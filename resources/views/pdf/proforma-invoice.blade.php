@@ -5,8 +5,6 @@
     <meta charset="utf-8" />
     <title>{{ strtoupper($pdf_title ?? 'PROFORMA INVOICE') }} — {{ $quotation->pi_number ?? '' }}</title>
     <style>
-        /* Reserve a bottom band on every page for the fixed footer so it
-       never overlaps content. */
         @page {
             margin-bottom: 48px;
         }
@@ -19,9 +17,6 @@
             right: 0;
             width: 100%;
             height: 40px;
-            /* Thin top border in the tenant's primary brand colour (same as
-               the table headers / section rules); falls back to the reference
-               green only when the branch has no brand colour set. */
             border-top: 1px solid {{ $companyDetails->primary_color ?? '#8BC34A' }};
             padding: 0;
             background: white;
@@ -32,10 +27,6 @@
             color: #4d4d4d;
         }
 
-        /* One compact line near the TOP of the footer band: barcode (LEFT) +
-       date (RIGHT), with the page number CENTER on the same line (drawn by
-       page_text). Keeping it near the band top lifts it clear of the
-       printer's non-printable bottom edge so nothing is clipped. */
         .pdf-footer .pf-row {
             width: 100%;
             border-collapse: collapse;
@@ -48,9 +39,6 @@
 
         .pdf-footer .pf-barcode {
             height: 18px;
-            /* FIXED width — the barcode image must never grow with the encoded
-               data length. The data inside stays dynamic (denser bars for
-               longer values); only the rendered box size is locked. */
             width: 90px;
             display: block;
         }
@@ -60,38 +48,21 @@
             color: #4d4d4d;
         }
 
-        /* Centered company compliance strip: "Name | CIN | GST | IEC | PAN".
-           Only the fields that have a value are rendered (built server-side),
-           so there are never empty "| |" gaps. Sits above the "Page X of Y"
-           line that page_text() draws. */
         .pdf-footer .pf-company {
             font-size: 7.5px;
             line-height: 1.2;
-            /* Colour is set inline to the tenant's primary brand colour
-               (same as the table headers); this is only a fallback. */
             color: #7CB342;
             font-weight: 400;
         }
 
         body {
             margin-bottom: 10px;
-            /* Helvetica is what the reference PDF metadata reports for every
-           text run, so we lead with that. DejaVu Sans stays as a fallback
-           because it ships with DomPDF and carries µ, ×, É, ®, … glyphs
-           that the line-item descriptions occasionally use. */
             font-family: Helvetica, "DejaVu Sans", Arial, sans-serif;
             font-size: 9px;
-            /* Values across the document render in this neutral grey (#777)
-           to match the Inorbvict reference. Labels override this via
-           <strong> to a slightly darker grey (#666). */
             color: #777777;
             position: relative;
         }
 
-        /* Tighter line-height matches the reference Inorbvict layout. The
-       old 15px was leaving large gaps between every label/value pair
-       and inflating the header block to ~50% of the page. 12px brings
-       it back to the reference proportions. */
         body,
         table,
         tr,
@@ -115,21 +86,12 @@
             margin: 0;
         }
 
-        /* Labels (everything wrapped in <strong>) render slightly darker
-       grey than the values, matching the metadata spec from the
-       reference Inorbvict letterhead. */
         strong,
         b {
             color: #666666;
             font-weight: bold;
         }
 
-        /* Table styling — body uses middle vertical alignment so single-line
-       values line up cleanly with the header even when a column needs
-       to wrap (e.g. a long product description forcing that row taller).
-       Header bar gets noticeably more vertical padding (12px top/bottom
-       vs 6px on body cells) so it reads as a substantial colored strip
-       like the reference Inorbvict product table, not a thin caption. */
         .prod_table {
             width: 100%;
             border-collapse: collapse;
@@ -142,10 +104,6 @@
         }
 
         .prod_table tr {
-            /* Allow a very tall row (long description) to split across pages
-               instead of being pushed off the page whole — otherwise a single
-               big-description product leaves page 1 blank and starts on a later
-               page. Short rows fit anyway so they never split. */
             page-break-inside: auto;
         }
 
@@ -153,15 +111,9 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             white-space: normal;
-            /* Top-align so a long description begins at the first line of the
-               row (page 1, row 1) rather than being centred in a tall cell. */
             vertical-align: top;
         }
 
-        /* A long description is emitted as several rows (dompdf can page-break
-           BETWEEN rows but not inside one tall cell). These rules make the
-           slices read as one continuous block: the flowing slice drops its
-           bottom padding, and continuation rows drop their top padding. */
         .prod_table td.description-flow {
             padding-bottom: 0;
         }
@@ -219,8 +171,6 @@
             font-size: 9px;
         }
 
-        /* Barcode and QR placeholders — drawn in CSS since the project doesn't
-       ship a barcode library. Visual stand-ins for DNS1D / DNS2D output. */
         .barcode-strip {
             display: inline-block;
             background-image: repeating-linear-gradient(90deg,
@@ -256,42 +206,15 @@
 <body>
 
     @php
-        // Sanitiser for any DB free-text printed in the PDF. dompdf's core
-        // Helvetica font can't draw characters outside the Latin range, and
-        // invalid/garbled bytes in the data surface as "??" or □ boxes (e.g. a
-        // stray character saved in a Port Of Loading name). This drops invalid
-        // UTF-8 byte sequences and the replacement / control characters so only
-        // clean, renderable text reaches the page. Normal letters, digits,
-        // punctuation and accented Latin characters are preserved.
         $pdfClean = function ($s) {
             $s = (string) $s;
-            $s = mb_convert_encoding($s, 'UTF-8', 'UTF-8'); // strip invalid byte sequences
-            // Keep ONLY what DomPDF's core fonts can draw: printable ASCII +
-            // Latin-1 (plus tab/newlines). Everything else — the replacement
-            // char, en/em dashes, CJK, emoji, control bytes — is removed so it
-            // can never surface as a "?" or box (DomPDF substitutes "?" for any
-            // glyph the font lacks; stripping it pre-render avoids that).
+            $s = mb_convert_encoding($s, 'UTF-8', 'UTF-8');
             $s = preg_replace('/[^\x09\x0A\x0D\x20-\x7E\x{00A0}-\x{00FF}]/u', '', $s);
             return trim((string) $s);
         };
     @endphp
 
-    <!-- GLOBAL FOOTER — corporate export-document style, per spec.
-     One white block, two rows, one shared background.
-     ROW 1: barcode + URL centered beneath it (LEFT, rowspan=2 so it
-            vertically centers across both rows), company compliance
-            strip "Name | CIN | GST | IEC | PAN" (CENTER), document
-            date (RIGHT, rowspan=2 so it baseline-aligns with the
-            company strip).
-     ROW 2: "Page X of Y" pagination — actual text drawn via the
-            <script type="text/php"> block at the bottom of this file
-            ({PAGE_COUNT} only resolves there). The empty cell holds
-            the vertical space so the page indicator lands on the same
-            white background as the rest of the footer. -->
     @php
-        // Company compliance strip for the footer — only the fields that
-        // actually carry a value are included, joined by " | ", so there are
-        // never empty "| |" gaps when (say) IEC isn't set.
         $__footerParts = [];
         if (trim((string) ($companyDetails->name ?? '')) !== '')
             $__footerParts[] = $companyDetails->name;
@@ -306,10 +229,6 @@
         $__footerStrip = implode('  |  ', $__footerParts);
     @endphp
     <div class="pdf-footer">
-        {{-- Footer on every page: barcode (LEFT) + dynamic company compliance
-        strip (CENTER, page-centered via equal-width side cells). The
-        "Page X of Y" line is drawn CENTER and BELOW this by the page_text()
-        script at the bottom (it needs {PAGE_COUNT}). --}}
         <table class="pf-row">
             <tr>
                 <td style="width:15%; text-align:left; padding-left:8px;">
@@ -326,16 +245,8 @@
         </table>
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="content-wrapper main-content">
         @php
-            // ──────────────────────────────────────────────────────────────
-            // AMOUNT IN WORDS — Indian English spell-out (lakhs / crores).
-            // Tries ext-intl's NumberFormatter::SPELLOUT first; falls back to
-            // a pure-PHP routine on servers without the intl extension so the
-            // PDF doesn't 500 (which is what was happening before this fix).
-            // Same pattern as resources/views/invoices/payment-invoice.blade.php.
-            // ──────────────────────────────────────────────────────────────
             $__grandTotal = (float) ($quotation->grand_total ?? 0);
             $__rupees = (int) floor($__grandTotal);
             $__paise = (int) round(($__grandTotal - $__rupees) * 100);
@@ -350,9 +261,6 @@
                     return trim($tens[intdiv($n, 10)] . ' ' . ($n % 10 ? $ones[$n % 10] : ''));
                 };
                 $threeDigit = function (int $n) use (&$threeDigit, $ones, $twoDigit): string {
-                    // A crore count can itself run into thousands/lakhs, so recurse
-                    // on thousands instead of assuming n < 1000 — otherwise
-                    // $ones[intdiv($n,100)] hits an undefined key on huge amounts.
                     if ($n >= 1000) {
                         $th = intdiv($n, 1000); $r = $n % 1000;
                         return trim($threeDigit($th) . ' Thousand' . ($r ? ' ' . $threeDigit($r) : ''));
@@ -375,10 +283,6 @@
                 $hund = $n;
                 $parts = [];
                 if ($crore)
-                    // Spell the crore segment recursively so amounts with a crore
-                    // count > 999 (e.g. 3232 crore) don't index $ones out of range
-                    // — that was the "Undefined array key 32" 500 on servers
-                    // without ext-intl.
                     $parts[] = $__spellInr($crore) . ' Crore';
                 if ($lakh)
                     $parts[] = $twoDigit($lakh) . ' Lakh';
@@ -402,16 +306,9 @@
             $amountInWords = $__rupeeWords
                 . ($__paiseWords !== '' ? ' and ' . $__paiseWords . ' Paise' : '');
 
-            // Currency CODE only (e.g. "SGD") for the Grand Total. currency_name
-            // carries the full "SGD - Singapore Dollar"; take just the leading
-            // token (the code) and fall back to the whole string if there's no
-            // space (e.g. already a bare "INR").
             $__ccyName = trim((string) ($quotation->currency_name ?? 'INR'));
             $__ccyCode = $__ccyName !== '' ? trim(explode(' ', $__ccyName)[0]) : 'INR';
 
-            // ==============================================
-            // COMPLETE CALCULATION FOR PAGINATION
-            // ==============================================
             $allProducts = $quotationProducts->toArray();
             $totalProducts = count($allProducts);
 
@@ -444,11 +341,6 @@
 
             $currentPageNumber = 1;
 
-            // Resolve logo once — the issuing Branch's uploaded logo (passed in
-            // as a base64 data URI on $companyDetails->logo_data). When the
-            // branch hasn't uploaded one, DON'T fall back to a bundled default;
-            // instead build an initials monogram from the org/branch name
-            // (e.g. "Inorbvict Health Care" → "IHC") in the brand color.
             $logoData = $companyDetails->logo_data ?? null;
             $logoFallbackHtml = '';
             if (!$logoData) {
@@ -462,15 +354,11 @@
                     if (strlen($initials) >= 4)
                         break;
                 }
-                // Single-word (or empty) names: a lone initial looks sparse, so
-                // use the first 3 letters of the name instead (e.g. "ACME" → "ACM").
                 if (strlen($initials) < 2) {
                     $bare = preg_replace('/[^A-Za-z0-9]/', '', (string) ($companyDetails->name ?? ''));
                     $initials = strtoupper(substr($bare, 0, 3)) ?: ($initials ?: 'NA');
                 }
                 $logoBrand = $companyDetails->primary_color ?? '#7CB342';
-                // Rendered as a single-cell table so DomPDF reliably centers the
-                // initials both ways inside the brand-colored monogram tile.
                 $logoFallbackHtml =
                     '<table style="border-collapse:collapse;"><tr>'
                     . '<td style="width:74px; height:74px; background:' . $logoBrand . '; border-radius:12px; '
@@ -479,16 +367,9 @@
                     . e($initials)
                     . '</td></tr></table>';
             }
-            // Authorised-signatory image rendered inside the "with signature"
-            // block — also base64 from the branch's signature upload. When
-            // absent, the template falls back to the CSS pseudo-stamp
-            // (BRANCH • AUTHORISED • SIGNED) below.
             $signatureData = $companyDetails->signature_data ?? null;
         @endphp
 
-        <!-- ============================ -->
-        <!-- CREATE PRODUCT PAGES WITH SUB-HEADERS -->
-        <!-- ============================ -->
         @foreach($productPages as $pageIndex => $pageProducts)
         @php
             $isFirstPage = ($pageIndex == 0);
@@ -500,17 +381,10 @@
         <div @if(!$isFirstPage) style="page-break-before: always;" @endif>
 
             @if($isFirstPage)
-                <!-- ============================ -->
-                <!-- PAGE 1: FULL HEADER -->
-                <!-- ============================ -->
                 <div class="page-header">
                     <table class="full-w" style="width:100%; border-collapse:collapse;">
                         <tr>
-                            <!-- LEFT SIDE: LOGO AND COMPANY INFO -->
                             <td style="width:45%; vertical-align:top; font-size:9px; padding:0; margin:0;">
-                                {{-- Logo sits in a fixed-height band so the letterhead
-                                below it starts on the SAME line as the right column's
-                                detail block (which uses a matching band). --}}
                                 <div style="height:80px;">
                                     @if($logoData)
                                         <img src="{{ $logoData }}" alt="Logo" width="200" height="80"
@@ -520,14 +394,6 @@
                                     @endif
                                 </div>
 
-                                {{-- Letterhead block — each row only renders when the
-                                branch has the value set. Empty fields used to print
-                                as "Drug License :" with a dangling colon, which
-                                looked unfinished on the PDF. Now the block compacts
-                                down to whatever the branch actually filled in.
-                                The "One Star Export House Details :" section
-                                heading + its two rows hide together when neither
-                                File No nor UDIN No is set. --}}
                                 <div style="margin-top:12px; font-size:9px; line-height:14px;">
                                     <strong style="display:block; font-size:9px; margin-bottom:6px; color:#666666;">
                                         {{ ucwords(strtolower($companyDetails->name)) }}
@@ -572,9 +438,6 @@
                                             </strong>{{ $companyDetails->aeo_code }}</div>
                                     @endif
 
-                                    {{-- One Star Export House sub-section: only print the
-                                    heading + rows when at least one of the two values
-                                    is filled. Otherwise the whole sub-section is hidden. --}}
                                     @php
                                         $oneStarFile = trim((string) $companyDetails->onestartfilename);
                                         $oneStarUdin = trim((string) $companyDetails->onestarudinumber);
@@ -592,16 +455,11 @@
                                 </div>
                             </td>
 
-                            <!-- RIGHT SIDE: PI INFO -->
                             <td style="width:60%; vertical-align:top;">
                                 <table style="width:100%; border-collapse:collapse;">
                                     <tr>
                                         <td style="width:35%;"></td>
                                         <td style="width:65%; text-align:left;">
-                                            {{-- Title + No/Date + barcode sit in a fixed-height
-                                            band matching the left logo band, so the
-                                            International detail block below starts on the
-                                            SAME line as the left letterhead. --}}
                                             <div style="height:80px;">
                                                 @if (Str::wordCount($pdf_title) > 3)
                                                     <h4
@@ -625,8 +483,6 @@
                                                         </td>
                                                         <td style="width:40%; text-align:right;">
                                                             @if(!empty($barcodeData))
-                                                                {{-- Branch has a website → render real scannable Code128
-                                                                + the URL below in a clean PDF font. --}}
                                                                 <img src="{{ $barcodeData }}" alt="Barcode" width="130"
                                                                     height="30"
                                                                     style="width:130px; height:30px; display:block; margin-left:auto;">
@@ -635,9 +491,6 @@
                                                                     {{ $barcodeText ?? ($companyDetails->website ?? '') }}
                                                                 </div>
                                                             @else
-                                                                {{-- No website on the branch → branch name takes the slot.
-                                                                Same right-aligned, ~140px wide, so the header strip
-                                                                stays balanced. --}}
                                                                 <div
                                                                     style="font-size:11px; font-weight:bold; color:#666666; text-align:right; line-height:13px; max-width:140px; margin-left:auto; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
                                                                     {{ $companyDetails->name ?? '' }}
@@ -649,15 +502,6 @@
                                             </div>
 
                                             @if($quotation->document_type == "International")
-                                                {{-- Document detail block — Doc Type / Opp / Ports / Inco / etc.
-                                                PI No + Date are already rendered in the small block above
-                                                next to the barcode, so we DON'T repeat them here (the old
-                                                template was emitting them twice). Net/Gross Weight rows are
-                                                also dropped — the Quotation model doesn't carry them and
-                                                the blank "Net Weight (kg) :" labels just took space. --}}
-                                                {{-- Right-column document info — same uniform 6px row gap
-                                                + 14px line-height as the letterhead on the left so the
-                                                two columns share the same rhythm row-for-row. --}}
                                                 <div style="margin-top:12px; font-size:9px; line-height:14px;">
                                                     <div style="margin-bottom:6px;"><strong>Document Type :</strong>
                                                         {{ $quotation->document_type }}</div>
@@ -688,9 +532,6 @@
                                             @endif
 
                                             @if($quotation->document_type == "Domestic")
-                                                {{-- Domestic detail block — mirrors the International block's
-                                                layout/rhythm but with the domestic fields (dispatch/deliver,
-                                                GST state code + GSTIN) in place of ports / INCO / destination. --}}
                                                 <div style="margin-top:12px; font-size:9px; line-height:14px;">
                                                     <div style="margin-bottom:6px;"><strong>Document Type :</strong>
                                                         {{ $quotation->document_type }}</div>
@@ -721,9 +562,6 @@
                     <hr
                         style="border: 0.1px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
-                    {{-- BUYER & CONSIGNEE — same uniform 6px row gap + 14px line-height as
-                    the letterhead above, so the two columns share a consistent rhythm
-                    instead of the previous cramped <br>-stacked block. --}}
                     <table class="full-w" style="width:100%; border-collapse:collapse; margin-top:8px;">
                         <tr>
                             <td style="width:50%; font-size:9px; line-height:14px; vertical-align: top; padding:6px 0;">
@@ -754,9 +592,6 @@
                     </table>
                 </div>
             @else
-                <!-- ============================ -->
-                <!-- PAGES 2, 3, 4...: SUB-HEADER -->
-                <!-- ============================ -->
                 <div class="sub-header">
                     <table class="full-w" style="width:100%; border-collapse:collapse;">
                         <tr>
@@ -796,8 +631,6 @@
                                                     </td>
                                                     <td style="width:40%; text-align:right;">
                                                         @if(!empty($barcodeData))
-                                                            {{-- Branch has a website → render real scannable Code128
-                                                            + the URL below in a clean PDF font. --}}
                                                             <img src="{{ $barcodeData }}" alt="Barcode" width="130" height="30"
                                                                 style="width:130px; height:30px; display:block; margin-left:auto;">
                                                             <div
@@ -805,9 +638,6 @@
                                                                 {{ $barcodeText ?? ($companyDetails->website ?? '') }}
                                                             </div>
                                                         @else
-                                                            {{-- No website on the branch → branch name takes the slot.
-                                                            Same right-aligned, ~140px wide, so the header strip
-                                                            stays balanced. --}}
                                                             <div
                                                                 style="font-size:11px; font-weight:bold; color:#666666; text-align:right; line-height:13px; max-width:140px; margin-left:auto; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
                                                                 {{ $companyDetails->name ?? '' }}
@@ -825,17 +655,9 @@
                 </div>
             @endif
 
-            <!-- ============================ -->
-            <!-- PRODUCT TABLE FOR THIS PAGE -->
-            <!-- ============================ -->
             <section class="product-area">
                 <table class="prod_table" style="table-layout: fixed; font-size:9px; width:100%;">
                     <thead>
-                        {{-- Column widths sum to 100%. Widened the cramped columns
-                        (Sr No, Product Code, Tax Amt, Rate+Tax, Amount) so the
-                        header labels stay on a single line; the Description
-                        column absorbs the lost width since it's the only one
-                        that wraps gracefully. --}}
                         <tr
                             style="background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
                             <th style="width:5%;  text-align: center; white-space: nowrap;">Sr No</th>
@@ -853,19 +675,6 @@
                     <tbody>
                         @foreach ($pageProducts as $product)
                             @php
-                                // DomPDF cannot split ONE tall cell across pages — a huge
-                                // description used to push the whole row off page 1 (blank
-                                // first page, content landing pages later). So a long
-                                // description is emitted as SEVERAL rows: the first carries
-                                // the data columns + the first slice; continuation rows carry
-                                // only the next slice. DomPDF breaks cleanly BETWEEN rows, so
-                                // the product starts on page 1 and the text flows page to page.
-                                // The .description-flow / tr.desc-cont CSS removes the inner
-                                // padding so the slices read as one continuous block.
-                                // Small (~120-char ≈ 5-line) slices: DomPDF can only break
-                                // BETWEEN rows, so the slice height is the worst-case gap
-                                // left at the bottom of a page. Fine slices let the text run
-                                // down to just above the footer before breaking.
                                 $__desc = !empty($product['product_description']) ? (string) $product['product_description'] : '-';
                                 $__chunks = [];
                                 if (mb_strlen($__desc) > 120) {
@@ -923,26 +732,13 @@
                 </table>
             </section>
 
-            <!-- ============================ -->
-            <!-- FOOTER ON LAST PRODUCT PAGE (IF SPACE) -->
-            <!-- ============================ -->
             @if($isLastProductPage && !$footerNeedsNewPage)
             <div style="margin-top: 20px;">
                 <hr
                     style="border: 0.2px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
-                {{-- Bank / Totals row — sized for PDF-print balance:
-                • QR cell: ~18% width to fit a 100×100 code with a 16px gap to the bank block
-                • Bank details: 52% — labels #555, values inherit #777 from body
-                • Totals: 30% — Grand Total emphasized 1.5× the surrounding rows --}}
-                {{-- table-layout:fixed + the three column widths summing to
-                100% keeps QR | Bank | Totals on ONE line (auto layout
-                was letting the nowrap totals push the row to wrap). --}}
                 <table style="width:100%; table-layout:fixed; border-collapse:collapse; margin-top:12px;">
                     <tr>
-                        <!-- LEFT: QR — top-aligned so its top edge lines up with the
-                                 Bank Name row and the Sub Total row. Kept square so it
-                                 stays scannable. -->
                         <td style="width:20%; vertical-align: top; padding-right:8px; padding-top:0;">
                             @if(!empty($qrData))
                                 <img src="{{ $qrData }}" alt="Bank Payment QR" width="132" height="132"
@@ -953,7 +749,6 @@
                             @endif
                         </td>
 
-                        <!-- MIDDLE: BANK DETAILS — 9px Helvetica, labels #555 bold, values #777 normal -->
                         <td
                             style="width:48%; vertical-align: top; font-size:9px; line-height:14px; padding-right:16px;">
                             <div style="margin-bottom:6px;"><strong style="color:#555;">Bank Name :</strong>
@@ -978,7 +773,6 @@
                                 {{ $bankDetails->swift_code }}</div>
                         </td>
 
-                        <!-- RIGHT: TOTALS — labels #555 bold, values #777, Grand Total emphasized -->
                         <td style="width:32%; vertical-align: top;">
                             <table style="width:100%; font-size:9px; line-height:14px; border-collapse:collapse;">
                                 <tr>
@@ -986,12 +780,6 @@
                                     <td style="text-align:right; padding:3px 0;"><strong
                                             style="color:#555;">{{ number_format($quotation->total, 2) }}</strong></td>
                                 </tr>
-                                {{-- IGST / CGST / SGST always render (matches the reference
-                                Inorbvict totals stack — Sub Total → IGST → CGST → SGST →
-                                Shipping → Grand Total). Values come from the quotation row;
-                                they're 0.00 when the doc_type doesn't apply that tax bucket.
-                                Sub Total above is PRE-TAX, so these rows add up:
-                                Sub Total + tax + shipping = Grand Total. --}}
                                 <tr>
                                     <td style="padding:3px 0; color:#555;">IGST</td>
                                     <td style="text-align:right; padding:3px 0;">
@@ -1010,9 +798,6 @@
                                         {{ number_format($quotation->sgst, 2) }}
                                     </td>
                                 </tr>
-                                {{-- Shipping only when it was actually charged — a 0.00 row on
-                                every domestic document is noise, but omitting a non-zero one
-                                would leave Sub Total + tax short of the Grand Total. --}}
                                 @if (($quotation->shipping_cost ?? 0) > 0)
                                     <tr>
                                         <td style="padding:3px 0; color:#555;">Shipping Cost</td>
@@ -1021,9 +806,6 @@
                                         </td>
                                     </tr>
                                 @endif
-                                {{-- Grand Total highlighted — larger font, bolder, with a top
-                                border separator so the eye lands on it as the row that
-                                actually matters. --}}
                                 <tr>
                                     <td
                                         style="padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
@@ -1040,10 +822,6 @@
                     </tr>
                 </table>
 
-                <!-- AMOUNT IN WORDS — text color adapts to whatever
-                         primary color the branch picked (white on dark
-                         brand colors, near-black on light ones) so it
-                         stays readable no matter the theme. -->
                 <div
                     style="width:100%; display:block; font-size:10px; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }}; margin-top:10px; margin-bottom:15px; text-align:left; padding:8px 14px; background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; box-sizing:border-box; line-height: 14px; font-weight:600;">
                     <strong
@@ -1054,7 +832,6 @@
                     </strong>
                 </div>
 
-                <!-- SIGNATURE SECTION -->
                 @if ($signature == 'Yes')
                     <section>
                         <table style="width:100%;">
@@ -1062,17 +839,11 @@
                                 <td style="width:50%; vertical-align: top; font-size:9px;">
                                     For {{ ucwords(strtolower($companyDetails->name)) }}<br>
                                     @if($signatureData)
-                                        {{-- Branch-uploaded signature image. Capped to 110×90 so
-                                        it lines up with the layout's signature column without
-                                        distorting the page balance. --}}
                                         <div style="margin: 6px 0;">
                                             <img src="{{ $signatureData }}" alt="Authorised Signatory"
                                                 style="max-width:140px; max-height:80px; display:block;">
                                         </div>
                                     @else
-                                        {{-- Fallback CSS "stamp" for branches without an uploaded
-                                        signature image — keeps the with-signature variant
-                                        visually distinct from the without-signature one. --}}
                                         <table style="margin: 6px 0;">
                                             <tr>
                                                 <td
@@ -1100,13 +871,6 @@
                     </section>
                 @endif
 
-                <!-- TERMS & CONDITIONS — sourced from the form's
-                         "Terms & Conditions" textarea (saved on the
-                         quotation/PI row as `terms`). Flows directly BELOW
-                         the signature on the same page (no forced page
-                         break, no repeated header). Only renders when
-                         non-empty. nl2br preserves the line breaks the
-                         user typed (DomPDF collapses raw \n otherwise). -->
                 @php($segTncs = $segmentTermsConditions ?? [])
                 @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs) || !empty($globalTermsConditions ?? []))
                     <div style="margin-top: 18px;">
@@ -1120,19 +884,6 @@
                                     {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
                                 </div>
                             @endif
-                            {{-- Grouped under a segment · product heading. The
-                                 controller already resolved which segment (and
-                                 which line items) pulled each clause in; the
-                                 PDF used to drop both and print one flat list,
-                                 so a customer spanning several segments could
-                                 not tell which term applied to which purchase.
-                                 Entries arrive grouped by segment already
-                                 (fetchSegmentTncs walks products in document
-                                 order and dedupes), so a heading is emitted
-                                 whenever the segment changes — inside the
-                                 non-empty guard, or an all-blank segment would
-                                 print a heading with nothing under it. --}}
-                            {{-- Layer 2: the global T&C of this document category. --}}
                             @foreach(($globalTermsConditions ?? []) as $__g)
                                 <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 6px;">{!! $__g !!}</div>
                             @endforeach
@@ -1158,9 +909,6 @@
         </div>
         @endforeach
 
-        <!-- ============================ -->
-        <!-- SEPARATE FOOTER PAGE (IF NEEDED) -->
-        <!-- ============================ -->
         @if($footerNeedsNewPage)
         <div style="page-break-before: always;">
             <div class="sub-header">
@@ -1257,13 +1005,6 @@
                                         <strong>{{ number_format($quotation->total, 2) }}</strong>
                                     </th>
                                 </tr>
-                                {{-- Same stack as the in-page footer above (this copy renders
-                                when the footer spills onto its own page), so it must break the
-                                total down the same way. The tax rows used to be Domestic-only
-                                and Shipping International-only, which left an export's tax and
-                                a domestic doc's shipping unaccounted for now that SUB TOTAL is
-                                pre-tax. Values are already 0.00 for whichever bucket doesn't
-                                apply, so rendering them unconditionally is safe. --}}
                                 <tr>
                                     <td>IGST</td>
                                     <td style="text-align:right;">{{ number_format($quotation->igst, 2) }}</td>
@@ -1337,10 +1078,7 @@
                     </section>
                 @endif
 
-                {{-- TERMS & CONDITIONS — flows directly BELOW the signature
-                on the same page (no forced page break, no repeated
-                header). Same data source
-                ($quotation->terms_and_conditions <- form's `terms`). --}} @php($segTncs = $segmentTermsConditions ?? [])
+ @php($segTncs = $segmentTermsConditions ?? [])
                     @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs) || !empty($globalTermsConditions ?? [])) <div
                                 style="margin-top: 18px;">
                                 <section style="margin-bottom: 8px;">
@@ -1353,11 +1091,6 @@
                                             {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
                                         </div>
                                     @endif
-                                    {{-- Same segment · product grouping as the
-                                         main layout above — this is the
-                                         footer-page copy of the block, and the
-                                         two must not drift apart. --}}
-                                    {{-- Layer 2: the global T&C of this document category. --}}
                                     @foreach(($globalTermsConditions ?? []) as $__g)
                                         <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 6px;">{!! $__g !!}</div>
                                     @endforeach
@@ -1382,59 +1115,15 @@
     </div>
     @endif
 
-    {{-- The dedicated "Terms & Conditions" force-page block that lived
-    here was deliberately removed. The reference Quotation PDF keeps
-    everything on page 1 (or page 2 only when products overflow);
-    the T&C text is sent in the quotation email body / contract,
-    not on the PDF. If a future requirement brings T&C back, render
-    it inline above the signature block in the main content above,
-    not on its own page. --}}
     </div>
 
     <script type="text/php">
 if (isset($pdf)) {
-    // Page pagination "1 / 3" — drawn AFTER the page is rendered (the
-    // script-text block is the only DomPDF hook that has access to
-    // {PAGE_COUNT}, since the total page count isn't known until
-    // rendering finishes).
-    //
-    // Coordinates use $pdf->get_width() / $pdf->get_height() instead of
-    // hardcoded A4 values so the position stays correct if the page
-    // size changes. Y = height − 28 keeps the text inside the printable
-    // area (below that and DomPDF clips it — earlier Y=828 was below
-    // the bottom margin and didn't render at all).
-    //
-    // Font is DejaVu Sans because it's the only font we can rely on
-    // being registered in the DomPDF cache; "helvetica" silently
-    // falls back to a default that doesn't always draw via page_text().
-    // Page indicator — "Page 1 of 3" inside the SECOND row of the footer
-    // table (same white background as the company strip above).
-    //
-    // Style: matches the company strip's *rendered* size. CSS "9px" in
-    // DomPDF (96 DPI) renders at ~6.75pt, while page_text() takes PDF
-    // points directly — so size 7 here visually matches the 9px HTML.
-    // Color #4d4d4d (RGB 0.30) matches the strip color.
-    //
-    // Width calc uses a REPRESENTATIVE rendered string ("Page 9 of 9"),
-    // not the literal placeholder "Page {PAGE_NUM} of {PAGE_COUNT}" —
-    // the placeholder is ~3× wider than the actual rendered text, which
-    // was offsetting the text left of true center.
-    // "<page> / <total>" centred on every page — including single-page
-    // docs (1 / 1) and the true last page of a multi-page doc (e.g. 4 / 4,
-    // 10 / 10). DomPDF draws page_text() on EVERY page and substitutes the
-    // {PAGE_NUM}/{PAGE_COUNT} placeholders per page.
     $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
     $size  = 8;
-    // CENTER, on the SAME line as the barcode (left) + date (right). "Page X
-    // of Y" — drawn on EVERY page, so a single-page doc shows "Page 1 of 1".
     $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
     $width = $fontMetrics->get_text_width("Page 99 of 99", $font, $size);
     $x     = ($pdf->get_width() - $width) / 2 + 2;
-    // Sits just under the footer strip. Larger subtraction = higher up (closer
-    // to the footer line), which tightens the gap below the barcode/company row.
-    // Taller footer band (height 40, @page margin-bottom 48) — the page-number
-    // line sits higher (−30) so it has clearance above the bottom edge and is
-    // no longer clipped to a thin sliver.
     $y     = $pdf->get_height() - 30;
     $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
 }
