@@ -6,12 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * One outbound email the system sent. Rows are written by
- * App\Listeners\LogSentEmail (hooked to Laravel's MessageSent event), so the
- * table is a faithful mirror of everything that left the mailer — transactional
- * mails (OTP, payslips, invoices, …) and anything composed from the Gmail page.
- */
 class EmailLog extends Model
 {
     use SoftDeletes;
