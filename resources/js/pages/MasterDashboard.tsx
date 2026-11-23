@@ -18,7 +18,7 @@ const INVENTORY_MASTER_PAGES: Record<string, string> = {
   'master.racks':            '/inventory-management/rack-master',
   'master.product_flags':    '/inventory-management/product-flags',
   'sales.lead_ack_master': '/master/lead-ack',
-  'hr.holiday':            '/hr/holiday',
+  'hr.holiday':            '/master/holiday',
   'clm.authority':         '/clm/authority',
   'clm.kyc':               '/clm/kyc',
   'clm.due_diligence':     '/clm/due-diligence',

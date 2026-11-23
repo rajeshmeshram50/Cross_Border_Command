@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
@@ -14,6 +14,10 @@ import TruncText from '../../components/ui/TruncText';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import SearchClear from '../../components/ui/SearchClear';
 import '../../../css/recruitment.css';
+import '../../../css/holiday-teal.css';
+import { tealize } from '../../utils/tealize';
+
+const HolTealCtx = createContext(false);
 
 type HolidayType = 'Public' | 'Restricted' | 'Company' | 'Regional' | 'Optional';
 
@@ -103,7 +107,13 @@ function weekdayName(raw: any): string {
   return WEEKDAYS[d.getDay()];
 }
 
-export default function HrHoliday() {
+export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' | 'teal' } = {}) {
+  const teal = variant === 'teal';
+  useEffect(() => {
+    if (!teal) return;
+    document.body.classList.add('hol-teal');
+    return () => document.body.classList.remove('hol-teal');
+  }, [teal]);
   const toast = useToast();
   const confirmDialog = useConfirm();
 
@@ -262,10 +272,6 @@ export default function HrHoliday() {
       meta: { width: 176, align: 'center' },
       cell: info => {
         const r = info.row.original;
-        /* The badge is a 176px column and the group name is free text, so a
-           long one ran straight out of its pill and across the cells beside
-           it. 18 here rather than the 30 used in the popup: this is a pill in
-           a narrow column, not a name in a table cell. (Holiday #5) */
         return r.holiday_group_id
           ? (
             <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', maxWidth: '100%' }}>
@@ -423,13 +429,13 @@ export default function HrHoliday() {
   };
 
   return (
-    <>
+    <HolTealCtx.Provider value={teal}>
       <MasterFormStyles />
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFilePicked} />
       <Row>
         <Col xs={12}>
           <div className="rec-page holiday-page">
-            <style>{`
+            <style>{(teal ? tealize : (c: string) => c)(`
 
               .holiday-page .rec-list-frame{
                 background: linear-gradient(180deg,#ffffff 0%, #fcfbff 100%);
@@ -501,7 +507,7 @@ export default function HrHoliday() {
                 color: #c4b5fd;
                 border-color: rgba(167,139,250,.28);
               }
-            `}</style>
+            `)}</style>
             <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -549,7 +555,7 @@ export default function HrHoliday() {
               data={rows}
               columns={columns}
               serial
-              accent="violet"
+              accent={teal ? 'teal' : 'violet'}
 
               /* Fill to the footer with real rows, like Employees and Leave:
                  the page size becomes however many the height holds (QA #71). */
@@ -606,7 +612,7 @@ export default function HrHoliday() {
         yearOptions={years.map(y => ({ value: y, label: y }))}
         onApply={(f) => { setGroupFilter(f.group); setTypeFilter(f.type); setYearFilter(f.year); setPage(0); }}
       />
-    </>
+    </HolTealCtx.Provider>
   );
 }
 
@@ -796,6 +802,7 @@ function ManageGroupsModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const teal = useContext(HolTealCtx);
   const toast = useToast();
   const confirmDialog = useConfirm();
   const [editing, setEditing] = useState<HolidayGroup | null>(null);
@@ -990,7 +997,7 @@ function ManageGroupsModal({
             title="Groups"
             subtitle="Each one holds its own holiday list"
             serial={{ header: 'Sr No' }}
-            accent="violet"
+            accent={teal ? 'teal' : 'violet'}
             minWidth={620}
             emptyMessage="No groups yet — click “Add Group” to create one."
           />
@@ -1081,6 +1088,7 @@ export function HolidayFilterModal({
   typeOptions: { value: string; label: string }[];
   yearOptions: { value: string; label: string }[];
 }) {
+  const teal = useContext(HolTealCtx);
   const [active, setActive] = useState<HolidayFacetKey>('group');
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<HolidayFilterValues>(initial);
@@ -1146,7 +1154,7 @@ export function HolidayFilterModal({
 
   return createPortal((
     <div className="lfm-backdrop lfm-purple">
-      <style>{LFM_CSS}</style>
+      <style>{teal ? tealize(LFM_CSS) : LFM_CSS}</style>
       <div className="lfm-modal">
         <div className="lfm-head">
           <div className="lfm-head-left">

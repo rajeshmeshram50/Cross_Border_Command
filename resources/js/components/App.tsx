@@ -708,6 +708,7 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/gmail"    element={<Gmail />} />
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/segments" element={<ClmSegmentPage />} />
+              <Route path="/master/holiday" element={<HrHoliday variant="teal" />} />
               <Route path="/master/lead-ack" element={<SalesLeadAckMaster variant="teal" />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/sales/customers" element={<SalesCustomers />} />
