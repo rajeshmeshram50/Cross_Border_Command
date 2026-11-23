@@ -7,10 +7,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * One execution of the payroll engine against a period. The status ladder
- * (draft → generated → approved → paid) is the locking mechanism (Rule 14/15).
- */
 class PayrollRun extends Model
 {
     use SoftDeletes;
@@ -47,7 +43,6 @@ class PayrollRun extends Model
         return $this->hasMany(Payslip::class);
     }
 
-    /** A run can be (re)generated only while it's draft or generated. */
     public function isEditable(): bool
     {
         return in_array($this->status, ['draft', 'generated'], true);
