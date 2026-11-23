@@ -6,20 +6,6 @@ use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Seeds the master_countries and master_states tables with real ISO 3166
- * data: all 249 countries plus subdivisions (states/provinces/regions)
- * for the major trade partners.
- *
- * ID-STABLE: upserts by natural key (country = iso_code, state = name +
- * country_id) so existing rows KEEP their primary key across re-runs. The
- * old version did delete + re-insert, which handed out fresh auto-increment
- * ids every time and ORPHANED every FK pointing at the old ids
- * (employees.country_id / state_id, legal entities, ports, …). Never go back
- * to truncate-and-insert here — that silently breaks saved addresses.
- *
- * Run: php artisan db:seed --class=Database\\Seeders\\GeographySeeder
- */
 class GeographySeeder extends Seeder
 {
     public function run(): void
@@ -32,17 +18,7 @@ class GeographySeeder extends Seeder
         $adminId = $admin->id;
         $now = now();
 
-        // Wrap the whole geography upsert in ONE transaction with PRELOADED
-        // keys + BATCHED inserts. The previous row-by-row form fired a SELECT
-        // then an INSERT/UPDATE per row (~4k auto-committed round-trips) which
-        // on a remote / managed Postgres took minutes ("looks stuck"). This
-        // version does 2 SELECTs + chunked inserts inside a single commit →
-        // ~1-2s. Behaviour is unchanged: id-stable upsert by natural key
-        // within the global (client_id / branch_id NULL) scope; existing rows
-        // are left in place (id preserved) and only genuinely new rows insert.
         [$cIns, $cKept, $sIns, $sKept] = DB::transaction(function () use ($adminId, $now) {
-
-            // ── COUNTRIES ── upsert by iso_code within the global scope. ──
             $isoToId = DB::table('master_countries')
                 ->whereNull('client_id')->whereNull('branch_id')
                 ->pluck('id', 'iso_code')->all();
@@ -51,7 +27,6 @@ class GeographySeeder extends Seeder
             foreach ($this->countries() as $c) {
                 [$name, $iso] = $c;
                 if (isset($isoToId[$iso])) {
-                    // Existing global row — refresh name in place (id preserved).
                     DB::table('master_countries')->where('id', $isoToId[$iso])->update([
                         'name' => $name, 'status' => 'Active', 'updated_at' => $now,
                     ]);
@@ -69,13 +44,10 @@ class GeographySeeder extends Seeder
                 DB::table('master_countries')->insert($chunk);
             }
 
-            // Refresh iso -> id map so states of just-inserted countries resolve.
             $isoToId = DB::table('master_countries')
                 ->whereNull('client_id')->whereNull('branch_id')
                 ->pluck('id', 'iso_code')->all();
 
-            // ── STATES ── upsert by (country_id, name) within the global scope. ──
-            // Preload existing global state keys in ONE query (no per-row SELECT).
             $existingStates = [];
             foreach (DB::table('master_states')
                         ->whereNull('client_id')->whereNull('branch_id')
@@ -89,7 +61,7 @@ class GeographySeeder extends Seeder
                 if (! $countryId) continue;
                 foreach ($names as $name) {
                     if (isset($existingStates[((string) $countryId) . '|' . $name])) {
-                        $sKept++;            // already present, id preserved, left as-is
+                        $sKept++;
                         continue;
                     }
                     $newStates[] = [
@@ -111,10 +83,6 @@ class GeographySeeder extends Seeder
         $this->command->info(sprintf('states: +%d new, %d kept (ids preserved)', $sIns, $sKept));
     }
 
-    /**
-     * All 249 ISO 3166-1 countries as [name, alpha-2 iso_code] pairs.
-     * Definitions split across helper methods so the file stays readable.
-     */
     private function countries(): array
     {
         return array_merge(
@@ -216,11 +184,6 @@ class GeographySeeder extends Seeder
         ];
     }
 
-    /**
-     * State / province / region data per country (keyed by ISO alpha-2).
-     * Comprehensive for major trade partners; skipped for tiny territories
-     * with no real political subdivisions.
-     */
     private function statesByIso(): array
     {
         return array_merge(
@@ -239,7 +202,6 @@ class GeographySeeder extends Seeder
     private function statesAsia(): array
     {
         return [
-            // India — 28 states + 8 union territories
             'IN' => [
                 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
                 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand',
@@ -251,34 +213,28 @@ class GeographySeeder extends Seeder
                 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi',
                 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
             ],
-            // Pakistan — 4 provinces + 4 territories
             'PK' => [
                 'Punjab', 'Sindh', 'Khyber Pakhtunkhwa', 'Balochistan',
                 'Islamabad Capital Territory', 'Gilgit-Baltistan', 'Azad Jammu and Kashmir',
             ],
-            // Bangladesh — 8 divisions
             'BD' => [
                 'Barisal', 'Chittagong', 'Dhaka', 'Khulna',
                 'Mymensingh', 'Rajshahi', 'Rangpur', 'Sylhet',
             ],
-            // Sri Lanka — 9 provinces
             'LK' => [
                 'Central', 'Eastern', 'Northern', 'North Central', 'North Western',
                 'Sabaragamuwa', 'Southern', 'Uva', 'Western',
             ],
-            // Nepal — 7 provinces
             'NP' => [
                 'Province No. 1', 'Madhesh', 'Bagmati', 'Gandaki',
                 'Lumbini', 'Karnali', 'Sudurpashchim',
             ],
-            // Bhutan — 20 dzongkhags
             'BT' => [
                 'Bumthang', 'Chukha', 'Dagana', 'Gasa', 'Haa', 'Lhuntse', 'Mongar',
                 'Paro', 'Pemagatshel', 'Punakha', 'Samdrup Jongkhar', 'Samtse',
                 'Sarpang', 'Thimphu', 'Trashigang', 'Trashiyangtse', 'Trongsa',
                 'Tsirang', 'Wangdue Phodrang', 'Zhemgang',
             ],
-            // Myanmar — 14 states/regions
             'MM' => [
                 'Ayeyarwady', 'Bago', 'Magway', 'Mandalay', 'Sagaing', 'Tanintharyi',
                 'Yangon', 'Chin', 'Kachin', 'Kayah', 'Kayin', 'Mon', 'Rakhine', 'Shan',
@@ -288,7 +244,6 @@ class GeographySeeder extends Seeder
     private function statesAsiaEast(): array
     {
         return [
-            // China — 34 provincial-level divisions
             'CN' => [
                 'Anhui', 'Beijing', 'Chongqing', 'Fujian', 'Gansu', 'Guangdong',
                 'Guangxi', 'Guizhou', 'Hainan', 'Hebei', 'Heilongjiang', 'Henan',
@@ -297,7 +252,6 @@ class GeographySeeder extends Seeder
                 'Shandong', 'Shanghai', 'Shanxi', 'Sichuan', 'Taiwan', 'Tianjin',
                 'Tibet', 'Xinjiang', 'Yunnan', 'Zhejiang',
             ],
-            // Japan — 47 prefectures
             'JP' => [
                 'Aichi', 'Akita', 'Aomori', 'Chiba', 'Ehime', 'Fukui', 'Fukuoka',
                 'Fukushima', 'Gifu', 'Gunma', 'Hiroshima', 'Hokkaido', 'Hyogo',
@@ -308,20 +262,17 @@ class GeographySeeder extends Seeder
                 'Tokushima', 'Tokyo', 'Tottori', 'Toyama', 'Wakayama', 'Yamagata',
                 'Yamaguchi', 'Yamanashi',
             ],
-            // South Korea — 17 administrative divisions
             'KR' => [
                 'Seoul', 'Busan', 'Daegu', 'Incheon', 'Gwangju', 'Daejeon', 'Ulsan',
                 'Sejong', 'Gyeonggi', 'Gangwon', 'North Chungcheong', 'South Chungcheong',
                 'North Jeolla', 'South Jeolla', 'North Gyeongsang', 'South Gyeongsang', 'Jeju',
             ],
-            // Taiwan — 22 administrative divisions
             'TW' => [
                 'Changhua', 'Chiayi City', 'Chiayi County', 'Hsinchu City', 'Hsinchu County',
                 'Hualien', 'Kaohsiung', 'Keelung', 'Kinmen', 'Lienchiang', 'Miaoli',
                 'Nantou', 'New Taipei', 'Penghu', 'Pingtung', 'Taichung', 'Tainan',
                 'Taipei', 'Taitung', 'Taoyuan', 'Yilan', 'Yunlin',
             ],
-            // Mongolia — 21 provinces + capital
             'MN' => [
                 'Arkhangai', 'Bayan-Olgii', 'Bayankhongor', 'Bulgan', 'Darkhan-Uul',
                 'Dornod', 'Dornogovi', 'Dundgovi', 'Govi-Altai', 'Govisumber',
@@ -449,55 +400,44 @@ class GeographySeeder extends Seeder
     private function statesAsiaWest(): array
     {
         return [
-            // UAE — 7 emirates
             'AE' => [
                 'Abu Dhabi', 'Ajman', 'Dubai', 'Fujairah',
                 'Ras Al Khaimah', 'Sharjah', 'Umm Al Quwain',
             ],
-            // Saudi Arabia — 13 regions
             'SA' => [
                 'Riyadh', 'Makkah', 'Madinah', 'Eastern Province', 'Asir',
                 'Tabuk', 'Hail', 'Northern Borders', 'Jazan', 'Najran',
                 'Al Bahah', 'Al Jouf', 'Qassim',
             ],
-            // Qatar — 8 municipalities
             'QA' => [
                 'Ad Dawhah', 'Al Khor', 'Al Rayyan', 'Al Shamal', 'Al Wakrah',
                 'Az Zaayin', 'Umm Salal', 'Al Daayen',
             ],
-            // Kuwait — 6 governorates
             'KW' => [
                 'Al Ahmadi', 'Al Asimah', 'Al Farwaniyah', 'Al Jahra',
                 'Hawalli', 'Mubarak Al-Kabeer',
             ],
-            // Bahrain — 4 governorates
             'BH' => ['Capital', 'Muharraq', 'Northern', 'Southern'],
-            // Oman — 11 governorates
             'OM' => [
                 'Ad Dakhiliyah', 'Ad Dhahirah', 'Al Batinah North', 'Al Batinah South',
                 'Al Buraimi', 'Al Wusta', 'Ash Sharqiyah North', 'Ash Sharqiyah South',
                 'Dhofar', 'Muscat', 'Musandam',
             ],
-            // Jordan — 12 governorates
             'JO' => [
                 'Ajloun', 'Amman', 'Aqaba', 'Balqa', 'Irbid', 'Jerash', 'Karak',
                 'Maan', 'Madaba', 'Mafraq', 'Tafilah', 'Zarqa',
             ],
-            // Lebanon — 8 governorates
             'LB' => [
                 'Akkar', 'Baalbek-Hermel', 'Beirut', 'Bekaa', 'Mount Lebanon',
                 'Nabatieh', 'North Lebanon', 'South Lebanon',
             ],
-            // Israel — 6 districts
             'IL' => ['Central', 'Haifa', 'Jerusalem', 'Northern', 'Southern', 'Tel Aviv'],
-            // Iraq — 19 governorates
             'IQ' => [
                 'Al Anbar', 'Babil', 'Baghdad', 'Basrah', 'Dhi Qar', 'Diyala',
                 'Dohuk', 'Erbil', 'Karbala', 'Kirkuk', 'Maysan', 'Muthanna',
                 'Najaf', 'Nineveh', 'Qadisiyyah', 'Salah ad Din', 'Sulaymaniyah',
                 'Wasit', 'Halabja',
             ],
-            // Iran — 31 provinces
             'IR' => [
                 'Alborz', 'Ardabil', 'Bushehr', 'Chaharmahal and Bakhtiari',
                 'East Azerbaijan', 'Fars', 'Gilan', 'Golestan', 'Hamadan',
@@ -512,16 +452,13 @@ class GeographySeeder extends Seeder
     private function statesEurope(): array
     {
         return [
-            // United Kingdom — 4 nations
             'GB' => ['England', 'Scotland', 'Wales', 'Northern Ireland'],
-            // Germany — 16 Bundeslander
             'DE' => [
                 'Baden-Wurttemberg', 'Bavaria', 'Berlin', 'Brandenburg', 'Bremen',
                 'Hamburg', 'Hesse', 'Lower Saxony', 'Mecklenburg-Vorpommern',
                 'North Rhine-Westphalia', 'Rhineland-Palatinate', 'Saarland', 'Saxony',
                 'Saxony-Anhalt', 'Schleswig-Holstein', 'Thuringia',
             ],
-            // France — 18 regions
             'FR' => [
                 'Auvergne-Rhone-Alpes', 'Bourgogne-Franche-Comte', 'Brittany',
                 'Centre-Val de Loire', 'Corsica', 'Grand Est', 'Hauts-de-France',
@@ -529,33 +466,28 @@ class GeographySeeder extends Seeder
                 'Pays de la Loire', 'Provence-Alpes-Cote d\'Azur', 'Guadeloupe',
                 'Martinique', 'French Guiana', 'Reunion', 'Mayotte',
             ],
-            // Italy — 20 regions
             'IT' => [
                 'Abruzzo', 'Aosta Valley', 'Apulia', 'Basilicata', 'Calabria',
                 'Campania', 'Emilia-Romagna', 'Friuli-Venezia Giulia', 'Lazio',
                 'Liguria', 'Lombardy', 'Marche', 'Molise', 'Piedmont', 'Sardinia',
                 'Sicily', 'Trentino-South Tyrol', 'Tuscany', 'Umbria', 'Veneto',
             ],
-            // Spain — 17 autonomous communities + 2 cities
             'ES' => [
                 'Andalusia', 'Aragon', 'Asturias', 'Balearic Islands', 'Basque Country',
                 'Canary Islands', 'Cantabria', 'Castile and Leon', 'Castilla-La Mancha',
                 'Catalonia', 'Extremadura', 'Galicia', 'La Rioja', 'Madrid',
                 'Murcia', 'Navarre', 'Valencia', 'Ceuta', 'Melilla',
             ],
-            // Netherlands — 12 provinces
             'NL' => [
                 'Drenthe', 'Flevoland', 'Friesland', 'Gelderland', 'Groningen',
                 'Limburg', 'North Brabant', 'North Holland', 'Overijssel',
                 'South Holland', 'Utrecht', 'Zeeland',
             ],
-            // Belgium — 11 provinces (incl. Brussels)
             'BE' => [
                 'Antwerp', 'Brussels', 'East Flanders', 'Flemish Brabant',
                 'Hainaut', 'Liege', 'Limburg', 'Luxembourg', 'Namur',
                 'Walloon Brabant', 'West Flanders',
             ],
-            // Switzerland — 26 cantons
             'CH' => [
                 'Aargau', 'Appenzell Ausserrhoden', 'Appenzell Innerrhoden', 'Basel-Landschaft',
                 'Basel-Stadt', 'Bern', 'Fribourg', 'Geneva', 'Glarus', 'Grisons',
@@ -563,19 +495,16 @@ class GeographySeeder extends Seeder
                 'Schwyz', 'Solothurn', 'St. Gallen', 'Thurgau', 'Ticino', 'Uri',
                 'Valais', 'Vaud', 'Zug', 'Zurich',
             ],
-            // Austria — 9 states
             'AT' => [
                 'Burgenland', 'Carinthia', 'Lower Austria', 'Salzburg', 'Styria',
                 'Tyrol', 'Upper Austria', 'Vienna', 'Vorarlberg',
             ],
-            // Portugal — 18 districts + 2 autonomous regions
             'PT' => [
                 'Aveiro', 'Beja', 'Braga', 'Braganca', 'Castelo Branco', 'Coimbra',
                 'Evora', 'Faro', 'Guarda', 'Leiria', 'Lisbon', 'Portalegre',
                 'Porto', 'Santarem', 'Setubal', 'Viana do Castelo', 'Vila Real',
                 'Viseu', 'Azores', 'Madeira',
             ],
-            // Ireland — 26 counties
             'IE' => [
                 'Carlow', 'Cavan', 'Clare', 'Cork', 'Donegal', 'Dublin',
                 'Galway', 'Kerry', 'Kildare', 'Kilkenny', 'Laois', 'Leitrim',
@@ -588,20 +517,17 @@ class GeographySeeder extends Seeder
     private function statesEurope2(): array
     {
         return [
-            // Sweden — 21 counties
             'SE' => [
                 'Blekinge', 'Dalarna', 'Gavleborg', 'Gotland', 'Halland', 'Jamtland',
                 'Jonkoping', 'Kalmar', 'Kronoberg', 'Norrbotten', 'Orebro', 'Ostergotland',
                 'Skane', 'Sodermanland', 'Stockholm', 'Uppsala', 'Varmland',
                 'Vasterbotten', 'Vasternorrland', 'Vastmanland', 'Vastra Gotaland',
             ],
-            // Norway — 11 counties
             'NO' => [
                 'Agder', 'Innlandet', 'More og Romsdal', 'Nordland', 'Oslo',
                 'Rogaland', 'Troms og Finnmark', 'Trondelag', 'Vestfold og Telemark',
                 'Vestland', 'Viken',
             ],
-            // Finland — 19 regions
             'FI' => [
                 'Aland Islands', 'Central Finland', 'Central Ostrobothnia', 'Kainuu',
                 'Kanta-Hame', 'Kymenlaakso', 'Lapland', 'North Karelia', 'North Ostrobothnia',
@@ -609,42 +535,35 @@ class GeographySeeder extends Seeder
                 'South Karelia', 'South Ostrobothnia', 'South Savo', 'Southwest Finland',
                 'Uusimaa',
             ],
-            // Denmark — 5 regions
             'DK' => [
                 'Capital Region', 'Central Denmark', 'North Denmark',
                 'Region Zealand', 'Southern Denmark',
             ],
-            // Iceland — 8 regions
             'IS' => [
                 'Capital', 'Eastern', 'Northeastern', 'Northwestern', 'Southern',
                 'Southern Peninsula', 'Western', 'Westfjords',
             ],
-            // Poland — 16 voivodeships
             'PL' => [
                 'Greater Poland', 'Kuyavian-Pomeranian', 'Lesser Poland', 'Lodz',
                 'Lower Silesian', 'Lublin', 'Lubusz', 'Masovian', 'Opole', 'Podlaskie',
                 'Pomeranian', 'Silesian', 'Subcarpathian', 'Holy Cross',
                 'Warmian-Masurian', 'West Pomeranian',
             ],
-            // Czechia — 14 regions
             'CZ' => [
                 'Prague', 'Central Bohemian', 'South Bohemian', 'Plzen', 'Karlovy Vary',
                 'Usti nad Labem', 'Liberec', 'Hradec Kralove', 'Pardubice', 'Vysocina',
                 'South Moravian', 'Olomouc', 'Zlin', 'Moravian-Silesian',
             ],
-            // Slovakia — 8 regions
             'SK' => [
                 'Bratislava', 'Trnava', 'Trencin', 'Nitra', 'Zilina',
                 'Banska Bystrica', 'Presov', 'Kosice',
             ],
-            // Hungary — 19 counties + capital
             'HU' => [
                 'Bacs-Kiskun', 'Baranya', 'Bekes', 'Borsod-Abauj-Zemplen', 'Budapest',
                 'Csongrad-Csanad', 'Fejer', 'Gyor-Moson-Sopron', 'Hajdu-Bihar', 'Heves',
                 'Jasz-Nagykun-Szolnok', 'Komarom-Esztergom', 'Nograd', 'Pest', 'Somogy',
                 'Szabolcs-Szatmar-Bereg', 'Tolna', 'Vas', 'Veszprem', 'Zala',
             ],
-            // Romania — 41 counties + Bucharest
             'RO' => [
                 'Alba', 'Arad', 'Arges', 'Bacau', 'Bihor', 'Bistrita-Nasaud', 'Botosani',
                 'Brasov', 'Braila', 'Bucharest', 'Buzau', 'Caras-Severin', 'Calarasi',
@@ -654,7 +573,6 @@ class GeographySeeder extends Seeder
                 'Sibiu', 'Suceava', 'Teleorman', 'Timis', 'Tulcea', 'Vaslui', 'Valcea',
                 'Vrancea',
             ],
-            // Bulgaria — 28 provinces
             'BG' => [
                 'Blagoevgrad', 'Burgas', 'Dobrich', 'Gabrovo', 'Haskovo', 'Kardzhali',
                 'Kyustendil', 'Lovech', 'Montana', 'Pazardzhik', 'Pernik', 'Pleven',
@@ -662,14 +580,12 @@ class GeographySeeder extends Seeder
                 'Smolyan', 'Sofia', 'Sofia City', 'Stara Zagora', 'Targovishte',
                 'Varna', 'Veliko Tarnovo', 'Vidin', 'Vratsa', 'Yambol',
             ],
-            // Greece — 13 regions
             'GR' => [
                 'Attica', 'Central Greece', 'Central Macedonia', 'Crete',
                 'Eastern Macedonia and Thrace', 'Epirus', 'Ionian Islands',
                 'North Aegean', 'Peloponnese', 'South Aegean', 'Thessaly',
                 'Western Greece', 'Western Macedonia',
             ],
-            // Russia — major federal subjects
             'RU' => [
                 'Moscow', 'Saint Petersburg', 'Moscow Oblast', 'Krasnodar Krai',
                 'Sverdlovsk Oblast', 'Rostov Oblast', 'Tatarstan', 'Bashkortostan',
@@ -681,7 +597,6 @@ class GeographySeeder extends Seeder
                 'Yaroslavl Oblast', 'Kaliningrad Oblast', 'Khabarovsk Krai',
                 'Primorsky Krai', 'Sakha Republic', 'Sakhalin Oblast',
             ],
-            // Turkey — 81 provinces
             'TR' => [
                 'Adana', 'Adiyaman', 'Afyonkarahisar', 'Agri', 'Aksaray', 'Amasya',
                 'Ankara', 'Antalya', 'Ardahan', 'Artvin', 'Aydin', 'Balikesir',
@@ -698,7 +613,6 @@ class GeographySeeder extends Seeder
                 'Tekirdag', 'Tokat', 'Trabzon', 'Tunceli', 'Usak', 'Van',
                 'Yalova', 'Yozgat', 'Zonguldak',
             ],
-            // Ukraine — 24 oblasts + Kyiv + Crimea
             'UA' => [
                 'Cherkasy', 'Chernihiv', 'Chernivtsi', 'Crimea', 'Dnipropetrovsk',
                 'Donetsk', 'Ivano-Frankivsk', 'Kharkiv', 'Kherson', 'Khmelnytskyi',
@@ -711,7 +625,6 @@ class GeographySeeder extends Seeder
     private function statesAmericas(): array
     {
         return [
-            // USA — 50 states + DC
             'US' => [
                 'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado',
                 'Connecticut', 'Delaware', 'District of Columbia', 'Florida', 'Georgia',
@@ -724,14 +637,12 @@ class GeographySeeder extends Seeder
                 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia',
                 'Wisconsin', 'Wyoming',
             ],
-            // Canada — 10 provinces + 3 territories
             'CA' => [
                 'Alberta', 'British Columbia', 'Manitoba', 'New Brunswick',
                 'Newfoundland and Labrador', 'Nova Scotia', 'Ontario',
                 'Prince Edward Island', 'Quebec', 'Saskatchewan',
                 'Northwest Territories', 'Nunavut', 'Yukon',
             ],
-            // Mexico — 31 states + Mexico City
             'MX' => [
                 'Aguascalientes', 'Baja California', 'Baja California Sur', 'Campeche',
                 'Chiapas', 'Chihuahua', 'Coahuila', 'Colima', 'Durango', 'Guanajuato',
@@ -745,7 +656,6 @@ class GeographySeeder extends Seeder
     private function statesAmericas2(): array
     {
         return [
-            // Brazil — 26 states + Federal District
             'BR' => [
                 'Acre', 'Alagoas', 'Amapa', 'Amazonas', 'Bahia', 'Ceara',
                 'Distrito Federal', 'Espirito Santo', 'Goias', 'Maranhao',
@@ -754,7 +664,6 @@ class GeographySeeder extends Seeder
                 'Rio Grande do Norte', 'Rio Grande do Sul', 'Rondonia', 'Roraima',
                 'Santa Catarina', 'Sao Paulo', 'Sergipe', 'Tocantins',
             ],
-            // Argentina — 23 provinces + Buenos Aires
             'AR' => [
                 'Buenos Aires', 'Buenos Aires City', 'Catamarca', 'Chaco', 'Chubut',
                 'Cordoba', 'Corrientes', 'Entre Rios', 'Formosa', 'Jujuy', 'La Pampa',
@@ -762,14 +671,12 @@ class GeographySeeder extends Seeder
                 'San Juan', 'San Luis', 'Santa Cruz', 'Santa Fe', 'Santiago del Estero',
                 'Tierra del Fuego', 'Tucuman',
             ],
-            // Chile — 16 regions
             'CL' => [
                 'Arica y Parinacota', 'Tarapaca', 'Antofagasta', 'Atacama', 'Coquimbo',
                 'Valparaiso', 'Metropolitana de Santiago', 'O\'Higgins', 'Maule',
                 'Nuble', 'Biobio', 'La Araucania', 'Los Rios', 'Los Lagos',
                 'Aysen', 'Magallanes',
             ],
-            // Colombia — 32 departments + capital district
             'CO' => [
                 'Amazonas', 'Antioquia', 'Arauca', 'Atlantico', 'Bogota', 'Bolivar',
                 'Boyaca', 'Caldas', 'Caqueta', 'Casanare', 'Cauca', 'Cesar', 'Choco',
@@ -778,7 +685,6 @@ class GeographySeeder extends Seeder
                 'Quindio', 'Risaralda', 'San Andres y Providencia', 'Santander',
                 'Sucre', 'Tolima', 'Valle del Cauca', 'Vaupes', 'Vichada',
             ],
-            // Peru — 25 regions + Lima
             'PE' => [
                 'Amazonas', 'Ancash', 'Apurimac', 'Arequipa', 'Ayacucho', 'Cajamarca',
                 'Callao', 'Cusco', 'Huancavelica', 'Huanuco', 'Ica', 'Junin',
@@ -786,7 +692,6 @@ class GeographySeeder extends Seeder
                 'Madre de Dios', 'Moquegua', 'Pasco', 'Piura', 'Puno', 'San Martin',
                 'Tacna', 'Tumbes', 'Ucayali',
             ],
-            // Venezuela — 23 states + Capital District
             'VE' => [
                 'Amazonas', 'Anzoategui', 'Apure', 'Aragua', 'Barinas', 'Bolivar',
                 'Carabobo', 'Cojedes', 'Delta Amacuro', 'Capital District', 'Falcon',
@@ -794,7 +699,6 @@ class GeographySeeder extends Seeder
                 'Portuguesa', 'Sucre', 'Tachira', 'Trujillo', 'La Guaira', 'Yaracuy',
                 'Zulia',
             ],
-            // Ecuador — 24 provinces
             'EC' => [
                 'Azuay', 'Bolivar', 'Canar', 'Carchi', 'Chimborazo', 'Cotopaxi',
                 'El Oro', 'Esmeraldas', 'Galapagos', 'Guayas', 'Imbabura', 'Loja',
@@ -802,19 +706,16 @@ class GeographySeeder extends Seeder
                 'Pichincha', 'Santa Elena', 'Santo Domingo de los Tsachilas',
                 'Sucumbios', 'Tungurahua', 'Zamora Chinchipe',
             ],
-            // Bolivia — 9 departments
             'BO' => [
                 'Beni', 'Chuquisaca', 'Cochabamba', 'La Paz', 'Oruro', 'Pando',
                 'Potosi', 'Santa Cruz', 'Tarija',
             ],
-            // Uruguay — 19 departments
             'UY' => [
                 'Artigas', 'Canelones', 'Cerro Largo', 'Colonia', 'Durazno', 'Flores',
                 'Florida', 'Lavalleja', 'Maldonado', 'Montevideo', 'Paysandu',
                 'Rio Negro', 'Rivera', 'Rocha', 'Salto', 'San Jose', 'Soriano',
                 'Tacuarembo', 'Treinta y Tres',
             ],
-            // Paraguay — 17 departments + capital
             'PY' => [
                 'Alto Paraguay', 'Alto Parana', 'Amambay', 'Asuncion', 'Boqueron',
                 'Caaguazu', 'Caazapa', 'Canindeyu', 'Central', 'Concepcion',
@@ -826,12 +727,10 @@ class GeographySeeder extends Seeder
     private function statesAfricaOceania(): array
     {
         return [
-            // South Africa — 9 provinces
             'ZA' => [
                 'Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo',
                 'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape',
             ],
-            // Egypt — 27 governorates
             'EG' => [
                 'Alexandria', 'Aswan', 'Asyut', 'Beheira', 'Beni Suef', 'Cairo',
                 'Dakahlia', 'Damietta', 'Faiyum', 'Gharbia', 'Giza', 'Ismailia',
@@ -839,7 +738,6 @@ class GeographySeeder extends Seeder
                 'New Valley', 'North Sinai', 'Port Said', 'Qalyubia', 'Qena',
                 'Red Sea', 'Sharqia', 'Sohag', 'South Sinai', 'Suez',
             ],
-            // Nigeria — 36 states + FCT
             'NG' => [
                 'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa',
                 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo',
@@ -848,7 +746,6 @@ class GeographySeeder extends Seeder
                 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo',
                 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
             ],
-            // Kenya — 47 counties
             'KE' => [
                 'Baringo', 'Bomet', 'Bungoma', 'Busia', 'Elgeyo-Marakwet', 'Embu',
                 'Garissa', 'Homa Bay', 'Isiolo', 'Kajiado', 'Kakamega', 'Kericho',
@@ -859,14 +756,12 @@ class GeographySeeder extends Seeder
                 'Samburu', 'Siaya', 'Taita-Taveta', 'Tana River', 'Tharaka-Nithi',
                 'Trans-Nzoia', 'Turkana', 'Uasin Gishu', 'Vihiga', 'Wajir', 'West Pokot',
             ],
-            // Morocco — 12 regions
             'MA' => [
                 'Beni Mellal-Khenifra', 'Casablanca-Settat', 'Draa-Tafilalet',
                 'Fes-Meknes', 'Guelmim-Oued Noun', 'Laayoune-Sakia El Hamra',
                 'Marrakesh-Safi', 'Oriental', 'Rabat-Sale-Kenitra', 'Souss-Massa',
                 'Tanger-Tetouan-Al Hoceima', 'Dakhla-Oued Ed-Dahab',
             ],
-            // Algeria — 58 provinces (top ones)
             'DZ' => [
                 'Adrar', 'Algiers', 'Annaba', 'Batna', 'Bechar', 'Bejaia', 'Biskra',
                 'Blida', 'Bordj Bou Arreridj', 'Bouira', 'Boumerdes', 'Chlef',
@@ -877,26 +772,22 @@ class GeographySeeder extends Seeder
                 'Skikda', 'Souk Ahras', 'Tamanrasset', 'Tebessa', 'Tiaret', 'Tindouf',
                 'Tipaza', 'Tissemsilt', 'Tizi Ouzou', 'Tlemcen',
             ],
-            // Tunisia — 24 governorates
             'TN' => [
                 'Ariana', 'Beja', 'Ben Arous', 'Bizerte', 'Gabes', 'Gafsa',
                 'Jendouba', 'Kairouan', 'Kasserine', 'Kebili', 'Kef', 'Mahdia',
                 'Manouba', 'Medenine', 'Monastir', 'Nabeul', 'Sfax', 'Sidi Bouzid',
                 'Siliana', 'Sousse', 'Tataouine', 'Tozeur', 'Tunis', 'Zaghouan',
             ],
-            // Ghana — 16 regions
             'GH' => [
                 'Ahafo', 'Ashanti', 'Bono', 'Bono East', 'Central', 'Eastern',
                 'Greater Accra', 'North East', 'Northern', 'Oti', 'Savannah',
                 'Upper East', 'Upper West', 'Volta', 'Western', 'Western North',
             ],
-            // Ethiopia — 11 regions + 2 chartered cities
             'ET' => [
                 'Addis Ababa', 'Afar', 'Amhara', 'Benishangul-Gumuz', 'Dire Dawa',
                 'Gambela', 'Harari', 'Oromia', 'Sidama', 'Somali',
                 'South West Ethiopia', 'Southern Nations', 'Tigray',
             ],
-            // Tanzania — 31 regions
             'TZ' => [
                 'Arusha', 'Dar es Salaam', 'Dodoma', 'Geita', 'Iringa', 'Kagera',
                 'Katavi', 'Kigoma', 'Kilimanjaro', 'Lindi', 'Manyara', 'Mara',
@@ -905,21 +796,17 @@ class GeographySeeder extends Seeder
                 'Singida', 'Songwe', 'Tabora', 'Tanga', 'Zanzibar North',
                 'Zanzibar South', 'Zanzibar Urban',
             ],
-            // Australia — 6 states + 2 territories
             'AU' => [
                 'New South Wales', 'Victoria', 'Queensland', 'Western Australia',
                 'South Australia', 'Tasmania', 'Australian Capital Territory',
                 'Northern Territory',
             ],
-            // New Zealand — 16 regions
             'NZ' => [
                 'Auckland', 'Bay of Plenty', 'Canterbury', 'Gisborne', 'Hawke\'s Bay',
                 'Manawatu-Whanganui', 'Marlborough', 'Nelson', 'Northland', 'Otago',
                 'Southland', 'Taranaki', 'Tasman', 'Waikato', 'Wellington', 'West Coast',
             ],
-            // Fiji — 4 divisions
             'FJ' => ['Central', 'Eastern', 'Northern', 'Western'],
-            // Papua New Guinea — 22 provinces
             'PG' => [
                 'Bougainville', 'Central', 'Chimbu', 'East New Britain', 'East Sepik',
                 'Eastern Highlands', 'Enga', 'Gulf', 'Hela', 'Jiwaka', 'Madang',
