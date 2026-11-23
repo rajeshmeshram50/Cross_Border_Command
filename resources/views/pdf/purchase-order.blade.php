@@ -6,10 +6,6 @@
     <title>PURCHASE ORDER — {{ $po->code ?? '' }}</title>
     <style>
         @page {
-            /* Reserve more than the 40px footer so a flowing line whose top fits
-               the content box (but bottom overshoots by ~one line) still clears
-               the fixed footer instead of overlapping the barcode/company strip.
-               This is what long Terms & Conditions were colliding with. */
             margin-bottom: 10px;
         }
 
@@ -103,9 +99,6 @@
         }
 
         .prod_table tr {
-            /* Never split a row: dompdf crops the half that straddles the break
-               instead of flowing it. The description is pre-sliced into short
-               rows below, so a whole row always fits and moves cleanly. */
             page-break-inside: avoid;
         }
 
@@ -114,15 +107,9 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             white-space: normal;
-            /* Top-align so a long description begins at the first line of the
-               row rather than being centred in a tall cell. */
             vertical-align: top;
         }
 
-        /* A long description is emitted as several rows (dompdf can page-break
-           BETWEEN rows but not inside one tall cell). These rules make the
-           slices read as one continuous block: the flowing slice drops its
-           bottom padding, and continuation rows drop their top padding. */
         .prod_table td.description-flow {
             padding-bottom: 0;
         }
@@ -133,9 +120,6 @@
 
         .prod_table td {
             padding: 10px 6px;
-            /* Top, not middle: in a row made tall by a wrapped description the
-               centred Qty / Rate / GST% / Amount drifted far below the product
-               name and read as missing (QA #160). */
             vertical-align: top;
             line-height: 13px;
         }
@@ -194,7 +178,6 @@
             return trim((string) $s);
         };
 
-        // Footer compliance strip — only non-empty fields, joined by " | ".
         $__footerParts = [];
         if (trim((string) ($companyDetails->name ?? '')) !== '') $__footerParts[] = $companyDetails->name;
         if (trim((string) ($companyDetails->cin ?? '')) !== '') $__footerParts[] = 'CIN: ' . $companyDetails->cin;
@@ -203,7 +186,6 @@
         if (trim((string) ($companyDetails->pan_no ?? '')) !== '') $__footerParts[] = 'PAN: ' . $companyDetails->pan_no;
         $__footerStrip = implode('  |  ', $__footerParts);
 
-        // Amount in words (Indian English lakhs/crores).
         $__grandTotal = (float) ($totals->grand_total ?? 0);
         $__rupees = (int) floor($__grandTotal);
         $__paise = (int) round(($__grandTotal - $__rupees) * 100);
@@ -216,9 +198,6 @@
                 return trim($tens[intdiv($n, 10)] . ' ' . ($n % 10 ? $ones[$n % 10] : ''));
             };
             $threeDigit = function (int $n) use (&$threeDigit, $ones, $twoDigit): string {
-                // A crore count can itself run into thousands/lakhs (e.g. an amount
-                // over ₹1000 crore), so recurse on thousands instead of assuming
-                // n < 1000 — otherwise $ones[intdiv($n,100)] hits an undefined key.
                 if ($n >= 1000) {
                     $th = intdiv($n, 1000); $r = $n % 1000;
                     return trim($threeDigit($th) . ' Thousand' . ($r ? ' ' . $threeDigit($r) : ''));
@@ -250,7 +229,6 @@
         $amountInWords = $__rupeeWords . ($__paiseWords !== '' ? ' and ' . $__paiseWords . ' Paise' : '');
         $__ccyCode = trim((string) ($po->currency ?? 'INR')) ?: 'INR';
 
-        // Logo / monogram fallback.
         $logoData = $companyDetails->logo_data ?? null;
         $logoFallbackHtml = '';
         if (!$logoData) {
@@ -276,7 +254,6 @@
         $signatureData = $companyDetails->signature_data ?? null;
     @endphp
 
-    <!-- GLOBAL FOOTER -->
     <div class="pdf-footer">
         <table class="pf-row">
             <tr>
@@ -293,13 +270,10 @@
         </table>
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="content-wrapper">
 
-        <!-- HEADER -->
         <table class="full-w" style="width:100%; border-collapse:collapse;">
             <tr>
-                <!-- LEFT: LOGO + LETTERHEAD -->
                 <td style="width:50%; vertical-align:top; font-size:9px; padding:0; margin:0;">
                     <div style="height:80px;">
                         @if($logoData)
@@ -363,7 +337,6 @@
                     </div>
                 </td>
 
-                <!-- RIGHT: TITLE + PO INFO GRID + VENDOR -->
                 <td style="width:50%; vertical-align:top;">
                     <div style="height:80px;">
                         <table style="width:100%; border-collapse:collapse;">
@@ -394,9 +367,6 @@
                         </table>
                     </div>
 
-                    {{-- PO INFO GRID — two sub-columns like the reference.
-                         PO No / PO Date live under the title above; repeating them
-                         here printed each twice on the PDF (QA #163). --}}
                     <table style="width:100%; border-collapse:collapse; margin-top:12px; font-size:9px; line-height:14px;">
                         <tr>
                             <td style="width:55%; vertical-align:top;">
@@ -427,7 +397,6 @@
 
         <hr style="border: 0.1px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
-        <!-- BILL TO / DELIVER TO -->
         <table class="full-w" style="width:100%; border-collapse:collapse; margin-top:8px;">
             <tr>
                 <td style="width:50%; font-size:9px; line-height:14px; vertical-align: top; padding:6px 0;">
@@ -453,7 +422,6 @@
             </tr>
         </table>
 
-        <!-- PRODUCT TABLE -->
         <section style="margin-top:10px;">
             <table class="prod_table" style="table-layout: fixed; font-size:9px; width:100%;">
                 <thead>
@@ -471,20 +439,6 @@
                 <tbody>
                     @foreach ($products as $i => $product)
                         @php
-                            // DomPDF cannot split ONE tall cell across pages — a huge
-                            // description used to push the whole row off page 1 (blank
-                            // first page, content landing pages later). So a long
-                            // description is emitted as SEVERAL rows: the first carries
-                            // the data columns + the first slice; continuation rows carry
-                            // only the next slice. DomPDF breaks cleanly BETWEEN rows, so
-                            // the product starts on page 1 and the text flows page to page.
-                            // The .description-flow / tr.desc-cont CSS removes the inner
-                            // padding so the slices read as one continuous block.
-                            // ~2 text lines per slice keeps every row short enough that
-                            // page-break-inside:avoid can move it whole — a fatter slice
-                            // straddled the break and dompdf cropped it (QA #161). An
-                            // unbroken token (no spaces) is cut mid-word, otherwise it
-                            // alone made the row a page tall again.
                             $__descChunk = 60;
                             $__desc = !empty($product['product_description']) ? $pdfClean($product['product_description']) : '—';
                             $__chunks = [];
@@ -529,7 +483,6 @@
             </table>
         </section>
 
-        <!-- BANK + CHARGES/TOTALS -->
         <div style="margin-top: 16px; page-break-inside: avoid;">
             <hr style="border: 0.2px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
@@ -607,14 +560,12 @@
                 </tr>
             </table>
 
-            <!-- AMOUNT IN WORDS -->
             <div style="width:100%; display:block; font-size:10px; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }}; margin-top:10px; margin-bottom:15px; text-align:left; padding:8px 14px; background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; box-sizing:border-box; line-height: 14px; font-weight:600;">
                 <strong style="text-transform:capitalize; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
                     Amount In Words : {{ $__ccyCode }} {{ $amountInWords }}
                 </strong>
             </div>
 
-            <!-- SIGNATURE -->
             @if ($signature == 'Yes')
                 <section>
                     <table style="width:100%;">
@@ -653,7 +604,6 @@
             @endif
         </div>
 
-        <!-- TERMS & CONDITIONS -->
         @if(!empty(trim((string) ($po->terms ?? ''))))
             <div style="margin-top: 18px;">
                 <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
@@ -665,8 +615,6 @@
             </div>
         @endif
 
-        {{-- GLOBAL TERMS & CONDITIONS — the one entry filed against this document
-             category, printed before the segment-wise blocks. --}}
         @if(!empty($globalTermsConditions))
             <div style="margin-top: 18px;">
                 <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
@@ -678,9 +626,6 @@
             </div>
         @endif
 
-        {{-- MASTER TERMS & CONDITIONS — auto-matched from the T&C Library by the
-             document category (Domestic / International Purchase Order), supplier
-             party (Material / FFD / Services) and each product's segment. --}}
         @if(!empty($segmentTermsConditions))
             <div style="margin-top: 18px;">
                 <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
@@ -689,9 +634,6 @@
                 @foreach($segmentTermsConditions as $tnc)
                     <div class="po-terms" style="margin-bottom: 8px;">
                         @if(!empty($tnc['segment']))
-                            {{-- Labelled, not bare: on its own the name reads as a
-                                 heading for the clauses under it rather than as the
-                                 segment they belong to. --}}
                             <div style="font-size: 8.5px; font-weight: 700; color: {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-bottom: 2px;">Segment - {{ $tnc['segment'] }}</div>
                         @endif
                         {!! \App\Support\PdfHighlight::fix($tnc['content']) !!}
