@@ -5,32 +5,10 @@ namespace App\Http\Controllers\Concerns;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory;
 
-/**
- * Shared helpers for the HTML ↔ DOCX round-trip used by the CLM
- * Trade Document and Agreement editors.
- *
- * Both editors render with the same contentEditable + execCommand
- * toolbar, so the shape of HTML they emit is identical and so are the
- * normalisation rules PhpWord needs to ingest it.
- */
 trait HandlesDocxHtmlRoundtrip
 {
-    /**
-     * Normalise the HTML the contentEditable toolbar produces so PhpWord's
-     * Html reader sees shapes it can convert:
-     *   - <font color="X"> / <font face="X"> → <span style="color:X / font-family:X">
-     *   - <font size="N">  (1..7)            → <span style="font-size:Xpt">
-     *   - <span style="font-weight:bold">    → <b>…</b>
-     *   - <span style="font-style:italic">   → <i>…</i>
-     *   - <span style="text-decoration:underline"> → <u>…</u>
-     *   - <div style="text-align:X">         → <p style="text-align:X">
-     */
     protected function normaliseEditorHtml(string $html): string
     {
-        // The contentEditable editor writes font sizes in px (e.g. the toolbar's
-        // applyFontSize sets `font-size:16px`), but Word/PhpWord expects points.
-        // Convert px→pt (1px ≈ 0.75pt) up front so the DOCX text keeps the same
-        // sizes the user saw in the editor instead of being scaled wrong.
         $html = preg_replace_callback(
             '/font-size\s*:\s*(\d+(?:\.\d+)?)\s*px/i',
             fn ($m) => 'font-size:' . round(((float) $m[1]) * 0.75, 1) . 'pt',
@@ -84,23 +62,12 @@ trait HandlesDocxHtmlRoundtrip
             (string) $html
         );
 
-        // PhpWord fills a table cell from `background-color` and IGNORES the
-        // `background` shorthand — but the editor writes cell fills as
-        // `background: rgb(r,g,b)`. Without this the teal header row came out
-        // with no fill, so its white text was invisible (white-on-white).
-        // Promote a solid-colour `background:` to `background-color:` (PhpWord
-        // accepts the rgb() value as-is and emits <w:shd>).
         $html = preg_replace(
             '/\bbackground\s*:\s*(rgb\([^)]*\)|#[0-9a-fA-F]{3,6})/i',
             'background-color:$1',
             (string) $html
         );
 
-        // Repair links whose href is empty or protocol-only (e.g. href="https://")
-        // but whose visible TEXT is a real URL — an old editor bug saved these
-        // when the user link-wrapped a pasted URL and accepted the bare "https://"
-        // prompt default. Use the link text as the href so the DOCX (and PDF)
-        // link actually opens instead of going nowhere.
         $html = preg_replace_callback(
             '/<a\b([^>]*)>(.*?)<\/a>/is',
             function ($m) {
@@ -122,18 +89,12 @@ trait HandlesDocxHtmlRoundtrip
             (string) $html
         );
 
-        // Word renders a hyperlink as blue + underlined ONLY when the <a> run
-        // carries that font style. The editor styles links via CSS (which
-        // PhpWord ignores when building the DOCX), so links came out as plain
-        // black text — clickable, but indistinguishable from normal text. Stamp
-        // a blue underline inline (unless the <a> already sets its own colour)
-        // so DOCX links look like — and are recognised as — links.
         $html = preg_replace_callback(
             '/<a\b([^>]*)>/i',
             function ($m) {
                 $attrs = $m[1];
                 if (preg_match('/\bstyle\s*=\s*"([^"]*)"/i', $attrs, $sm)) {
-                    if (preg_match('/color\s*:/i', $sm[1])) return $m[0];   // keep an author colour
+                    if (preg_match('/color\s*:/i', $sm[1])) return $m[0];
                     $newStyle = rtrim($sm[1], "; \t") . ';color:#0563C1;text-decoration:underline';
                     return '<a' . preg_replace('/\bstyle\s*=\s*"[^"]*"/i', 'style="' . $newStyle . '"', $attrs) . '>';
                 }
@@ -145,38 +106,6 @@ trait HandlesDocxHtmlRoundtrip
         return (string) $html;
     }
 
-    /**
-     * Lightweight DOCX → HTML — walks PhpWord's parsed model and stitches
-     * <p>/<b>/<i>/<u> tags. Mirrors the HRMS template helper so a Word
-     * round-trip preserves text + basic formatting + paragraph breaks.
-     */
-    /**
-     * A document's length as the EDITORS count it: characters of text, with the
-     * markup left out.
-     *
-     * The render limit used to be measured on the HTML, so formatting spent it
-     * — raising a selection's font size wraps every run it touches in a span
-     * and its style, and the count climbed without a character being written
-     * (CS-18). Block ends become newlines first, which is how the editor's own
-     * text separates them, so the server refuses at the same figure the screen
-     * showed rather than one the user never saw.
-     */
-    /**
-     * The ceiling the SERVER enforces, which is not quite the one the screen
-     * shows.
-     *
-     * The editors count with the editor's own text walk; this counts by
-     * reading the stored HTML. Both answer "how many characters is this
-     * document", and on a long one they differ by a fraction of a percent —
-     * whitespace between blocks, an entity, a cell boundary. Held to the exact
-     * figure, the server would refuse a save the screen had just called
-     * acceptable, which is the same "within the limit but not accepted"
-     * complaint from the other end (CS-17).
-     *
-     * So the server keeps a small margin. It is a backstop against documents
-     * that are genuinely too big for the renderers, not a second opinion on
-     * the last thousand characters.
-     */
     protected function renderLimitWithMargin(int $max): int
     {
         return (int) round($max * 1.02);
@@ -194,16 +123,9 @@ trait HandlesDocxHtmlRoundtrip
 
     protected function docxToHtml(string $absPath): string
     {
-        // 1) Parse word/document.xml DIRECTLY. This is the only lossless path:
-        //    PhpWord's reader silently drops soft line breaks (<w:br/>), so its
-        //    HTML writer and the element walker both flatten things like a
-        //    Seller block ("Seller:" / "Name:" / "Address:" on separate lines)
-        //    into one run-on line. Direct parsing keeps paragraph breaks, soft
-        //    breaks, bold/italic/underline, headings, alignment and tables.
         $direct = $this->docxBodyToHtml($absPath);
         if ($direct !== null) return $direct;
 
-        // 2) Fallback: PhpWord's HTML writer (good structure, loses <br>).
         try {
             $phpWord = IOFactory::load($absPath);
         } catch (\Throwable $e) {
@@ -222,7 +144,6 @@ trait HandlesDocxHtmlRoundtrip
             if (ob_get_level() > 0) { @ob_end_clean(); }
         }
 
-        // 3) Last resort: the element walker.
         $html = '';
         foreach ($phpWord->getSections() as $section) {
             foreach ($section->getElements() as $el) {
@@ -232,31 +153,10 @@ trait HandlesDocxHtmlRoundtrip
         return trim($html) ?: '<p></p>';
     }
 
-    /** OOXML wordprocessing namespace. */
     private const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-    /**
-     * Parse a DOCX's word/document.xml straight into HTML, preserving soft line
-     * breaks (<w:br/>), paragraph breaks, headings (pStyle), alignment, basic
-     * run formatting (bold/italic/underline) and tables. Returns null when the
-     * file can't be opened/parsed so the caller can fall back to PhpWord.
-     */
-    /** Largest document the editors and the PDF renderer stay usable on. */
     protected const DOCX_MAX_PAGES = 70;
 
-    /**
-     * Page count for an uploaded .docx, or null when it cannot be determined.
-     *
-     * Word caches the count in docProps/app.xml every time it saves, so for a
-     * file that came out of Word this is the real number rather than a guess
-     * from bytes or characters — a 60-page text document and a 6-page one full
-     * of images can weigh the same, which is why a size cap alone never
-     * expressed this rule.
-     *
-     * Returns null for files written by tools that omit the element (or that
-     * leave it at 1 without recalculating), so callers must treat null as
-     * "unknown" and fall back to something else rather than as "fine".
-     */
     protected function docxPageCount(string $absPath): ?int
     {
         if (!class_exists('ZipArchive')) return null;
@@ -267,18 +167,9 @@ trait HandlesDocxHtmlRoundtrip
         if (!is_string($xml) || $xml === '') return null;
         if (!preg_match('/<Pages>(\d+)<\/Pages>/i', $xml, $m)) return null;
         $n = (int) $m[1];
-        // 0 is meaningless and 1 is what a non-Word writer leaves behind, so
-        // neither is trusted as a real measurement.
         return $n > 1 ? $n : null;
     }
 
-    /**
-     * Null when the upload is within the page limit, else the message to show.
-     *
-     * `$html` is the converted body, used only when the page count is unknown:
-     * at this template's metrics a page holds roughly 3,000 characters, so it
-     * stands in for the count rather than leaving unmeasurable files unchecked.
-     */
     protected function docxPageLimitError(string $absPath, ?string $html = null): ?string
     {
         $max = self::DOCX_MAX_PAGES;
@@ -327,29 +218,12 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /**
-     * A run's TEXT and its FORMATTING, kept apart.
-     *
-     * Word breaks a sentence into a new <w:r> wherever anything about it
-     * changes — a spell-check mark, a field, a language tag — so "{{supplier.
-     * company}}" arrives as three runs that look identical. Wrapping each one
-     * separately cost ~40 characters of markup per fragment and was most of the
-     * reason a 70,000-character Word file landed in the editor as several
-     * hundred thousand characters of HTML, against a 1,000,000 ceiling (CS-18).
-     *
-     * Returning the pieces lets xmlParaToHtml glue neighbours that share a
-     * signature and wrap the lot once. Returns null for a run with no text.
-     *
-     * @return array{sig: string, text: string, fmt: array}|null
-     */
     private function xmlRunParts(\DOMElement $r, \DOMXPath $xp): ?array
     {
         $b  = $xp->query('w:rPr/w:b', $r)->length > 0;
         $i  = $xp->query('w:rPr/w:i', $r)->length > 0;
         $uN = $xp->query('w:rPr/w:u', $r);
         $u  = $uN->length > 0 && $uN->item(0)->getAttributeNS(self::W_NS, 'val') !== 'none';
-        // Text colour — needed so a white header run survives the round trip
-        // (it sits on a coloured cell fill; without this it comes back black).
         $colorN = $xp->query('w:rPr/w:color', $r);
         $color  = $colorN->length ? $colorN->item(0)->getAttributeNS(self::W_NS, 'val') : '';
         if ($color === 'auto' || !preg_match('/^[0-9A-Fa-f]{6}$/', (string) $color)) $color = '';
@@ -366,7 +240,6 @@ trait HandlesDocxHtmlRoundtrip
         return ['sig' => ($b ? 'b' : '') . ($i ? 'i' : '') . ($u ? 'u' : '') . '|' . $color, 'text' => $out, 'fmt' => $fmt];
     }
 
-    /** Wrap already-escaped run text in its b/i/u/colour tags — once per group. */
     private function wrapRunText(string $text, array $fmt): string
     {
         if ($text === '') return '';
@@ -377,7 +250,6 @@ trait HandlesDocxHtmlRoundtrip
         return $text;
     }
 
-    /** Convert a <w:p> paragraph to <p>/<hN>, honouring style, alignment, breaks. */
     private function xmlParaToHtml(\DOMElement $p, \DOMXPath $xp): string
     {
         $style = '';
@@ -391,12 +263,8 @@ trait HandlesDocxHtmlRoundtrip
             if (in_array($j, ['center', 'right', 'both'], true)) $align = $j === 'both' ? 'justify' : $j;
         }
 
-        /* Runs are gathered, not written straight out: consecutive ones with the
-           same formatting are joined and wrapped once. See xmlRunParts — this is
-           what keeps an imported Word document close to its own size instead of
-           several times it. */
         $inner   = '';
-        $pending = null;                       // ['sig' => …, 'text' => …, 'fmt' => …]
+        $pending = null;
         $flush   = function () use (&$inner, &$pending) {
             if ($pending === null) return;
             $inner  .= $this->wrapRunText($pending['text'], $pending['fmt']);
@@ -404,7 +272,7 @@ trait HandlesDocxHtmlRoundtrip
         };
         $take = function (\DOMElement $r) use ($xp, &$pending, $flush) {
             $part = $this->xmlRunParts($r, $xp);
-            if ($part === null) return;        // empty run — no break in the group
+            if ($part === null) return;
             if ($pending !== null && $pending['sig'] === $part['sig']) {
                 $pending['text'] .= $part['text'];
                 return;
@@ -413,8 +281,6 @@ trait HandlesDocxHtmlRoundtrip
             $pending = $part;
         };
         foreach ($p->childNodes as $c) {
-            // PhpWord-written docs put <w:br/> / <w:t> directly under <w:p>;
-            // real Word docs wrap them in <w:r>. Handle both.
             if ($c->localName === 'r')             $take($c);
             elseif ($c->localName === 'br')        { $flush(); $inner .= '<br>'; }
             elseif ($c->localName === 't')         { $flush(); $inner .= htmlspecialchars($c->textContent, ENT_QUOTES); }
@@ -434,12 +300,8 @@ trait HandlesDocxHtmlRoundtrip
         return "<p{$styleAttr}>{$inner}</p>";
     }
 
-    /** Convert a <w:tbl> to an HTML <table>, preserving the ORIGINAL column
-     *  widths (from <w:tblGrid>) and merged cells (<w:gridSpan>) so a wide /
-     *  multi-column Word table doesn't collapse into equal, cramped columns. */
     private function xmlTableToHtml(\DOMElement $t, \DOMXPath $xp): string
     {
-        // ── Column widths (twips) from the table grid → percentages ──
         $colWidths = [];
         foreach ($xp->query('w:tblGrid/w:gridCol', $t) as $gc) {
             $w = (int) $gc->getAttributeNS(self::W_NS, 'w');
@@ -449,10 +311,6 @@ trait HandlesDocxHtmlRoundtrip
         $pcts   = [];
         if ($totalW > 0) foreach ($colWidths as $w) $pcts[] = round($w / $totalW * 100, 2);
 
-        // A <colgroup> is honoured by dompdf (PDF) + PhpWord (DOCX); the editor
-        // (TipTap) may drop it, so the width is ALSO stamped on each cell's
-        // inline style, which the editor preserves — tables render with their
-        // original proportions everywhere instead of collapsing to equal cols.
         $colgroup = '';
         if ($pcts) {
             $colgroup = '<colgroup>';
@@ -460,10 +318,6 @@ trait HandlesDocxHtmlRoundtrip
             $colgroup .= '</colgroup>';
         }
 
-        // Does the table carry borders? PhpWord writes them at TABLE level
-        // (w:tblBorders), not per-cell, so detect once here and stamp an inline
-        // border on every cell (that's what the editor renders) plus the table's
-        // own border attribute — the grid lines were vanishing on re-upload.
         $tblBordered = false;
         $tblB = $xp->query('w:tblPr/w:tblBorders', $t)->item(0);
         if ($tblB) {
@@ -484,7 +338,6 @@ trait HandlesDocxHtmlRoundtrip
             $cellCount  = 0;
             $shadedCount = 0;
             foreach ($xp->query('w:tc', $tr) as $tc) {
-                // Horizontal merge → colspan (and its width spans those columns).
                 $span = 1;
                 $gs = $xp->query('w:tcPr/w:gridSpan', $tc);
                 if ($gs->length) $span = max(1, (int) $gs->item(0)->getAttributeNS(self::W_NS, 'val'));
@@ -492,9 +345,6 @@ trait HandlesDocxHtmlRoundtrip
                 for ($k = 0; $k < $span; $k++) $wPct += $pcts[$colIdx + $k] ?? 0;
                 $colIdx += $span;
 
-                // Cell fill (w:shd/@fill) → background-color, so a coloured header
-                // row (e.g. the teal header) survives a download → re-upload round
-                // trip instead of coming back plain white.
                 $bg = '';
                 $shd = $xp->query('w:tcPr/w:shd', $tc);
                 if ($shd->length) {
@@ -508,19 +358,7 @@ trait HandlesDocxHtmlRoundtrip
                 $styleBits = [];
                 if ($wPct > 0) $styleBits[] = 'width:' . round($wPct, 2) . '%';
                 if ($bg !== '') $styleBits[] = $bg;
-                // Bordered table → inline slate border on every cell (the exact
-                // colour is lost in the DOCX, so match the editor's default).
                 if ($tblBordered) $styleBits[] = 'border:1px solid #cbd5e1';
-                /* Cell padding and alignment are NOT written per cell.
-                   They were the same 34 characters on every <td>, which on a
-                   table-heavy import came to 378,000 of a 1,325,917-character
-                   document — more than a quarter of a 1,000,000-character
-                   budget spent saying the same thing 10,800 times, and enough
-                   to put a document over the ceiling on its markup alone
-                   (CS-18). The editor surface and the PDF templates carry the
-                   identical rule in CSS, so nothing about the rendering
-                   changes; documents imported before this keep their inline
-                   copies, which say exactly what the stylesheet says. */
                 $styleAttr = $styleBits ? ' style="' . implode(';', $styleBits) . '"' : '';
                 $ci = '';
                 foreach ($xp->query('w:p', $tc) as $p) $ci .= $this->xmlParaToHtml($p, $xp);
@@ -532,10 +370,6 @@ trait HandlesDocxHtmlRoundtrip
             $rowIsHeader[] = $cellCount > 0 && $shadedCount === $cellCount;
         }
 
-        // If the first row is a fully-shaded header (the teal Insert-Table header),
-        // emit it as a real <thead>. With the PDF's `thead{display:table-header-group}`
-        // that keeps the header WITH its body across a page break (no orphaned
-        // header stranded at the bottom of a page) and repeats it on each page.
         $thead = '';
         $bodyRows = $rowsHtml;
         if (!empty($rowIsHeader) && $rowIsHeader[0] && count($rowsHtml) > 1) {
@@ -543,10 +377,6 @@ trait HandlesDocxHtmlRoundtrip
         }
         $tbody = '<tbody>' . implode('', $bodyRows) . '</tbody>';
 
-        // border-collapse + fixed layout so the re-imported table renders its
-        // cell borders as a clean grid. Keep the `border` attribute on a bordered
-        // table so a later DOWNLOAD re-emits PhpWord table borders (PhpWord only
-        // honours the attribute, never the CSS border).
         $borderAttr = $tblBordered ? ' border="1"' : '';
         return '<table' . $borderAttr . ' style="width:100%;table-layout:fixed;border-collapse:collapse">'
             . $colgroup . $thead . $tbody . '</table>';
@@ -567,9 +397,6 @@ trait HandlesDocxHtmlRoundtrip
             if ($f) {
                 if (method_exists($f, 'isBold')      && $f->isBold())      $text = "<b>{$text}</b>";
                 if (method_exists($f, 'isItalic')    && $f->isItalic())    $text = "<i>{$text}</i>";
-                /* getUnderline(), NOT isUnderline(): PhpWord's Font style has
-                   no isUnderline(), so this never fired and underlines were
-                   lost on every import. It returns a style name or 'none'. */
                 $u = method_exists($f, 'getUnderline') ? $f->getUnderline() : null;
                 if ($u && $u !== 'none') $text = "<u>{$text}</u>";
             }
@@ -600,24 +427,6 @@ trait HandlesDocxHtmlRoundtrip
         return '';
     }
 
-    /**
-     * Make the editor HTML well-formed XHTML so PhpWord's Html::addHtml (which
-     * uses a strict loadXML internally) doesn't choke on unclosed tags and
-     * throw — which would otherwise drop us into a strip_tags() fallback that
-     * flattens the whole document into one run-on paragraph (no headings,
-     * tables or line breaks). Uses the lenient DOMDocument::loadHTML parser to
-     * repair the markup, then re-serialises as XML.
-     */
-    /**
-     * Render the saved page-shell header_config / footer_config into a PhpWord
-     * section as a real Word header + footer (logo image, title, subtitle,
-     * footer text + page number). DOCX headers flow rather than absolute-
-     * position, so the logo/title use the config's `align` (left/center/right)
-     * — the closest practical mapping of the editor's x/y placement.
-     *
-     * $logoAbsPath is the resolved on-disk path of the header logo (or null);
-     * the caller resolves it because storage/client lookup is app-specific.
-     */
     protected function applyDocxHeaderFooter($section, array $headerCfg, array $footerCfg, ?string $logoAbsPath): void
     {
         $align = static function ($a, string $fallback): string {
@@ -628,29 +437,11 @@ trait HandlesDocxHtmlRoundtrip
             return preg_match('/^[0-9a-fA-F]{6}$/', $c) ? strtoupper($c) : $fallback;
         };
 
-        // ── Header ──
         $showLogo  = $headerCfg['show_logo']  ?? true;
         $showTitle = $headerCfg['show_title'] ?? true;
         if ($showLogo || $showTitle) {
             $header = $section->addHeader();
             $hAlign = $align($headerCfg['align'] ?? 'right', 'right');
-            /* Logo and title share ONE ROW, not two stacked blocks.
-             *
-             * addImage() and addText() are separate block elements, so the
-             * logo landed on its own line above the title while the editor
-             * showed them side by side at the same height. A two-cell table
-             * puts them on one line and vertically centres both, which is what
-             * the editor draws — the same arrangement HrTemplateDocxRenderer
-             * already uses for HR templates.
-             *
-             * The logo keeps its OWN alignment inside its cell, derived from
-             * where it was actually placed. It used to reuse $hAlign, the
-             * TITLE's alignment, so a right-aligned title dragged the logo to
-             * the right edge even though the editor showed it on the left.
-             * The editor free-positions it via header.logo_pos — an {x,y}
-             * percentage of the band with a CENTRE anchor (see ClmCtcForm).
-             * Word cannot reproduce that, so x is snapped to the nearest of
-             * left / center / right by thirds. */
             $logoX = $headerCfg['logo_pos']['x'] ?? null;
             if (is_numeric($logoX)) {
                 $logoX = max(0, min(100, (float) $logoX));
@@ -666,18 +457,6 @@ trait HandlesDocxHtmlRoundtrip
             $hasText = $showTitle && ($title !== '' || $sub !== '');
 
             if ($hasLogo && $hasText) {
-                // Both present — one row, two cells, both vertically centred.
-                /* Sized in TWIPS against the real printable width (A4 11906
-                   minus the two 1440 margins = 9026).
-                   This declared 'pct' while handing addCell() raw twips, and
-                   PhpWord reads cell widths as twips whatever the table unit
-                   says -- so 4000 + 6000 made the row ~1000 twips WIDER than
-                   the page and Word clipped whatever hung past the right
-                   margin. The 40/60 note below was written chasing that
-                   clipping from the logo side; the split was never the cause,
-                   the overflow was, so a long company name got cut off too.
-                   The 40/60 ratio is kept -- it does fit the widest wordmark
-                   in use -- but taken against a width that actually fits. */
                 $usable = 11906 - (2 * 1440);
                 $t = $header->addTable([
                     'borderSize' => 0, 'cellMargin' => 0,
@@ -686,24 +465,16 @@ trait HandlesDocxHtmlRoundtrip
                     'layout' => \PhpOffice\PhpWord\Style\Table::LAYOUT_FIXED,
                 ]);
                 $r = $t->addRow();
-                /* noWrap => false because PhpWord's Cell style defaults it to
-                   TRUE, emitting <w:noWrap/>: the title cell was forbidden to
-                   wrap, so a heading too long for it ran off the margin and
-                   was clipped rather than flowing to a second line. */
                 $logoW     = (int) round($usable * 0.40);
                 $logoCell  = $r->addCell($logoW, ['valign' => 'center', 'noWrap' => false]);
                 $titleCell = $r->addCell($usable - $logoW, ['valign' => 'center', 'noWrap' => false]);
                 try {
-                    /* Fit the logo to its cell instead of constraining height
-                       alone. A wide mark otherwise renders far wider than the
-                       column, and in this fixed-layout table it overruns the
-                       title cell and covers the company name (#2). */
                     $logoCell->addImage($logoAbsPath, \App\Services\HrTemplateDocxRenderer::logoFitStyle(
                         $logoAbsPath,
                         (int) ($headerCfg['logo_height'] ?? 62),
                         $logoW,
                     ) + ['alignment' => $logoAlign]);
-                } catch (\Throwable $e) { /* skip an unreadable image rather than fail the export */ }
+                } catch (\Throwable $e) { }
                 if ($title !== '') {
                     $titleCell->addText(htmlspecialchars($title, ENT_QUOTES), ['bold' => true, 'size' => 12, 'color' => $color], ['alignment' => $hAlign]);
                 }
@@ -711,14 +482,13 @@ trait HandlesDocxHtmlRoundtrip
                     $titleCell->addText(htmlspecialchars($sub, ENT_QUOTES), ['size' => 9, 'color' => '888888'], ['alignment' => $hAlign]);
                 }
             } else {
-                // Only one of the two — no table needed.
                 if ($hasLogo) {
                     try {
                         $header->addImage($logoAbsPath, [
                             'height'    => (int) ($headerCfg['logo_height'] ?? 62),
                             'alignment' => $logoAlign,
                         ]);
-                    } catch (\Throwable $e) { /* skip an unreadable image */ }
+                    } catch (\Throwable $e) { }
                 }
                 if ($hasText) {
                     if ($title !== '') {
@@ -731,7 +501,6 @@ trait HandlesDocxHtmlRoundtrip
             }
         }
 
-        // ── Footer ──
         $footerText = trim((string) ($footerCfg['text'] ?? ''));
         $showPage   = $footerCfg['show_page_number'] ?? true;
         if ($footerText !== '' || $showPage) {
@@ -741,8 +510,6 @@ trait HandlesDocxHtmlRoundtrip
                 $footer->addText(htmlspecialchars($footerText, ENT_QUOTES), ['size' => 9, 'color' => $fColor], ['alignment' => $align($footerCfg['align'] ?? 'center', 'center')]);
             }
             if ($showPage) {
-                // {PAGE}/{NUMPAGES} are Word field codes — addPreserveText keeps
-                // them live so the page count updates as the document grows.
                 $footer->addPreserveText('Page {PAGE} of {NUMPAGES}', ['size' => 9, 'color' => $fColor], ['alignment' => $align($footerCfg['page_number_align'] ?? 'right', 'right')]);
             }
         }
@@ -754,8 +521,6 @@ trait HandlesDocxHtmlRoundtrip
         $prev = libxml_use_internal_errors(true);
         try {
             $doc = new \DOMDocument('1.0', 'UTF-8');
-            // Wrap in a single root + declare UTF-8 so loadHTML keeps the
-            // encoding and we have a known node to read children back from.
             $doc->loadHTML(
                 '<?xml encoding="UTF-8"?><div data-root="1">' . $html . '</div>',
                 LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
@@ -778,14 +543,6 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /**
-     * PhpWord section page-size style from the request's ?size / ?orient params.
-     * Lets a wide, many-column table be exported to a larger page (A3) or
-     * landscape so it isn't cramped onto A4. Dimensions are in twips (1/20 pt):
-     * A4 = 210×297mm, A3 = 297×420mm (portrait).
-     */
-    /** Section side margin (twips) — PhpWord's default; set explicitly so the
-     *  usable text width used for table sizing is deterministic. */
     protected const DOCX_SIDE_MARGIN = 1440;
 
     protected function docxPageStyle(\Illuminate\Http\Request $request): array
@@ -805,31 +562,12 @@ trait HandlesDocxHtmlRoundtrip
         ];
     }
 
-    /** Usable text width (twips) for the chosen page = page width − side margins.
-     *  Tables are stretched to exactly this so they fill the page without the
-     *  user having to drag columns in Word. */
     protected function docxUsableWidthTwips(\Illuminate\Http\Request $request): int
     {
         $s = $this->docxPageStyle($request);
         return max(2000, (int) $s['pageSizeW'] - 2 * self::DOCX_SIDE_MARGIN);
     }
 
-    /**
-     * Make every <table> that lacks explicit column widths render as an
-     * EQUAL-column, full-width grid that fits the page — matching the editor's
-     * `table-layout:fixed; width:100%`.
-     *
-     * The subtlety: PhpWord's HTML reader IGNORES <colgroup>/<col> widths and
-     * sizes columns from the CELLS. When cells have no width it defaults every
-     * grid column to a fixed 5000-twip width, so an N-column table becomes
-     * N×5000 twips wide and overflows the page in portrait (a 3-col table is
-     * 15000 twips ≈ 10.4" — wider than A4's ~6.3" text area). Stamping an equal
-     * `width:%` on each cell makes PhpWord emit PROPORTIONAL grid columns that,
-     * with the table at width:100%, scale to the page in any size/orientation.
-     *
-     * Tables that already carry real column widths (e.g. an uploaded Word grid)
-     * are left untouched so their proportions survive.
-     */
     protected function ensureTableColWidths(string $html): string
     {
         if (stripos($html, '<table') === false) return $html;
@@ -842,14 +580,12 @@ trait HandlesDocxHtmlRoundtrip
             )) {
                 return $html;
             }
-            // A real width, as opposed to the editor's harmless `min-width:25px`.
             $hasRealWidth = static function (string $style): bool {
                 return (bool) preg_match('/(?<!-)\bwidth\s*:/i', $style);
             };
 
             $xp = new \DOMXPath($doc);
             foreach ($xp->query('//table') as $table) {
-                // Widest row (respecting colspans) = the column count.
                 $maxCols = 0;
                 foreach ($xp->query('.//tr', $table) as $tr) {
                     $cols = 0;
@@ -860,11 +596,6 @@ trait HandlesDocxHtmlRoundtrip
                 }
                 if ($maxCols < 1) continue;
 
-                // PhpWord IGNORES CSS cell borders — it only draws table borders
-                // from the `border` ATTRIBUTE. So if the cells carry a visible CSS
-                // border (every Insert-Table table does), mirror it onto the
-                // table's border attribute or the downloaded DOCX shows no grid
-                // lines. Done before the width check so ALL bordered tables get it.
                 if (!$table->hasAttribute('border')) {
                     foreach ($xp->query('.//td|.//th', $table) as $cell) {
                         $cs = $cell->getAttribute('style');
@@ -875,8 +606,6 @@ trait HandlesDocxHtmlRoundtrip
                     }
                 }
 
-                // If the author already set explicit column widths (on <col> or
-                // on any cell), respect them and leave the table alone.
                 $explicit = false;
                 foreach ($xp->query('.//col', $table) as $col) {
                     if ($hasRealWidth($col->getAttribute('style'))) { $explicit = true; break; }
@@ -888,18 +617,11 @@ trait HandlesDocxHtmlRoundtrip
                 }
                 if ($explicit) continue;
 
-                // Table itself: full width + fixed layout.
                 $tStyle = $table->getAttribute('style');
                 if (!$hasRealWidth($tStyle)) $tStyle = trim($tStyle . ';width:100%', '; ');
                 if (stripos($tStyle, 'table-layout') === false) $tStyle = trim($tStyle . ';table-layout:fixed', '; ');
                 $table->setAttribute('style', $tStyle);
 
-                // Stamp an equal width on every cell (× colspan). This is what
-                // PhpWord actually reads to size the columns. The width MUST be a
-                // whole-number percent — PhpWord's percent parser mangles decimals
-                // (33.3333% → 3333%, 33.0% → 0%), so use an integer share. Exact
-                // sum-to-100 is irrelevant: the widths only set the column RATIO
-                // and the table itself is pinned to 100% of the page.
                 $perCol = max(1, (int) round(100 / $maxCols));
                 foreach ($xp->query('.//tr', $table) as $tr) {
                     foreach ($xp->query('td|th', $tr) as $cell) {
@@ -910,8 +632,6 @@ trait HandlesDocxHtmlRoundtrip
                     }
                 }
 
-                // Also normalise the <colgroup> (cosmetic — PhpWord ignores it,
-                // but keeps the markup self-consistent for other consumers).
                 foreach ($xp->query('colgroup', $table) as $cg) {
                     $cols = $xp->query('col', $cg);
                     if ($cols->length) {
@@ -936,28 +656,14 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /**
-     * Add editor HTML to a PhpWord section RESILIENTLY. PhpWord's Html reader
-     * throws on markup it can't handle, and the old catch degraded the WHOLE
-     * document to strip_tags() — so one bad element wiped every table + all
-     * formatting ("table broken / content missing"). Here we first try the whole
-     * body; if that throws, we add each top-level block on its own so only the
-     * single offending block degrades to plain text — everything else keeps its
-     * tables, links and formatting.
-     */
     protected function addHtmlResilient($section, string $bodyHtml): void
     {
         $whole = '<!DOCTYPE html><html><body>' . $bodyHtml . '</body></html>';
-        /* A failed parse does NOT throw: addHtml swallows libxml's errors and
-           returns having added nothing, so "no exception" was never proof the
-           body went in, and the per-block path below could not be reached on
-           the one failure it exists for. Count the elements instead. */
         $before = count($section->getElements());
         try {
             \PhpOffice\PhpWord\Shared\Html::addHtml($section, $whole, true, false);
             if (count($section->getElements()) > $before) return;
         } catch (\Throwable $e) {
-            // fall through to per-block
         }
 
         foreach ($this->splitTopLevelBlocks($bodyHtml) as $block) {
@@ -971,23 +677,6 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /**
-     * Repair schema-INVALID OOXML that PhpWord's Word2007 writer can emit from
-     * editor HTML, which makes the .docx corrupt — Word opens it as a single
-     * recovered line and Google Docs rejects it ("unexpected error"). Rewrites
-     * document.xml + any header/footer parts in-place inside the .docx zip:
-     *
-     *   0. Control characters XML forbids outright, and invalid UTF-8. Neither
-     *      can be escaped into legality; they have to go. They come in with
-     *      content pasted from PDFs and legacy Word files.
-     *   1. Bare `&` (PhpWord leaves ampersands decoded from HTML entities
-     *      unescaped) → `&amp;`. This is the fatal one: it makes the XML
-     *      non-well-formed, so the whole document fails to parse.
-     *   2. Fractional `w:sz` / `w:szCs` (from a px→pt font-size conversion,
-     *      e.g. 19.6) → nearest integer. Half-points must be whole numbers.
-     *   3. Border `w:color` that isn't 6-hex or `auto` (PhpWord maps a CSS
-     *      `solid` border keyword into the colour slot) → `auto`.
-     */
     protected function sanitizeDocxXml(string $docxPath, ?int $usableTwips = null): void
     {
         if (!class_exists('ZipArchive')) return;
@@ -1002,9 +691,6 @@ trait HandlesDocxHtmlRoundtrip
             $xml = $zip->getFromName($name);
             if ($xml === false || $xml === '') continue;
             $fixed = $this->sanitizeOoxmlString($xml);
-            // Stretch body tables to the page width (document.xml only — leave
-            // header/footer layout tables alone). Runs after the & escape so the
-            // XML is well-formed enough to parse.
             if ($name === 'word/document.xml' && $usableTwips) {
                 $fixed = $this->fitTablesToWidthDom($fixed, $usableTwips);
             }
@@ -1013,17 +699,6 @@ trait HandlesDocxHtmlRoundtrip
         $zip->close();
     }
 
-    /**
-     * Force every table in document.xml to fill the page's usable width, so the
-     * user never has to hand-drag columns in Word.
-     *
-     * PhpWord emits `tblLayout=autofit` with a narrow grid, so Word shrinks the
-     * table to its content instead of the page. We switch to a FIXED layout and
-     * rewrite the grid + each cell width to equal, absolute (dxa) columns that
-     * sum to the usable width — a fixed-layout table with a full-width grid
-     * renders edge-to-edge, empty cells included, in any page size/orientation.
-     * Cell colspans (w:gridSpan) get a proportionally wider width.
-     */
     protected function fitTablesToWidthDom(string $xml, int $usableTwips): string
     {
         if (stripos($xml, '<w:tbl>') === false && stripos($xml, '<w:tbl ') === false) return $xml;
@@ -1040,19 +715,12 @@ trait HandlesDocxHtmlRoundtrip
                 $cols = $xp->query('w:gridCol', $grid);
                 $n = $cols->length;
                 if ($n < 1) continue;
-                // Leave a small buffer under the usable width: a table pinned to
-                // EXACTLY the text width draws its right-hand border on the margin,
-                // which the page then clips ("last column border cut"). ~160 twips
-                // (~0.11") keeps the whole grid + borders inside the margin.
                 $fitTwips = max(2000, $usableTwips - 160);
                 $colW  = max(1, intdiv($fitTwips, $n));
                 $total = $colW * $n;
 
-                // Equal grid columns (absolute).
                 foreach ($cols as $gc) $gc->setAttributeNS(self::W_NS, 'w:w', (string) $colW);
 
-                // Table preferred width = full usable, and FIXED layout so Word
-                // honours the grid rather than shrinking to content.
                 $tblPr = $xp->query('w:tblPr', $tbl)->item(0);
                 if ($tblPr) {
                     $tw = $xp->query('w:tblW', $tblPr)->item(0);
@@ -1065,8 +733,6 @@ trait HandlesDocxHtmlRoundtrip
                     $tl->setAttributeNS(self::W_NS, 'w:type', 'fixed');
                 }
 
-                // Each cell width = span × column width (absolute), overriding the
-                // relative pct widths PhpWord wrote.
                 foreach ($xp->query('.//w:tc', $tbl) as $tc) {
                     $tcPr = $xp->query('w:tcPr', $tc)->item(0);
                     if (!$tcPr) continue;
@@ -1089,42 +755,15 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /** Apply the three OOXML repairs (see sanitizeDocxXml) to one XML part. */
     protected function sanitizeOoxmlString(string $xml): string
     {
-        /* 0) Characters XML 1.0 does not allow AT ALL.
-              Control codes below 0x20 (except tab, LF, CR) are illegal in XML,
-              full stop — no escaping makes them legal. One of them anywhere in
-              the file and every reader, Word included, refuses the document
-              with a generic "there is a problem with its contents".
-              They arrive from content pasted out of PDFs and legacy Word files,
-              which is exactly the "upload a doc, then download it" path this
-              was reported on, and they survive every step because nothing else
-              looks at them.
-              Invalid UTF-8 is dropped for the same reason: a broken byte
-              sequence is not a character, and the parser stops at it. */
         $xml = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', (string) $xml) ?? $xml;
         if (!mb_check_encoding($xml, 'UTF-8')) {
             $xml = mb_convert_encoding($xml, 'UTF-8', 'UTF-8');
         }
 
-        // 1) Escape bare ampersands (anything not already a valid entity).
         $xml = preg_replace('/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', (string) $xml);
 
-        /* 2) Numeric attributes that are not whole numbers, or that still carry
-              a CSS unit.
-              OOXML measurements are integers -- twips, half-points, eighths of
-              a point -- and Word rejects the WHOLE file on a single bad value
-              with "we found a problem with its contents", naming nothing. They
-              get in because PhpWord converts CSS to OOXML by arithmetic: a
-              line-height of 1.5, a row height in px, a percentage column width
-              each divide into a fraction, and a unit PhpWord does not
-              recognise is passed through as written.
-              This used to round only w:sz / w:szCs, the one case that had been
-              hit. Every numeric w:* attribute is covered now, because the next
-              style added to the editor produces the next one.
-              A non-numeric value is left alone: w:val also carries keywords
-              (w:jc w:val="center") that must not be touched. */
         $xml = preg_replace_callback(
             '/\b(w:[a-zA-Z]+)="(-?\d+(?:\.\d+)?)(px|pt|pc|in|cm|mm|em|rem|%)?"/',
             function ($m) {
@@ -1137,8 +776,6 @@ trait HandlesDocxHtmlRoundtrip
             (string) $xml
         );
 
-        // 3) Invalid border colours → auto (runs use <w:color w:val="…"> and
-        //    are untouched; this only matches the w:color="…" attribute form).
         $xml = preg_replace_callback(
             '/\bw:color="([^"]*)"/',
             function ($m) {
@@ -1151,7 +788,6 @@ trait HandlesDocxHtmlRoundtrip
         return (string) $xml;
     }
 
-    /** Split body HTML into its top-level block elements (for the resilient add). */
     protected function splitTopLevelBlocks(string $html): array
     {
         $prev = libxml_use_internal_errors(true);
@@ -1172,7 +808,6 @@ trait HandlesDocxHtmlRoundtrip
             foreach ($root->childNodes as $child) {
                 $s = $doc->saveHTML($child);
                 if ($s === false) continue;
-                // Keep blocks with text, or structural elements (tables / rules).
                 if (trim(strip_tags($s)) !== '' || preg_match('/<(table|hr|img)\b/i', $s)) {
                     $blocks[] = $s;
                 }
@@ -1186,18 +821,6 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /**
-     * Absolute local path for a stored logo, on whichever disk holds it.
-     *
-     * Storage::disk('public') was hardcoded here and in HrTemplateDocxRenderer,
-     * while FILESYSTEM_DISK is 'azure' in production -- so every lookup missed
-     * and the DOCX shipped without its logo. Two rules make it work on both:
-     *
-     *  - try the CONFIGURED disk first, then 'public' for rows written before
-     *    the move to Azure;
-     *  - never call path() on a remote adapter. It is local-only; copy the
-     *    bytes to a temp file instead, which is what PhpWord actually needs.
-     */
     protected static function docxLogoFile(?string $path): ?string
     {
         $path = trim((string) $path);
@@ -1208,11 +831,10 @@ trait HandlesDocxHtmlRoundtrip
                 $disk = Storage::disk($name);
                 if (!$disk->exists($path)) continue;
 
-                // Local adapter: hand PhpWord the real file.
                 try {
                     $local = $disk->path($path);
                     if (is_string($local) && is_file($local)) return $local;
-                } catch (\Throwable $e) { /* remote adapter -- copy below */ }
+                } catch (\Throwable $e) { }
 
                 $bytes = $disk->get($path);
                 if ($bytes === null) continue;
@@ -1220,7 +842,7 @@ trait HandlesDocxHtmlRoundtrip
                 $tmp = tempnam(sys_get_temp_dir(), 'clm_logo_') . '.' . $ext;
                 file_put_contents($tmp, $bytes);
                 return $tmp;
-            } catch (\Throwable $e) { /* disk not configured -- try the next */ }
+            } catch (\Throwable $e) { }
         }
         return null;
     }
