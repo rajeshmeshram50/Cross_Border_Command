@@ -890,10 +890,14 @@ export default function Vendors() {
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    // The "What We Are Doing Here" strip collapses over .3s (max-height
+    // transition). Measuring now reads the pre-collapse top and sizes the card
+    // too short, leaving a gap above the footer — re-measure once it settles.
+    const stripSettle = setTimeout(recompute, 340);
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
     const recomputeDebounced = () => { if (settleTimer) clearTimeout(settleTimer); settleTimer = setTimeout(recompute, 140); };
     window.addEventListener('resize', recomputeDebounced);
-    return () => { if (settleTimer) clearTimeout(settleTimer); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
+    return () => { if (settleTimer) clearTimeout(settleTimer); clearTimeout(stripSettle); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, search, loading, swapping, brefOpen, rpp, vendors.length > 0]);
 useEffect(() => {
