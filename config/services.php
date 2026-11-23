@@ -1,19 +1,6 @@
 <?php
 
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Third Party Services
-    |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
-    */
-
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],
@@ -45,17 +32,6 @@ return [
         'webhook_secret' => env('RAZORPAY_WEBHOOK_SECRET'),
     ],
 
-    // Zoho Sign — used by ZohoSignService for the CLM Trade Document
-    // "Send for Signature" flow. Defaults point at the IN data centre;
-    // override BASE_URL + ACCOUNTS_URL + DC for US/EU/AU orgs.
-    //
-    // ZOHO_TESTING_MODE=true appends ?testing=true to the /requests
-    // create call. That makes the request count as a sandbox send: it
-    // works on free-tier accounts that can't otherwise hit the API
-    // (Zoho error 12000 — "Upgrade Zoho Sign license to send documents
-    // via API"), but Zoho will NOT email a signer whose address isn't
-    // already a user on the org. Use it for smoke tests only; turn it
-    // off once the account is upgraded for production signing.
     'zoho' => [
         'client_id'     => env('ZOHO_CLIENT_ID'),
         'client_secret' => env('ZOHO_CLIENT_SECRET'),
@@ -67,12 +43,6 @@ return [
         'testing_mode'  => env('ZOHO_TESTING_MODE', false),
     ],
 
-    // Zoho Books — used by ZohoBooksService for the Purchase Order "Sync with
-    // Zohobook" flow. Separate refresh token from Zoho Sign because the scopes
-    // differ (ZohoBooks.purchaseorders.CREATE / contacts / settings / items).
-    // client_id / client_secret can be shared with the Sign block if the same
-    // Zoho app is registered for both. base_url is the Books API host (NOT the
-    // Sign host); org_id is the target organization the PO lands in.
     'zoho_books' => [
         'client_id'     => env('ZOHO_BOOKS_CLIENT_ID', env('ZOHO_CLIENT_ID')),
         'client_secret' => env('ZOHO_BOOKS_CLIENT_SECRET', env('ZOHO_CLIENT_SECRET')),
@@ -80,16 +50,11 @@ return [
         'organization_id' => env('ZOHO_BOOKS_ORG_ID'),
         'base_url'      => env('ZOHO_BOOKS_BASE_URL', 'https://www.zohoapis.in/books/v3'),
         'accounts_url'  => env('ZOHO_BOOKS_ACCOUNTS_URL', env('ZOHO_ACCOUNTS_URL', 'https://accounts.zoho.in')),
-        // API name of the mandatory "Title" custom field on the Zoho Books Expense
-        // module (Settings → Custom Fields → Expenses). Sent in expense create.
         'expense_title_cf' => env('ZOHO_BOOKS_EXPENSE_TITLE_CF', 'cf_expense_title'),
     ],
 
-    // CredVault Critical Vault — the inbox email 2-step codes go to unless the owner picks another.
     'credvault' => [
         'otp_email' => env('CREDVAULT_OTP_EMAIL', 'php@inhpl.com'),
-        // Every share email is also copied here (CC); empty = no copy.
         'share_copy_email' => env('CREDVAULT_SHARE_COPY_EMAIL', 'php@inhpl.com'),
     ],
-
 ];
