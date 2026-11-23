@@ -16,20 +16,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Shared plumbing for the five Inventory master controllers.
- *
- * All five screens are the same screen: three tabs that count All / Active /
- * Inactive, a search box, a ten-row page, and a toggle that flips status
- * rather than deleting. Keeping that here means a fix to the paging or the
- * counts lands on every master at once.
- *
- * Responses are built in the controllers themselves — a failure is an
- * abort() with its own HTTP status, never a value passed back up.
- */
 abstract class BaseInventoryController extends Controller
 {
-    /** Every write needs a tenant; a super admin has no client to file under. */
     protected function tenantUser(Request $request)
     {
         $user = $request->user();
@@ -41,20 +29,6 @@ abstract class BaseInventoryController extends Controller
         return $user;
     }
 
-    /**
-     * The branch these five masters are scoped to.
-     *
-     * A warehouse belongs to the office that runs it, so the masters below it
-     * are branch-wise, not client-wise. Resolution, in order:
-     *
-     *   branch user   its own branch, always — asking for another in the query
-     *                 string must not reach it
-     *   client admin  the branch the switcher is on (Axios sends branch_id on
-     *                 every GET), or null for the whole company when it is not
-     *
-     * Null therefore means "all branches of this client", which only a user
-     * without a branch of their own can ever get.
-     */
     protected function branchScope(Request $request, $user): ?int
     {
         if ($user->branch_id) return (int) $user->branch_id;
@@ -62,14 +36,6 @@ abstract class BaseInventoryController extends Controller
         return $request->integer('branch_id') ?: null;
     }
 
-    /**
-     * The tenancy columns a write takes from the authenticated user.
-     *
-     * Set explicitly rather than left to the model's creating hook: that hook
-     * only fires while TenantContext is active, and it is NOT active for a
-     * super admin — so a row created by one would keep a null client_id, which
-     * the read scope treats as global and shows it to every tenant.
-     */
     protected function tenantColumns($user, ?int $branchId = null): array
     {
         return [
@@ -78,26 +44,6 @@ abstract class BaseInventoryController extends Controller
         ];
     }
 
-    /**
-     * This client's rows, in this branch — the backup filter the
-     * BelongsToTenant scope expects controllers to keep, and the one that still
-     * holds if the tenant middleware is ever missing from a route.
-     *
-     * A null branch_id row IS returned — that is a client-wide master row, and
-     * every branch can see it.
-     *
-     * A null CLIENT id is a platform row, owned by nobody and seeded for
-     * everyone. Four of these five masters have no such defaults — a warehouse
-     * belongs to somebody — so they are excluded unless $includePlatform says
-     * otherwise. Product flags are the exception: Hazardous, Cold Chain and
-     * Fragile are drawn as built-in chips by the packing screen, which resolves
-     * each to a master row by NAME, so every tenant must be able to see them.
-     *
-     * Reads pass true; WRITES deliberately do not. A platform row is then
-     * simply not found by an update or a delete, so one tenant cannot rename
-     * or switch off a flag every other tenant is relying on. A tenant that
-     * wants its own variant creates one of its own.
-     */
     protected function scopeTenant(Builder $q, $user, ?int $branchId = null, bool $includePlatform = false): Builder
     {
         $table = $q->getModel()->getTable();
@@ -113,30 +59,11 @@ abstract class BaseInventoryController extends Controller
         return $q;
     }
 
-    /**
-     * The row a write or a by-id read may touch: this client's, and — for a
-     * branch user — this branch's (or a client-wide one).
-     *
-     * Not branchScope(): a PUT carries no switcher branch, so a client admin
-     * stays client-wide here, while a branch user stays pinned to their own.
-     * The global tenant scope is client-wide for every non-super user, which
-     * is exactly the gap this closes — a branch user reaching another
-     * branch's row by id although their list never shows it.
-     */
     protected function ownedQuery(Builder $q, $user): Builder
     {
         return $this->scopeTenant($q, $user, $user->branch_id ? (int) $user->branch_id : null);
     }
 
-    /**
-     * The branch a NEW warehouse is filed under. A branch user's own branch;
-     * a client admin's is the switcher's, which the form sends with the save.
-     *
-     * Never null. A warehouse with no branch is read as client-wide and shows
-     * in every branch, and the code allocator cannot number it — the unique
-     * index does not stop the repeat either, as Postgres treats NULLs as
-     * distinct. Everything below a warehouse takes the branch of its parent.
-     */
     protected function writeBranch(Request $request, $user): int
     {
         $branch = $user->branch_id ?: $request->integer('branch_id');
@@ -153,11 +80,6 @@ abstract class BaseInventoryController extends Controller
         return (int) $branch;
     }
 
-    /**
-     * Abort with the 422 shape the forms read: the message for the toast, and
-     * the same message under the API field so it lands on the right input
-     * instead of being guessed from the wording.
-     */
     protected function reject(string $message, ?string $field = null, int $status = 422): never
     {
         abort(response()->json(array_filter([
@@ -167,11 +89,6 @@ abstract class BaseInventoryController extends Controller
         ], fn ($v) => $v !== null), $status));
     }
 
-    /**
-     * A name already used under the same parent. Compared as equal text, not
-     * with ilike — under ilike "_" and "%" are wildcards, so "Rack_A" was
-     * refused because "Rack-A" existed. Trim and case are ignored.
-     */
     protected function nameTaken(Builder $q, string $column, string $name, ?int $exceptId = null): bool
     {
         return $q->whereRaw("lower(trim({$column})) = lower(trim(?))", [$name])
@@ -179,16 +96,6 @@ abstract class BaseInventoryController extends Controller
             ->exists();
     }
 
-    /**
-     * Whether stock or put-away history still points at this location.
-     *
-     * These masters hard-delete, and none of the put-away tables has a
-     * foreign key back to them, so a delete here would leave those rows
-     * pointing at nothing — and free the code for reuse while a sticker with
-     * it is still on the wall. Any row at all counts, released history too.
-     *
-     * Tables a deployment has not migrated yet are skipped, not failed on.
-     */
     protected function referencedBy(string $column, int $id): ?string
     {
         foreach ([
@@ -204,13 +111,6 @@ abstract class BaseInventoryController extends Controller
         return null;
     }
 
-    /**
-     * Whether boxes are on hand anywhere under this location right now.
-     *
-     * Live occupancy rows where the put-away tables exist, and the shelves'
-     * own box counts always — the two are kept together by the put-away, and
-     * the shelf count still answers on a deployment not yet migrated.
-     */
     protected function holdsStock(string $column, int $id): bool
     {
         if (Schema::hasTable('inventory_location_occupancy')
@@ -226,19 +126,11 @@ abstract class BaseInventoryController extends Controller
         return $shelves->where('boxes_count', '>', 0)->exists();
     }
 
-    /** 3,500 rather than 3,500.00 — and 12.4 rather than 12.40 — in a message. */
     protected function num(float $value): string
     {
         return rtrim(rtrim(number_format($value, 2), '0'), '.');
     }
 
-    /**
-     * 403 rather than a bare 404 when a tenant reaches for a platform row.
-     *
-     * The write scope already fails to find it, which is the protection; this
-     * only turns "no such flag" into an answer the user can act on, by telling
-     * them the row is shared and not theirs to change.
-     */
     protected function refuseIfPlatformRow(Builder $q, $user, int $id, string $what): void
     {
         $exists = (clone $q)->newModelInstance()->newQuery()
@@ -252,11 +144,6 @@ abstract class BaseInventoryController extends Controller
         }
     }
 
-    /**
-     * All / Active / Inactive, counted in one query off a query that the tab
-     * and the search have NOT yet narrowed — typing in the search box must not
-     * make the "All" tab fall to 3.
-     */
     protected function tabCounts(Builder $base): array
     {
         $row = $base->toBase()
@@ -270,7 +157,6 @@ abstract class BaseInventoryController extends Controller
         return ['all' => $all, 'active' => $active, 'inactive' => $all - $active];
     }
 
-    /** The 'all' tab is no filter at all, which is why it is not in the match. */
     protected function applyTab(Builder $q, ?string $tab): void
     {
         match ($tab) {
@@ -280,17 +166,6 @@ abstract class BaseInventoryController extends Controller
         };
     }
 
-    /**
-     * One search box over several columns, and optionally over a relation.
-     *
-     * $also is given the same where group and the trimmed term, so a caller can
-     * OR in anything a column list cannot express — a related name, or a code
-     * that is derived rather than stored. It runs inside the group, so the
-     * whole search stays one AND against the tab and tenant filters.
-     *
-     * @param  string[]  $columns
-     * @param  null|callable(\Illuminate\Contracts\Database\Query\Builder, string): void  $also
-     */
     protected function applySearch(Builder $q, ?string $term, array $columns, ?callable $also = null): void
     {
         $term = trim((string) $term);
@@ -304,14 +179,6 @@ abstract class BaseInventoryController extends Controller
         });
     }
 
-    /**
-     * A dropdown is the same query as the list with the detail taken off:
-     * active rows only, ordered by name, no tabs, no paging, no counts.
-     *
-     * Not paginated on purpose — a <select> cannot ask for page 2. If a master
-     * ever grows past a few hundred rows the picker needs a typeahead against
-     * the list endpoint instead, not a page here.
-     */
     protected function optionsBody(Builder $q, string $orderBy, callable $row): array
     {
         return [
@@ -320,10 +187,6 @@ abstract class BaseInventoryController extends Controller
         ];
     }
 
-    /**
-     * The body every list returns. per_page defaults to 10 and is capped — a
-     * master with 4,000 rows must not be fetchable in one call.
-     */
     protected function listBody(Builder $q, Request $request, array $tabs, callable $row): array
     {
         $page = $q->paginate(min((int) $request->input('per_page', 10), 100));
@@ -341,28 +204,8 @@ abstract class BaseInventoryController extends Controller
         ];
     }
 
-    /**
-     * The printable location label, 4in x 3in.
-     *
-     * The QR carries `$data['scan']` when the caller supplies one, and the
-     * code otherwise.
-     *
-     * That distinction matters now. Codes are numbered PER BRANCH, so three
-     * branches each have a WH-001 and the code alone no longer identifies a
-     * row — a scanner reading "WH-001" off a shelf cannot tell which of the
-     * three it is holding. The printed code stays as it is, because that is
-     * what the person reads; the scan value carries the id, which does not
-     * repeat. Previously both were the same string, back when the code was
-     * built from the id and was therefore globally unique.
-     *
-     * @param array{kind:string,code:string,scan?:string,title:string,subtitle:?string,rows:array,flags:array} $data
-     */
     protected function labelPdf(array $data, string $filename)
     {
-        /* The QR carries the signed URL, so a phone that photographs a rack
-           label lands on our server and is refused there. The short form
-           ('RC:7') stays on the API for the screens that show it — only what
-           gets PRINTED changes. */
         $payload = $this->stickerPayload($data);
 
         $pdf = Pdf::loadView('pdf.inventory-label', $data + [
@@ -370,65 +213,27 @@ abstract class BaseInventoryController extends Controller
             'qrUrl'     => str_starts_with($payload, 'http') ? $payload : null,
             'printedOn' => now()->format('d M Y H:i'),
         ])
-            // A4 portrait. The sheet was 4in x 3in, which fit a rack upright
-            // and nothing else: the address had to be shortened to the point of
-            // being unreadable across an aisle. A4 is the stock every printer
-            // here already holds.
             ->setPaper('a4', 'portrait');
 
         return $pdf->download($filename . '.pdf');
     }
 
-    /**
-     * What a scanner should read off this label: the kind and the row id.
-     *
-     * Not the code. Codes restart at 001 in every branch, so "WH-001" names
-     * three different warehouses in a three-branch client — fine printed under
-     * the QR where a person reads it in context, useless to a scanner that has
-     * only the sticker to go on. The id does not repeat.
-     */
     protected function scanValue(string $kind, int $id): string
     {
         $short = strtoupper($kind) . ':' . $id;
 
-        /* The signed sticker URL, so a phone that photographs this label opens
-           our server and is refused there rather than being shown a string it
-           can make sense of.
-           ONE source. This value reaches the printed PDF, the /qr endpoint,
-           the label preview and the four QR modals that draw their own canvas
-           in the browser — five places that each used to decide for
-           themselves, and drifted. Falls back to 'SH:1' when there is no
-           tenant in context, which still resolves on every scanner we have. */
         return StickerKey::fromShort($short, auth()->user()?->client_id) ?: $short;
     }
 
-    /**
-     * What a label encodes — ONE answer for the printed PDF and the /qr
-     * endpoint alike.
-     *
-     * These two drifted apart once before, and a QR saved off the screen then
-     * resolved to something different from the one glued to the rack. Both now
-     * come through here: the signed sticker URL, so a phone that photographs a
-     * rack label lands on our server and is refused there, falling back to the
-     * short 'RC:7' form when no URL can be built (no tenant in context).
-     */
     protected function stickerPayload(array $data): string
     {
-        // scanValue() already resolved this; nothing else may second-guess it.
         return (string) ($data['scan'] ?? $data['code']);
     }
 
-    /**
-     * The QR on its own, as a PNG — no card, no text, nothing else.
-     *
-     * For a screen that wants to place the code itself, or a sheet of codes
-     * printed without the label around them. $size is the module scale, so the
-     * image grows in whole pixels per module and never resamples blurry.
-     */
     protected function qrPng(string $code, int $scale = 10, ?string $filename = null)
     {
         $png = (new QRCode(new QROptions([
-            'eccLevel'    => 3,        // H — a scuffed warehouse label still reads
+            'eccLevel'    => 3,
             'scale'       => max(1, min($scale, 20)),
             'imageBase64' => false,
             'outputType'  => 'png',
@@ -436,23 +241,18 @@ abstract class BaseInventoryController extends Controller
 
         return response($png, 200, [
             'Content-Type'        => 'image/png',
-            // inline: the browser shows it in an <img>, rather than saving it.
-            // Named from the CODE, never the payload — the payload is a URL,
-            // and its slashes would make a filename the browser cannot use.
             'Content-Disposition' => 'inline; filename="' . preg_replace('/[^A-Za-z0-9._-]/', '-', $filename ?: $code) . '.png"',
             'Cache-Control'       => 'private, max-age=86400',
         ]);
     }
 
-    /** A base64 PNG dompdf can embed. Null when it cannot be built — the label
-     *  still prints, with the code in text, rather than failing outright. */
     protected function qr(?string $value): ?string
     {
         if (!$value) return null;
 
         try {
             return (new QRCode(new QROptions([
-                'eccLevel'    => 3,        // H — a scuffed warehouse label still reads
+                'eccLevel'    => 3,
                 'scale'       => 6,
                 'imageBase64' => true,
                 'outputType'  => 'png',
@@ -462,13 +262,11 @@ abstract class BaseInventoryController extends Controller
         }
     }
 
-    /** Yes / No as a label chip, or nothing at all when the flag is off. */
     protected function flag(bool $on, string $text, string $tone): ?array
     {
         return $on ? ['text' => $text, 'tone' => $tone] : null;
     }
 
-    /** The filters every list accepts, so the five validate() calls agree. */
     protected function listRules(): array
     {
         return [
@@ -476,16 +274,11 @@ abstract class BaseInventoryController extends Controller
             'q'        => ['nullable', 'string', 'max:120'],
             'page'     => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            // Axios sends this on every GET from the branch switcher; declared
-            // so it validates rather than being silently ignored. branchScope()
-            // decides whether it is honoured.
             'branch_id' => ['nullable', 'integer'],
-            // 'options' asks the same endpoint for the dropdown shape.
             'view'      => ['nullable', 'in:list,options'],
         ];
     }
 
-    /** True when the caller wants the dropdown shape rather than the grid. */
     protected function wantsOptions(Request $request): bool
     {
         return $request->input('view') === 'options';
