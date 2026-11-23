@@ -8,13 +8,8 @@ use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-
 class SettingsController extends Controller
 {
-    /**
-     * The validators for each section. Centralised so update() can
-     * dispatch by $section without a giant switch.
-     */
     private const RULES = [
         'general' => [
             'platform_name' => 'required|string|max:255',
@@ -45,8 +40,6 @@ class SettingsController extends Controller
             'primary_color'   => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'secondary_color' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'dark_default'    => 'boolean',
-            // logo_path / favicon_path are written by the asset upload endpoint,
-            // not directly by section update — preserved on save if not sent.
             'logo_path'       => 'nullable|string',
             'favicon_path'    => 'nullable|string',
         ],
@@ -71,10 +64,6 @@ class SettingsController extends Controller
         ],
     ];
 
-    /**
-     * Return every section as { section => value } so the SPA can hydrate the
-     * whole Settings page in one request.
-     */
     public function index(Request $request)
     {
         $rows = PlatformSetting::query()->get(['section', 'value', 'updated_at']);
@@ -82,20 +71,10 @@ class SettingsController extends Controller
         foreach ($rows as $r) {
             $out[$r->section] = $r->value;
         }
-        // Ensure every section key exists in the response so the SPA never
-        // hits "undefined" when a fresh DB hasn't seeded a section yet.
         foreach (array_keys(self::RULES) as $sec) {
             if (!isset($out[$sec])) $out[$sec] = (object)[];
         }
 
-        // Enrich the appearance section with resolved URLs alongside the
-        // raw disk paths so the SPA doesn't have to guess how
-        // logo_path / favicon_path turn into something a <img src> /
-        // <link rel=icon> can load. file_url() handles cloud disks
-        // (Azure / S3) returning absolute URLs and local disks
-        // returning /storage/... — the frontend was previously
-        // hand-rolling that resolution and breaking on cloud-backed
-        // deployments.
         if (isset($out['appearance']) && is_array($out['appearance'])) {
             $logoPath    = $out['appearance']['logo_path']    ?? null;
             $faviconPath = $out['appearance']['favicon_path'] ?? null;
@@ -106,10 +85,6 @@ class SettingsController extends Controller
         return response()->json($out);
     }
 
-    /**
-     * Upsert one section. Validates by section. Super_admin only — platform
-     * settings are global config, not per-tenant.
-     */
     public function update(Request $request, string $section)
     {
         if (!$request->user()->isSuperAdmin()) {
@@ -121,8 +96,6 @@ class SettingsController extends Controller
 
         $data = $request->validate(self::RULES[$section]);
 
-        // For appearance, preserve existing logo_path/favicon_path if the
-        // form didn't send them (they're managed by the asset endpoint).
         if ($section === 'appearance') {
             $existing = PlatformSetting::getSection('appearance');
             $data['logo_path']    = $data['logo_path']    ?? ($existing['logo_path']    ?? null);
@@ -130,7 +103,7 @@ class SettingsController extends Controller
         }
 
         PlatformSetting::setSection($section, $data, $request->user()->id);
-        Settings::bust();  // cached toggles must reflect this save immediately
+        Settings::bust();
 
         return response()->json([
             'message' => 'Settings saved',
@@ -139,11 +112,6 @@ class SettingsController extends Controller
         ]);
     }
 
-    /**
-     * Upload a logo or favicon for the appearance section. Stores under
-     * public/platform/ and writes the relative path back into the
-     * appearance settings JSON. Super_admin only.
-     */
     public function uploadAsset(Request $request)
     {
         if (!$request->user()->isSuperAdmin()) {
@@ -160,7 +128,6 @@ class SettingsController extends Controller
 
         $existing = PlatformSetting::getSection('appearance');
 
-        // Delete old file (best-effort; don't fail upload on cleanup error)
         if (!empty($existing[$field])) {
             try { Storage::disk('public')->delete($existing[$field]); } catch (\Throwable $e) {}
         }
@@ -171,10 +138,6 @@ class SettingsController extends Controller
         PlatformSetting::setSection('appearance', $merged, $request->user()->id);
         Settings::bust();
 
-        // Echo the resolved URLs alongside the raw paths so the
-        // optimistic state-patch on the SPA side (patch('appearance',
-        // res.data.value)) carries everything needed to render the new
-        // asset immediately — no second GET needed.
         $merged['logo_url']    = !empty($merged['logo_path'])    ? file_url($merged['logo_path'])    : null;
         $merged['favicon_url'] = !empty($merged['favicon_path']) ? file_url($merged['favicon_path']) : null;
 
