@@ -10,21 +10,9 @@ use App\Models\ProformaInvoice;
 use App\Models\ShipmentOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-
 
 class ShipmentOrderController extends Controller
 {
-    /**
-     * Create the shipment order for a lead (Stage 6 "Create Shipment ID").
-     *
-     * Timing note (QA #2, "save takes 14-15 s"): this method itself runs in
-     * ~20 ms (~24 ms with the max 2 MB attachment), 17 queries, no mail /
-     * Zoho / PDF work. A slow save is therefore either the attachment upload
-     * on the client's network, or a wait on the clients-row lock below, which
-     * the CLM bulk imports also hold while they run. Check the browser
-     * Network tab ("Request sent" vs "Waiting") before changing code here.
-     */
     public function store(Request $request)
     {
         $user = $request->user();
@@ -37,46 +25,18 @@ class ShipmentOrderController extends Controller
             'lead_id'             => 'required|integer|exists:leads,id',
             'proforma_invoice_id' => 'nullable|integer|exists:proforma_invoices,id',
             'shipping_liability'  => 'nullable|string|max:64',
-            // B18: explicit boolean validation so payloads like
-            // cold_chain='invalid' don't silently truecast to true via
-            // (bool) inside the create() call below.
             'cold_chain'          => 'nullable|boolean',
-            // B15: real postal codes are at most ~10 chars + a hyphen.
-            // Regex permits letters (UK, CA), digits, dashes and spaces.
             'zip_code'            => 'nullable|string|max:12|regex:/^[A-Za-z0-9\s\-]+$/',
-            // B14: freight_cost of 0 makes no business sense — a real
-            // shipment always has a non-zero cost. nullable still allowed
-            // for early drafts that haven't priced freight yet.
             'freight_cost'        => 'nullable|numeric|gt:0',
             'shipping_mode'       => 'nullable|string|max:64',
-            // inco_term_id is the real reference (master_incoterms); inco_term
-            // is the label the form showed, stored alongside as the snapshot so
-            // pre-id rows and any legacy reader keep working.
             'inco_term'           => 'nullable|string|max:100',
             'inco_term_id'        => 'nullable|integer|exists:master_incoterms,id',
-            // Port of Loading / Unloading are mandatory for INTERNATIONAL
-            // shipments and optional for DOMESTIC ones. The type-based
-            // requirement is enforced on the frontend (CreateShipmentOrderModal,
-            // gated on the PI's doc_type); server-side they stay nullable — same
-            // pattern as inco_term / port_of_unloading — so a Domestic shipment
-            // can be created without a port. (Supersedes the old B17 hard-require.)
             'port_of_loading'     => 'nullable|string|max:128',
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',
-            // origin_country accepts either a full name (e.g. "India") or
-            // an ISO code — the field is free-text on the frontend so the
-            // strict ISO-2 rule blocked perfectly valid input. Carriers
-            // receive a downstream normalisation step elsewhere.
             'origin_country'      => 'nullable|string|max:64',
 
-            /* ── Domestic-only counterparts (see the add_domestic_fields
-             * migration). Nullable server-side, required on the frontend per
-             * doc type — the same pattern the port fields above already use.
-             * store() persists only the set matching the PI's doc_type, so an
-             * export value can never land in a domestic column or vice versa. */
-            // Indian 6-digit PIN — the domestic counterpart of zip_code.
             'pin_code'            => 'nullable|string|max:12|regex:/^\d{6}$/',
-            // Domestic counterpart of freight_cost — same gt:0 reasoning.
             'shipping_cost'       => 'nullable|numeric|gt:0',
             'place_of_dispatch'   => 'nullable|string|max:128',
             'place_of_delivery'   => 'nullable|string|max:128',
@@ -86,23 +46,15 @@ class ShipmentOrderController extends Controller
             'remarks'             => 'nullable|string|max:20000',
         ]);
 
-        // Tenant gate — lead must belong to caller's client.
         $belongs = Lead::where('id', $data['lead_id'])->where('client_id', $user->client_id)->exists();
         if (!$belongs) {
             return response()->json(['status' => false, 'message' => 'Lead not in your tenant'], 403);
         }
 
-        // Tenant gate — the INCO term must come from this client's master
-        // (the exists: rule alone would accept another tenant's row id).
         if (!empty($data['inco_term_id']) && !$this->incoTermInTenant($data['inco_term_id'], $user->client_id)) {
             return response()->json(['status' => false, 'message' => 'INCO term not in your tenant'], 403);
         }
 
-        // One-shipment-per-opportunity gate. The exists() check below is
-        // not atomic — two concurrent POSTs can both pass it before either
-        // INSERT lands. The DB unique constraint on (lead_id) catches the
-        // second insert and raises a UniqueConstraintViolationException,
-        // which we map to a friendly 409 below instead of bubbling a 500.
         if (ShipmentOrder::where('lead_id', $data['lead_id'])->exists()) {
             return response()->json([
                 'status'  => false,
@@ -110,7 +62,6 @@ class ShipmentOrderController extends Controller
             ], 409);
         }
 
-        // Tenant-scope the PI if provided.
         if (!empty($data['proforma_invoice_id'])) {
             $piBelongs = ProformaInvoice::where('id', $data['proforma_invoice_id'])
                 ->where('client_id', $user->client_id)->exists();
@@ -129,19 +80,7 @@ class ShipmentOrderController extends Controller
         }
 
         try {
-            // Shipment IDs are sequenced per BRANCH. Use the opportunity's
-            // branch (falling back to the creator's branch when the lead has
-            // none) so the counter is scoped correctly.
             $branchId = Lead::where('id', $data['lead_id'])->value('branch_id') ?? $user->branch_id;
-            // Allocate the code + insert inside a transaction that locks the
-            // client row, so two concurrent saves can't read the same MAX and
-            // collide or skip a number (mirrors Quotation/PI — CLAUDE rule #3).
-            // This is what keeps the sequence gap-free and deterministic, so the
-            // create-form preview and the saved code agree.
-            /* The PI's doc_type decides BOTH the code prefix and which set of
-             * columns this row may populate. Derived server-side from the PI
-             * (never taken from the request) so a crafted payload can't write
-             * export values onto a domestic shipment or vice versa. */
             $domestic = $this->isDomesticShipment(
                 $data['proforma_invoice_id'] ?? null,
                 $data['lead_id'] ?? null,
@@ -150,7 +89,6 @@ class ShipmentOrderController extends Controller
             $shipment = DB::transaction(function () use ($user, $branchId, $data, $paths, $domestic) {
                 DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
 
-                // Fields common to both flows.
                 $attrs = [
                     'client_id'           => $user->client_id,
                     'branch_id'           => $branchId,
@@ -159,7 +97,6 @@ class ShipmentOrderController extends Controller
                     'proforma_invoice_id' => $data['proforma_invoice_id']  ?? null,
                     'shipping_liability'  => $data['shipping_liability']   ?? null,
                     'cold_chain'          => (bool) ($data['cold_chain']   ?? false),
-                    // Labelled "Mode of Transport" on the form; one column, both flows.
                     'shipping_mode'       => $data['shipping_mode']        ?? null,
                     'attachments'         => $paths ?: null,
                     'remarks'             => $data['remarks']              ?? null,
@@ -167,8 +104,6 @@ class ShipmentOrderController extends Controller
                 ];
 
                 if ($domestic) {
-                    // Domestic: PIN + shipping cost + dispatch/delivery places.
-                    // The export columns stay NULL — no INCO term, no ports.
                     $attrs += [
                         'pin_code'          => $data['pin_code']          ?? null,
                         'shipping_cost'     => $data['shipping_cost']     ?? null,
@@ -176,8 +111,6 @@ class ShipmentOrderController extends Controller
                         'place_of_delivery' => $data['place_of_delivery'] ?? null,
                     ];
                 } else {
-                    // International: ZIP + freight cost + the full export block.
-                    // The domestic columns stay NULL.
                     $attrs += [
                         'zip_code'          => $data['zip_code']          ?? null,
                         'freight_cost'      => $data['freight_cost']      ?? null,
@@ -193,9 +126,6 @@ class ShipmentOrderController extends Controller
                 return ShipmentOrder::create($attrs);
             });
         } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-            // B21: covers the race where two concurrent POSTs both pass
-            // the exists() pre-check above. Returning 409 keeps the
-            // client UX consistent regardless of which path tripped.
             return response()->json([
                 'status'  => false,
                 'message' => 'This opportunity already has a shipment order. Edit it instead of creating a new one.',
@@ -208,10 +138,6 @@ class ShipmentOrderController extends Controller
         ], 201);
     }
 
-    /**
-     * Is this master_incoterms row usable by the caller's tenant? Rows with a
-     * NULL client_id are the shared/global seed set, so those pass too.
-     */
     private function incoTermInTenant(int $incoTermId, int $clientId): bool
     {
         return Incoterms::where('id', $incoTermId)
@@ -219,25 +145,11 @@ class ShipmentOrderController extends Controller
             ->exists();
     }
 
-    /**
-     * Next per-BRANCH sequential Shipment ID — SHP-001, SHP-002, … Derives the
-     * highest existing numeric suffix for the branch and adds one. Postgres
-     * `regexp_replace` strips non-digits so legacy/odd codes don't break it.
-     * Each branch keeps its own SHP sequence (scoped within the client tenant).
-     *
-     * Purely `highest_code + 1` — deterministic and gap-free going forward.
-     * (The old `max(highest_code, row_count)` term made the number jump ahead
-     * whenever the branch had uncoded/legacy rows, so the create-form preview
-     * and the saved code disagreed. `highest_code + 1` is always above every
-     * existing code, so it can never collide.)
-     */
-    /** Code prefix per PI doc type — Domestic shipments are DSHP-, exports SHP-. */
     private function shipmentPrefix(bool $domestic): string
     {
         return $domestic ? 'DSHP-' : 'SHP-';
     }
 
-    /** True when the given PI (or lead's latest PI) is a Domestic document. */
     private function isDomesticShipment(?int $proformaInvoiceId, ?int $leadId): bool
     {
         $docType = null;
@@ -256,13 +168,6 @@ class ShipmentOrderController extends Controller
     {
         $prefix = $this->shipmentPrefix($domestic);
 
-        /* Scope the MAX to codes with the SAME prefix so Domestic and Export
-         * keep INDEPENDENT sequences — the first domestic shipment is DSHP-001
-         * even when SHP-001..009 already exist. This filter is essential: the
-         * regexp below strips every non-digit, so without it DSHP-001 and
-         * SHP-001 would both read as 1 and the two series would share a
-         * counter. LIKE 'SHP-%' can't match 'DSHP-…' (that starts with a D),
-         * so the two buckets stay disjoint. */
         $row = ShipmentOrder::query()
             ->where('client_id', $clientId)
             ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
@@ -277,8 +182,6 @@ class ShipmentOrderController extends Controller
         return $prefix . str_pad((string) $next, 3, '0', STR_PAD_LEFT);
     }
 
-    /** GET /sales/shipment-orders/next-code — preview the next Shipment ID for
-     *  the create form's header (the actual code is allocated on store). */
     public function nextCode(Request $request)
     {
         $user = $request->user();
@@ -286,14 +189,9 @@ class ShipmentOrderController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
-        // Preview against the lead's branch when known (matches what store()
-        // allocates), else the creator's branch.
         $branchId = $request->integer('lead_id')
             ? (Lead::where('id', $request->integer('lead_id'))->value('branch_id') ?? $user->branch_id)
             : $user->branch_id;
-        /* Preview the prefix the PI's doc_type will actually produce (DSHP- vs
-         * SHP-), resolved the same way store() does — otherwise the form header
-         * would promise SHP-001 and then save a DSHP-001. */
         $domestic = $this->isDomesticShipment(
             $request->integer('proforma_invoice_id') ?: null,
             $request->integer('lead_id') ?: null,
@@ -320,25 +218,14 @@ class ShipmentOrderController extends Controller
             ->where('client_id', $user->client_id)
             ->findOrFail($id);
 
-        // Surface the live master value under the same key the UI already reads.
         $row->inco_term = $row->incoTermLabel();
         $this->attachAttachmentUrls($row);
 
         return response()->json(['status' => true, 'data' => $row]);
     }
 
-    /* Build ABSOLUTE URLs for the stored attachment paths, server-side.
-     *
-     * `attachments` holds bare disk paths ("shipment_orders/…pdf"). The view was
-     * resolving those on the CLIENT, which builds them against the SPA origin —
-     * the router catch-all then serves index.html and bounces the user to the
-     * dashboard instead of the file (the documented QA #55 failure the Task
-     * Manager attachment already fixed the same way). file_url() returns a
-     * storage-host-correct absolute URL, so the link opens the actual file. */
     private function attachAttachmentUrls(ShipmentOrder $row): void
     {
-        // Map (not filter) so attachments_url[i] stays aligned with attachments[i]
-        // — the view pairs them by index.
         $paths = is_array($row->attachments) ? $row->attachments : [];
         $row->setAttribute('attachments_url', array_map(fn ($p) => file_url($p), $paths));
     }
@@ -368,11 +255,6 @@ class ShipmentOrderController extends Controller
         return response()->json(['status' => true, 'data' => $row]);
     }
 
-    /**
-     * Business Task list — every shipment order for the tenant, newest first,
-     * with the relations the table needs (opportunity owner, customer,
-     * consignee, PI). Powers the Developers → Shipment page.
-     */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -385,24 +267,14 @@ class ShipmentOrderController extends Controller
             'lead:id,opp_code,query_time,customer_id,consignee_id',
             'lead.customer:id,company_name,customer_code',
             'lead.consignee:id,company_name,consignee_code',
-            // doc_type drives which logistics fields below are meaningful.
             'proformaInvoice:id,code,created_at,doc_type',
-            // Hazardous is not stored on the shipment — it is derived from the
-            // PI's line items (see $hazByPi below).
             'proformaInvoice.items:id,proforma_invoice_id,product_id',
-            // INCO term resolves live off the master for rows that carry an id;
-            // older rows fall back to their stored label (see incoTermLabel()).
             'incoterm:id,code,full_name',
         ])
             ->where('client_id', $user->client_id)
             ->orderByDesc('id')
             ->get();
 
-        /* Hazardous flag, derived: a shipment is hazardous when ANY product on
-         * its PI is flagged 'Haz' (products.haz_type); it is non-hazardous when
-         * every product is Non-Haz. PIs with no resolvable products stay null so
-         * the list shows a dash instead of a misleading "NO". One lookup for
-         * the whole page rather than per row. */
         $productIds = $rows
             ->flatMap(fn ($s) => $s->proformaInvoice?->items?->pluck('product_id') ?? collect())
             ->filter()
@@ -444,19 +316,14 @@ class ShipmentOrderController extends Controller
                         ? ($hazByPi[$s->proformaInvoice->id] ?? null)
                         : null,
                     'shipping_mode'      => $s->shipping_mode,
-                    /* Which flow this row belongs to, so the list can render the
-                     * right columns instead of showing blank INCO/ports for
-                     * every domestic shipment. */
                     'doc_type'           => $domestic ? 'Domestic' : 'International',
                     'is_domestic'        => $domestic,
-                    // International-only
                     'inco_term'          => $s->incoTermLabel(),
                     'inco_term_id'       => $s->inco_term_id,
                     'port_of_loading'    => $s->port_of_loading,
                     'port_of_unloading'  => $s->port_of_unloading,
                     'freight_cost'       => $s->freight_cost,
                     'zip_code'           => $s->zip_code,
-                    // Domestic-only
                     'place_of_dispatch'  => $s->place_of_dispatch,
                     'place_of_delivery'  => $s->place_of_delivery,
                     'shipping_cost'      => $s->shipping_cost,
@@ -477,20 +344,15 @@ class ShipmentOrderController extends Controller
         $data = $request->validate([
             'shipping_liability'  => 'nullable|string|max:64',
             'cold_chain'          => 'nullable|boolean',
-            // Same B14/B15/B16/B17/B18 fixes as in store() — keep validators
-            // symmetrical so update() can't accept what store() rejects.
             'zip_code'            => 'nullable|string|max:12|regex:/^[A-Za-z0-9\s\-]+$/',
             'freight_cost'        => 'nullable|numeric|gt:0',
             'shipping_mode'       => 'nullable|string|max:64',
             'inco_term'           => 'nullable|string|max:100',
             'inco_term_id'        => 'nullable|integer|exists:master_incoterms,id',
-            // Nullable server-side (International-vs-Domestic requirement is
-            // enforced on the frontend) — mirrors store().
             'port_of_loading'     => 'nullable|string|max:128',
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',
             'origin_country'      => 'nullable|string|max:64',
-            // Domestic-only counterparts — mirrors store().
             'pin_code'            => 'nullable|string|max:12|regex:/^\d{6}$/',
             'shipping_cost'       => 'nullable|numeric|gt:0',
             'place_of_dispatch'   => 'nullable|string|max:128',
@@ -500,11 +362,6 @@ class ShipmentOrderController extends Controller
             'remarks'             => 'nullable|string|max:20000',
         ]);
 
-        /* Keep the two flows disjoint on edit too. update() writes $data
-         * wholesale, so without this a payload could populate export columns on
-         * a domestic shipment (or vice versa) — exactly the crossover the
-         * separate columns exist to prevent. Doc type comes from the row's own
-         * PI, never the request. */
         if (!empty($data['inco_term_id']) && !$this->incoTermInTenant($data['inco_term_id'], $user->client_id)) {
             return response()->json(['status' => false, 'message' => 'INCO term not in your tenant'], 403);
         }
