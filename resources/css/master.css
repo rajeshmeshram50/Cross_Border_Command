@@ -706,6 +706,9 @@ body:has(.mp-tealf) .master-select-search-input:focus { border-color: #22d3ee !i
   border-color: rgba(148, 163, 184, .22);
   box-shadow: 0 50px 120px -30px rgba(0, 0, 0, .85), 0 0 0 6px rgba(148, 163, 184, .08);
 }
+/* Master form dropdowns open exactly as wide as their field; long options end
+   in an ellipsis instead of the menu running past the edge of the form. */
+body:has(.master-modal) .master-select-menu[style*="min-width"] { width: 0 !important; }
 [data-bs-theme="dark"] .mp-tealf .spi-mdl-foot { background: transparent; border-top-color: rgba(148, 163, 184, .16); }
 [data-bs-theme="dark"] .master-modal.mp-tealf label { color: #7c93a8; }
 [data-bs-theme="dark"] .master-modal.mp-tealf .form-control,
