@@ -209,7 +209,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
             <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
@@ -381,7 +381,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
             <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>

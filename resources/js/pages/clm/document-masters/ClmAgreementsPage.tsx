@@ -187,7 +187,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -421,7 +421,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             <table className="clm-table" style={{ minWidth: 960 }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
