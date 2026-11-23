@@ -6,10 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Tracks when the "Probation Successfully Completed" email was sent to an
-     * employee, so the daily job never sends it twice.
-     */
     public function up(): void
     {
         Schema::table('employees', function (Blueprint $table) {
