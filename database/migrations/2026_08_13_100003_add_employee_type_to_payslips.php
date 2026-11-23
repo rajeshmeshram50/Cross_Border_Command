@@ -5,19 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Rule 17 — snapshot the employment type onto the payslip so the payroll export
- * can filter by it.
- *
- * Joining employees at export time would have been less work, but it breaks the
- * payslip's defining property: it is a self-contained snapshot, reproducible
- * long after the employee record has moved on. An employee promoted from
- * Contract to Full-time in November would otherwise retroactively change which
- * rows a re-run of the March export returns.
- *
- * Backfilled from the employee's current type, which is the best available
- * answer for slips generated before the column existed.
- */
 return new class extends Migration
 {
     public function up(): void
