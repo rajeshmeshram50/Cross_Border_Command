@@ -19,8 +19,6 @@ class WarehouseMaster extends Model
         'wh_name',
         'wh_type',
         'city',
-        // `state` is the legacy free-text value, kept for older rows; the form
-        // now writes country_id / state_id (master references).
         'state',
         'country_id',
         'state_id',
