@@ -5,13 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Brings master_leave_types in line with the Keka-style "Add Leave Type"
- * modal: adds the Compoff category, classify-as-sick toggle, description,
- * paid/unpaid flag and gender restriction. The original enum() helper
- * compiled to a CHECK on Postgres; we widen it via raw SQL so existing
- * rows keep working while Compoff becomes a valid value.
- */
 return new class extends Migration {
     public function up(): void
     {
