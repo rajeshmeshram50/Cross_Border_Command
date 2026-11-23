@@ -1,15 +1,3 @@
-{{--
-  Expense Management export — the PDF behind "Export ▸ PDF". (#166)
-
-  The screen used to open a print window and call window.print(), which hands
-  the user a print dialog and asks them to pick "Save as PDF" themselves. This
-  renders the same table through dompdf so the browser receives a finished file,
-  the way every other PDF in the app is produced.
-
-  The controller passes already-formatted strings — this view only escapes and
-  lays out. Landscape A4 with a repeating header row, so a long claim list
-  carries its column names onto every page.
---}}
 <!doctype html>
 <html>
 <head>
@@ -24,7 +12,6 @@
     table { border-collapse: collapse; width: 100%; font-size: 8.5px; }
     th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; vertical-align: top; }
     thead th { background: #f3f4f6; font-weight: 700; }
-    /* Repeat the header on every page — dompdf honours this on thead. */
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; }
     tbody tr:nth-child(even) { background: #fafafa; }
