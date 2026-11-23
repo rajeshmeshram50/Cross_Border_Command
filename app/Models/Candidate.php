@@ -9,9 +9,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Candidate extends Model
 {
-    /* Email uniqueness — the rule itself lives in
-       config/email_uniqueness.php; these two lines only say which
-       identity this model belongs to. (#email-unique) */
     use EnforcesUniqueEmail;
     protected static string $emailScope   = 'candidate';
     protected static array  $emailColumns = ['email'];
@@ -40,23 +37,6 @@ class Candidate extends Model
         'expected_salary_lpa' => 'decimal:2',
     ];
 
-    /**
-     * Store candidate emails folded to lowercase and trimmed (CBC #67).
-     *
-     * A mutator rather than a normalise step in the controller because there
-     * are three write paths — store(), update() and the CSV import — and a
-     * per-controller fix would leave whichever one is added next writing mixed
-     * case again. Every path funnels through the model, so this is the single
-     * choke point.
-     *
-     * The existing duplicate guards already compare with LOWER(email) on both
-     * sides, so this does not change who counts as a duplicate; it stops the
-     * two representations from being persisted in the first place, which is
-     * what makes exports, mail-merge and any future raw `=` join consistent.
-     *
-     * Blank/null is passed through untouched so "no email given" stays
-     * distinguishable from an empty string on an update.
-     */
     public function setEmailAttribute($value): void
     {
         $trimmed = trim((string) $value);
@@ -66,13 +46,7 @@ class Candidate extends Model
             : mb_strtolower($trimmed);
     }
 
-    /**
-     * Append the computed CV URL + initials/accent helpers to every JSON
-     * payload. The frontend's CandidateRow shape relies on these.
-     */
     protected $appends = ['cv_url', 'initials', 'accent'];
-
-    // ── Relationships ───────────────────────────────────────────────────
 
     public function client(): BelongsTo
     {
@@ -94,31 +68,17 @@ class Candidate extends Model
         return $this->belongsTo(Recruitment::class);
     }
 
-    /** Employee who referred this candidate (only set when Source = Referral). */
     public function referrer(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'referred_by_id');
     }
 
-    // ── Computed accessors ──────────────────────────────────────────────
-
-    /**
-     * URL the frontend uses for the green "CV" download chip. Returns the
-     * Laravel route that streams the file rather than a direct /storage/
-     * link — that way the download works regardless of whether the
-     * environment's webserver has DocumentRoot=public/ or not.
-     *
-     * The frontend appends `?token=<sanctum>` at click-time so the route
-     * (which lives outside sanctum middleware) can authorise the request.
-     * Returns null when no CV was uploaded.
-     */
     public function getCvUrlAttribute(): ?string
     {
         if (empty($this->cv_path) || empty($this->id)) return null;
         return url("/api/candidates/{$this->id}/cv");
     }
 
-    /** Two-letter initials for the avatar bubble in the candidate table. */
     public function getInitialsAttribute(): string
     {
         $name = trim((string) ($this->name ?? ''));
@@ -128,11 +88,6 @@ class Candidate extends Model
         return mb_strtoupper(implode('', $letters));
     }
 
-    /**
-     * Deterministic accent colour seeded by id+name so the same candidate
-     * always renders with the same avatar tone. Matches the palette used by
-     * the recruitment / hiring-request rows.
-     */
     public function getAccentAttribute(): string
     {
         $palette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
@@ -144,4 +99,3 @@ class Candidate extends Model
         return $palette[$hash % count($palette)];
     }
 }
- 
