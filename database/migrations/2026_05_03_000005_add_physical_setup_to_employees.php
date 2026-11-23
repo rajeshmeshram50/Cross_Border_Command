@@ -4,14 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Stage 3 — Physical Setup & Identification.
- *
- * Three small fields that the wizard tracks alongside device
- * allocation: biometric enrolment, desk/workstation slot, and ID card
- * print status. All nullable so existing rows stay valid; all default
- * to the "not yet" state shown in the UI when blank.
- */
 return new class extends Migration
 {
     public function up(): void
