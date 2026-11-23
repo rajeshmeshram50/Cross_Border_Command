@@ -535,8 +535,11 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
             serial
             /* Fill the viewport down to the footer, like every other HRMS list
                (HrEmployees, Leave, Payroll...). Without it the card hugged its
-               rows and left a large blank below on a short result (QA 193). */
+               rows and left a large blank below on a short result (QA 193).
+               fillToFooter pins the card to 8px above the footer; fitToViewport
+               alone stopped at the 10-row floor and left a gap below it. */
             fitToViewport
+            fillToFooter
             /* The server owns paging, search and the tab counts. pageIndex is
                0-based here and 1-based in the request. */
             serverPagination={{

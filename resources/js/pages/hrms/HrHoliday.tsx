@@ -558,9 +558,17 @@ export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' |
               accent={teal ? 'teal' : 'violet'}
 
               /* Fill to the footer with real rows, like Employees and Leave:
-                 the page size becomes however many the height holds (QA #71). */
+                 the page size becomes however many the height holds (QA #71),
+                 floored at 10 so a short window shows 10 rows (card runs past
+                 the fold, page scrolls) instead of collapsing to a few.
+                 fillToFooter stretches the card to 8px above the footer instead
+                 of stopping at the row count — the leftover gap the fitted
+                 height left below it is gone; a near-full last row may sit just
+                 under the footer, which is fine. */
               fitToViewport
               autoFitRows
+              fillToFooter
+              minAutoRows={10}
               minWidth={1395}
               loading={loading}
               serverPagination={{
