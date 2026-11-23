@@ -13,8 +13,8 @@ return new class extends Migration
             $table->foreignId('plan_id')->nullable()->constrained('plans')->cascadeOnDelete();
             $table->foreignId('module_id')->nullable()->constrained('modules')->cascadeOnDelete();
 
-            $table->string('access_level', 20)->nullable()->default('full'); // full, limited, addon, not_included
-            $table->integer('usage_limit')->nullable(); // for limited access - max usage count
+            $table->string('access_level', 20)->nullable()->default('full');
+            $table->integer('usage_limit')->nullable();
             $table->text('notes')->nullable();
 
             $table->timestamps();
