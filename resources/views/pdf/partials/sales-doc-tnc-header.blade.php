@@ -1,8 +1,3 @@
-{{-- Page header for the Terms & Conditions page of a Quotation / Proforma
-     Invoice PDF: logo on the left; the document title with No + Date below
-     it and the barcode beside them on the right. Inherits the parent view's
-     variables ($logoData, $logoFallbackHtml, $pdf_title, $doc_label_short,
-     $quotation, $barcodeData, $barcodeText, $companyDetails). --}}
 <table class="full-w" style="width:100%; border-collapse:collapse; margin-bottom:10px;">
     <tr>
         <td style="width:45%; vertical-align:top; padding:0;">
