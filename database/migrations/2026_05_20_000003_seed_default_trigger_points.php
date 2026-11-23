@@ -5,21 +5,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Seed the two default trigger points everyone needs out of the box:
- *
- *   • Onboarding
- *   • Exit Process
- *
- * They're created as platform-level rows owned by the super_admin
- * (client_id = NULL, branch_id = NULL, created_by = <super_admin id>)
- * so every tenant sees them by default and the purge migration is
- * intentionally bypassed for these two entries by running AFTER it.
- *
- * Idempotent: existing rows with the same module_name in the
- * super-admin scope are left untouched, so re-running migrations
- * won't duplicate.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -62,6 +47,5 @@ return new class extends Migration
 
     public function down(): void
     {
-        // No-op — keep the defaults around.
     }
 };
