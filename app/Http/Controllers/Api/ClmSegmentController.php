@@ -14,34 +14,13 @@ use Illuminate\Validation\Rule;
 
 class ClmSegmentController extends Controller
 {
-    /** Every table this controller may interrogate. Listing them lets the
-     *  column map be fetched in one query instead of one per table. */
     private const USAGE_TABLES = [
         'clm_segment_rules', 'customers', 'consignees', 'clm_tnc_library',
         'vendors', 'products', 'master_vendor_directory', 'clm_agreement_library',
     ];
 
-    /** @var array<string, array<string, int>> table => flipped column list, per request */
     private array $columnCache = [];
 
-    /**
-     * Does `$table` exist, and (when given) have `$column`? Answered from ONE
-     * query for every table at once.
-     *
-     * These checks are defensive — the tables come from this app's own
-     * migrations, but a half-migrated environment should degrade rather than
-     * fatal. The cost was not: Schema::getColumnListing is a round trip to
-     * information_schema PER TABLE, this controller asks about eight of them,
-     * and the schema has 199 tables. That was eight queries per request spent
-     * asking Postgres whether the app's own tables exist — a third of what a
-     * segment list costs.
-     *
-     * Same approach ClmAuthorityController already takes. Static for the
-     * process, not cached: it must never be stale across a deployment, and
-     * one query is already cheap enough that caching it would add a failure
-     * mode for no gain. A table outside the list, or a failed lookup, falls
-     * back to the per-table read so nothing silently answers "no".
-     */
     private function schemaHas(string $table, ?string $column = null): bool
     {
         static $map = null;
@@ -57,7 +36,7 @@ class ClmSegmentController extends Controller
                     $map[$r->table_name][$r->column_name] = 1;
                 }
             } catch (\Throwable $e) {
-                $map = [];   // fall through to the per-table read below
+                $map = [];
             }
         }
 
@@ -72,8 +51,6 @@ class ClmSegmentController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-430).
-        // Newest segments first so a freshly-added entry appears at the top.
         $q = ClmSegment::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
@@ -88,8 +65,6 @@ class ClmSegmentController extends Controller
             $q->where(fn ($w) => $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like));
         }
 
-        // Tab counts follow search + filter (so a no-match search shows 0 everywhere)
-        // but not the active tab, so every tab still shows its own match count.
         $c = (clone $q)->reorder()->toBase()->selectRaw(
             'COUNT(*) AS total_all,
              COUNT(*) FILTER (WHERE regulatory_status = ?) AS total_highly,
@@ -102,16 +77,10 @@ class ClmSegmentController extends Controller
             $q->where('regulatory_status', $reg);
         }
 
-        // Paged only when per_page is sent; dropdown consumers still get every row.
         $perPage = $request->filled('per_page') ? min(200, max(1, (int) $request->input('per_page'))) : null;
         $total   = $perPage ? (clone $q)->count() : null;
         $rows    = $perPage ? $q->forPage(max(1, (int) $request->input('page', 1)), $perPage)->get() : $q->get();
 
-        // Usage scan runs on the current page only — it is the expensive part.
-        // ?lite=1 skips it for callers that only read name + regulatory_status
-        // (the Reg-High/Less badge loads EVERY segment, and the scan is 3
-        // whole-table JSON queries per segment — 24 s on live, QA #1). Rows
-        // then carry no in_use / used_in; every other caller is unchanged.
         if (!$request->boolean('lite')) {
             $usage = $this->usageLabels($rows);
             $rows->each(function ($r) use ($usage) {
@@ -130,22 +99,11 @@ class ClmSegmentController extends Controller
         ]);
     }
 
-    /**
-     * Build a [segment_id => [labels...]] map of where each segment is
-     * referenced across the project. Batched (one query per referencing
-     * table) so the index endpoint doesn't run N×tables queries. The label
-     * set mirrors the checks in destroy() so the UI's disabled state and the
-     * server's 409 stay in sync.
-     */
     private function usageLabels($rows): array
     {
         if ($rows->isEmpty()) return [];
         $ids    = $rows->pluck('id')->all();
         $names  = $rows->pluck('name')->all();
-        // name => [segment rows]. A LIST, not one id: two branches under the
-        // same client may each own a segment called "Rice", and a
-        // name => single-id map silently dropped whichever came second, so
-        // that segment could never be flagged at all.
         $segsByName = [];
         foreach ($rows as $r) {
             $segsByName[$r->name][] = $r;
@@ -169,24 +127,11 @@ class ClmSegmentController extends Controller
             }
         };
 
-        // ── id-based reference tables ──
         if ($this->schemaHas('clm_segment_rules')) {
             foreach (DB::table('clm_segment_rules')->whereIn('segment_id', $ids)->distinct()->pluck('segment_id') as $sid) {
                 $addById($sid, 'Segment Rules');
             }
         }
-        /* Customers / consignees / T&C hold their segments as ids in a JSON
-           column. This used to ask the question once PER SEGMENT —
-           `whereJsonContains(...)->exists()` in a loop — which is a full scan
-           of the table for every segment the page shows. At 38 segments that
-           was 114 queries across these three tables alone, and it is why
-           /clm/segments cost 129 queries to return 1.9 kB.
-
-           One pass per table instead: read the column, expand it in PHP.
-           Only NUMERIC elements count, which is what `@> '[4]'` did — a
-           stored "4" (string) never matched before and must not start to.
-           A malformed value is skipped rather than throwing, so one bad row
-           cannot take the whole list down. */
         $referencedIds = function (string $table, bool $softDeletes) use ($ids): array {
             $q = DB::table($table)->whereNotNull('segment_ids');
             if ($softDeletes) $q->whereNull('deleted_at');
@@ -217,7 +162,6 @@ class ClmSegmentController extends Controller
                 }
             }
         }
-        // master_vendor_directory stores segment as a string id OR the name.
         if ($this->schemaHas('master_vendor_directory') && $this->schemaHas('master_vendor_directory', 'segment_id')) {
             $strIds = array_map('strval', $ids);
             [$refCols, $refScoped] = $this->referenceStampColumns('master_vendor_directory');
@@ -232,10 +176,6 @@ class ClmSegmentController extends Controller
             }
         }
 
-        // ── name-based reference tables (store the segment NAME) ──
-        // Each row is read with its own client_id / branch_id stamp so the
-        // match can be confined to segments that row could actually have been
-        // pointing at (see referenceMayPointAt).
         foreach (
             [
                 ['clm_agreement_library', 'segment', 'Agreement Library'],
@@ -255,7 +195,6 @@ class ClmSegmentController extends Controller
         return $map;
     }
 
-    /** Same name (case/space-insensitive) + same regulatory status within the caller's branch scope. */
     private function duplicateExists($user, string $name, string $regulatoryStatus, ?int $exceptId = null): bool
     {
         $q = ClmSegment::query()
@@ -272,14 +211,6 @@ class ClmSegmentController extends Controller
         return "\"{$name}\" already exists as {$label}. Pick a different name or regulatory status.";
     }
 
-    /**
-     * Which tenant-stamp columns a reference table actually carries, plus
-     * whether it carries enough of them to be scoped at all. A table with no
-     * client_id cannot be placed in a tenant, so it stays unscoped (old
-     * behaviour) rather than having every match silently discarded.
-     *
-     * @return array{0: string[], 1: bool}
-     */
     private function referenceStampColumns(string $table): array
     {
         $cols = [];
@@ -289,20 +220,6 @@ class ClmSegmentController extends Controller
         return [$cols, $hasClient];
     }
 
-    /**
-     * Could a record stamped ($refClientId, $refBranchId) be referring to this
-     * segment by name? Answers "who can see this segment", because a record can
-     * only name a segment its author could pick:
-     *
-     *   - global segment (client_id NULL)      → anyone
-     *   - client-level segment (branch_id NULL) → any branch of that client
-     *   - branch segment                        → that branch, plus the
-     *       client-level users (branch_id NULL) who see every branch
-     *
-     * A sibling branch is NOT in that set — branches are isolated peers
-     * (MasterVisibility) — which is the whole point: its records must not make
-     * this branch's identically-named segment look "in use".
-     */
     private static function referenceMayPointAt($seg, $refClientId, $refBranchId): bool
     {
         $segClient = $seg->client_id === null ? null : (int) $seg->client_id;
@@ -318,11 +235,6 @@ class ClmSegmentController extends Controller
         return $refBranch === null || $refBranch === $segBranch;
     }
 
-    /**
-     * Query-builder form of referenceMayPointAt(), for the one-row-at-a-time
-     * checks in destroy(). Applies nothing when the table has no client_id —
-     * same fallback as referenceStampColumns().
-     */
     private function scopeToSegment($q, string $table, $seg): void
     {
         if (!$this->schemaHas($table, 'client_id') || $seg->client_id === null) return;
@@ -334,9 +246,6 @@ class ClmSegmentController extends Controller
         });
     }
 
-    /**
-     * POST /clm/segments
-     */
     public function store(Request $request)
     {
         $user = $request->user();
@@ -352,7 +261,6 @@ class ClmSegmentController extends Controller
             'status'            => ['nullable', Rule::in(ClmSegment::STATUSES)],
         ]);
 
-        // Unique on name + regulatory status: "Sugar – Less" and "Sugar – Highly" may coexist.
         $name = trim($data['name']);
         if ($this->duplicateExists($user, $name, $data['regulatory_status'])) {
             $msg = $this->duplicateMessage($name, $data['regulatory_status']);
@@ -366,7 +274,7 @@ class ClmSegmentController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmSegment::create([
                 'client_id'         => $user->client_id,
-                'branch_id'         => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'         => $user->branch_id,
                 'code'              => $this->nextCode($user->client_id, $user->branch_id),
                 'name'              => trim($data['name']),
                 'regulatory_status' => $data['regulatory_status'],
@@ -377,21 +285,11 @@ class ClmSegmentController extends Controller
             ]);
         });
 
-        // Segments feed the cached Vendor / Customer / Product form bundles —
-        // without this they keep serving the old list until the 5-min TTL lapses.
         MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'data' => $row], 201);
     }
 
-    /**
-     * PUT /clm/segments/{id}
-     *
-     * The `code` is immutable — once allocated, downstream references
-     * (rules in the Document Control Panel etc.) should keep resolving
-     * stably. Name + regulatory_status + buyer_consignee + status can
-     * all be edited.
-     */
     public function update(Request $request, $id)
     {
         $user = $request->user();
@@ -412,18 +310,8 @@ class ClmSegmentController extends Controller
 
         if (isset($data['name'])) $data['name'] = trim($data['name']);
 
-        // Both the NAME and REGULATORY-STATUS locks apply ONLY when the segment
-        // is actually referenced somewhere. A brand-new / unused segment stays
-        // fully editable. Compute usage once (same map the index uses) so the
-        // locked fields and these guards stay in sync; enforced server-side
-        // because the read-only inputs can be bypassed.
         $usedIn = $this->usageLabels(collect([$row]))[$row->id] ?? [];
 
-        // Segment NAME is frozen once referenced (Customers / Consignees /
-        // Suppliers / Products / rules / libraries) — renaming would break every
-        // record that stores the segment by name. Only a genuine rename is
-        // blocked (same value re-submitted is fine), so Customer ≠ Consignee
-        // edits still go through.
         if (isset($data['name']) && $data['name'] !== (string) $row->name && !empty($usedIn)) {
             $msg = 'This segment is in use by ' . implode(', ', $usedIn) . " — its name can't be changed.";
             return response()->json([
@@ -433,9 +321,6 @@ class ClmSegmentController extends Controller
             ], 409);
         }
 
-        // Regulatory classification is frozen once the segment is referenced,
-        // since compliance structures (DCP rules, required docs) get built
-        // against it. An unused segment can still be re-classified.
         if (
             isset($data['regulatory_status'])
             && $data['regulatory_status'] !== $row->regulatory_status
@@ -449,7 +334,6 @@ class ClmSegmentController extends Controller
             ], 422);
         }
 
-        // Checked on the FINAL name + status, so changing only the status is validated too.
         if (isset($data['name']) || isset($data['regulatory_status'])) {
             $finalName = $data['name'] ?? (string) $row->name;
             $finalReg  = $data['regulatory_status'] ?? (string) $row->regulatory_status;
@@ -463,37 +347,20 @@ class ClmSegmentController extends Controller
             }
         }
 
-        // Capture the old name BEFORE the update so we can cascade a rename.
         $oldName = (string) $row->name;
 
         $data['updated_by'] = $user->id;
         $row->update($data);
 
-        /* Cascade a rename onto the denormalised segment NAME stored on customer
-         * / consignee rows (customers.segment / consignees.segment are
-         * comma-joined names, not ids). Without this the master shows the new
-         * name but the party grids keep the old one until each row is re-saved
-         * (QA #38). Scoped to the segment's own client + branch so a rename in
-         * one branch never rewrites another branch's identically-named segment. */
         if (isset($data['name']) && $oldName !== '' && strcasecmp($oldName, (string) $row->name) !== 0) {
             $this->cascadeSegmentRename((int) $row->id, $row->client_id, $oldName, (string) $row->name);
         }
 
-        // A renamed / deactivated segment must reach the form dropdowns now.
         MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
-    /**
-     * Rewrite a renamed segment's NAME inside the comma-joined `segment`
-     * strings on customers + consignees. Replaces only WHOLE entries (an exact,
-     * case-insensitive match of a comma-separated part) so "Rice" never
-     * partially matches "Rice Bran". Scoped to the CLIENT (not branch): parties
-     * reference segments by name and a customer in one branch may reference a
-     * segment owned by another, so branch-scoping would miss them; names are
-     * effectively client-unique.
-     */
     private function cascadeSegmentRename(int $segmentId, $clientId, string $old, string $new): void
     {
         if ($this->schemaHas('clm_tnc_library', 'segment_ids')) {
@@ -504,7 +371,6 @@ class ClmSegmentController extends Controller
         }
         foreach (['customers', 'consignees'] as $table) {
             if (!$this->schemaHas($table, 'segment')) continue;
-            // By id: a same-named sibling segment must keep its name on its own parties.
             if ($this->schemaHas($table, 'segment_ids')) {
                 foreach (DB::table($table)->whereNull('deleted_at')->whereJsonContains('segment_ids', $segmentId)->get(['id', 'segment_ids']) as $r) {
                     $names = \App\Support\SegmentGuard::namesFor(json_decode((string) $r->segment_ids, true) ?: []);
@@ -535,9 +401,6 @@ class ClmSegmentController extends Controller
         }
     }
 
-    /**
-     * DELETE /clm/segments/{id} — hard delete.
-     */
     public function destroy(Request $request, $id)
     {
         $user = $request->user();
@@ -549,10 +412,6 @@ class ClmSegmentController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Block delete if this segment is referenced anywhere else in the
-        // project. Each check is guarded by Schema::hasTable so the endpoint
-        // doesn't crash in environments that haven't run a particular
-        // migration yet (e.g. staging without consolidate-segments).
         $usedIn = [];
         if (
             $this->schemaHas('clm_segment_rules')
@@ -582,9 +441,6 @@ class ClmSegmentController extends Controller
                 $usedIn[] = $label;
             }
         }
-        // Some legacy tables store segment as a string (name or id-as-string).
-        // The id arm is exact, so it stays unscoped; the name arm is ambiguous
-        // across tenants and gets the same scoping as the tables below.
         if (
             $this->schemaHas('master_vendor_directory')
             && $this->schemaHas('master_vendor_directory', 'segment_id')
@@ -605,35 +461,9 @@ class ClmSegmentController extends Controller
             $usedIn[] = 'T&C Library';
         }
 
-        // String-typed `segment` columns — these store the segment NAME
-        // (case-sensitive match — the segment name itself is the canonical
-        // string key these tables capture).
-        //
-        // Confined to this segment's own tenant scope. A name is unique only
-        // within a scope, so an unscoped match let a sibling branch's records
-        // — or another client's entirely — hold this segment hostage: the
-        // delete was refused, and update() reuses the same map, so the name and
-        // regulatory status were locked on a segment nobody had used yet.
         $nameStringTables = [
             ['table' => 'clm_agreement_library',  'col' => 'segment', 'label' => 'Agreement Library'],
         ];
-        /* A name shared with a sibling segment makes these checks meaningless.
-         *
-         * These tables record the segment NAME, so when two segments in one
-         * tenant carry the same name a match cannot say WHICH of them a record
-         * meant — and the check blamed both. Branch 2 creating a segment that
-         * branch 1 already has by name could therefore never delete it, even
-         * brand new with no rule attached and nothing pointing at it.
-         * scopeToSegment() handles this when the segment belongs to a branch,
-         * but a client-level segment has no branch_id to scope by, so it fell
-         * through to a tenant-wide name match.
-         *
-         * Skipping the name checks is safe precisely BECAUSE the reference is
-         * by name: the sibling keeps that name, so every record still resolves
-         * to a live segment afterwards and nothing is orphaned. The id-based
-         * checks above (rules, vendors, products, customers.segment_id) are
-         * exact and still apply — they are what actually protects a segment
-         * that is genuinely in use. */
         $sharesNameWithSibling = ClmSegment::query()
             ->where('client_id', $row->client_id)
             ->whereKeyNot($row->id)
@@ -659,45 +489,20 @@ class ClmSegmentController extends Controller
 
         $row->delete();
 
-        // Drop the deleted segment from the cached form bundles immediately —
-        // otherwise it keeps appearing (and stays selectable) in the Supplier /
-        // Customer / Product dropdowns until the TTL lapses.
         MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /**
-     * Allocate the next per-tenant code. Row-locks the parent client row
-     * so two concurrent inserts can't pick the same number (Postgres
-     * rejects FOR UPDATE on aggregates so we can't lock count(*) itself).
-     * The composite UNIQUE on (client_id, code) is the second guard.
-     *
-     * Uses MAX(numeric suffix) + 1 rather than count() so deleted rows in
-     * the middle of the sequence don't cause the next allocation to clash
-     * with an existing code.
-     */
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        // Don't rely on count(+1) — the sequence can have gaps (e.g. after
-        // the consolidate-segments migration merged rows from the legacy
-        // master_segments table, or when a user has deleted+re-added).
-        // Pull the actual max S-NNN and increment past it; skip any
-        // collisions just to be doubly safe.
-        // Branch-scoped so each branch restarts from SG-001 rather than
-        // continuing another branch's tally — the segment master is branch-
-        // isolated via MasterVisibility. A client-level creator ($branchId
-        // null) sequences the shared rows.
         $segQuery = ClmSegment::where('client_id', $clientId);
         $branchId === null ? $segQuery->whereNull('branch_id') : $segQuery->where('branch_id', $branchId);
         $codes = $segQuery->pluck('code')->all();
         $maxN  = 0;
         $taken = [];
         foreach ($codes as $c) {
-            // Match both the new SG-NNN and any legacy S-NNN still around
-            // (during/after the prefix migration) so the sequence never reuses
-            // a number.
             if (preg_match('/^SG?-(\d+)$/', (string) $c, $m)) {
                 $n = (int) $m[1];
                 if ($n > $maxN) $maxN = $n;
