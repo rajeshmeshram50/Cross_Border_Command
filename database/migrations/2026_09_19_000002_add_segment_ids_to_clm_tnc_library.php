@@ -5,8 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-// T&C rows matched products by segment NAME; a name can belong to a Less and a Highly
-// segment, so the resolved ids (name + tier + branch) become what the PI/PO fetch matches.
 return new class extends Migration {
     public function up(): void
     {
