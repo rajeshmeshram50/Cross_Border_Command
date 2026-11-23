@@ -3,11 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Idempotently inserts the `master.employees` module row for existing envs.
- * The full ModuleSeeder also defines this row for fresh installs; this
- * migration just guarantees it exists without re-seeding everything.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -25,8 +20,6 @@ return new class extends Migration
             'description'  => 'Employee master with login provisioning',
             'route_name'   => null,
             'route_prefix' => null,
-            // Push to the end of the master.identity group; concrete sort_order
-            // value isn't critical because the seeder rewrites these on full reseed.
             'sort_order'   => 99,
             'is_active'    => true,
             'is_default'   => false,
