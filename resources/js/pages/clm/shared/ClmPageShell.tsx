@@ -155,9 +155,10 @@ export function ClmSubHead({ title, sub, count, tabs, active = 'all', onTab }: {
   const list = tabs?.length ? [all, ...tabs] : [all];
   return (
     <div className="clm-total">
-      {/* From the Master Control Center (.clm-mc) the heading is the Master
-          list's tab rail instead -- "All …" plus any status tabs; CSS shows one
-          or the other. */}
+      {/* With status tabs, the Master Control Center (.clm-mc) shows the Master
+          list's tab rail -- "All …" plus those tabs -- in place of the heading.
+          A single tab is never drawn: without status tabs the heading stays. */}
+      {tabs?.length ? (
       <div className="clm-mtab" role="tablist" aria-label={title}>
         {list.map(t => {
           const on = tabs?.length ? active === t.key : true;
@@ -174,6 +175,7 @@ export function ClmSubHead({ title, sub, count, tabs, active = 'all', onTab }: {
           );
         })}
       </div>
+      ) : null}
       <div className="clm-subhead-text">
         <div className="clm-subhead-title">
           {title}

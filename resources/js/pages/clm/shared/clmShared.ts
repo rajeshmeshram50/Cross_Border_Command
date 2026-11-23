@@ -2227,8 +2227,8 @@ body > .dropdown-menu.master-select-menu,
 
 /* The toolbar heading becomes the Master list's single "All …" tab */
 .clm-mtab { display: none; }
-.clm-mc .clm-total { padding-left: 0; min-height: 0; }
-.clm-mc .clm-total > .clm-subhead-text { display: none; }
+.clm-mc .clm-total:has(> .clm-mtab) { padding-left: 0; min-height: 0; }
+.clm-mc .clm-total:has(> .clm-mtab) > .clm-subhead-text { display: none; }
 .clm-mc .clm-mtab {
   display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px;
   padding: 4px; border-radius: 14px;
