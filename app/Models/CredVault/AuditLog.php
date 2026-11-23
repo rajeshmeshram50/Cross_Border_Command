@@ -6,16 +6,12 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * CredVault · one audited event. Append-only — created, never updated.
- */
 class AuditLog extends Model
 {
     protected $table = 'credvault_audit_logs';
 
     public const UPDATED_AT = null;
 
-    /** action => [label, base severity]. Reveal, copy and share on a critical credential are raised to critical. */
     public const ACTIONS = [
         'view'         => ['Viewed', 'info'],
         'reveal'       => ['Password revealed', 'warn'],
@@ -44,13 +40,11 @@ class AuditLog extends Model
         'backupfail'   => ['Backup attempt failed', 'critical'],
         'health_fixed' => ['Health issue resolved', 'info'],
         'totp_linked'  => ['2-step linked', 'info'],
-        'generate'     => ['Password generated', 'info'],   // the action only, never the value (GP-R6)
+        'generate'     => ['Password generated', 'info'],
     ];
 
-    /** Actions that touch a secret directly — on a critical credential they are security alerts. */
     public const RAISE_ON_CRITICAL = ['reveal', 'copy', 'share'];
 
-    /** The timeline sentence "<actor> <verb> <credential>" — the prototype's AL_VERB, completed for every action. */
     public const VERBS = [
         'view' => 'viewed', 'reveal' => 'revealed the password of', 'copy' => 'copied the password of',
         'launch' => 'launched the website of', 'create' => 'added', 'edit' => 'updated', 'share' => 'shared',
