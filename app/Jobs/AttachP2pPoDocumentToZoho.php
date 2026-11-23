@@ -13,15 +13,6 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Puts the Stage 04 purchase order PDF on the Zoho purchase order and its bill,
- * so the paperwork sits with the transaction in the books rather than only in
- * our vault. The legacy PO module has done this since its own sync; the P2P one
- * created both records and attached nothing.
- *
- * Runs on the QUEUE: the sync must not wait on two file uploads, and a Zoho
- * hiccup must not fail a PO and bill that were created fine. Best-effort.
- */
 class AttachP2pPoDocumentToZoho implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -31,7 +22,6 @@ class AttachP2pPoDocumentToZoho implements ShouldQueue
 
     public function __construct(public int $poId) {}
 
-    /** Wait between retries: 30s, then 2min. */
     public function backoff(): array
     {
         return [30, 120];
@@ -45,8 +35,6 @@ class AttachP2pPoDocumentToZoho implements ShouldQueue
         $books = app(ZohoBooksService::class);
         if (!$books->isConfigured()) return;
 
-        /* The stored Stage 04 PDF, not a fresh render: it is the document the
-           supplier was sent, and rendering again would cost a dompdf pass. */
         $doc = PurchaseOrderDocument::withoutGlobalScope('tenant')
             ->where('purchase_order_id', $po->id)
             ->where('doc_kind', 'purchase_order')
@@ -68,7 +56,6 @@ class AttachP2pPoDocumentToZoho implements ShouldQueue
         $bytes    = $disk->get($doc->file_path);
         $filename = 'PO-' . preg_replace('/[^A-Za-z0-9._-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
 
-        // Attempted separately: a bill that refuses the file must not cost the PO its copy.
         $failed = [];
         if (!empty($po->zoho_purchaseorder_id)) {
             try {
@@ -87,9 +74,6 @@ class AttachP2pPoDocumentToZoho implements ShouldQueue
             }
         }
 
-        /* Retrying re-sends to both, and Zoho's attachment endpoint accumulates
-           rather than replaces, so a retry can duplicate the copy that landed.
-           Only a total failure is worth retrying. */
         if ($failed && count($failed) === 2) {
             throw new \RuntimeException('Zoho attachment failed for P2P purchase order ' . $po->id);
         }
