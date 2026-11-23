@@ -17,13 +17,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-/**
- * Backs the "Gmail" menu — a tenant-scoped history of every outbound email plus
- * a compose/send box. The history rows are written automatically by
- * App\Listeners\LogSentEmail; this controller only reads them (scoped to the
- * caller's tenant exactly like AnnouncementController) and lets the user send a
- * new message, which flows back through the same logging path.
- */
 class EmailController extends Controller
 {
     private const WITH = [
@@ -33,7 +26,6 @@ class EmailController extends Controller
         'employee:id,first_name,last_name,display_name,emp_code',
     ];
 
-    /** Columns returned to the list (body excluded — pulled on show()). */
     private const LIST_COLUMNS = [
         'id', 'client_id', 'branch_id', 'user_id', 'employee_id',
         'direction', 'category', 'from_email', 'from_name',
@@ -41,13 +33,6 @@ class EmailController extends Controller
         'status', 'is_read', 'is_starred', 'sent_at', 'created_at',
     ];
 
-    /**
-     * The Gmail module is oversight of tenant correspondence — credential /
-     * onboarding mails for the whole branch flow through it — so it is closed
-     * to the `employee` tier (which can only see its own work). The sidebar /
-     * profile menu already hides it for employees; this is the matching
-     * server-side guard so the API can't be hit directly.
-     */
     private function guard(Request $request)
     {
         $user = $request->user();
@@ -64,8 +49,6 @@ class EmailController extends Controller
 
         $q = EmailLog::query()->with(self::WITH);
 
-        // Folders. "trash" reads the soft-deleted rows; everything else reads
-        // live rows (SoftDeletes scopes them out by default).
         $folder = $request->query('folder', $request->query('tab', 'all'));
         if ($folder === 'trash') {
             $q->onlyTrashed();
@@ -83,16 +66,11 @@ class EmailController extends Controller
                 $q->where('category', 'composed');
                 break;
             case 'sent':
-                // "Sent" is everything the signed-in user actually dispatched —
-                // composed mail AND announcements / docs they triggered — not just
-                // the compose box. System mail (OTP, etc.) has no actor (user_id
-                // null) so it correctly stays out of the sender's Sent box.
                 $q->where('user_id', $user->id);
                 break;
             case 'starred':
                 $q->where('is_starred', true);
                 break;
-            // 'all' / 'trash' — no extra category filter.
         }
 
         if ($request->boolean('unread')) $q->where('is_read', false);
@@ -110,9 +88,6 @@ class EmailController extends Controller
         }
 
         $perPage = max(5, min(100, (int) $request->integer('per_page', 25)));
-        // Exclude the heavy body columns from the list — show() pulls the full
-        // record. FK ids are kept in LIST_COLUMNS so the eager loads still work.
-        // A short snippet of the text body is added for the Gmail-style preview.
         $page = $q->select(self::LIST_COLUMNS)
             ->selectRaw("LEFT(COALESCE(body_text, ''), 160) AS snippet")
             ->orderByDesc('id')
@@ -137,7 +112,6 @@ class EmailController extends Controller
         $this->applyScope($q, $user);
         $row = $q->findOrFail((int) $id);
 
-        // Opening an email marks it read (Gmail behaviour).
         if (!$row->is_read) {
             $row->forceFill(['is_read' => true])->save();
         }
@@ -145,7 +119,6 @@ class EmailController extends Controller
         return response()->json(['data' => $row]);
     }
 
-    /** KPI strip + category breakdown for the page header. */
     public function stats(Request $request)
     {
         $user = $this->guard($request);
@@ -162,7 +135,6 @@ class EmailController extends Controller
                 'branch'    => $base()->whereNotNull('branch_id')->count(),
                 'employee'  => $base()->whereNotNull('employee_id')->count(),
                 'composed'  => $base()->where('category', 'composed')->count(),
-                // Drives the "Sent" folder count — mail the signed-in user sent.
                 'mine'      => $base()->where('user_id', $user->id)->count(),
                 'starred'   => $base()->where('is_starred', true)->count(),
                 'trash'     => $trash()->count(),
@@ -170,11 +142,6 @@ class EmailController extends Controller
         ]);
     }
 
-    /**
-     * Bulk action over a set of email ids — the Gmail toolbar (mark read /
-     * unread, star / unstar, trash / restore). All ids are re-scoped to the
-     * caller's tenant before any change, so you can only act on your own mail.
-     */
     public function bulk(Request $request)
     {
         $user = $this->guard($request);
@@ -198,7 +165,7 @@ class EmailController extends Controller
                 case 'unstar':  $row->forceFill(['is_starred' => false])->save(); break;
                 case 'trash':   if (!$row->trashed()) $row->delete();   break;
                 case 'restore': if ($row->trashed())  $row->restore();  break;
-                case 'delete':  $row->forceDelete();  break;   // permanent — empty-trash
+                case 'delete':  $row->forceDelete();  break;
             }
             $affected++;
         }
@@ -206,7 +173,6 @@ class EmailController extends Controller
         return response()->json(['data' => ['affected' => $affected, 'action' => $data['action']]]);
     }
 
-    /** Recipient picker for the compose box — branches + employees in scope. */
     public function recipients(Request $request)
     {
         $user = $this->guard($request);
@@ -216,8 +182,6 @@ class EmailController extends Controller
             ->whereNotNull('email')
             ->select(['id', 'first_name', 'last_name', 'display_name', 'emp_code', 'email', 'branch_id']);
         if ($clientId !== null) $empQ->where('client_id', $clientId);
-        // Branch user → only their own branch's staff. Client admin /
-        // super_admin see the whole client.
         if ($branchId !== null) {
             $empQ->where('branch_id', $branchId);
         }
@@ -237,8 +201,6 @@ class EmailController extends Controller
             'email' => $b->email,
         ]);
 
-        // Customers — sales contacts the branch corresponds with. Same tenant
-        // scoping as employees/branches.
         $custQ = Customer::query()
             ->whereNotNull('primary_email')->where('primary_email', '!=', '')
             ->select(['id', 'company_name', 'customer_code', 'primary_email', 'branch_id']);
@@ -260,26 +222,20 @@ class EmailController extends Controller
         ]]);
     }
 
-    /** Compose + send a new email. Logged automatically by LogSentEmail. */
     public function store(Request $request)
     {
         $user = $this->guard($request);
 
         $data = $request->validate([
-            // Cap the blast radius — a compose box shouldn't be a bulk mailer.
             'to'      => ['required', 'array', 'min:1', 'max:50'],
             'to.*'    => ['required', 'email'],
             'cc'      => ['nullable', 'array', 'max:50'],
             'cc.*'    => ['email'],
             'subject' => ['required', 'string', 'max:255'],
             'body'    => ['required', 'string', 'max:50000'],
-            // Attachments — documents / images, Gmail-style. Per-file 8 MB,
-            // up to 10 files; office docs, PDFs, images, csv/txt, zip only
-            // (no executables/scripts).
             'attachments'   => ['nullable', 'array', 'max:10'],
             'attachments.*' => [
                 'file', 'max:8192',
-                // No svg — it can carry inline script and would run from our origin.
                 'mimes:jpg,jpeg,png,gif,webp,bmp,pdf,doc,docx,xls,xlsx,csv,ppt,pptx,txt,zip',
             ],
         ]);
@@ -290,17 +246,11 @@ class EmailController extends Controller
             ], 422);
         }
 
-        // Persist any attachments once (shared by every recipient row). Each file
-        // lands under an unguessable random folder on the public disk; we keep
-        // two views: $mailFiles (absolute paths for the mailable to attach) and
-        // $attachmentMeta (name/size/mime + /storage URL for the reading pane).
         $uploads = array_values(array_filter(
             $request->file('attachments', []),
             fn ($f) => $f && $f->isValid()
         ));
 
-        // Enforce the total-size cap BEFORE writing anything, so an over-limit
-        // batch never leaves half its files orphaned on disk.
         $totalBytes = array_sum(array_map(fn ($f) => (int) $f->getSize(), $uploads));
         if ($totalBytes > 20 * 1024 * 1024) {
             return response()->json(['message' => 'Attachments exceed the 20 MB total limit.'], 422);
@@ -313,7 +263,7 @@ class EmailController extends Controller
             $ext      = strtolower($file->getClientOriginalExtension());
             $diskName = (Str::slug(pathinfo($display, PATHINFO_FILENAME)) ?: 'file') . ($ext ? ".{$ext}" : '');
             $dir      = 'email-attachments/' . date('Y/m') . '/' . Str::random(24);
-            $stored   = $file->storeAs($dir, $diskName, 'public');   // e.g. email-attachments/2026/06/<rand>/file.pdf
+            $stored   = $file->storeAs($dir, $diskName, 'public');
             $mime     = $file->getClientMimeType() ?: 'application/octet-stream';
 
             $mailFiles[]      = ['path' => Storage::disk('public')->path($stored), 'name' => $display, 'mime' => $mime];
@@ -322,21 +272,13 @@ class EmailController extends Controller
 
         $orgName = $user->client?->org_name ?: config('mail.from.name', 'Cross Border Command');
         $senderName = $user->name ?: '';
-        // Normalise plain-text line breaks to <br> so a typed message keeps its
-        // shape; if the user pasted HTML it passes through untouched.
         $bodyHtml = str_contains($data['body'], '<') ? $data['body'] : nl2br(e($data['body']));
 
-        // Hand the attachment metadata to the send-logger so each logged row
-        // records the file list (for the reading-pane download chips). Cleared
-        // in finally so it never bleeds into the next send.
         LogSentEmail::$composedAttachments = $attachmentMeta ?: null;
 
         $sent = 0;
         $failed = [];
         try {
-            // One personalised send per recipient (each gets a "Hi {their name}").
-            // Cc is attached only to the FIRST send so cc'd people don't receive a
-            // duplicate copy for every To address.
             $ccAttached = false;
             foreach ($data['to'] as $email) {
                 $name = $this->resolveRecipientName($email);
@@ -375,8 +317,6 @@ class EmailController extends Controller
         return $u ?: 'there';
     }
 
-    // ── Tenant scoping (mirrors AnnouncementController) ──────────────────────
-
     private function resolveOwnership(User $user): array
     {
         if ($user->user_type === 'super_admin') return [null, null];
@@ -405,7 +345,6 @@ class EmailController extends Controller
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
-            // Every branch is an isolated peer — globals + client-level rows + own branch only.
             $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
                   ->orWhere(function ($ww) use ($clientId, $branchId) {
