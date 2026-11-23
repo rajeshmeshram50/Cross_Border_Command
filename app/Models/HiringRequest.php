@@ -15,19 +15,15 @@ class HiringRequest extends Model
         'client_id', 'branch_id', 'created_by',
         'code',
 
-        // Section 1 — basics
         'title', 'job_role', 'department_id', 'team',
         'requested_by_name', 'request_date',
 
-        // Section 2 — hiring need
         'openings', 'employment_type', 'work_mode', 'urgency',
 
-        // Section 3 — role details
         'job_description', 'daily_responsibilities',
         'required_skills', 'required_experience',
         'required_qualification', 'preferred_profile',
 
-        // Section 4 — business justification
         'request_type', 'business_justification', 'hiring_need_reason',
         'current_team_gap', 'what_if_not_filled',
 
@@ -39,8 +35,6 @@ class HiringRequest extends Model
         'target_join_date' => 'date',
         'openings'         => 'integer',
     ];
-
-    // ── Tenant / ownership ──────────────────────────────────────────────
 
     public function client(): BelongsTo
     {
