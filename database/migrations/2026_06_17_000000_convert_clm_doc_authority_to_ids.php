@@ -4,20 +4,8 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Convert the authority reference on the CLM document masters (KYC / DD /
- * Trade-License / QC) from a copied authority NAME to the authority ID.
- *
- * Values are comma-joined (a document can map to several authorities). For each
- * row, each name token is matched (case-insensitively, within the same tenant)
- * against clm_authorities and replaced with that authority's id. Tokens that
- * are already numeric ids, or that don't match any authority, are left as-is so
- * nothing is lost. After this, the name is resolved live on read — so renaming
- * an authority propagates everywhere automatically.
- */
 return new class extends Migration
 {
-    /** table => authority column */
     private array $targets = [
         'clm_kyc_documents'  => 'authority',
         'clm_dd_documents'   => 'authority',
@@ -27,7 +15,6 @@ return new class extends Migration
 
     public function up(): void
     {
-        // [client_id][lower(name)] => id
         $byClientName = [];
         foreach (DB::table('clm_authorities')->get(['id', 'client_id', 'name']) as $a) {
             $byClientName[$a->client_id][mb_strtolower(trim((string) $a->name))] = $a->id;
@@ -44,9 +31,9 @@ return new class extends Migration
                 foreach (explode(',', (string) $val) as $tok) {
                     $tok = trim($tok);
                     if ($tok === '') continue;
-                    if (ctype_digit($tok)) { $out[] = $tok; continue; } // already an id
+                    if (ctype_digit($tok)) { $out[] = $tok; continue; }
                     $id = $byClientName[$r->client_id][mb_strtolower($tok)] ?? null;
-                    $out[] = $id !== null ? (string) $id : $tok;        // matched → id; else passthrough
+                    $out[] = $id !== null ? (string) $id : $tok;
                 }
 
                 $new = implode(', ', $out);
@@ -57,10 +44,6 @@ return new class extends Migration
         }
     }
 
-    /**
-     * Reverse: turn ids back into names (best-effort). Unknown tokens pass
-     * through unchanged.
-     */
     public function down(): void
     {
         $byId = [];
