@@ -4,11 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Inter-state supply (supplier state code ≠ our home 27) is taxed as a single
- * IGST = the full product GST, instead of split CGST + SGST. Add the columns to
- * store it (header total + per-item %/amount) so the SPI matches the PO wizard.
- */
 return new class extends Migration
 {
     public function up(): void
