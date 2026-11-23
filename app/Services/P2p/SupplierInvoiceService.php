@@ -10,30 +10,8 @@ use App\Support\TenantContext;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Rules shared by the SPI endpoints: numbering, how much of a PO line is still
- * uninvoiced, the totals rollup, the packing summary, and the two append-only
- * trails.
- *
- * Six kinds of work live here, and nothing else does:
- *
- *   1. NUMBERING      a code allocated under a lock, so two saves never collide
- *   2. GUARDS         a rule that must hold before a write (open quantity)
- *   3. DERIVED READS  an aggregate more than one screen needs (packed/pending)
- *   4. ROLLUPS        child rows summed onto the parent inside the save
- *   5. WRITE PATHS    the single door to a table nothing else may touch
- *   6. TRAILS         the audit rows that must share the caller's transaction
- *
- * What does NOT live here: HTTP (that is the controller) and anything about a
- * single row (that is the model).
- */
 class SupplierInvoiceService
 {
-    /* ═══════════════ 1 · NUMBERING ═══════════════
-       Shared by the form preview and the save, and it takes a row lock. Both
-       reasons on their own would justify being here. */
-
-    /** Indian financial year label, e.g. 2026-27 for any date Apr 2026 – Mar 2027. */
     public function financialYear(?Carbon $on = null): string
     {
         $d = $on ?: now();
@@ -42,24 +20,11 @@ class SupplierInvoiceService
         return $start . '-' . substr((string) ($start + 1), -2);
     }
 
-    /**
-     * Next SPI/<FY>/<SEQ>, one sequence PER BRANCH. Call inside a transaction.
-     *
-     * A new branch therefore starts again at 001, and two branches of the same
-     * client each hold their own SPI/2026-27/001 — so every lookup by code must
-     * carry the branch, never the client alone.
-     *
-     * The global scope is lifted and the branch filtered by hand: the scope
-     * also lets through rows with a NULL branch_id, which would pull another
-     * branch's numbers into this one's sequence. Trashed rows still count —
-     * a deleted invoice must not hand its number to the next one.
-     */
     public function nextCode(int $clientId, int $branchId): string
     {
         return $this->allocate($clientId, $branchId, true);
     }
 
-    /** What the next invoice WOULD get. Read only — nothing locked or reserved. */
     public function previewCode(int $clientId, int $branchId): string
     {
         return $this->allocate($clientId, $branchId, false);
@@ -69,9 +34,6 @@ class SupplierInvoiceService
     {
         $fy = $this->financialYear();
 
-        /* Lock the BRANCH row, not the client: two branches numbering at the
-           same moment are independent sequences and must not block each other,
-           while two saves within one branch must. */
         if ($lock) {
             DB::table('branches')->where('id', $branchId)->lockForUpdate()->first();
         }
@@ -92,25 +54,6 @@ class SupplierInvoiceService
         return sprintf('SPI/%s/%03d', $fy, $max + 1);
     }
 
-
-    /**
-     * Split one PO line's balance into the two figures everything downstream
-     * actually wants.
-     *
-     * openQtyByPoItem() returns `ordered - billed`, which goes negative once a
-     * line is over-supplied. Every caller then has to decide what a negative
-     * quantity means, and they were each deciding it slightly differently —
-     * which is how an over-supply caused by one invoice ended up reported as
-     * the NEXT invoice's shortfall. One method, one answer.
-     *
-     *   open    what may still be billed. Never negative: an over-supplied
-     *           line has nothing left to give.
-     *   over    how far the order has ALREADY been passed. Belongs to the
-     *           invoices that caused it, not to the one being written now.
-     *   closed  nothing left to bill — fully met, or already over.
-     *
-     * @return array{open: float, over: float, closed: bool}
-     */
     public function splitBalance(float $balance): array
     {
         return [
@@ -122,8 +65,6 @@ class SupplierInvoiceService
 
     public function openQtyByPoItem(int $poId, ?int $ignoreSpiId = null): array
     {
-        // No deleted_at filter: p2p_purchase_order_items is hard-deleted, it has
-        // no such column. Only the SPI side is soft-deleted.
         $ordered = DB::table('p2p_purchase_order_items')
             ->where('purchase_order_id', $poId)
             ->pluck('quantity', 'id');
@@ -134,7 +75,6 @@ class SupplierInvoiceService
             ->whereNull('sii.deleted_at')
             ->whereNull('spi.deleted_at')
             ->where('spi.status', '<>', SupplierInvoice::STATUS_CANCELLED)
-            // An invoice being edited must not count its own old quantity.
             ->when($ignoreSpiId, fn($q) => $q->where('sii.supplier_invoice_id', '<>', $ignoreSpiId))
             ->groupBy('sii.po_item_id')
             ->selectRaw('sii.po_item_id, SUM(sii.qty_spi) AS billed')
@@ -144,7 +84,6 @@ class SupplierInvoiceService
             ->map(fn($qty, $id) => round((float) $qty - (float) ($invoiced[$id] ?? 0), 3))
             ->all();
     }
-
 
     public function packingSummary(int $spiId): array
     {
@@ -169,10 +108,6 @@ class SupplierInvoiceService
         })->all();
     }
 
-    /**
-     * The TOTALS row under the packing grid — one object for the whole invoice,
-     * summed from the per-line rows the caller already holds. No extra query.
-     */
     public function packingTotals(array $summary): array
     {
         $rows = collect($summary);
@@ -186,24 +121,6 @@ class SupplierInvoiceService
             'fully_packed' => $rows->every(fn($r) => $r['qty_pending'] <= 0.001),
         ];
     }
-
-    /**
-     * Keep stage_completed honest about packing.
-     *
-     * Stage 3 is the only stage whose work spans many requests, so there is
-     * no single save to stamp. Deriving it from the boxes instead means the
-     * column is right even when the wizard's Next is never pressed — someone
-     * who packs the last carton and closes the drawer has finished stage 3,
-     * whether or not the browser said so.
-     *
-     * It walks BACK too: delete a box from a packed invoice and stage 3 is no
-     * longer done. Only ever between 2 and 3 — 4 means submitted, and submit
-     * already refuses while anything is unplaced, so nothing above 3 is this
-     * method's business.
-     *
-     * Returns the stage it settled on, so a caller can report it without
-     * re-reading the row.
-     */
 
     public function normaliseBoxScenarios(SupplierInvoice $spi): void
     {
@@ -244,8 +161,6 @@ class SupplierInvoiceService
         if ($current < 2 || $current > 3) return $current;
 
         $rows = $this->packingSummary($spi->id);
-        // every() is true over nothing: an invoice with no lines is empty,
-        // not packed.
         $packed = $rows && $this->packingTotals($rows)['fully_packed'];
         $target = $packed ? 3 : 2;
 
@@ -273,20 +188,13 @@ class SupplierInvoiceService
         ])->save();
     }
 
-
     public function syncFulfilment(SupplierInvoiceItem $item, string $event, ?float $previous = null): void
     {
-        if ($item->po_item_id === null) return;   // standalone or unmapped: consumes no PO quantity
+        if ($item->po_item_id === null) return;
 
         $poQty = (float) DB::table('p2p_purchase_order_items')->where('id', $item->po_item_id)->value('quantity');
         $now   = $event === SpiPoFulfilment::EVENT_CANCELLED ? 0.0 : (float) $item->qty_spi;
 
-        /* The balance the moment this row is written — a historical reading,
-           not a live figure. It is deliberately left signed: negative means the
-           order was already past its quantity at that point, and the ledger is
-           the one place where the raw difference is worth keeping, because a
-           reader can diff two rows to see what a change did. splitBalance()
-           turns it into open / over wherever it is displayed. */
         $balance = $this->openQtyByPoItem((int) $item->invoice->purchase_order_id)[$item->po_item_id] ?? 0;
 
         SpiPoFulfilment::create([
@@ -306,45 +214,17 @@ class SupplierInvoiceService
         ]);
     }
 
-
-    /**
-     * Save the whole Stage 02 grid: items, the ledger, the header totals and
-     * the trail — all of it or none of it.
-     *
-     * DB::transaction() IS the error handling here. Any exception thrown
-     * inside rolls every write back. A try/catch would instead leave items
-     * saved with no ledger row, which is the one state that corrupts pending
-     * quantity silently. Let it throw — the controller turns it into a 422.
-     *
-     * $rollUp false when the caller posted its own totals: the Stage 02 grid
-     * computes them, and recomputing here would overwrite the figures the user
-     * actually saw on screen with ours.
-     */
     public function saveItems(SupplierInvoice $spi, array $rows, bool $rollUp = true): SupplierInvoice
     {
         return DB::transaction(function () use ($spi, $rows, $rollUp) {
             $before = SupplierInvoiceItem::where('supplier_invoice_id', $spi->id)
                 ->pluck('qty_spi', 'id');
 
-            /* Lines are matched by their own id when the caller sends one, and
-               by position only when it does not.
-               Position alone meant a reordered grid rewrote rows in place: the
-               row that was line 1 kept its id and took line 3's data, while
-               Stage 03 boxes — which point at these ids — silently followed it
-               to a different product. A Direct SPI made that worse, because
-               po_item_id is null there and nothing else identified the line.
-               No id sent still behaves exactly as before. */
             $existing = SupplierInvoiceItem::where('supplier_invoice_id', $spi->id)->get();
             $byId     = $existing->keyBy('id');
             $byLine   = $existing->keyBy('line_no');
-            /* Once the caller names its lines, a row without an id is a NEW
-               line - matching it by position would hand an existing line,
-               and its boxes, to a different product. */
             $named    = collect($rows)->contains(fn($r) => !empty($r['id']));
 
-            /* What Stage 03 has already boxed, per line. A boxed line may grow
-               (the extra shows up as pending on Stage 03) but it may not drop
-               below what is in its boxes, change product, or leave the grid. */
             $packed = collect($this->packingSummary($spi->id))
                 ->pluck('qty_packed', 'supplier_invoice_item_id')
                 ->filter(fn($q) => $q > 0.0005);
@@ -353,8 +233,6 @@ class SupplierInvoiceService
                 'message' => $message,
                 'errors' => ['items' => [$message]],
             ], 422));
-            /* Named by its product, not its description - a description can
-               run to paragraphs. */
             $products = DB::table('products')->whereIn('id', $existing->pluck('product_id'))
                 ->get(['id', 'product_code', 'name'])->keyBy('id');
             $nameOf = function (SupplierInvoiceItem $i) use ($products) {
@@ -375,7 +253,6 @@ class SupplierInvoiceService
                 } elseif (!$id && !$named && $byLine->has($i + 1)) {
                     $item = $byLine[$i + 1];
                 }
-                // Never twice: two payload rows must not collapse into one line.
                 if ($item && in_array($item->id, $kept, true)) $item = null;
 
                 if ($item && isset($packed[$item->id])) {
@@ -404,10 +281,6 @@ class SupplierInvoiceService
                 );
             }
 
-            /* The grid is sent whole, so a line that is no longer in it was
-               deleted on screen. Without this, saving 3 lines and then 1 would
-               leave lines 2 and 3 alive, still holding PO quantity that nobody
-               can see. Each one gives its quantity back to the order first. */
             $dropped = SupplierInvoiceItem::where('supplier_invoice_id', $spi->id)
                 ->whereNotIn('id', $kept ?: [0])->get();
 
