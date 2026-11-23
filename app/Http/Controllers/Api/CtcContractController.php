@@ -13,27 +13,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
-/**
- * CLM Operations · Without Shipment ID → Case-to-Case (CTC) Contracts.
- *
- * One controller drives the add/drafting form plus the three views:
- *   index()         → Case to Case Contracts list
- *   sentIndex()     → Agreements We Sent      (created_by = me)
- *   toApproveIndex()→ Agreements To Approve   (my email is an approver)
- * Approver actions: approve / reject / clarify; sender: respond.
- *
- * Counterparties, page header/footer, approvers and the clarification thread
- * round-trip as JSON, so the response shapes match the SPA's CtcContract /
- * AwsContract / AtaContract types 1:1.
- */
 class CtcContractController extends Controller
 {
     use HandlesDocxHtmlRoundtrip;
 
-    /* ── shared helpers ── */
-
-    /** Display timezone — timestamps are stored UTC and converted on read
-     *  (same convention as AttendanceController::DISPLAY_TZ). */
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
     private function fmt($d): string
@@ -46,30 +29,16 @@ class CtcContractController extends Controller
         }
     }
 
-    /**
-     * Convert a stored UTC date string (already formatted as "d M Y" or
-     * "d M Y H:i" by now()->format() at write time) to the display timezone.
-     *
-     * Delegates to CtcAuditTime — ClmSignatureController::ctcSignatureStatus()
-     * feeds the SAME Review Timeline as show(), and when each controller kept
-     * its own copy of this logic only one got fixed, so the timeline's times
-     * shifted by 5:30 as the SPA's poll switched endpoints (CBC-574).
-     */
     private function istStr(?string $s): string
     {
         return CtcAuditTime::str($s);
     }
 
-    /**
-     * Convert the `date` / `acted_at` fields inside a list of audit entries
-     * (versions, clarifications, approvers) from stored UTC to display TZ.
-     */
     private function istEntries($arr): array
     {
         return CtcAuditTime::entries($arr);
     }
 
-    /** Append a content-snapshot version entry (append-only audit). */
     private function pushVersion(CtcContract $c, string $label, string $status, string $by, ?string $content = null, array $extra = []): void
     {
         $versions = array_values($c->versions ?? []);
@@ -104,27 +73,12 @@ class CtcContractController extends Controller
                 return $a['status'] ?? 'pending';
             }
         }
-        // Legacy rows that only stored the primary approver slot.
         if (strtolower((string) $c->primary_approver_email) === $email && isset($approvers[0])) {
             return $approvers[0]['status'] ?? 'pending';
         }
         return null;
     }
 
-    /**
-     * Is this user one of the contract's approvers?
-     *
-     * approve() has always enforced this; reject() and clarify() never did, so
-     * any authenticated user in the tenant could kill an agreement they had no
-     * part in, or post a query into its thread under their own name. The
-     * to-approve LIST is filtered by approver_emails, so they would not see the
-     * contract in the UI — but the endpoints take an id and were reachable
-     * directly.
-     *
-     * Returns true when the contract carries no approver information at all:
-     * approve() already treats that case as an unguarded legacy row, and the
-     * three actions have to agree on who may act.
-     */
     private function isApprover(CtcContract $c, $user): bool
     {
         $email = strtolower(trim((string) ($user->email ?? '')));
@@ -132,7 +86,7 @@ class CtcContractController extends Controller
         $emails    = array_values($c->approver_emails ?? []);
         $primary   = strtolower(trim((string) $c->primary_approver_email));
 
-        if (empty($approvers) && empty($emails) && $primary === '') return true;  // legacy, unconfigured
+        if (empty($approvers) && empty($emails) && $primary === '') return true;
         if ($email === '') return false;
 
         foreach ($approvers as $a) {
@@ -144,24 +98,12 @@ class CtcContractController extends Controller
         return $primary === $email;
     }
 
-    /**
-     * Does THIS approver have a query of their own still unanswered?
-     *
-     * Clarification is personal; review and approval are not. Three approvers
-     * on one agreement each read it independently, and a question from one of
-     * them says nothing about whether the other two are ready to decide. Only
-     * the approver who asked is actually waiting on an answer.
-     *
-     * Matches on `by_email`, which clarify() stamps precisely because two
-     * approvers can share a display name. Entries written before that field
-     * existed fall back to the name.
-     */
     private function hasMyOpenClarification(CtcContract $c, string $email, string $name = ''): bool
     {
         $email = strtolower(trim($email));
         $name  = strtolower(trim($name));
         foreach (array_values($c->clarifications ?? []) as $cl) {
-            if (trim((string) ($cl['response'] ?? '')) !== '') continue;   // answered
+            if (trim((string) ($cl['response'] ?? '')) !== '') continue;
             $byEmail = strtolower(trim((string) ($cl['by_email'] ?? '')));
             if ($byEmail !== '') {
                 if ($email !== '' && $byEmail === $email) return true;
@@ -172,12 +114,6 @@ class CtcContractController extends Controller
         return false;
     }
 
-    /**
-     * Every approver on this contract with their individual decision — so the
-     * UI can list all of them (Parth: approved, Vedant: approved) instead of
-     * only the static primary approver. Falls back to the primary slot for
-     * legacy rows that never stored an approver list.
-     */
     private function approverList(CtcContract $c): array
     {
         $approvers = array_values($c->approvers ?? []);
@@ -192,14 +128,6 @@ class CtcContractController extends Controller
         ], $approvers);
     }
 
-    /**
-     * Each approval round derived from the version audit, newest first. A
-     * round opens on every "Under Review" submission (initial draft +
-     * resubmissions) and closes on the approver's Rejected / Approved
-     * decision — so a draft that was rejected, revised and approved yields
-     * three persistent entries (Rejected → Pending → Approved) instead of a
-     * single row whose status keeps flipping.
-     */
     private function approvalRoundsShaped(CtcContract $c, string $approverName, string $approverEmail = ''): array
     {
         $reasonFromLabel = function (string $label): ?string {
@@ -221,63 +149,26 @@ class CtcContractController extends Controller
                 $rounds[] = $cur ? array_merge($cur, $entry) : $entry;
                 $cur = null;
             }
-            // 'Sent for Signing' / 'Signed' are post-approval — ignored here.
         }
         if ($cur) {
-            /* Open round — this is a PERSONAL inbox row, so every branch here
-               reads the viewing approver's own position, never the contract's.
-               Once they have approved their slot the row moves to their
-               Approved tab while other approvers are still pending.
-               The clarification branch used to test `$c->approval_status`,
-               which is contract-wide: the moment ONE approver asked a question,
-               the row flipped to "Clarification" for all three of them, left
-               everyone else's Pending tab and sat in a queue that was not
-               theirs — so two approvers who were perfectly able to review and
-               approve saw an agreement apparently waiting on somebody else.
-               It now asks whether THIS approver has an unanswered query. */
             $mine = $this->myApproverStatus($c, $approverEmail);
             if ($mine === 'approved')     $cur['status'] = 'approved';
             elseif ($mine === 'rejected') $cur['status'] = 'rejected';
             $rounds[] = $cur;
         }
-        if (empty($rounds)) {                                 // legacy rows w/o audit
+        if (empty($rounds)) {
             $shaped = $this->shapeApprove($c, $approverName);
             $mine = $this->myApproverStatus($c, $approverEmail);
             if ($mine === 'approved')     $shaped['status'] = 'approved';
             elseif ($mine === 'rejected') $shaped['status'] = 'rejected';
-            // shapeApprove reports the CONTRACT's status, so somebody else's
-            // open query would read as this approver's clarification here too.
-            // Same rule as the open round above: it is only their clarification
-            // if they are the one waiting on an answer.
             elseif ($shaped['status'] === 'clarification' && !$this->hasMyOpenClarification($c, $approverEmail, $approverName)) {
                 $shaped['status'] = 'pending';
             }
             return [$shaped];
         }
 
-        $ordered = array_reverse($rounds);                    // newest round first
+        $ordered = array_reverse($rounds);
 
-        /* An unanswered query of MINE outranks whatever the newest round says,
-           and is applied here rather than inside the open-round branch above
-           because it has to reach CLOSED rounds too.
-           Two cases, and only this placement covers both:
-            - I approved and then asked something. My decision is recorded, but
-              I am still waiting on an answer.
-            - Every approver approved (which CLOSES the round in the audit) and
-              I asked afterwards. There is no open round left to annotate, so
-              the branch above never ran and my own question stayed invisible to
-              me — filed under Approved, with no way to find it or to see the
-              reply when it arrived.
-           Only the newest round: older rounds are settled history, and a query
-           raised today says nothing about a round that closed last week.
-
-           A REJECTED round is the exception and keeps its status. Rejection is
-           terminal and collective — the agreement is dead until the initiator
-           revises and resubmits — so an outstanding query on it is moot, and
-           filing it under the asker's Clarifications tab would show them a
-           conversation that cannot go anywhere as if it still needed them.
-           Resubmit opens a fresh round, and a query still open then surfaces
-           against that one. */
         if (
             !empty($ordered)
             && $ordered[0]['status'] !== 'rejected'
@@ -295,16 +186,12 @@ class CtcContractController extends Controller
             'approver'       => $c->primary_approver_name ?: $approverName,
             'approvers'      => $this->approverList($c),
             'status'         => $r['status'],
-            // Keep the full clarification history visible across rounds (it was
-            // only surfaced while the round itself sat in 'clarification', so it
-            // looked deleted once the agreement moved on — the data was never lost).
             'clarifications' => $this->istEntries($c->clarifications ?? []),
             'expDate'        => $this->fmt($c->end_date),
             'rejReason'      => $r['reason'] ?? null,
         ])->all();
     }
 
-    /** Approval lifecycle → CTC-list bucket. */
     private function listStatus(CtcContract $c): string
     {
         if ($c->approval_status === 'rejected') return 'rejected';
@@ -312,19 +199,6 @@ class CtcContractController extends Controller
         return 'inprogress';
     }
 
-    private function cpNames(CtcContract $c): array
-    {
-        return collect($this->resolveCounterparties($c))->map(fn($x) => $x['name'] ?? '')->filter()->values()->all();
-    }
-
-    /**
-     * Counterparty display names straight from the STORED snapshot (no live DB
-     * re-resolve). The list only needs the names captured when each party was
-     * added — resolving them live per row ran a Customer/Consignee/Vendor query
-     * PER counterparty PER row (an N+1 that made the whole list page slow). Live
-     * data is still resolved on the detail/preview/generation paths where a
-     * fresh company name / address actually matters.
-     */
     private function cpNamesFromStored(CtcContract $c, bool $labeled): array
     {
         $cps = is_array($c->counterparties) ? $c->counterparties : [];
@@ -337,7 +211,6 @@ class CtcContractController extends Controller
         })->filter()->values()->all();
     }
 
-    /** Map a counterparty's source_type / role to a display label. */
     private function cpRoleLabel(array $cp): string
     {
         $type = strtolower((string) ($cp['source_type'] ?? $cp['role'] ?? ''));
@@ -347,19 +220,11 @@ class CtcContractController extends Controller
         return '';
     }
 
-    /** True when a counterparty's country is India (Domestic). */
     private function cpIsDomestic(array $cp): bool
     {
         return strtolower(trim((string) ($cp['country'] ?? ''))) === 'india';
     }
 
-    /**
-     * Enforce the CTC counterparty category rule server-side (client filter is a
-     * convenience only): the Customer and the Consignee on one agreement must
-     * share ONE category — both Domestic (India) or both International. Supplier
-     * is exempt (may be either), and "Our Organisation" is not a counterparty.
-     * Throws a 422 ValidationException on mismatch.
-     */
     private function assertCounterpartyCategories(?array $cps): void
     {
         $rows     = is_array($cps) ? $cps : [];
@@ -368,7 +233,6 @@ class CtcContractController extends Controller
         foreach ($rows as $cp) {
             if (!is_array($cp)) continue;
             $label = $this->cpRoleLabel($cp);
-            // Fall back to the display badge when source_type/role is blank.
             if ($label === '') {
                 $badge = strtolower((string) ($cp['badge'] ?? ''));
                 if (str_contains($badge, 'consignee')) $label = 'Consignee';
@@ -377,7 +241,7 @@ class CtcContractController extends Controller
             if ($label === 'Customer')  $customer  = $cp;
             if ($label === 'Consignee') $consignee = $cp;
         }
-        if ($customer === null || $consignee === null) return; // rule needs both
+        if ($customer === null || $consignee === null) return;
         if ($this->cpIsDomestic($customer) !== $this->cpIsDomestic($consignee)) {
             $custCat = $this->cpIsDomestic($customer) ? 'Domestic (India)' : 'International';
             $consCat = $this->cpIsDomestic($consignee) ? 'Domestic (India)' : 'International';
@@ -387,23 +251,12 @@ class CtcContractController extends Controller
         }
     }
 
-    /**
-     * Refresh each stored counterparty against its live source record
-     * (Customer / Consignee / Vendor) by source_type + source_id, so edits made
-     * in those masters flow through to the agreement. Only the factual fields
-     * (name, country, phone, email) are overlaid; the user-set `referred` alias,
-     * `badge`, and the `source_*` reference keys are preserved as stored. Manual
-     * / legacy entries without a source reference keep their snapshot.
-     */
     private function resolveCounterparties(CtcContract $c): array
     {
         $cps = is_array($c->counterparties) ? $c->counterparties : [];
         return array_map(function ($cp) use ($c) {
             $type = strtolower((string) ($cp['source_type'] ?? ''));
             $id   = $cp['source_id'] ?? null;
-            // The picker stores the party's numeric PK alongside its display
-            // code; the PK is the only reference that means one company, so it
-            // leads. See partyByRef().
             $dbId = $cp['source_db_id'] ?? null;
             if ($type === '') return $cp;
             if (($id === null || $id === '') && ($dbId === null || $dbId === '')) return $cp;
@@ -412,14 +265,6 @@ class CtcContractController extends Controller
         }, $cps);
     }
 
-    /**
-     * Resolve a party model from a stored source_id by: numeric PK → code column
-     * → the numeric id embedded in a "PREFIX-NNN" display-fallback code. That
-     * last step matters for consignees stored as "CN-014" whose consignee_code
-     * column is null (the code is the id-based fallback the UI shows), which
-     * would otherwise fail to resolve and surface as an empty / "Not Applicable"
-     * company name in Stage 2 and in the {{consignee.*}} placeholders.
-     */
     private function resolvePartyRow($q, $id, string $codeCol, $branchId = null)
     {
         if (is_numeric($id)) return (clone $q)->find($id);
@@ -433,16 +278,6 @@ class CtcContractController extends Controller
         return preg_match('/(\d+)\s*$/', (string) $id, $m) ? (clone $q)->find((int) $m[1]) : null;
     }
 
-    /**
-     * Resolve a counterparty to its live row, PK first.
-     *
-     * `source_db_id` is the party's numeric primary key, captured by the
-     * counterparty picker at the moment the user chose the company. It is the
-     * only reference on a stored counterparty that identifies exactly one row.
-     * `source_id` is the DISPLAY code, which repeats across branches, so it is
-     * the fallback -- used for counterparties saved before the picker recorded
-     * the PK, and branch-scoped by resolvePartyRow() when it is.
-     */
     private function partyByRef($q, $id, string $codeCol, $dbId = null, $branchId = null)
     {
         if ($dbId !== null && $dbId !== '' && (int) $dbId > 0) {
@@ -452,12 +287,9 @@ class CtcContractController extends Controller
         return $this->resolvePartyRow($q, $id, $codeCol, $branchId);
     }
 
-    /** Current name/country/phone/email for a party reference, or null if it no longer exists. */
     private function liveParty(string $type, $id, int $clientId, $dbId = null, $branchId = null): ?array
     {
         if ($type === 'buyer' || $type === 'customer') {
-            // source_id is the customer_code (e.g. "C-009"), not the numeric PK —
-            // resolve by code, falling back to the id (numeric or "C-NNN" form).
             $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
             $row = $this->partyByRef($q, $id, 'customer_code', $dbId, $branchId);
             if (!$row) return null;
@@ -467,8 +299,6 @@ class CtcContractController extends Controller
                 'country'      => (string) ($a?->country ?? ''),
                 'phone'        => (string) ($a?->cp_contact ?? ''),
                 'email'        => (string) ($a?->cp_email ?? $row->primary_email ?? ''),
-                // Numeric PK so the CTC "Next" gate can fetch this party's
-                // Evidence-Vault compliance (source_id is the display code).
                 'source_db_id' => (int) $row->id,
             ];
         }
@@ -501,12 +331,6 @@ class CtcContractController extends Controller
         return null;
     }
 
-    /**
-     * Load the live Eloquent model + its CLM model-name for a counterparty
-     * reference, so its {{customer.*}} / {{consignee.*}} / {{supplier.*}}
-     * placeholders can be resolved against real data. Returns [model, name]
-     * or [null, ''] when the reference can't be resolved.
-     */
     private function livePartyModel(string $type, $id, int $clientId, $dbId = null, $branchId = null): array
     {
         $type = strtolower($type);
@@ -528,11 +352,6 @@ class CtcContractController extends Controller
         return [null, ''];
     }
 
-    /**
-     * Replace the {{customer.*}} / {{consignee.*}} / {{supplier.*}} party
-     * placeholders in agreement HTML with each counterparty's real data,
-     * reusing the same resolver the trade-doc / signature render uses.
-     */
     private function resolvePartyTokens(string $html, CtcContract $row): string
     {
         foreach ((is_array($row->counterparties) ? $row->counterparties : []) as $cp) {
@@ -547,11 +366,6 @@ class CtcContractController extends Controller
         return $html;
     }
 
-    /**
-     * Fill the organisation-detail placeholders ({{company_name}} {{company_no}}
-     * {{email}} {{contact_no}} {{address}}) from the SELECTED BRANCH backing this
-     * agreement's "Our Organisation" selection (company_no = the branch CIN).
-     */
     private function resolveOrgTokens(string $html, CtcContract $row): string
     {
         foreach ($this->orgBranchTokens($row) as $tok => $val) {
@@ -560,54 +374,27 @@ class CtcContractController extends Controller
         return $html;
     }
 
-    /**
-     * Agreement HTML with party + organisation placeholders resolved to real
-     * data, for the Stage-2 "Agreement Preview" pane. The {{signature}} token
-     * is intentionally left untouched — the SPA swaps it for a sign-here marker.
-     */
     private function previewContent(CtcContract $row): string
     {
         $html = (string) ($row->content ?? '');
         if ($html === '') return '';
         $html = $this->resolvePartyTokens($this->resolveOrgTokens($html, $row), $row);
-        // Blank out any placeholder still left over — a party that isn't mapped
-        // ({{supplier.*}} with no supplier), product tokens (CTC has none), or a
-        // typo'd token — so the preview shows nothing instead of raw {{...}}.
-        // {{signature}} is preserved: the SPA swaps it for the sign-here marker.
         $html = preg_replace('/\{\{\s*(?!signature\s*\}\})[^{}]*\}\}/i', '', $html);
         return $html;
     }
 
-    /**
-     * Counterparty-level signature tally for the document status label.
-     *
-     * BR-12 / section 7.3 of the Multiple Signature Placements spec: the
-     * document label shows COMPLETED COUNTERPARTIES out of total - "1 of 2
-     * Signed" - never a placement count. One counterparty = one contact
-     * person = one Zoho recipient, and Zoho only marks a recipient signed
-     * once every mandatory field of theirs is filled, so a signed recipient
-     * IS a completed counterparty (BR-09 / BR-10: partial placement progress
-     * is never surfaced). Viewed / Sent / Declined / Expired do not count.
-     */
     private function cpSignatureCounts(CtcContract $c): array
     {
         $recs  = is_array($c->signing_recipients) ? $c->signing_recipients : [];
         $cps   = is_array($c->counterparties) ? $c->counterparties : [];
-        // Recipients are the truth once a request exists; before that fall
-        // back to the counterparties on the draft so the label still reads
-        // "0 of 2" rather than "0 of 0".
         $total = count($recs) ?: count($cps);
         $signed = 0;
         foreach ($recs as $r) {
             if (is_array($r) && !empty($r['signed']) && empty($r['declined'])) $signed++;
         }
-        // Recipients only exist once the request has actually gone to Zoho, so
-        // their presence is what separates "sent, 0 of 2 signed" from a draft
-        // that has never been sent — where a count label would be nonsense.
         return ['signed' => $signed, 'total' => $total, 'sent' => count($recs) > 0];
     }
 
-    /** Case to Case Contracts list row. */
     private function shapeList(CtcContract $c): array
     {
         $approval = $c->approval_status === 'clarification' ? 'pending' : ($c->approval_status ?: 'pending');
@@ -634,7 +421,6 @@ class CtcContractController extends Controller
         ];
     }
 
-    /** Approval progress: [approvedCount, totalApprovers]. */
     private function approvalProgress(CtcContract $c): array
     {
         $approvers = array_values($c->approvers ?? []);
@@ -643,7 +429,6 @@ class CtcContractController extends Controller
         return [$approved, $total];
     }
 
-    /** Agreements We Sent row. */
     private function shapeSent(CtcContract $c): array
     {
         $statusMap = ['approved' => 'approved', 'rejected' => 'rejected', 'clarification' => 'clarify', 'pending' => 'pending'];
@@ -676,7 +461,6 @@ class CtcContractController extends Controller
         ];
     }
 
-    /** Agreements To Approve row. */
     private function shapeApprove(CtcContract $c, string $approverName): array
     {
         return [
@@ -693,16 +477,11 @@ class CtcContractController extends Controller
         ];
     }
 
-    /* ── Case to Case Contracts list ── */
     public function index(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Branch-scope the list the same way as the approver picker: a branch
-        // user only ever sees their OWN branch's contracts; a tenant-level
-        // client_admin (no own branch) sees the SPA-injected active branch, or
-        // all branches when none is selected.
         $branchFilter = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
         $rows = CtcContract::where('client_id', $user->client_id)
@@ -712,7 +491,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $rows]);
     }
 
-    /* ── Agreements We Sent (mine) ── */
     public function sentIndex(Request $request)
     {
         $user = $request->user();
@@ -724,7 +502,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $rows]);
     }
 
-    /* ── Agreements To Approve (I'm an approver) ── */
     public function toApproveIndex(Request $request)
     {
         $user = $request->user();
@@ -737,20 +514,11 @@ class CtcContractController extends Controller
             })
             ->orderByDesc('id')->get()
             ->flatMap(fn($c) => $this->approvalRoundsShaped($c, $user->name ?? '', $user->email ?? ''))
-            // One row per CTC — keep only the latest round (rounds come back
-            // newest-first, so the first occurrence of each code is the latest).
             ->unique('id')
             ->values();
         return response()->json(['status' => true, 'data' => $rows->values()]);
     }
 
-    /**
-     * The branch backing this agreement's "Our Organisation" selection. The
-     * form now picks a branch (not a Company-master row), stored as org_name;
-     * branch names are unique per client, so resolve by name within the client.
-     * Falls back to the contract's own branch so the signature/tokens still
-     * resolve on older contracts that pre-date the branch-org selection.
-     */
     private function resolveOrgBranch(CtcContract $c): ?\App\Models\Branch
     {
         $orgName = trim((string) ($c->org_name ?? ''));
@@ -760,7 +528,6 @@ class CtcContractController extends Controller
         return $branch ?: ($c->branch_id ? \App\Models\Branch::find($c->branch_id) : null);
     }
 
-    /** Full postal address of a branch for the {{address}} token. */
     private function branchAddress(?\App\Models\Branch $b): string
     {
         if (!$b) return '';
@@ -772,26 +539,23 @@ class CtcContractController extends Controller
         ], fn($v) => $v !== '')), ', ');
     }
 
-    /** Organisation-detail tokens filled from the SELECTED branch's own data. */
     private function orgBranchTokens(CtcContract $c): array
     {
         $b = $this->resolveOrgBranch($c);
         return [
             'company_name' => $c->org_name ?: ($b->name ?? ''),
-            'company_no'   => $b->cin ?? '',          // registered company number (CIN)
+            'company_no'   => $b->cin ?? '',
             'email'        => $b->email ?? '',
             'contact_no'   => $b->phone ?? '',
             'address'      => $this->branchAddress($b),
         ];
     }
 
-    /** Branch (our-organisation) authorised-signatory image = signature + stamp combined. */
     private function orgSignatureUrl(CtcContract $c): ?string
     {
         return $this->resolveOrgBranch($c)?->signature_url;
     }
 
-    /** Same image as a data URI for dompdf (which can't fetch /storage URLs). */
     private function orgSignatureDataUri(CtcContract $c): ?string
     {
         $branch = $this->resolveOrgBranch($c);
@@ -809,13 +573,6 @@ class CtcContractController extends Controller
         }
     }
 
-    /**
-     * GET /clm/ctc-contracts/contact-persons?type=buyer|consignee|supplier&id=...
-     *
-     * Contact persons captured on the counterparty's own form — the address /
-     * contact rows of the Customer (buyer), Consignee or Vendor (supplier).
-     * Drives the "Select contact persons to notify" picker in Send-for-Signing.
-     */
     public function contactPersons(Request $request)
     {
         $user = $request->user();
@@ -848,7 +605,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => []]);
     }
 
-    /** Customer/Consignee addresses → contact persons (shared cp_* columns). */
     private function mapCpAddresses($row): array
     {
         if (!$row) return [];
@@ -866,34 +622,16 @@ class CtcContractController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $row = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
-        // Surface the branch signature+stamp so the SPA can drop it onto the
-        // {{signature}} placeholder once the agreement is approved.
         $row->org_signature_url = $this->orgSignatureUrl($row);
-        // Fully-signed PDF (from Zoho) once the signature request completed.
         $row->signed_document_url = $this->signedDocumentUrl($row);
-        // Re-hydrate counterparties from their live source masters so any edit
-        // made in Customer / Consignee / Vendor since this was saved shows here.
         $row->counterparties = $this->resolveCounterparties($row);
-        // Stage-2 preview content: same body with {{party.*}} + {{org}} tokens
-        // resolved to real data so the preview shows actual values, not raw
-        // {{consignee.gst}} placeholders. Raw `content` is kept for editing.
         $row->content_preview = $this->previewContent($row);
-        // Audit-trail timestamps (versions / clarifications / approver decisions)
-        // are stored UTC; convert to display TZ for the timeline view. In-memory
-        // only — show() never persists, so storage stays UTC.
         $row->versions       = $this->istEntries($row->versions ?? []);
         $row->clarifications = $this->istEntries($row->clarifications ?? []);
         $row->approvers      = $this->istEntries($row->approvers ?? []);
         return response()->json(['status' => true, 'data' => $row]);
     }
 
-    /**
-     * GET /clm/ctc-contracts/placeholder-values?type=&id=
-     *
-     * Resolved field → value map for one counterparty, so the Insert
-     * Placeholder modal can show ONLY the fields that actually have data
-     * (hide empty GST/PAN/contact/etc. instead of inserting blank tokens).
-     */
     public function placeholderValues(Request $request)
     {
         $user = $request->user();
@@ -916,7 +654,6 @@ class CtcContractController extends Controller
             'contact_person' => (string) ($vendor ? ($addr?->contact_name ?? '') : ($addr?->cp_name ?? '')),
             'phone'          => (string) ($vendor ? ($addr?->contact_no ?? '') : ($addr?->cp_contact ?? '')),
             'email'          => (string) ($model->primary_email ?? ''),
-            // No backing column yet → always empty (so they get hidden).
             'gst'            => '',
             'pan'            => '',
             'iec'            => '',
@@ -931,7 +668,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $values]);
     }
 
-    /** Public URL of the fully-signed PDF (from the linked signature request), or null. */
     private function signedDocumentUrl(CtcContract $c): ?string
     {
         if (!$c->signature_request_id) return null;
@@ -942,58 +678,33 @@ class CtcContractController extends Controller
         return $first['file_url'] ?? $first['url'] ?? (isset($first['path']) ? file_url($first['path']) : null);
     }
 
-    /**
-     * GET /clm/ctc-contracts/approver-candidates
-     *
-     * Internal people who can be picked as approvers for a CTC draft:
-     * the client (client_admin), the branch (branch_user) and the employees
-     * under the active branch. Scoped to the caller's client; when a
-     * branch_id is present (auto-injected by the SPA), employees/branch users
-     * are narrowed to that branch while the client admin stays tenant-wide.
-     */
     public function approverCandidates(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Approvers must belong to the SAME branch as the contract. Always scope
-        // to the caller's OWN branch when they have one (branch users / employees)
-        // so the picker never lists other branches' people — even when the branch
-        // switcher is on "All". A tenant-level client_admin (no own branch) falls
-        // back to the SPA-injected active branch_id.
         $branchFilter = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
-        // Internal approvers are branch users and employees only — clients
-        // (client_admin) are intentionally excluded from the approver list.
         $query = User::where('client_id', $user->client_id)
             ->where('status', 'active')
             ->whereIn('user_type', ['branch_user', 'employee'])
             ->with('branch:id,name');
 
         if ($branchFilter) {
-            $query->where('branch_id', $branchFilter);    // branch + its employees
+            $query->where('branch_id', $branchFilter);
         }
 
         $candidates = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id']);
 
-        // Only employees who actually hold a CLM module grant (can_view on any
-        // clm.* module) may appear — otherwise, in a 500-employee company, the
-        // whole roster floods the picker and the user can't tell who has CLM
-        // access. Branch users (the branch Director / CEO) are the internal
-        // decision-makers and stay eligible regardless of explicit grants.
         $clmUserIds = \App\Models\Permission::whereIn('user_id', $candidates->pluck('id'))
             ->where('can_view', true)
             ->whereHas('module', fn($m) => $m->where('slug', 'like', 'clm.%'))
             ->pluck('user_id')->unique()->flip();
 
-        // Designation + Department come from each candidate's linked Employee row
-        // so the picker shows the person's job title / team instead of just the
-        // branch name — the reviewer knows who they're sending to.
         $employees = \App\Models\Employee::whereIn('user_id', $candidates->pluck('id'))
             ->with(['designation:id,name', 'department:id,name'])
             ->get()->keyBy('user_id');
 
-        // BRANCH first, then employees — and alphabetical within each.
         $order = ['branch_user' => 0, 'employee' => 1];
         $rows = $candidates
             ->filter(fn($u) => $u->user_type === 'branch_user' || $clmUserIds->has($u->id))
@@ -1015,7 +726,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $rows->values()]);
     }
 
-    /* ── Create (Submit & Send for Approval from the add form) ── */
     public function store(Request $request)
     {
         $user = $request->user();
@@ -1045,9 +755,6 @@ class CtcContractController extends Controller
 
         $this->assertCounterpartyCategories($data['counterparties'] ?? []);
 
-        // Each approver carries its own decision so the contract only counts
-        // as approved once EVERY selected approver has approved (see approve()).
-        // `status` starts 'pending'; `acted_at` stamps when they decide.
         $approvers = collect($data['approvers'] ?? [])->map(fn($a) => [
             'name'      => (string) ($a['name'] ?? ''),
             'email'     => strtolower((string) ($a['email'] ?? '')),
@@ -1059,12 +766,6 @@ class CtcContractController extends Controller
         $primary = $approvers->first();
 
         $row = DB::transaction(function () use ($user, $data, $approvers, $primary) {
-            // Per-BRANCH sequential code under a client row lock (same locking as
-            // Quotation/PI). Branch-scoped so each branch restarts at CTC-001
-            // instead of continuing the client-wide tally — a fresh branch's
-            // first agreement is CTC-001, not CTC-007. withTrashed() keeps the
-            // count gap-free across soft-deletes. Client-level creators
-            // (branch_id null) share the unassigned-branch sequence.
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $seq  = CtcContract::withTrashed()
                 ->where('client_id', $user->client_id)
@@ -1104,7 +805,7 @@ class CtcContractController extends Controller
                 'approver_emails'    => $approvers->pluck('email')->filter()->values()->all(),
                 'clarifications'     => [],
                 'versions'           => $v1,
-                'stage'              => 2,                 // submitted → Internal Review
+                'stage'              => 2,
                 'approval_status'    => 'pending',
                 'status'             => 'inprogress',
                 'days_to_approve'    => $data['days_to_approve'] ?? null,
@@ -1154,18 +855,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true]);
     }
 
-    /* ── Approver actions ── */
-
-    /**
-     * Mark the caller's approval. The contract is only flagged `approved`
-     * (which is what unlocks "Send for Signing" → Stage 3) once EVERY
-     * selected approver has approved — a single approver's nod is no longer
-     * enough. Each approver's decision is tracked inside the `approvers`
-     * JSON so partial progress survives reloads and is queryable.
-     *
-     * Backward-compatible: drafts created before per-approver tracking (no
-     * `status` keys, or an empty approver list) approve outright on one nod.
-     */
     public function approve(Request $request, int $id)
     {
         $user = $request->user();
@@ -1175,7 +864,6 @@ class CtcContractController extends Controller
         $email     = strtolower((string) $user->email);
         $approvers = array_values($row->approvers ?? []);
 
-        // Legacy / no approver list → single approval approves outright.
         if (empty($approvers)) {
             $row->approval_status = 'approved';
             $row->rejection_reason = null;
@@ -1185,8 +873,6 @@ class CtcContractController extends Controller
             return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
         }
 
-        // Stamp this approver's decision (match by email; fall back to the
-        // primary-approver slot for legacy rows that only stored the primary).
         $matched = false;
         foreach ($approvers as &$a) {
             if (strtolower((string) ($a['email'] ?? '')) === $email && $email !== '') {
@@ -1210,24 +896,12 @@ class CtcContractController extends Controller
         $total    = count($approvers);
         $approved = collect($approvers)->filter(fn($a) => ($a['status'] ?? 'pending') === 'approved')->count();
 
-        /* Derived, not assigned — see deriveApprovalStatus().
-           This used to set 'approved' or 'pending' outright, which meant an
-           approval landing after someone else's open query wiped the
-           clarification state and dropped the agreement off the sender's
-           Clarifications panel. The derivation keeps an unanswered query
-           visible until it is actually answered, and still reports 'approved'
-           only when every approver has approved AND nothing is outstanding. */
         $derived = $this->deriveApprovalStatus($row);
 
         if ($approved >= $total && $derived === 'approved') {
-            // Everyone has approved → contract is approved (stays at Stage 2;
-            // the sender then chooses "Send for Signing & Negotiation").
             $row->rejection_reason = null;
             $this->pushVersion($row, 'Approved by all ' . $total . ' approver' . ($total > 1 ? 's' : ''), 'Approved', $user->name ?? '');
         } else {
-            // Still waiting on others, or on an answer to an open query → keep
-            // the round open. The audit note uses a non-round status so
-            // approvalRoundsShaped() doesn't close it early.
             $note = ($user->name ?? 'Approver') . ' approved (' . $approved . ' of ' . $total . ')'
                 . ($derived === 'clarification'
                     ? ' — awaiting a response to an open clarification'
@@ -1250,10 +924,6 @@ class CtcContractController extends Controller
         }
         $data = $request->validate(['reason' => 'required|string|max:1000']);
 
-        // One rejection blocks the whole agreement — record which approver
-        // declined, then flip the contract to rejected. Rejected → sender can
-        // revise & resubmit (multiple times), so the row stays workable
-        // (status 'inprogress'); only approval_status flips.
         $email = strtolower((string) $user->email);
         $approvers = array_values($row->approvers ?? []);
         foreach ($approvers as &$a) {
@@ -1284,10 +954,6 @@ class CtcContractController extends Controller
         }
         $data = $request->validate(['query' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
-        // Stamp the raising approver so the shared thread can attribute each
-        // remark — any of the contract's approvers may add to the same thread.
-        // `by_email` as well as `by`: two approvers can share a display name,
-        // and the per-approver state below has to match on something unique.
         $thread[] = [
             'query'    => $data['query'],
             'by'       => $user->name ?: 'Approver',
@@ -1303,29 +969,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
 
-    /**
-     * The contract's approval state, derived from the approvers and the
-     * clarification thread rather than written by whoever acted last.
-     *
-     * `approval_status` is ONE field describing what is really per-approver
-     * state, and three people can be in three different positions at once. It
-     * used to be assigned directly by each action, so the last write won:
-     * approver A raised a query (status → clarification), approver B then
-     * approved, and approve() set it to 'pending' — silently clearing the
-     * clarification while A's question sat unanswered. The sender's
-     * Clarifications panel filters on this field, so the agreement simply
-     * vanished from it with two approvers still waiting.
-     *
-     * Order matters:
-     *  - rejected wins outright; one rejection blocks the agreement and no
-     *    later approval or query should reopen it.
-     *  - an UNANSWERED query outranks 'pending', because somebody is waiting on
-     *    the sender, not the other way round.
-     *  - all approved → approved. Otherwise still pending.
-     *
-     * Not called by reject(): a rejection is a deliberate terminal decision and
-     * stays sticky until the sender resubmits.
-     */
     private function deriveApprovalStatus(CtcContract $row): string
     {
         if (($row->approval_status ?? '') === 'rejected') return 'rejected';
@@ -1347,7 +990,6 @@ class CtcContractController extends Controller
         return 'pending';
     }
 
-    /** Sender responds to the latest open clarification. */
     public function respond(Request $request, int $id)
     {
         $user = $request->user();
@@ -1355,30 +997,12 @@ class CtcContractController extends Controller
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate(['response' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
-        /* Answer EVERY open query, not just the newest.
-           This used to walk backwards and `break` on the first one it filled.
-           But the sender has a single response box and no way to address one
-           query rather than another — they read the whole thread and write one
-           answer covering it. So when an approver asked twice before the sender
-           replied (or two approvers each asked), the older query kept
-           "Awaiting your response" against it forever, and because
-           deriveApprovalStatus treats any unanswered query as an open
-           clarification, the contract could never leave that state no matter
-           how many times the sender replied.
-           One answer, recorded against everything it was written to answer. */
         $answeredAt = now()->format('d M Y H:i');
         foreach ($thread as $i => $entry) {
             if (trim((string) ($entry['response'] ?? '')) !== '') continue;
             $thread[$i]['response'] = $data['response'];
-            // Stamp WHEN the sender answered — distinct from the request's
-            // `date` so the review timeline shows the real answer time
-            // instead of reusing the "Clarification Requested" timestamp.
             $thread[$i]['response_date'] = $answeredAt;
         }
-        /* Recompute after answering. The derivation checks whether any query is
-           still open before letting the contract fall back to pending/approved;
-           with the loop above none is, unless an approver raised a new one
-           between the sender opening the modal and submitting. */
         $row->clarifications = $thread;
         $row->approval_status = $this->deriveApprovalStatus($row);
         $row->save();
@@ -1386,15 +1010,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $this->shapeSent($row->fresh())]);
     }
 
-    /* ── Lifecycle transitions (sender side, from the add/edit form) ── */
-
-    /**
-     * POST /clm/ctc-contracts/{id}/resubmit
-     * Revise the draft and re-send for internal review — used both after an
-     * internal rejection AND after a counterparty declined the e-sign. Either
-     * way the contract re-enters Stage 2 approval (a decline cannot go straight
-     * back to Zoho), so any live signing request is cleared. Repeatable.
-     */
     public function resubmit(Request $request, int $id)
     {
         $user = $request->user();
@@ -1408,8 +1023,6 @@ class CtcContractController extends Controller
             'header_config'  => 'nullable|array',
             'page_config'    => 'nullable|array',
             'footer_config'  => 'nullable|array',
-            // Full-edit fields — sent by the add/edit form's "Update & Send for
-            // Approval"; absent on the lighter rejected/declined resubmit.
             'counterparties' => 'nullable|array',
             'eff_date'       => 'nullable|date',
             'end_date'       => 'nullable|date',
@@ -1444,10 +1057,6 @@ class CtcContractController extends Controller
 
         $wasDeclined = collect($row->signing_recipients ?? [])->contains(fn($r) => !empty($r['declined']));
 
-        // Approvers: when the edit form supplies a new list, replace it
-        // (rebuilding approver_emails + primary); otherwise keep the existing
-        // approvers. Either way, reset every approver's decision so the
-        // all-must-approve gate starts over for this fresh round.
         if (!empty($data['approvers'])) {
             $approvers = collect($data['approvers'])->map(fn($a) => [
                 'name'      => (string) ($a['name'] ?? ''),
@@ -1476,8 +1085,6 @@ class CtcContractController extends Controller
         $row->stage = 2;
         $row->rejection_reason = null;
         $row->submitted_at = now();
-        // Re-entering the approval cycle → drop the previous signing request so
-        // it can't be reused; a fresh one is created after the new approval.
         $row->signing_recipients   = [];
         $row->zoho_request_id      = null;
         $row->signature_request_id = null;
@@ -1492,10 +1099,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
-    /**
-     * POST /clm/ctc-contracts/{id}/send-for-signing
-     * Approved → send to counterparties for signature & negotiation (Stage 3).
-     */
     public function sendForSigning(Request $request, int $id)
     {
         $user = $request->user();
@@ -1534,11 +1137,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
-    /**
-     * POST /clm/ctc-contracts/{id}/record-signature
-     * Mark one recipient (by index/email) signed, or all at once.
-     * When every recipient has signed, a "signed by all parties" version is added.
-     */
     public function recordSignature(Request $request, int $id)
     {
         $user = $request->user();
@@ -1592,10 +1190,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh(), 'allSigned' => $allSigned]);
     }
 
-    /**
-     * POST /clm/ctc-contracts/{id}/move-to-repository
-     * All parties signed → store in the Final Contract Repository (Stage 4).
-     */
     public function moveToRepository(Request $request, int $id)
     {
         $user = $request->user();
@@ -1617,7 +1211,6 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
-    /** GET /clm/ctc-contracts/{id}/versions — version history list. */
     public function versions(Request $request, int $id)
     {
         $user = $request->user();
@@ -1626,16 +1219,8 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $this->istEntries($row->versions ?? [])]);
     }
 
-    /**
-     * GET /clm/ctc-contracts/{id}/versions/{v}/download
-     * Render a specific version's content snapshot to PDF (page-shell + footer
-     * page numbers), reusing the shared signature-document blade + dompdf.
-     */
     public function downloadVersion(Request $request, int $id, int $v)
     {
-        // Large agreements (200-300+ pages) blow past PHP's default 128M memory
-        // and 30s execution cap while dompdf lays out every page, so the request
-        // 500s ("Could not generate this version PDF"). Lift both for this render.
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
@@ -1651,37 +1236,18 @@ class CtcContractController extends Controller
         if ($html === '') $html = '<p><em>No content saved for this version.</em></p>';
         $processedHtml = $this->normaliseEditorHtml($html);
 
-        // Once approved, the {{signature}} placeholder (receiving-party / our
-        // organisation) is filled with the branch's signature + stamp image.
         $approved = $row->approval_status === 'approved' || (int) $row->stage >= 3;
         $sigUri = $approved ? $this->orgSignatureDataUri($row) : null;
-        // display:block is load-bearing, not cosmetic. dompdf does NOT grow a
-        // line box to fit an INLINE image, so an 80px-tall signature dropped
-        // into a ~15px text line rendered straight over the lines above it —
-        // the approver PDF showed the stamp sitting on top of the paragraph.
-        // Block takes it out of the text flow onto its own line; the margin
-        // keeps it off the neighbouring paragraphs. Mirrors the identical
-        // injection in ClmSignatureController::resolveCtcContent(), which
-        // already carried this fix — this path had been left behind.
         $sigHtml = $sigUri
             ? '<img src="' . $sigUri . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />'
             : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $processedHtml);
 
-        // Organisation-detail placeholders — filled from the SELECTED BRANCH
-        // backing this agreement's "Our Organisation" selection.
-        // ({{company_name}} {{company_no}}=CIN {{email}} {{contact_no}} {{address}})
         foreach ($this->orgBranchTokens($row) as $tok => $val) {
             $processedHtml = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $processedHtml);
         }
 
-        // Party placeholders ({{customer.*}} / {{consignee.*}} / {{supplier.*}})
-        // → real counterparty data, so the rendered PDF/DOCX never leaks raw
-        // tokens like {{consignee.gst}}.
         $processedHtml = $this->resolvePartyTokens($processedHtml, $row);
-        // Blank any placeholder still left (unmapped party, missing data, typo)
-        // so the final document shows nothing rather than raw {{...}}.
-        // ({{signature}} was already substituted above.)
         $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $processedHtml);
 
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
@@ -1696,36 +1262,16 @@ class CtcContractController extends Controller
                     $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path));
                     break;
                 }
-            } catch (\Throwable $e) { /* try next candidate */
+            } catch (\Throwable $e) {
             }
         }
 
-        // Make the document title reflect the version for the blade heading.
         $row->title = ($row->title ?: 'Agreement') . ' — v' . $v;
 
-        // DOCX export — same processed content rendered to an editable Word file.
         if (strtolower((string) $request->query('format')) === 'docx') {
             return $this->renderVersionDocx($processedHtml, $row->title, ($row->code ?: 'CTC') . '-v' . $v);
         }
 
-        /* Serve a previously rendered copy when nothing that reaches the page
-         * has changed.
-         *
-         * Measured on real rows: the dompdf render IS the request. CTC-006
-         * (697 KB of HTML) took 56.8s of a 57.5s request; CTC-004 (876 KB)
-         * 5.6s of 5.7s. Only 7 queries either way, so there is no SQL to
-         * tune here. Size is not the driver — CTC-006 is the SMALLER of the
-         * two and ten times slower because it carries 300 tables / 10,800
-         * cells, and dompdf's table layout degrades sharply on cell count.
-         *
-         * A version entry is a frozen historical snapshot, so the same bytes
-         * get rebuilt from scratch on every click. The fingerprint below
-         * covers every value the blade actually reads — $generatedDate,
-         * $requestId, $signers and $party appear only in its docblock, never
-         * in its output, which is why a date does not belong in the key.
-         * Change the content, the approval signature, an org/party token, the
-         * header, the footer or the logo and the key changes with it, so a
-         * stale file can never be served. */
         $fingerprint = sha1(implode("\0", [
             $processedHtml,
             json_encode($headerConfig),
@@ -1739,17 +1285,12 @@ class CtcContractController extends Controller
         $fileName  = ($row->code ?: 'CTC') . '-v' . $v . '.pdf';
         $cacheDir  = 'ctc-version-pdf/' . $row->id;
         $cachePath = $cacheDir . '/v' . $v . '-' . $fingerprint . '.pdf';
-        // Private disk on purpose — these are executed legal documents and
-        // must stay behind the auth middleware, never under /storage.
         $disk = Storage::disk('local');
 
         if ($disk->exists($cachePath)) {
             return response()->download($disk->path($cachePath), $fileName, ['Content-Type' => 'application/pdf']);
         }
 
-        /* Same dompdf trap as the trade-doc renderer: a table cell left
-           outside its table aborts the whole render. The agreement editor
-           shows the orphan normally, so it only surfaces here. (QA #67) */
         $processedHtml = \App\Support\PdfHtml::repairTableMarkup($processedHtml);
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $row,
@@ -1767,10 +1308,6 @@ class CtcContractController extends Controller
 
         $bytes = $pdf->output();
 
-        /* Best-effort: a disk that is full or read-only must not turn a
-         * working download into a 500, so the write is never fatal. Older
-         * renders of THIS version are dropped first, which keeps the cache
-         * at one file per version instead of one per edit. */
         try {
             foreach ($disk->files($cacheDir) as $old) {
                 if (str_starts_with(basename($old), 'v' . $v . '-')) $disk->delete($old);
@@ -1787,16 +1324,6 @@ class CtcContractController extends Controller
         );
     }
 
-    /**
-     * POST /clm/ctc-contracts/preview-live
-     * Render the CURRENT (unsaved) editor HTML to an inline PDF for the draft
-     * editor's live-preview panel — same dompdf pipeline the download uses, so
-     * the preview shows exactly where dompdf breaks pages, the real footer band
-     * and the true A4 layout. Never applies the org signature (draft, not
-     * approved). Works with or without a saved contract id: when an id is
-     * given, party / org placeholders resolve to real data; otherwise every
-     * placeholder is blanked so the preview never leaks raw {{...}}.
-     */
     public function previewLive(Request $request)
     {
         @ini_set('memory_limit', '1024M');
@@ -1813,8 +1340,6 @@ class CtcContractController extends Controller
             'footer_config' => 'nullable|array',
         ]);
 
-        // Resolve the backing contract (for placeholder context) only within the
-        // caller's own tenant — never trust a client_id from the request.
         $row = null;
         if (!empty($data['id'])) {
             $row = CtcContract::where('client_id', $user->client_id)->find($data['id']);
@@ -1826,8 +1351,6 @@ class CtcContractController extends Controller
         }
         $processedHtml = $this->normaliseEditorHtml($html);
 
-        // Preview is a DRAFT view — the signature placeholder stays blank (the
-        // real stamp is only injected once the agreement is approved).
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', '', $processedHtml);
 
         if ($row) {
@@ -1836,19 +1359,13 @@ class CtcContractController extends Controller
             }
             $processedHtml = $this->resolvePartyTokens($processedHtml, $row);
         }
-        // Blank any placeholder still left so the preview shows nothing rather
-        // than raw {{...}} (unmapped party, unsaved contract, or a typo).
         $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $processedHtml);
 
-        // Header / footer / margins come from the editor's LIVE config when
-        // provided (so the preview tracks unsaved ruler + header/footer edits),
-        // falling back to whatever is saved on the row.
         $headerConfig = $data['header_config'] ?? (is_array($row->header_config ?? null) ? $row->header_config : []);
         $footerConfig = $data['footer_config'] ?? (is_array($row->footer_config ?? null) ? $row->footer_config : []);
         $pageConfig   = $data['page_config']   ?? (is_array($row->page_config   ?? null) ? $row->page_config   : []);
         $client = \App\Models\Client::find($user->client_id);
 
-        // Header logo — same candidate resolution as downloadVersion.
         $urlPath = (isset($headerConfig['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerConfig['logo_url'], $m)) ? $m[1] : null;
         $headerLogoBase64 = '';
         foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
@@ -1857,21 +1374,12 @@ class CtcContractController extends Controller
                     $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path));
                     break;
                 }
-            } catch (\Throwable $e) { /* try next candidate */
+            } catch (\Throwable $e) {
             }
         }
 
-        // A lightweight stand-in document when the contract isn't saved yet, so
-        // the blade's $document->title still resolves.
         $document = $row ?: new CtcContract(['title' => 'Agreement (draft preview)']);
 
-        /* Same render cache as the Trade Document preview — see the note there.
-         * dompdf is ~99% of this request (8 ms of HTML, 1.5 s of PDF on a 183k
-         * draft) and its options do not make it faster, so the saving has to
-         * come from not rendering the same document twice. The key covers every
-         * input the blade reads, including the date its footer stamps, so any
-         * change misses and re-renders. base64 because the cache store is a
-         * database text column and PDF bytes are not valid UTF-8. */
         $cacheKey = 'clm:ctcpreview:' . sha1(implode('|', [
             (int) $user->client_id,
             (string) ($row->code ?? 'DRAFT'),
@@ -1886,25 +1394,13 @@ class CtcContractController extends Controller
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="ctc-preview.pdf"',
         ];
-        /* Best-effort, both ways.
-         *
-         * A preview must never fail because the CACHE failed. On a server
-         * where the cache table has not been migrated, or Redis is down, or
-         * the store is set to 'array', these calls throw or no-op — and
-         * without the guard that would turn a working preview into a 500.
-         * Swallowed, the worst case is exactly the behaviour before this
-         * cache existed: render it. */
         try {
             if ($hit = \Illuminate\Support\Facades\Cache::get($cacheKey)) {
                 return response(base64_decode($hit), 200, $headers);
             }
         } catch (\Throwable $e) {
-            // fall through and render
         }
 
-        /* Same dompdf trap as the trade-doc renderer: a table cell left
-           outside its table aborts the whole render. The agreement editor
-           shows the orphan normally, so it only surfaces here. (QA #67) */
         $processedHtml = \App\Support\PdfHtml::repairTableMarkup($processedHtml);
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $document,
@@ -1921,27 +1417,17 @@ class CtcContractController extends Controller
             'headerLogoBase64' => $headerLogoBase64,
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
-        // Inline so the frontend can pull it as a blob and paint it with pdf.js.
         $bytes = $pdf->output();
-        /* Skip absurd blobs: the store here is a database text column, and a
-           multi-megabyte base64 row per preview is not worth the write. */
         if (strlen($bytes) <= 5 * 1024 * 1024) {
             try {
                 \Illuminate\Support\Facades\Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(10));
             } catch (\Throwable $e) {
-                // caching is an optimisation, never a requirement
             }
         }
 
         return response($bytes, 200, $headers);
     }
 
-    /**
-     * Render a version's processed HTML to an editable .docx via PhpWord.
-     * Data-URI images (e.g. the signature stamp) are stripped first because
-     * PhpWord's HTML reader chokes on them; the malformed-HTML fallback drops
-     * to plain paragraphs so a download is always produced.
-     */
     private function renderVersionDocx(string $html, string $title, string $baseName)
     {
         $phpWord = new \PhpOffice\PhpWord\PhpWord();
@@ -1949,18 +1435,12 @@ class CtcContractController extends Controller
         $section->addTitle(strip_tags($title), 1);
 
         $clean = preg_replace('/<img[^>]*src="data:[^"]*"[^>]*>/i', '', $html) ?? $html;
-        /* Self-close the void tags. PhpWord parses with loadXML, and one bare
-           <col> — which the editor writes for every table column — ends the
-           parse of the whole body, not just the table. (#57) */
         $clean = preg_replace(
             '#<(br|hr|col|input|area|base|embed|link|meta|param|source|track|wbr)\b([^>]*?)/?>#i',
             '<$1$2/>',
             $clean
         ) ?? $clean;
 
-        /* addHtml does not throw on a parse failure — it returns having added
-           nothing — so the count, not the catch, is what tells us the body
-           arrived. */
         $before = count($section->getElements());
         $added  = false;
         try {
