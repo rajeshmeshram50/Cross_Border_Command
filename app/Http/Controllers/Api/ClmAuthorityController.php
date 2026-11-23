@@ -12,7 +12,6 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-
 class ClmAuthorityController extends Controller
 {
     public function index(Request $request)
@@ -20,15 +19,9 @@ class ClmAuthorityController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Branch-scoped read: a branch admin sees its own rows + client-level
-        // (shared) rows; sibling branches stay hidden (CBC-431). Client
-        // admins/users see the whole client and may narrow via BranchSwitcher.
-        $q = ClmAuthority::query()->orderBy('id', 'desc');   // newest entry first
+        $q = ClmAuthority::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-        /* SEARCH moves to SQL alongside the paging. Once the client holds one
-           page, filtering there searches 10 rows out of 10,000 and reports
-           "2 results" for a term that matches 300. */
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
             $q->where(function ($w) use ($like) {
@@ -38,12 +31,6 @@ class ClmAuthorityController extends Controller
             });
         }
 
-        /* PICKER MODE (?view=options) — id/code/name/status only.
-           The KYC, DD, QC and Trade-License pages all pull this endpoint to
-           fill an authority dropdown. They need every option, so they cannot
-           page; but they do not need `description` (the bulk of the payload)
-           and they never read `in_use`. Skipping both turns a 3.8 MB picker
-           load into a few hundred KB and avoids the usage scans entirely. */
         if ($request->input('view') === 'options') {
             return response()->json([
                 'status' => true,
@@ -51,8 +38,6 @@ class ClmAuthorityController extends Controller
             ]);
         }
 
-        /* PAGINATION — opt-in via per_page, so every existing caller that wants
-           the whole list is unchanged. */
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -61,24 +46,7 @@ class ClmAuthorityController extends Controller
 
         $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
-        // Flag each authority that's referenced elsewhere. The frontend uses
-        // `in_use` to lock the DELETE action (deleting would orphan those
-        // references). Editing stays allowed — CLM masters reference by id and
-        // the legacy name-based tables are kept in sync by cascadeRename().
         if ($rows->isNotEmpty()) {
-            /* Cached for a minute, because building these three sets costs 33
-               queries — eight tables read in full, plus two Schema::hasTable /
-               hasColumn lookups each, and every one of those interrogates
-               information_schema across a 199-table schema. That is the bulk
-               of this endpoint, it is identical for three rows and for ten
-               thousand, and on a server where the database is a network hop
-               away each query is a round trip.
-               A minute of staleness is safe here: `in_use` only greys out the
-               delete button, and destroy() runs its own live check before it
-               deletes anything — so the worst case is a button enabled for up
-               to 60s longer than it should be, and a 409 if it is pressed.
-               Best-effort like the rest of the caching in this app: if the
-               cache store is unavailable the closure simply runs. */
             $usage = $this->cachedUsageSets((int) $user->client_id);
             $usedIds   = $usage['ids'];
             $usedNames = $usage['names'];
@@ -94,28 +62,12 @@ class ClmAuthorityController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-            // `count` stays the rows in hand (unchanged for existing callers);
-            // `total` is the whole filtered set, which is what a pager needs.
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
-            /* The Add modal's code preview. It used to be derived in the
-               browser from the full row set; with paging the browser only
-               holds ONE page, so on page 5 it would preview a code that was
-               taken long ago. Allocated here from the same branch-scoped walk
-               store() uses, so the preview and the eventual insert agree. */
             'next_code' => $this->nextCodePreview((int) $user->client_id, $user->branch_id ?: null),
         ]);
     }
 
-    /**
-     * Same sequence walk as nextCode(), minus the row lock.
-     *
-     * nextCode() takes a lockForUpdate on the client row because it is
-     * allocating a code that is about to be INSERTED under a unique index.
-     * This one only feeds a preview, so taking that lock on every list request
-     * would serialise reads behind unrelated writes for no benefit. The real
-     * allocation still happens in store(), under the lock.
-     */
     private function nextCodePreview(int $clientId, ?int $branchId): string
     {
         $query = ClmAuthority::where('client_id', $clientId);
@@ -147,12 +99,6 @@ class ClmAuthorityController extends Controller
             'status'      => ['nullable', Rule::in(ClmAuthority::STATUSES)],
         ]);
 
-        /* The NAME alone is the identity of an authority (QA #2). It used to be
-           unique only together with the description, so "FSSAI" could be added
-           a second time by typing a different description — and a list with two
-           FSSAI rows is a list nobody can use. Case-insensitive, and scoped to
-           what the caller can see: a sibling branch that cannot see this row may
-           still use the name, as with every other branch-isolated master. */
         $name = trim($data['name']);
         $dupe = ClmAuthority::query()->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
@@ -165,7 +111,7 @@ class ClmAuthorityController extends Controller
         $row = DB::transaction(function () use ($user, $data, $name) {
             return ClmAuthority::create([
                 'client_id'   => $user->client_id,
-                'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'   => $user->branch_id,
                 'code'        => $this->nextCode($user->client_id, $user->branch_id),
                 'name'        => $name,
                 'description' => trim($data['description']),
@@ -178,12 +124,6 @@ class ClmAuthorityController extends Controller
         return response()->json(['status' => true, 'data' => $row], 201);
     }
 
-    /**
-     * Bulk import from the Excel sheet. Each row is validated on its own — a
-     * bad row lands in `failed` with a reason and never blocks the good ones.
-     * Same rules as store(): name/description required, length caps, and no
-     * duplicate name (case-insensitive) in the caller's scope or in the file.
-     */
     public function import(Request $request)
     {
         $user = $request->user();
@@ -196,8 +136,6 @@ class ClmAuthorityController extends Controller
         $existing = ClmAuthority::query();
         MasterVisibility::applyReadScope($existing, $user, $user->branch_id ?: null);
         $seen = [];
-        // Keyed on the NAME alone, like the single add and the rename (QA #2):
-        // an import must not be the way in for a duplicate the form refuses.
         $key = fn($n) => mb_strtolower(trim((string) $n));
         foreach ($existing->get(['name']) as $e) $seen[$key($e->name)] = true;
 
@@ -228,10 +166,6 @@ class ClmAuthorityController extends Controller
 
         if ($valid) {
             try {
-                /* Bulk path: codes are allocated ONCE under the same client row
-                   lock nextCode() uses, then rows go in 500 at a time. Calling
-                   nextCode() per row re-reads every code each time — O(n²),
-                   which times out on a 10,000-row sheet. */
                 DB::transaction(function () use ($user, $valid, &$imported) {
                     DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
                     $q = ClmAuthority::where('client_id', $user->client_id);
@@ -305,8 +239,6 @@ class ClmAuthorityController extends Controller
         if (isset($data['name']))        $data['name']        = trim($data['name']);
         if (isset($data['description'])) $data['description'] = trim($data['description']);
 
-        // Reject rename to a duplicate within the caller's branch scope
-        // (case-insensitive, excluding self).
         if (isset($data['name'])) {
             $newName = trim((string) $data['name']);
             $clash = ClmAuthority::query()->where('id', '!=', $row->id)
@@ -325,9 +257,6 @@ class ClmAuthorityController extends Controller
 
         DB::transaction(function () use ($row, $data, $oldName) {
             $row->update($data);
-            // Authority is referenced by NAME downstream, so a rename must be
-            // mirrored everywhere it's used (KYC/DD/QC/Trade-Licence/vendor &
-            // customer docs) — otherwise those rows keep the stale old name.
             if (array_key_exists('name', $data) && $data['name'] !== $oldName) {
                 $this->cascadeRename((int) $row->client_id, $row->branch_id, $oldName, $data['name']);
             }
@@ -347,9 +276,6 @@ class ClmAuthorityController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Referenced by ID in the CLM document masters (kyc, dd, trade-license,
-        // qc), by NAME in the legacy vendor/customer tables, and by CODE inside
-        // the segment-rule `auths_json`. Shared with index()'s in_use flag.
         $usedIn = $this->authorityUsage((int) $user->client_id, (int) $row->id, $row->name, $row->code, $row->branch_id);
 
         if (!empty($usedIn)) {
@@ -365,11 +291,6 @@ class ClmAuthorityController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /**
-     * CLM document masters that reference an authority by ID (stored as a
-     * comma-joined list — a document can map to several authorities). Renames
-     * need no cascade here: the display name is resolved live from the id.
-     */
     private function idUsageTables(): array
     {
         return [
@@ -380,10 +301,6 @@ class ClmAuthorityController extends Controller
         ];
     }
 
-    /**
-     * Legacy tables that still reference an authority by NAME. These are kept in
-     * sync on rename via cascadeRename().
-     */
     private function nameUsageTables(): array
     {
         return [
@@ -393,19 +310,11 @@ class ClmAuthorityController extends Controller
         ];
     }
 
-    /** Bucket key for a branch id: null (client-level) → 'shared'. */
     private static function branchKey($branchId): string
     {
         return $branchId === null ? 'shared' : (string) (int) $branchId;
     }
 
-    /**
-     * Is `$key` referenced from the scope an authority with `$branchId` lives
-     * in? `$byBranch` is [branchKey => [key => true]].
-     *   · branch-owned authority → its own branch + client-level references;
-     *   · client-level authority → anywhere in the client (every branch can use it).
-     * Same rule as ChecksClmDocUsage, which the four document masters use.
-     */
     private static function usageHas(array $byBranch, $branchId, string $key): bool
     {
         if ($key === '') return false;
@@ -419,19 +328,10 @@ class ClmAuthorityController extends Controller
             || isset($byBranch['shared'][$key]);
     }
 
-    /**
-     * Human-readable list of places a single authority is referenced. Empty
-     * array => safe to delete. Checks id-based CLM masters, name-based legacy
-     * tables, and the code-based segment-rule JSON. Used by destroy().
-     *
-     * Names and codes are matched within the authority's own branch scope —
-     * see usageHas() — so the delete guard agrees with the list's in_use flag.
-     */
     private function authorityUsage(int $clientId, int $id, string $name, ?string $code, ?int $branchId): array
     {
         $usedIn = [];
 
-        // id-based CLM masters — token-match the id within the comma-joined col.
         foreach ($this->idUsageTables() as $t) {
             if (!$this->schemaHas($t["table"], $t["col"])) continue;
             $q = DB::table($t['table'])->where($t['col'], 'like', '%' . $id . '%');
@@ -440,39 +340,23 @@ class ClmAuthorityController extends Controller
             if ($hit) $usedIn[] = $t['label'];
         }
 
-        // name-based legacy tables — exact name match, scoped to the tenant and
-        // branch through each row's supplier / customer.
         foreach ($this->nameUsageTables() as $t) {
             if (!$this->legacyScopable($t)) continue;
             $q = DB::table($t['table'] . ' as d')
                 ->join($t['owner'] . ' as o', 'o.id', '=', 'd.' . $t['fk'])
                 ->where('o.client_id', $clientId)
                 ->where('d.' . $t['col'], $name);
-            // Own branch, or a client-level owner every branch shares.
             if ($branchId !== null) {
                 $q->where(fn ($w) => $w->where('o.branch_id', $branchId)->orWhereNull('o.branch_id'));
             }
             if ($q->exists()) $usedIn[] = $t['label'];
         }
 
-        // Segment Rules stores the CODE inside a JSON array — substring match
-        // keeps the check portable across MySQL / Postgres / SQLite.
-        /* Same check the list uses for its `in_use` flag — deliberately the
-           same method, because these two answered the same question in two
-           ways and disagreed: the list said an authority was free while this
-           refused to delete it.
-           Also now scoped to the TENANT. The old `LIKE` ran across every
-           client's rules, and an authority CODE is only unique per
-           (client, branch) — so another branch's AUTH-003 could block this
-           one's deletion. */
         if ($code && $this->schemaHas('clm_segment_rules', 'auths_json')) {
             $rules = DB::table('clm_segment_rules');
             if ($this->schemaHas('clm_segment_rules', 'client_id')) {
                 $rules->where('client_id', $clientId);
             }
-            // …and to the BRANCH: every branch restarts at AUTH-001, so a
-            // sibling branch's rule naming its own AUTH-003 says nothing
-            // about this one.
             if ($branchId !== null && $this->schemaHas('clm_segment_rules', 'branch_id')) {
                 $rules->where(fn($w) => $w->where('branch_id', $branchId)->orWhereNull('branch_id'));
             }
@@ -487,30 +371,10 @@ class ClmAuthorityController extends Controller
         return $usedIn;
     }
 
-    /**
-     * Propagate an authority rename to the legacy NAME-based tables, scoped to
-     * the tenant AND the authority's branch. The CLM document masters store the
-     * id, so they need no update.
-     *
-     * Authorities are branch-owned and names repeat across branches — Branch 6
-     * and Branch 8 can each have their own "QCI". Matching on client + name
-     * alone meant renaming Branch 8's QCI also rewrote Branch 6's supplier and
-     * customer documents, whose "QCI" is Branch 6's own authority. The legacy
-     * rows carry no branch_id, so the branch is read from the supplier /
-     * customer each row belongs to:
-     *   · branch authority → only rows whose owner is in that same branch;
-     *   · client-level authority → rows across the client, EXCEPT owners in a
-     *     branch that has its own authority by the old name — those rows name
-     *     their branch's authority, not the shared one.
-     * A table whose owner link cannot be resolved is left untouched rather than
-     * renamed client-wide: a missed rename leaves a stale label, a wrong one
-     * silently edits another branch's records.
-     */
     private function cascadeRename(int $clientId, ?int $branchId, string $oldName, string $newName): void
     {
         if ($oldName === $newName) return;
 
-        // Branches holding their own authority under the old name (shared renames only).
         $ownNameBranches = $branchId === null
             ? ClmAuthority::query()
                 ->where('client_id', $clientId)
@@ -522,10 +386,6 @@ class ClmAuthorityController extends Controller
         foreach ($this->nameUsageTables() as $t) {
             if (!$this->legacyScopable($t)) continue;
 
-            /* The owners whose rows this rename may touch. The tenant comes from
-               the owner too: these tables have no client_id, so the old
-               `if (has client_id) where client_id` guard never applied and a
-               rename rewrote the matching rows of EVERY client. */
             $owners = function ($s) use ($t, $clientId, $branchId, $ownNameBranches) {
                 $s->select('id')->from($t['owner'])->where('client_id', $clientId);
                 if ($branchId !== null) {
@@ -542,9 +402,6 @@ class ClmAuthorityController extends Controller
         }
     }
 
-    /** Can this legacy name table be scoped through its owner? It needs the
-     *  owner link and the owner's client_id + branch_id — the table itself has
-     *  neither. When it can't, callers skip it rather than query every tenant. */
     private function legacyScopable(array $t): bool
     {
         return $this->schemaHas($t['table'], $t['col'])
@@ -553,20 +410,6 @@ class ClmAuthorityController extends Controller
             && $this->schemaHas($t['owner'], 'branch_id');
     }
 
-    /** Set of authority IDS referenced by the CLM document masters (for in_use). */
-    /**
-     * The three usage sets, cached together for 60 seconds.
-     *
-     * Cached as one entry rather than three so a partial hit is impossible —
-     * the `in_use` flag is derived from all three, and mixing a fresh set with
-     * two stale ones would be harder to reason about than a whole minute of
-     * consistent staleness.
-     *
-     * Keyed by tenant. Not invalidated on write: the flag is advisory, the
-     * delete path re-checks, and an explicit invalidation would have to fire
-     * from four other controllers (KYC / DD / TL / QC) plus the segment-rule
-     * screen — more coupling than a 60s window is worth.
-     */
     private function cachedUsageSets(int $clientId): array
     {
         $build = fn() => [
@@ -576,37 +419,16 @@ class ClmAuthorityController extends Controller
         ];
 
         try {
-            // :v2 — names / codes are now grouped by branch; a v1 entry (flat
-            // sets) still inside its 60s window must not be read back.
             return \Illuminate\Support\Facades\Cache::remember(
                 'clm:auth:usage:v2:' . $clientId,
                 now()->addSeconds(60),
                 $build
             );
         } catch (\Throwable $e) {
-            // A preview must never fail because the CACHE failed — same rule
-            // the CTC preview cache follows.
             return $build();
         }
     }
 
-    /**
-     * Does `$table` exist AND have `$column`? Answered from ONE query.
-     *
-     * These checks are defensive — the referencing tables come from this app's
-     * own migrations, but a half-migrated environment should degrade rather
-     * than fatal. The cost, though, was absurd: every Schema::hasTable /
-     * hasColumn call is its own round trip to information_schema, this
-     * controller makes fifteen of them, and the schema has 199 tables. That is
-     * 24 queries per list request spent asking Postgres whether the app's own
-     * tables exist.
-     *
-     * One query now fetches every (table, column) pair that matters and the
-     * answers are served from memory for the rest of the request. Static, not
-     * cached, deliberately: it must never be stale across a deployment, and a
-     * single query per request is already cheap enough that caching it would
-     * add a failure mode for no gain.
-     */
     private function schemaHas(string $table, string $column): bool
     {
         static $map = null;
@@ -629,9 +451,6 @@ class ClmAuthorityController extends Controller
                     $map[$r->table_name . '.' . $r->column_name] = true;
                 }
             } catch (\Throwable $e) {
-                // Fall back to the per-call behaviour rather than wrongly
-                // reporting that nothing exists, which would silently blank
-                // every in_use flag.
                 $map = false;
             }
         }
@@ -659,8 +478,6 @@ class ClmAuthorityController extends Controller
         return $used;
     }
 
-    /** Lowercased authority NAMES used by the legacy tables, grouped by the
-     *  branch of the supplier / customer that owns each row (for in_use). */
     private function usedNameSet(?int $clientId): array
     {
         $used = [];
@@ -679,8 +496,6 @@ class ClmAuthorityController extends Controller
         return $used;
     }
 
-    /** Authority CODES referenced by segment rules, grouped by the rule's
-     *  branch (for index's in_use flag). */
     private function usedCodeSet(?int $clientId): array
     {
         $used = [];
@@ -699,21 +514,6 @@ class ClmAuthorityController extends Controller
         return $used;
     }
 
-    /**
-     * Every authority CODE referenced inside a segment rule's `auths_json`.
-     *
-     * Walks the structure instead of assuming a flat list. The previous version
-     * did `foreach ($arr as $c) $used[(string) $c] = true;`, which is only
-     * correct while the column holds `["AUTH-002","AUTH-012"]`. Give it a
-     * nested shape and every `$c` is an array, `(string) $c` becomes the
-     * literal "Array", and NOT ONE real code is collected — so the list
-     * reported `in_use: false` for authorities that were genuinely referenced,
-     * and the delete then refused with "in use by Segment Rules".
-     *
-     * That is the bug this fixes, and it is also why both the list flag and
-     * the delete guard now call THIS method: two checks answering the same
-     * question in two different ways is how they came to disagree.
-     */
     private static function codesInAuthsJson($json): array
     {
         $arr = is_array($json) ? $json : (json_decode((string) $json, true) ?: []);
@@ -721,9 +521,6 @@ class ClmAuthorityController extends Controller
 
         $out = [];
         array_walk_recursive($arr, function ($v, $k) use (&$out) {
-            // Codes appear as values in a flat list (["AUTH-002", ...]) and as
-            // KEYS in a map shape ({"AUTH-002": "M", ...}), so collect both and
-            // keep only what looks like a code.
             foreach ([$v, $k] as $candidate) {
                 if (is_string($candidate) && preg_match('/^AUTH-\d+$/', $candidate)) {
                     $out[$candidate] = true;
@@ -736,12 +533,6 @@ class ClmAuthorityController extends Controller
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        // Walk past max + any taken codes — count(+1) breaks when the
-        // sequence has gaps (e.g. after deletes). Branch-scoped so each
-        // branch restarts from AUTH-001 rather than continuing another
-        // branch's tally (the authority master is branch-isolated via
-        // MasterVisibility); a client-level creator ($branchId null)
-        // sequences the shared rows.
         $query = ClmAuthority::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();
