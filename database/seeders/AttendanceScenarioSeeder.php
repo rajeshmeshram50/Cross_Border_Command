@@ -6,28 +6,12 @@ use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Attendance test data for the payroll flow — client 1 / branch 3.
- *
- * Fills 1 Jul → 3 Aug 2026 (Mon–Sat; Sunday = Weekly Off) for the eligible
- * employees, with a spread of scenarios so a payroll run reflects them:
- *   - Full day (Present, 09:00→18:00 IST + punches)
- *   - Overtime logout (late check-out + approved payroll_adjustments OT row)
- *   - Half day (status Half Day → 0.5 present)
- *   - Leave (status Leave + approved PAID leave_requests row)
- *   - Early logout (Present, out 16:00 — informational, no payroll hit)
- *   - Absent (LOP) and Late (3 lates → late-mark LOP)
- *
- * Times are stored UTC (IST − 5:30). Idempotent: clears the window first.
- * Run:  php artisan db:seed --class=AttendanceScenarioSeeder
- */
 class AttendanceScenarioSeeder extends Seeder
 {
     private int $clientId = 1;
     private int $branchId = 3;
     private string $start = '2026-07-01';
     private string $end   = '2026-09-30';
-    /** Months (of $start's year) the seeder covers — used for OT + cleanup. */
     private array $months = [7, 8, 9];
 
     public function run(): void
@@ -46,7 +30,6 @@ class AttendanceScenarioSeeder extends Seeder
             return;
         }
 
-        // Scenario assignment by emp_code (fallback = full day).
         $scenario = [
             'EMP-014' => 'overtime',
             'EMP-019' => 'overtime',
@@ -59,7 +42,6 @@ class AttendanceScenarioSeeder extends Seeder
 
         $empIds = $emps->pluck('id')->all();
 
-        // ── Idempotent cleanup for the window ────────────────────────────
         $dayIds = DB::table('attendances')
             ->whereIn('employee_id', $empIds)
             ->whereBetween('attendance_date', [$this->start, $this->end])
@@ -80,7 +62,6 @@ class AttendanceScenarioSeeder extends Seeder
             ->whereIn('month', $this->months)
             ->delete();
 
-        // ── Overtime rate master (needed for the OT multiplier) ──────────
         if (!DB::table('master_overtime_rates')->where('rate_name', 'Hourly Pay')->exists()) {
             DB::table('master_overtime_rates')->insert([
                 'client_id'  => $this->clientId,
@@ -93,7 +74,6 @@ class AttendanceScenarioSeeder extends Seeder
             ]);
         }
 
-        // Working days grouped by month (Mon–Sat); Sundays = Weekly Off.
         $allDays = [];
         $workingByMonth = [];
         for ($d = Carbon::parse($this->start); $d->lte(Carbon::parse($this->end)); $d->addDay()) {
@@ -109,7 +89,6 @@ class AttendanceScenarioSeeder extends Seeder
 
         foreach ($emps as $emp) {
             $mode = $scenario[$emp->emp_code] ?? 'full';
-            // Special dates PER MONTH so every month carries the scenario variety.
             $leaveDates = $halfDates = $earlyDates = $absentDates = $lateDates = $otDates = [];
             $leaveBlocks = [];
             foreach ($workingByMonth as $wd) {
@@ -129,7 +108,6 @@ class AttendanceScenarioSeeder extends Seeder
                     continue;
                 }
 
-                // Defaults — full present day.
                 $status = 'Present';
                 $inT = '09:00'; $outT = '18:00';
 
@@ -152,7 +130,6 @@ class AttendanceScenarioSeeder extends Seeder
                 $attId = $this->insertDayReturnId($emp, $date, $status, $ci, $co);
                 $attCount++;
 
-                // Punches for worked days.
                 if ($ci) {
                     DB::table('attendance_punches')->insert([
                         'attendance_id' => $attId, 'employee_id' => $emp->id,
@@ -171,13 +148,12 @@ class AttendanceScenarioSeeder extends Seeder
                 }
             }
 
-            // Approved PAID leave request per month for the leave employee.
             if ($mode === 'leave') {
                 foreach ($leaveBlocks as $block) {
                     if (empty($block)) continue;
                     DB::table('leave_requests')->insert([
                         'client_id' => $this->clientId, 'branch_id' => $this->branchId,
-                        'employee_id' => $emp->id, 'leave_type_id' => 2, // Casual Leave (Paid)
+                        'employee_id' => $emp->id, 'leave_type_id' => 2,
                         'from_date' => $block[0], 'to_date' => end($block),
                         'days' => count($block), 'day_type' => 'full',
                         'reason' => 'Seeded paid leave', 'status' => 'Approved',
@@ -187,7 +163,6 @@ class AttendanceScenarioSeeder extends Seeder
                 }
             }
 
-            // Approved overtime adjustment for every covered month so it pays.
             if ($mode === 'overtime') {
                 foreach ($this->months as $mo) {
                     DB::table('payroll_adjustments')->insert([
