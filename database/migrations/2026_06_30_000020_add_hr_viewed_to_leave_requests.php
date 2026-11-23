@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Track that a view-only HR user has SEEN a leave request. Leave approval is
- * reporting-manager-only, so HR never acts on the chain — but the UI shows an
- * "HR" node that should turn green once HR has reviewed the request. These
- * columns record the first such view (idempotent — set once, never overwritten).
- */
 return new class extends Migration {
     public function up(): void
     {
