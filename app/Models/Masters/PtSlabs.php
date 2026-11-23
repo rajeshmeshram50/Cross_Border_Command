@@ -8,13 +8,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Rule 9 — one Professional Tax band for a state.
- *
- * Rows seeded with a NULL client_id are the statutory tables every tenant
- * inherits; a tenant that needs to override one adds its own row for the same
- * state and PayrollService prefers it (see resolveProfessionalTaxSlab()).
- */
 class PtSlabs extends Model
 {
     protected $table = 'master_pt_slabs';
