@@ -4,7 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-// One segment per name + regulatory status per client/branch; "Sugar" may exist once as Less and once as Highly.
 return new class extends Migration {
     public function up(): void
     {
