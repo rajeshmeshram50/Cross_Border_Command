@@ -5,10 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
-/**
- * An enrolled sticker-scanning handheld. The plaintext credential exists only
- * on the device; this row keeps its hash. See the create_scan_devices migration.
- */
 class ScanDevice extends Model
 {
     protected $fillable = [
@@ -23,13 +19,6 @@ class ScanDevice extends Model
         'enrolled_at'  => 'datetime',
     ];
 
-    /**
-     * Who a scan by this device is authored by.
-     *
-     * The floor does not log in per carton, so the person who logged in to
-     * enroll the handheld owns everything it confirms. Falls back to the admin
-     * who added the row, for devices enrolled before that was recorded.
-     */
     public function actorId(): ?int
     {
         return $this->enrolled_by ?: $this->created_by;
@@ -40,7 +29,6 @@ class ScanDevice extends Model
         return $this->status === 'active';
     }
 
-    /** Fresh credential: plaintext for the device, hash for the row. */
     public static function issueToken(): array
     {
         $plain = 'CBCD-' . Str::upper(Str::random(40));
@@ -55,7 +43,6 @@ class ScanDevice extends Model
         return static::where('token_hash', hash('sha256', trim($plain)))->first();
     }
 
-    /** Shape the SPA consumes (`branch` is the free-text location). */
     public function toClient(): array
     {
         return [
