@@ -1528,7 +1528,7 @@ export default function Order() {
 
         {list.loading || list.replacing ? (
           <OrderListSkeleton phone={isPhone} rows={fitSize || DEFAULT_PAGE_SIZE} />
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && isPhone ? (
           <div className="ord-empty">
             {search.trim()
               ? 'No purchase orders match your search.'
@@ -1558,7 +1558,7 @@ export default function Order() {
         ) : (
 
         <div className="ord-table-scroll" ref={scrollRef} onScroll={onTableScroll}>
-          <table className="ord-table" style={{ width: TABLE_WIDTH }}>
+          <table className={`ord-table${rows.length === 0 ? ' ord-table--empty' : ''}`} style={{ width: TABLE_WIDTH }}>
 
             <colgroup>
               {ORDER_COLUMNS.map((col) => (
@@ -1575,6 +1575,23 @@ export default function Order() {
                 ))}
               </tr>
             </thead>
+
+            {rows.length === 0 && (
+              <tbody>
+                <tr className="ord-emptyrow">
+                  <td colSpan={ORDER_COLUMNS.length}>
+                    <div className="ord-emptybox">
+                      <b>{search.trim() ? 'No matching purchase orders' : 'No entries yet'}</b>
+                      <span>
+                        {search.trim()
+                          ? `Nothing here matches “${search.trim()}”. Try a different PO number, supplier, ID or status.`
+                          : 'No purchase orders in this category yet. Create one to see it here.'}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            )}
 
             {rows.map((row, poIndex) => (
               <OrderRowBody
@@ -1596,7 +1613,7 @@ export default function Order() {
         </div>
         )}
 
-        {rows.length > 0 && !isPhone && (
+        {!isPhone && (
           <WorklistPager
             className="wl-teal"
             total={total}

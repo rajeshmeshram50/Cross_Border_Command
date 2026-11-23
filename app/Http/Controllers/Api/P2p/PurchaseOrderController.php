@@ -1349,7 +1349,7 @@ class PurchaseOrderController extends Controller
             'currency_code'       => $po->currency_code,
             'vendor_id'           => $po->vendor_id,
             'supplier_code'       => $po->vendor?->vendor_code,
-            'supplier_name'       => $po->vendor ? ($po->vendor->legal_name ?: $po->vendor->company_name) : null,
+            'supplier_name'       => $po->vendor ? ($po->vendor->company_name ?: $po->vendor->legal_name) : null,
             'link_type'           => $po->link_type,
             'shipment_order_id'   => $po->shipment_order_id,
             'link_procurement'    => $po->link_procurement,

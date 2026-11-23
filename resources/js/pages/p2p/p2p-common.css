@@ -1,11 +1,3 @@
-/* ─────────────────────────────────────────────────────────────────────────
- * P2P shared page styles — the pieces every P2P list page has:
- * header strip, "What We Are Doing Here" guide, tabs, search, list card
- * and the choice modal (spi-mdl-*).
- *
- * Moved here from p2p-detail.css so SPI, Debit Note and
- * Order share one copy. Class names are unchanged.
- * ───────────────────────────────────────────────────────────────────────── */
 
 .spi-root,
 .spi-mdl-backdrop {
@@ -15,21 +7,12 @@
 }
 
 .spi-root {
-  /* No top pull. This was -6px, which cancelled most of .page-content's 8px
-     padding and left every P2P page with a 2px gap under the menu against 8px
-     down its sides — the strip read as pasted to the menu and floating away
-     from the edges. app.css removed the same -6px from .frm-cstrip for exactly
-     this reason; 8px on all four sides is the one number. */
   margin: 0;
   display: flex;
   flex-direction: column;
-  /* 8px, the app's block rhythm. The Order page already overrode the old 6px
-     to 8 in .ord-page; this makes every P2P page agree instead of one of them
-     correcting the shared default. */
   gap: 8px;
 }
 
-/* ── Header banner ─────────────────────────────────────────────────────── */
 .spi-head {
   position: relative;
   overflow: hidden;
@@ -161,7 +144,6 @@
   pointer-events: none;
 }
 
-/* ── What We Are Doing Here (collapsible) ──────────────────────────────── */
 .spi-bref {
   position: relative;
   border: 1px solid #9ce1ee;
@@ -399,7 +381,6 @@
   line-height: 1.4;
 }
 
-/* ── Card / segment tabs / toolbar ─────────────────────────────────────── */
 .spi-card {
   display: flex;
   flex-direction: column;
@@ -414,10 +395,6 @@
   flex: 1 1 auto;
 }
 
-/* grow so the pager is pushed to the card bottom */
-
-/* Big segment pills (With PO / Without PO) */
-/* Pill-group container (Figma .polist-seg) */
 .spi-seg {
   display: flex;
   width: fit-content;
@@ -431,7 +408,6 @@
   border-radius: 14px;
 }
 
-/* Tabs row that can also hold the search (Direct SPI tab) so it sits in line, not below. */
 .spi-segrow {
   display: flex;
   align-items: center;
@@ -453,7 +429,6 @@
   margin-bottom: 0;
 }
 
-/* Direct-SPI tab: search lives on this row, so add breathing room before the table. */
 .spi-segrow--search {
   margin-bottom: 12px;
   padding-bottom: 12px;
@@ -514,7 +489,6 @@
   color: #fff;
 }
 
-/* Sub tabs (With / Without Shipment) + search on same row */
 .spi-sub {
   display: flex;
   align-items: flex-end;
@@ -524,14 +498,12 @@
   flex-wrap: wrap;
 }
 
-/* One continuous gray baseline under BOTH tabs; active segment shows the gradient bar. */
 .spi-subtabs {
   display: flex;
   gap: 14px;
   border-bottom: 1.5px solid #e3f1f5;
 }
 
-/* Underline-style tabs (match Figma): active = dark text + bold gradient underline bar. */
 .spi-subtab {
   position: relative;
   display: inline-flex;
@@ -574,7 +546,6 @@
   opacity: 1;
 }
 
-/* Icon carries its own color: muted grey when idle, teal when active/hovered. */
 .spi-subtab svg {
   color: #94a3b8;
   transition: color .14s;
@@ -653,7 +624,6 @@
   font-weight: 500;
 }
 
-/* ── Mobile / narrow-screen responsive ─────────────────────────────────── */
 @media (max-width: 768px) {
   .spi-head {
     flex-direction: column;
@@ -703,7 +673,6 @@
     min-width: 0;
   }
 
-  /* Natural (scrolling) layout on mobile — the card must not be force-stretched. */
   .spi-card {
     min-height: 0 !important;
   }
@@ -729,7 +698,6 @@
   background: linear-gradient(180deg, #0c1c24, #0a1720);
 }
 
-/* Dark-mode premium top banner + WDH strip (light mode untouched) */
 [data-bs-theme="dark"] .spi-head {
   border-color: rgba(34, 211, 238, .22);
   background: linear-gradient(110deg, #0c2630 0%, #0e2e3a 40%, #103642 70%, #0c2c38 100%);
@@ -851,7 +819,6 @@
   color: #7dd3fc;
 }
 
-/* ── Map SPI modal ─────────────────────────────────────────────────────── */
 .spi-mdl-backdrop {
   position: fixed;
   inset: 0;
@@ -862,57 +829,22 @@
   padding: 16px;
   background: rgba(8, 47, 73, .45);
   backdrop-filter: blur(4px);
-  /* A centred flex child taller than its container overflows BOTH ends, and
-     a fixed backdrop cannot be scrolled — so the top of such a dialog is
-     unreachable and the bottom is simply cut off by the window. Letting the
-     backdrop scroll is the floor under every dialog that outgrows the
-     viewport; with the max-height below it should never be needed, but a
-     dialog whose own content refuses to shrink would otherwise be lost. */
   overflow-y: auto;
 }
 
 .spi-mdl {
   width: min(560px, 100%);
-  /* calc, not 92vh. The backdrop pads 16px on each side, so 92vh + 32px of
-     padding is taller than the window once the window is under ~400px —
-     which is an ordinary laptop with DevTools open, and exactly where the
-     type chooser was being clipped at both ends. This is the tallest the
-     dialog can be and still sit inside that padding, at any height. */
   max-height: calc(100vh - 32px);
-  /* With `align-items: center`, overflow is split above and below and the
-     part above cannot be scrolled back to. `margin: auto` centres the same
-     way but keeps the overflow reachable. */
   margin: auto;
   overflow-y: auto;
   background: #fff;
   border-radius: 20px;
-  /* thin white edge (Figma) + soft drop shadow */
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9), 0 24px 60px rgba(8, 47, 73, .32);
   animation: spi-mdl-in .2s ease-out both;
 }
 
-/* ── Wide variant ─────────────────────────────────────────────────────────────
-   For choosers whose option cards carry a description line under the title.
-   The design's "Map Supplier Purchase Invoice" popup is 780px; at the shared
-   560px its card text wraps onto a third line and the dialog stops matching.
-
-   It sits AFTER the base rule on purpose: both selectors are specificity
-   (0,1,0), so if this came first the base width would simply win.
-
-   Three declarations, because that is genuinely all that differs — the base
-   already has the right padding, gap and type size. Scoped to the modifier, so
-   every existing dialog is untouched. Same approach .ord-cpo takes for the
-   Create PO popup, one level up.
-   ──────────────────────────────────────────────────────────────────────────── */
-/* 760. The design's base dialog says 740, but this one is widened past it by
-   a rule of its own — and the 20px matter: at 740 the card is 341 wide and
-   "Direct SPI · WITHOUT PURCHASE ORDER" no longer fits on one line, which is
-   where the badge was dropping below the title. */
 .spi-mdl--wide {
   width: min(760px, calc(100vw - 32px));
-  /* The design's rim: a 1px cyan edge plus a matching ring, over a deeper
-     drop. The base dialog ships a plain white hairline, which disappears
-     against the page behind it. Measured off the prototype. */
   border: 1px solid #a5f3fc;
   box-shadow: 0 30px 80px rgba(8, 47, 73, .5), 0 0 0 1px rgba(165, 243, 252, .6);
 }
@@ -923,15 +855,10 @@
 
 .spi-mdl--wide .spi-mdl-card {
   border-radius: 16px;
-  /* Both needed by the accent strip below: `relative` to position it, and
-     `hidden` so a square 4px bar is clipped to the card's 16px corners. */
   position: relative;
   overflow: hidden;
 }
 
-/* The selected card's left edge. It is always present and always transparent,
-   so selecting a card fades the colour in rather than inserting an element and
-   shifting the text by 4px. */
 .spi-mdl--wide .spi-mdl-card::before {
   content: '';
   position: absolute;
@@ -951,11 +878,6 @@
   background: linear-gradient(180deg, #fbbf24, #d97706);
 }
 
-/* The chosen option's icon tile turns SOLID — a white glyph on the filled
-   colour — instead of staying the pale resting tint. It is the strongest
-   signal on the card that this is the selected path, and without it the two
-   cards read as equally weighted even when one is chosen.
-   The transition is on the base tile so it fades both ways, not just on. */
 .spi-mdl--wide .spi-mdl-card-ico {
   transition: background .18s, color .18s, box-shadow .18s;
 }
@@ -972,15 +894,11 @@
   box-shadow: 0 8px 18px -3px rgba(217, 119, 6, .55), inset 0 1px 0 rgba(255, 255, 255, .4);
 }
 
-/* 800, as the design sets the option titles. */
 .spi-mdl--wide .spi-mdl-card-title {
   font-weight: 800;
   letter-spacing: -.2px;
 }
 
-/* ── Footer ───────────────────────────────────────────────────────────────────
-   Measured off the prototype: both buttons 40px on a 13px radius at 800, and
-   the audit pill a quieter outlined chip than the shared one. */
 .spi-mdl--wide .spi-mdl-confirm,
 .spi-mdl--wide .spi-mdl-cancel {
   height: 40px;
@@ -1005,9 +923,6 @@
   color: #8aa0af;
 }
 
-/* The validation hint. Confirm is dead until a type is chosen — the design
-   disables it exactly there and nowhere else — and live from then on, so a
-   missing PO is explained here rather than left to a grey button. */
 .spi-mdl--wide .spi-mdl-err {
   display: flex;
   align-items: center;
@@ -1025,7 +940,6 @@
 .spi-mdl--wide .spi-mdl-err svg {
   flex-shrink: 0;
 }
-
 
 @keyframes spi-mdl-in {
   from {
@@ -1102,18 +1016,10 @@
   background: rgba(255, 255, 255, .32);
 }
 
-/* 9px at the top. 18 pushed the cards down for nothing — the header above is
-   a solid colour band and already separates itself — but 4 went too far the
-   other way and left the label sitting on the band. Measured off the design:
-   10px of clear space between the band and the label's first row, which 9
-   plus the label's own half-leading gives. */
 .spi-mdl-body {
   padding: 9px 18px 10px;
 }
 
-/* The label is one short line that names what follows, so it sits close to
-   it: no space above at all, 8 below. 6/12 put nearly its own height again
-   around it. */
 .spi-mdl-seclabel {
   font-size: 9.5px;
   font-weight: 800;
@@ -1296,7 +1202,6 @@
   text-decoration: underline;
 }
 
-/* Custom dropdown (matches the PO wizard's .pof-dd — styled trigger + portalled panel). */
 .spi-mdl-dd {
   width: 100%;
   height: 44px;
@@ -1404,7 +1309,6 @@
   white-space: nowrap;
 }
 
-/* Shipment batch badge in front of each PO option */
 .spi-mdl-shipbadge {
   flex-shrink: 0;
   display: inline-flex;
@@ -1553,9 +1457,6 @@
   color: #d97706;
 }
 
-/* 8px above and below the buttons, measured off the design. 14 put half a
-   button's height of air around a 43px control and was most of why the
-   dialog sat ~27px taller than it should. */
 .spi-mdl-foot {
   display: flex;
   align-items: center;
@@ -1630,9 +1531,6 @@
   box-shadow: none;
 }
 
-/* Working, not unavailable: the button is disabled while it hands off, but it
-   keeps its colour, because faded-and-spinning reads as broken. currentColor,
-   so the mark needs no palette of its own. */
 @keyframes spiMdlSpin {
   to {
     transform: rotate(360deg);
@@ -1657,16 +1555,9 @@
 
 [data-bs-theme="dark"] .spi-mdl {
   background: #0e1b24;
-  /* The light shell draws its edge as a 1.5px ring of rgba(255,255,255,.9) --
-     a hairline against a white page, a white outline around a dark dialog.
-     Same ring, in the cyan the rest of the dark chrome edges with. */
   box-shadow: 0 0 0 1.5px rgba(34, 211, 238, .22), 0 24px 60px rgba(0, 0, 0, .6);
 }
 
-/* The header band runs to #22d3ee, which on a white page is a title bar and on
-   a dark one is the brightest thing on screen -- and it sits above a #0e1b24
-   body, so the jump is the full range of the palette in one edge. Pulled to
-   the range the active step card uses in dark mode. */
 [data-bs-theme="dark"] .spi-mdl-head {
   background: linear-gradient(110deg, #0a3b49, #0c5265 38%, #0e6b84 70%, #0891b2);
 }
@@ -1766,9 +1657,6 @@
   border: 1px solid rgba(245, 158, 11, .3);
 }
 
-/* "Add attachment" menu — upload a file or take the photo here. Shared by the
-   refund screens and Add New Payment, and portalled to the body, so it lives
-   here rather than in one page's stylesheet. */
 .arf-att {
   position: fixed;
   z-index: 3200;
@@ -1810,10 +1698,6 @@
   background: #f1f9fc;
 }
 
-/* The design's .p2pcap-opt__t / __s. Only the sizes matched: the title sat a
-   shade darker than #0c4a6e, the sub-line ran a point large at 10.5px with
-   whatever weight it inherited, and neither had its leading set, so the two
-   lines sat further apart than the design has them. */
 .arf-att__opt b {
   display: block;
   font-size: 12.5px;
@@ -1831,9 +1715,6 @@
   line-height: 1.3;
 }
 
-/* The design stacks the two lines with a 3px gap (.p2pcap-opt__txt); ours
-   relied on the blocks sitting flush, which with the leading set above left
-   them tighter than the design has them. */
 .arf-att__opt>span:not(.arf-att__ico) {
   display: flex;
   flex-direction: column;
@@ -1858,8 +1739,6 @@
   height: 16px;
 }
 
-/* Stays violet on purpose — the design uses it to tell "Take photo" apart
-   from "Upload file" at a glance — but on the design's stops, not ours. */
 .arf-att__ico--cam {
   background: linear-gradient(135deg, #7c3aed, #a855f7);
 }
@@ -1881,8 +1760,6 @@
   border-top-color: #1f2d42;
 }
 
-/* A choice that is not built yet: greyed and inert, but still on screen so
-   the option is known to be coming. */
 .spi-mdl-card.is-disabled {
   cursor: not-allowed;
   background: #f7fafc;
@@ -1932,14 +1809,6 @@
   border-color: rgba(255, 255, 255, .1);
 }
 
-/* ── SPI type chooser — the two types, side by side ──────────────────────────
- * A choice between peers: both get the same three columns (mark, body, tick),
- * both say what they are and then what they get you. Stacked full-width, the
- * second type read as a footnote to the first rather than its equal.
- * Values are the prototype's.
- * ───────────────────────────────────────────────────────────────────────────*/
-/* 14px between the cards, 8px if they ever stack. Measured off the design:
-   the pair sits 14 apart, not the 12 the base grid used. */
 .spich-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1948,9 +1817,6 @@
   align-items: stretch;
 }
 
-/* The 12 below belongs between the cards and the panel that opens under
-   them. With nothing open it stacked on the body's own bottom padding and
-   doubled the gap to the footer rule. */
 .spich-grid:last-child {
   margin-bottom: 0;
 }
@@ -1987,15 +1853,11 @@
   box-shadow: 0 0 0 3px rgba(245, 158, 11, .16), 0 10px 22px -12px rgba(217, 119, 6, .45);
 }
 
-/* Not yet available, rather than broken: the card keeps its shape and loses
-   its lift, so it reads as something that will work later. */
 .spich-card.is-off {
   cursor: not-allowed;
   opacity: .72;
 }
 
-/* 44px mark · body · 22px tick. Fixed outer columns so both cards put their
-   tick in the same place however long the text runs. */
 .spich-c2 {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 22px;
@@ -2074,8 +1936,6 @@
   background: #fef3c7;
 }
 
-/* What the type gets you, under a dashed rule — a different kind of statement
-   from the sentence above it, so it is set apart rather than run on. */
 .spich-c2__pts {
   display: flex;
   flex-direction: column;
@@ -2137,7 +1997,6 @@
   background: linear-gradient(135deg, #fbbf24, #d97706);
 }
 
-/* The chosen type's remaining question, in a panel under both cards. */
 .spich-sub {
   border: 1px solid #e2eef3;
   border-radius: 14px;
@@ -2156,11 +2015,6 @@
   }
 }
 
-/* ── The Purchase Order picker in the SPI chooser ────────────────────────────
- * An order is picked on five facts at once — which order, whose, when, what
- * it is tied to, for how much — so the row carries all five rather than a
- * line of text. Values are the design's.
- * ───────────────────────────────────────────────────────────────────────────*/
 .spidd {
   position: relative;
 }
@@ -2198,7 +2052,6 @@
   color: #94a3b8;
 }
 
-/* Turns to point at the panel it opened. */
 .spidd-chev {
   flex-shrink: 0;
   width: 26px;
@@ -2217,7 +2070,6 @@
   transform: rotate(180deg);
 }
 
-/* The picked order, summarised in the trigger. */
 .spisel {
   flex: 1;
   min-width: 0;
@@ -2243,10 +2095,6 @@
   text-overflow: ellipsis;
 }
 
-/* #5b7585, not #93a7b3. At 9.5px this is the smallest copy in the dialog and
-   it was sitting at 2.49:1 on white — below AA's 4.5 for normal text, and
-   DevTools flags it. #5b7585 is already the app's quiet-slate and measures
-   4.85:1. Dark mode keeps a light tone; the old value only failed on white. */
 .spisel-s {
   font-size: 9.5px;
   font-weight: 600;
@@ -2320,20 +2168,8 @@
   color: #94a3b8;
 }
 
-/* One order. The code is a fixed-width column so the codes line up down the
-   list and the eye can run the column instead of reading each row. */
-/* Real columns, not a flex row with minimum widths: code, what it is, how
-   much, where its procurement came from, and the tick. A grid means an order
-   with no procurement leaves an empty CELL rather than letting the amount
-   slide across into the space, which is what pulled the right edge apart. */
 .spim {
   display: grid;
-  /* 86 for the procurement pill, not the design's 74: 74 is its MINIMUM and
-     the pill grows past it, which a fixed grid track cannot do — "Auto-
-     created" needs 86 and was being squeezed, eating its own padding.
-     Fixed at the widest label so every row's amount still lines up. */
-  /* The status track also carries the inspection pill — "Inspection:
-     Pending" is its widest label. */
   grid-template-columns: 112px minmax(0, 1fr) auto 118px 14px;
   align-items: center;
   column-gap: 10px;
@@ -2392,8 +2228,6 @@
   text-overflow: ellipsis;
 }
 
-/* Right-aligned in its own track, so every amount in the list ends on the
-   same pixel however many digits it has. */
 .spim-amt {
   text-align: right;
   font-family: 'Geist Mono', ui-monospace, monospace;
@@ -2403,8 +2237,6 @@
   white-space: nowrap;
 }
 
-/* Present on every row so the amounts keep one right edge; only the chosen
-   row's is inked. */
 .spim-tick {
   display: flex;
   align-items: center;
@@ -2437,13 +2269,6 @@
   color: #d7eef5;
 }
 
-/* The header tile and the dropdown chevron were the two things in this modal
-   with no dark rule at all, so both kept their light fills: a .9 white tile
-   on the dark teal head, and a #ecfeff square beside the Purchase Order
-   field. On a dark surface a near-white block is the brightest thing on
-   screen, so the eye goes to the chrome instead of the content. Translucent
-   in both cases - the tile sits on a gradient, so a tint of what is behind
-   it reads as part of the head rather than a sticker on top of it. */
 [data-bs-theme="dark"] .spi-mdl-head-ico {
   background: rgba(255, 255, 255, .12);
   color: #a5f3fc;
@@ -2484,8 +2309,6 @@
   color: #7dd3e8;
 }
 
-/* Where the order's procurement case came from. Fixed width so the pills form
-   a column of their own instead of ragging against the amounts. */
 .spim-st {
   text-align: center;
   font-size: 8px;
@@ -2521,7 +2344,6 @@
   border-color: rgba(16, 185, 129, .32);
 }
 
-/* An order still waiting on its physical inspection: listed, not pickable. */
 .spim.is-locked {
   cursor: not-allowed;
 }
@@ -2550,12 +2372,6 @@
   border-color: rgba(245, 158, 11, .32);
 }
 
-/* ── The SPI type cards in dark ──────────────────────────────────────────────
- * The cards were written light-only, so in dark they stayed white sheets on a
- * dark dialog and the disabled one went pale grey. Same tokens the rest of
- * this dialog already uses: #13242e for a card, #e2e8f0 for a title,
- * #8ba3b5 for the line under it.
- * ───────────────────────────────────────────────────────────────────────────*/
 [data-bs-theme="dark"] .spich-card {
   background: #13242e;
   border-color: rgba(148, 163, 184, .18);
@@ -2578,8 +2394,6 @@
   box-shadow: 0 0 0 3px rgba(245, 158, 11, .18), 0 10px 22px -12px rgba(0, 0, 0, .6);
 }
 
-/* Dimming works by lowering contrast, so in dark it has to lose light, not
-   gain grey — the light rule's opacity alone left it reading as a pale tile. */
 [data-bs-theme="dark"] .spich-card.is-off {
   background: #101c24;
   border-color: rgba(148, 163, 184, .12);
@@ -2634,25 +2448,6 @@
   border-color: rgba(34, 211, 238, .2);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   SPI WORKLIST TOOLBAR — the CLM measurements.
-
-   The house toolbar is one 48px band: a 48px rail holding 40px tabs, and a
-   48px search beside it. Those numbers are set out in clmShared.ts, measured
-   off Customers, and every CLM page now renders them. This toolbar did not:
-   a 50px rail (38px tab in 5px of padding), a 40px search on the scope row,
-   13px/700 tab text and a grey count chip — so the two modules read as
-   different controls for the same job.
-
-   Scoped to `.spi-list`, which only the SPI worklist carries. The `.spi-*`
-   classes are shared with the PO list, Payment Requests, Advance/Refund and
-   the four inventory masters, and moving all eight at once is a bigger change
-   than was asked for. When they follow, this block loses its prefix.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* The rail: 48px stated, not inferred from the tab. A tab is 40, inside 3px
-   of padding and a 1px border each side — the only arithmetic that gives a
-   visible capsule round a 40px tab. */
 .spi-list .spi-seg {
   height: 48px;
   box-sizing: border-box;
@@ -2663,12 +2458,6 @@
   border: 1px solid #c9f8fd;
 }
 
-/* The tab. An inactive one is NOT a tinted chip: it is transparent with the
-   accent as its ink, so only the selected tab carries fill. The border stays
-   1px and turns transparent on selection, so the tab keeps its width.
-   12.5px/650 — 650 is a real weight in DM Sans, and the weight does not
-   change on selection: lettering that thickens on click is what makes a rail
-   look like it moved. */
 .spi-list .spi-seg-btn {
   height: 40px;
   box-sizing: border-box;
@@ -2684,8 +2473,6 @@
   transition: box-shadow .22s ease, border-color .15s ease;
 }
 
-/* A white chip lifting off the rail, with no outline — hover says "this is
-   under the pointer", not "this is nearly chosen". */
 .spi-list .spi-seg-btn:hover {
   background: #fff;
   border-color: transparent;
@@ -2695,9 +2482,6 @@
 
 .spi-list .spi-seg-btn.is-active {
   background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
-  /* Against the border box, so the ramp runs to the edge. Placed against the
-     padding box it extends its lightest stop under the transparent border,
-     which reads as a pale line down the left of the selected tab. */
   background-origin: border-box;
   color: #fff;
   border-color: transparent;
@@ -2707,9 +2491,6 @@
 
 .spi-list .spi-seg-btn.is-active:hover { opacity: .95; }
 
-/* Wide enough for two digits and tabular, so the rail does not resize on
-   every keystroke as the counts change — a rail that breathes is what reads
-   as the page jumping. */
 .spi-list .spi-seg-c {
   min-width: 28px;
   height: 18px;
@@ -2729,14 +2510,6 @@
   color: #155e75;
 }
 
-/* The search, at the rail's own height. Three stops from white rather than
-   two near-identical tints: starting at pure white and ending on the accent-50
-   gives the surface somewhere to travel, which is what makes it look lit.
-   The shadow is almost all inset — a bright hairline along the top where a lit
-   surface catches the light, a faint accent line along the bottom — so the
-   field is seated on the toolbar, not lifted off it.
-   `.spi-segrow .spi-search` pins 40px at the same specificity, so the scope
-   row is named here too. */
 .spi-list .spi-search,
 .spi-list .spi-segrow .spi-search {
   height: 48px;
@@ -2752,16 +2525,11 @@
   gap: 8px;
 }
 
-/* The ring replaces the whole box-shadow, so the top highlight is restated or
-   the field goes flat at the moment it is being used. */
 .spi-list .spi-search:focus-within {
   border-color: #22d3ee;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 0 0 3px rgba(6, 182, 212, .14);
 }
 
-/* The magnifier sits in the flow at 16px rather than absolutely at 13px from
-   the left, which is what lets the 14px inset and the 8px gap put the query
-   text where CLM's sits. */
 .spi-list .spi-search svg {
   position: static;
   transform: none;
@@ -2783,22 +2551,12 @@
   font-weight: 500;
 }
 
-/* The sub-tabs keep their underline — that is a different control, and the
-   design draws it that way. Only the lettering joins the house size, so the
-   two rows of the toolbar read as one. */
 .spi-list .spi-subtab {
   font-size: 12.5px;
   font-weight: 650;
   letter-spacing: 0;
 }
 
-/* Bug #94: the SPI list reads at the CLM sizes (clmShared.ts), on both the
-   With and the Without Shipment ID tab. The PO-list breakpoints shrank the
-   segment pills to 11.5px / 11px while the sub-tabs stayed 12.5px and the
-   search 13px, and the sub-tab count sat at 8.5px. Now, at every desktop
-   width: tabs 12.5px/650, counts 10px/800, search 13px/500, table headings
-   9.5px/800, cell text 11.5px. Scoped to the SPI list; the PO list keeps its
-   own sizes. */
 @media (min-width: 769px) {
   .spi-list .ord-list .spi-segrow .spi-seg-btn,
   .spi-list .ord-list .spi-sub .spi-subtab {
@@ -2806,19 +2564,13 @@
     font-weight: 650;
     letter-spacing: 0;
   }
-  /* Tab size too (CS-923/924/1132/1133): the PO-list breakpoints made the
-     segment tab 38px on 0 10px / 0 8px below 1800px. It keeps the CLM 40px
-     tab on 0 14px at every desktop width; the rail scrolls if it runs out. */
   .spi-list .ord-list .spi-segrow .spi-seg-btn {
-    width: auto; /* p2p-detail.css stretches it to 100% below 980px */
+    width: auto;
     height: 40px;
     gap: 7px;
     padding: 0 14px;
   }
   .spi-list .ord-list .spi-segrow .spi-seg-ico { display: flex; }
-  /* The rail never shrinks below its tabs (that is what drew a scrollbar
-     inside it at 1280px and cut the Direct SPI tab off at 800px). When the
-     row runs out of room the search wraps under the rail instead. */
   .spi-list .ord-list > .spi-segrow { flex-wrap: wrap; }
   .spi-list .ord-list .spi-segrow .spi-seg {
     flex: 0 0 auto;
@@ -2828,16 +2580,12 @@
   .spi-list .ord-list .spi-segrow .spi-search {
     flex: 1 1 300px;
     min-width: 300px;
-    height: 48px; /* CS-928: the same 48px as the outer tab rail */
+    height: 48px;
   }
 }
-/* Between tablet and small laptop the search has wrapped under the rail; it
-   takes the whole row rather than sitting right-aligned at 594px. */
 @media (min-width: 769px) and (max-width: 900px) {
   .spi-list .ord-list .spi-segrow .spi-search { flex-basis: 100%; max-width: none; margin-left: 0; }
 }
-/* Phones: the two tabs share the row and their labels wrap, so the tab grows
-   to fit the label instead of clipping it, at the same 12.5px lettering. */
 @media (max-width: 768px) {
   .spi-list .ord-list .spi-segrow .spi-seg-btn {
     height: auto;
@@ -2908,19 +2656,6 @@
 [data-bs-theme="dark"] .spi-list .spi-search input { color: #e2e8f0; }
 [data-bs-theme="dark"] .spi-list .spi-search input::placeholder { color: #5f8b9c; }
 
-/* ── One button height ──────────────────────────────────────────────────────
-   Every button on this page stands 40px, the number the form already uses
-   (.spi-invform, invoice-form.css) and the height of the tab inside the rail
-   above. They were four: the Create button 34 off 9px of padding, the row
-   actions 40, the pager arrows 32, the rows-per-page pill 28.
-
-   The pager is the shared WorklistPager that Customers, CLM and HRMS also
-   render, so its arrows are resized HERE only — which does make the SPI pager
-   the odd one out across the app. Say the word and it moves everywhere, or
-   back to 32 here.
-
-   `min-height` goes with `height` on the padded ones: a button with padding
-   and a line taller than the box will push past a bare height. */
 .spi-list .spi-head-btn,
 .spi-list .ord-btn {
   height: 40px; min-height: 40px;
@@ -2929,27 +2664,15 @@
 }
 .spi-list .spi-head-btn { padding-left: 20px; padding-right: 20px; }
 
-/* The list's empty state ("No matching invoices" / "No entries yet").
-   It lived in invoice-form.css, the form's sheet, which the list does not
-   load — so until a form had been opened the title and the note ran together
-   on one unstyled line at the table's far left. Here, with the page it
-   belongs to.
-   The message sits in a cell spanning a table several screens wide, so
-   centring it in the cell put it off to the right, and it scrolled sideways
-   with the columns. It is pinned to the left edge of the scroll box and made
-   exactly as wide as the visible area (the box is its container, so 100cqw
-   is the width you can see), which keeps it in the middle of the screen
-   whatever the horizontal scroll. The table fills the box's height, so the
-   row - and the message in it - centres vertically too. */
-.spi-list .ord-table-scroll { container-type: inline-size; }
-.spi-list .ord-table.ord-table--empty { height: 100%; }
-.spi-list .ord-table .ord-emptyrow > td {
+:is(.spi-list, .ord-list) .ord-table-scroll { container-type: inline-size; }
+:is(.spi-list, .ord-list) .ord-table.ord-table--empty { height: 100%; }
+:is(.spi-list, .ord-list) .ord-table .ord-emptyrow > td {
   padding: 0;
   background: #fff;
   border-bottom: 0;
   vertical-align: middle;
 }
-.spi-list .ord-table .ord-emptybox {
+:is(.spi-list, .ord-list) .ord-table .ord-emptybox {
   position: sticky; left: 0;
   width: 100cqw; box-sizing: border-box;
   display: flex; flex-direction: column;
@@ -2958,7 +2681,7 @@
   padding: 40px 20px;
   text-align: center;
 }
-.spi-list .ord-table .ord-emptybox::before {
+:is(.spi-list, .ord-list) .ord-table .ord-emptybox::before {
   content: '';
   width: 46px; height: 46px; margin-bottom: 6px;
   border-radius: 14px;
@@ -2967,33 +2690,27 @@
     #ecfbfe;
   box-shadow: inset 0 0 0 1px #cdeef6;
 }
-.spi-list .ord-table .ord-emptybox b {
+:is(.spi-list, .ord-list) .ord-table .ord-emptybox b {
   font-size: 14px;
   font-weight: 800;
   color: #0c4a6e;
   letter-spacing: -.1px;
 }
-.spi-list .ord-table .ord-emptybox span {
+:is(.spi-list, .ord-list) .ord-table .ord-emptybox span {
   max-width: 430px;
   font-size: 12px;
   font-weight: 500;
   color: #64748b;
   line-height: 1.55;
 }
-[data-bs-theme="dark"] .spi-list .ord-table .ord-emptyrow > td { background: #0b1922; }
-[data-bs-theme="dark"] .spi-list .ord-table .ord-emptybox::before {
+[data-bs-theme="dark"] :is(.spi-list, .ord-list) .ord-table .ord-emptyrow > td { background: #0b1922; }
+[data-bs-theme="dark"] :is(.spi-list, .ord-list) .ord-table .ord-emptybox::before {
   background-color: rgba(34, 211, 238, .1);
   box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .25);
 }
-[data-bs-theme="dark"] .spi-list .ord-table .ord-emptybox b { color: #e2e8f0; }
-[data-bs-theme="dark"] .spi-list .ord-table .ord-emptybox span { color: #7f9aa6; }
+[data-bs-theme="dark"] :is(.spi-list, .ord-list) .ord-table .ord-emptybox b { color: #e2e8f0; }
+[data-bs-theme="dark"] :is(.spi-list, .ord-list) .ord-table .ord-emptybox span { color: #7f9aa6; }
 
-/* Hover flicker on the row actions. On hover an .ord-btn lifts 1px
-   (order.css), which pulls its bottom edge out from under a pointer resting
-   on that edge — hover drops, the button settles back under the pointer,
-   hover returns, and it loops: the button blinks. A transparent strip 2px
-   below the button keeps the pointer inside it through the lift, so the
-   hover area no longer moves away from the mouse. The lift itself stays. */
 .spi-list .ord-btn { position: relative; }
 .spi-list .ord-btn::after {
   content: '';
@@ -3001,11 +2718,6 @@
   inset: 0 0 -2px;
 }
 
-/* The pager's own controls. The two nav circles are buttons; the rows-per-page
-   pill holds one, and the pill is what has the height, so the button fills it
-   rather than stretching past it. The count pills beside them are not buttons,
-   but a 40px arrow next to a 28px pill reads as a broken row — they take the
-   height so the pager stays one band. */
 .spi-list .tc-wl-btn { width: 40px; height: 40px; }
 .spi-list .tc-wl-rows,
 .spi-list .tc-wl-info,
@@ -3016,11 +2728,6 @@
 }
 .spi-list .tc-wl-rows-btn { height: 100%; }
 
-/* The SPI payment popups — Payment Requests History, Raise Request and Record
-   Payment — at the same 40px. They are built on the Purchase Order's .mpr-card,
-   which is now 40 as well (bug #28, see the end of manage-payment-requests.css).
-   The popups portal to <body>, outside .spi-list, so they are picked out
-   by their title ids instead: all three are "inv-…", which no PO popup uses. */
 .mpr-card[aria-labelledby^="inv-"] .spi-mdl-cancel,
 .mpr-card[aria-labelledby^="inv-"] .spi-mdl-confirm,
 .mpr-card[aria-labelledby^="inv-"] .cpay-add,
@@ -3036,18 +2743,12 @@
   box-sizing: border-box;
 }
 
-/* Narrow screens: the base rule drops the tab to 11px on 7px 11px, which a
-   stated 40px height would fight. The tab shrinks with it; the rail follows,
-   since its height is what holds the two in step. */
 @media (max-width: 768px) {
   .spi-list .spi-seg { height: auto; }
   .spi-list .spi-seg-btn { height: 34px; padding: 0 11px; font-size: 11px; }
   .spi-list .spi-search,
   .spi-list .spi-segrow .spi-search { height: 42px; }
 }
-/* ══ Button size 40 (bug #28): every button in the Purchase Order module and its popups
-   stands 40px tall; icon-only buttons are 40 x 40. Text links, the camera shutter and the
-   small remove-x inside file chips are not buttons in this sense and keep their size. */
 .spi-mdl-cancel,
 .spi-mdl-confirm { height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); padding-top: 0; padding-bottom: 0; box-sizing: border-box; }
 .spi-mdl-x { width: var(--p2p-btn, 40px); height: var(--p2p-btn, 40px); min-height: var(--p2p-btn, 40px); box-sizing: border-box; }
