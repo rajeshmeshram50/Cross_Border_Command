@@ -694,6 +694,13 @@ class ProductController extends Controller
             'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,jpg,jpeg,png,gif,webp|max:10240',
         ]);
 
+        // A product is never created without its GST — nullable above only so an
+        // edit-mode re-save may omit the field and leave the mapped rate alone.
+        if (!isset($data['id']) && empty($data['gst_id'])) {
+            $msg = 'GST is mandatory. Select a GST rate from the GST Master before saving the product.';
+            return response()->json(['message' => $msg, 'errors' => ['gst_id' => [$msg]]], 422);
+        }
+
         $product = isset($data['id'])
             ? $this->applyScope(Product::query(), $request)->findOrFail($data['id'])
             : new Product();
