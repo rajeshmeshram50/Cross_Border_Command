@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/** Money received back from the supplier against a refund adjustment (a Zoho vendor-credit refund). */
 class PoRefundRecovery extends Model
 {
     use BelongsToTenant, SoftDeletes;
@@ -23,7 +22,6 @@ class PoRefundRecovery extends Model
 
     protected $casts = [
         'amount'         => 'decimal:2',
-        // Every proof on this recovery: [{ path, name, mime, size }].
         'proof_files'    => 'array',
         'recovered_date' => 'date',
         'zoho_synced_at' => 'datetime',
