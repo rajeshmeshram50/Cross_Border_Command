@@ -4,16 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * P2P · Bulk Sourcing — dedicated directory for "New Supplier" entries created
- * inline from the Map Supplier Directory form.
- *
- * Deliberately SEPARATE from the company Vendor master (`vendors`): these are
- * P2P-only ad-hoc suppliers. A product-supplier mapping row
- * (p2p_sourcing_product_suppliers) with source='new' references this table via
- * supplier_id, so the same new supplier can be re-used (re-mapped) across
- * products by its id instead of being re-typed each time.
- */
 return new class extends Migration
 {
     public function up(): void
