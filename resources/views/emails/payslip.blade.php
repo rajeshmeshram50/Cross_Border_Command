@@ -15,7 +15,6 @@
     <tr>
       <td align="center">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-          {{-- Header --}}
           <tr>
             <td style="background:linear-gradient(135deg,#5a3fd1,#7c5cfc);padding:26px 32px;">
               <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;color:rgba(255,255,255,0.7);text-transform:uppercase;">Payslip</div>
@@ -24,7 +23,6 @@
             </td>
           </tr>
 
-          {{-- Body --}}
           <tr>
             <td style="padding:28px 32px;">
               <p style="font-size:15px;margin:0 0 12px;">Dear {{ $employeeName }},</p>
@@ -53,7 +51,6 @@
             </td>
           </tr>
 
-          {{-- Footer --}}
           <tr>
             <td style="padding:16px 32px;border-top:1px solid #eef1f5;">
               <div style="font-size:11px;color:#9ca3af;">© {{ $companyName }}</div>
