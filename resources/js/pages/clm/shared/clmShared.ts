@@ -123,7 +123,7 @@ export const CLM_CSS = `
   border-radius: 16px;
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 20px; min-height: 58px; gap: 14px;
+  padding: 0 12px; min-height: 58px; gap: 14px;
   box-shadow: 0 2px 10px rgba(6,182,212,.10);
 }
 .clm-head-strip::before {
@@ -136,7 +136,7 @@ export const CLM_CSS = `
   pointer-events: none;
 }
 .clm-head-strip > * { position: relative; z-index: 1; }
-.clm-head-strip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; min-width: 0; }
+.clm-head-strip-left { display: flex; align-items: center; gap: 13px; padding-left: 6px; min-width: 0; }
 .clm-head-strip-ico-wrap { position: relative; flex-shrink: 0; }
 .clm-head-strip-ico {
   width: 38px; height: 38px; border-radius: 12px;
@@ -221,8 +221,10 @@ export const CLM_CSS = `
 }
 .clm-bref-head {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 12px;
-  padding: 7px 12px;
+  display: flex; align-items: center; gap: 13px;
+  /* Same insets as .clm-head-strip above it (12px sides + 6px before the icon),
+     so the two icons start, and the Add button and this arrow end, on one line. */
+  padding: 7px 12px 7px 18px;
   background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 30%, #d8f8fc 60%, #caf5fa 80%, #baf2f9 100%);
   border-bottom: 1px solid #A5F3FC;
   cursor: pointer; user-select: none;
@@ -237,7 +239,7 @@ export const CLM_CSS = `
 }
 .clm-bref.collapsed .clm-bref-head { border-bottom-color: transparent; }
 .clm-bref-ico {
-  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+  width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
   display: flex; align-items: center; justify-content: center; color: #fff;
   position: relative; z-index: 1;
