@@ -3,13 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Adds the new "Attendance Master Management" category under the top-level
- * Master module, plus its two leaf masters: Leave Type Master and Leave Plan
- * Master. Mirrors the pattern in 2026_05_04_000002_seed_expense_category_module.php
- * so branch_users that already have full master permissions automatically get
- * a permission row for the new leaves (copied from a peer master).
- */
 return new class extends Migration
 {
     public function up(): void
@@ -17,7 +10,6 @@ return new class extends Migration
         $masterId = DB::table('modules')->where('slug', 'master')->value('id');
         if (!$masterId) return;
 
-        // 1) Category — Attendance Master Management
         $catSlug = 'master.attendance';
         $catId   = DB::table('modules')->where('slug', $catSlug)->value('id');
         if (!$catId) {
@@ -37,7 +29,6 @@ return new class extends Migration
             ]);
         }
 
-        // 2) Leaves — Leave Type Master + Leave Plan Master
         $leaves = [
             [
                 'slug' => 'master.leave_type',
@@ -73,10 +64,6 @@ return new class extends Migration
             $leafIds[] = $id;
         }
 
-        // 3) Copy permission rows from a peer master so existing users who
-        //    already had blanket "all masters" access don't lose visibility.
-        //    Uses expense_category as the donor (also branch-scoped, tenant
-        //    isolated, fresh enough that admins have explicit rows for it).
         $donorId = DB::table('modules')->where('slug', 'master.expense_category')->value('id');
         if (!$donorId) return;
 
