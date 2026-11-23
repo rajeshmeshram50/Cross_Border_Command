@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('code', 50)->nullable();
             $table->text('description')->nullable();
             $table->string('status', 20)->nullable()->default('active');
-            $table->foreignId('head_user_id')->nullable()->constrained('users')->nullOnDelete(); // department head
+            $table->foreignId('head_user_id')->nullable()->constrained('users')->nullOnDelete();
 
             $table->timestamps();
             $table->softDeletes();
