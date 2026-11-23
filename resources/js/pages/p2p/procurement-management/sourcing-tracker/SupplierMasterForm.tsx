@@ -110,12 +110,26 @@ export default function SupplierMasterForm({
     const taken = mappedIds.has(s.id);
     return {
       value: s.id, code: s.code, label: intl ? `${s.name}${s.country ? ` · ${s.country}` : ''}` : s.name,
+      /* The list is only as wide as the field, so a long name ends in "…". A fullLabel that is not
+         "code + label" keeps the row's tooltip on (MasterSelect turns it off when the chip and the
+         label already show every word), so the full name shows on hover. */
+      fullLabel: intl ? `${s.name}${s.country ? ` · ${s.country}` : ''}` : s.name,
       selectedLabel: s.code ? `${s.code} · ${s.name}` : s.name,
       // The supplier's type as a badge in the open list (Material / Goods, FFD / Transporter, a service).
       ...(s.type && s.type !== '—' ? { badge: { text: s.type, tone: typeTone(s.type), title: `Supplier Type: ${s.type}`, listOnly: true } } : {}),
-      disabled: taken, disabledReason: taken ? 'Already mapped to this product' : undefined,
+      /* An already-mapped supplier stays greyed out and can't be picked; its tooltip names it in full
+         as well as saying why (the row is narrow, so its name is often cut). */
+      disabled: taken,
+      disabledReason: taken ? `${intl ? `${s.name}${s.country ? ` · ${s.country}` : ''}` : s.name} — already mapped to this product` : undefined,
     };
   }), [pool, intl, mappedIds]);
+
+  /* A greyed-out (already-mapped) row: kept hoverable so its tooltip shows (a natively disabled row
+     gets no mouse events, so its "…" name had no tooltip at all), and a click says why it can't be
+     picked instead of doing nothing. The list stays open. */
+  const onTakenClick = useCallback((opt: { label: string }) => {
+    toast.info('Already mapped', `${opt.label} is already mapped to this product.`);
+  }, [toast]);
 
   const gstRates = useMemo(() => (masters?.gstRates.length ? masters.gstRates : [0, 5, 12, 18, 28]), [masters]);
   const currencyOptions = useMemo(() => (masters?.currencies ?? []).map(c => ({ value: c.code.toUpperCase(), label: c.name ? `${c.code.toUpperCase()} · ${c.name}` : c.code.toUpperCase(), selectedLabel: c.code.toUpperCase() })), [masters]);
@@ -232,7 +246,7 @@ export default function SupplierMasterForm({
                 value={sup ? (sup.code ? `${sup.code} · ${sup.name}` : sup.name) : ''} placeholder={pool === null ? 'Loading supplier…' : '—'} />
             ) : (
             <div className={`stsm-ms${bad('sup') ? ' is-err' : ''}`} aria-labelledby="stsm-sup-l">
-              <MasterSelect value={id} options={options} invalid={bad('sup')} menuClassName="stsm-sup-menu"
+              <MasterSelect value={id} options={options} invalid={bad('sup')} menuClassName="stsm-sup-menu" onDisabledClick={onTakenClick}
                 placeholder={pool === null ? 'Loading suppliers…' : pool.length ? 'Select Supplier Name' : `No ${intl ? 'International' : 'Domestic'} suppliers in the Supplier Master`}
                 searchable searchPlaceholder={intl ? 'Search supplier code, name or country' : 'Search supplier code, name'}
                 onChange={c => pickSupplier(c)} />

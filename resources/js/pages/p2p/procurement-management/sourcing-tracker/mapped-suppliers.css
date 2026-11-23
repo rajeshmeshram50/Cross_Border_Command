@@ -829,6 +829,7 @@
 }
 .stsv-card-acts .stsv-card-edit-btn,
 .stsv-card-acts .stsv-card-convert-btn,
+.stsv-card-acts .stsv-card-converted,
 .stsv-card-acts .sct-frozen-wrap { margin-left: 0; }
 .stsv-card-acts:empty { display: none; }
 [data-bs-theme="dark"] .stsv-card-edit-btn:disabled { color: #64748b; background: rgba(148, 163, 184, .1); border-color: rgba(148, 163, 184, .2); }

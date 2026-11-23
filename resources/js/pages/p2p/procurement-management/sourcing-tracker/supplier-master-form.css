@@ -673,12 +673,15 @@ body:has(.stsm-box) .master-select-item span[style*="max-width: 55%"] {
     overflow: visible !important;
 }
 
-/* Supplier Name list (CS-2308): one fixed width. The shared list sizes itself to its widest row and
-   adds 10 rows at a time while scrolling, so each longer name or badge that scrolled in widened the
-   whole list and every badge jumped sideways. Fixed, the badges stay in one column on the right and a
-   long name takes the "…". MasterSelect sets the width inline, hence !important; still never wider
-   than the screen, and never narrower than the field (its inline min-width). */
+/* Supplier Name list (CS-2308): exactly as wide as the Supplier Name field, always. The shared list
+   sizes itself to its widest row and adds 10 rows at a time while scrolling, so a longer name or
+   badge scrolling in widened it (and a fixed width looked big in one origin, small in the other).
+   MasterSelect puts the field's width in the inline min-width; width 0 lets that min-width decide,
+   so the list matches the field and never changes while scrolling. A long name ends in "…" and
+   shows in full in the row's tooltip (SupplierMasterForm passes fullLabel for that). */
 .master-select-menu.stsm-sup-menu {
-    width: min(600px, calc(100vw - 24px)) !important;
+    width: 0 !important;
     max-width: calc(100vw - 24px) !important;
 }
+/* In the narrow list the name gets the room left after the code chip and the type badge. */
+.master-select-menu.stsm-sup-menu .master-select-item > * { min-width: 0; max-width: 100%; }

@@ -3109,7 +3109,10 @@ body:has(.avm-cp-popup-doc) .sta-att { z-index: 13200; }
 body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 /* ═════ Stepper + sub-tabs: exact Figma values (.slm-teal .sf-modal: .sf-stages / .sf-stage-* /
    .sf-subtabs / .sf-subtab). Measured against the build; only what differed is set here. ═════ */
-:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-stepper-wrap { padding: 8px 22px 0; }
+/* Right padding = the body's 22px + its reserved scrollbar track (.avm-body has
+   scrollbar-gutter: stable + scrollbar-width: thin, ~10px): without it the stepper ran 10px past
+   the form cards below, so the two right edges never lined up (QA #40). */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-stepper-wrap { padding: 8px calc(22px + var(--avm-gutter, 10px)) 0 22px; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step { border-width: 1.5px; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-ico { border-radius: 12px; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-modal .avm-step-title { font-size: 13.5px; font-weight: 800; letter-spacing: -.2px; }

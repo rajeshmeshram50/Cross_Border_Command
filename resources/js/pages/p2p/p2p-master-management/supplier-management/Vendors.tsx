@@ -897,7 +897,31 @@ export default function Vendors() {
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
     const recomputeDebounced = () => { if (settleTimer) clearTimeout(settleTimer); settleTimer = setTimeout(recompute, 140); };
     window.addEventListener('resize', recomputeDebounced);
-    return () => { if (settleTimer) clearTimeout(settleTimer); clearTimeout(stripSettle); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
+    /* The fixed height is measured from where the table STARTS. Anything above it that settles
+       later — the top menu folding items into "More", the "What We Are Doing Here" banner, the
+       toolbar, fonts — moves that start without a window resize, and a height measured before the
+       move left an empty band under the card (or pushed it past the footer). Watch every block
+       above the table (the earlier siblings of each ancestor) and re-measure when one resizes. */
+    /* Re-measured at once, not through the 140ms debounce: a ResizeObserver callback runs after
+       layout but BEFORE paint, so measuring here fixes the height before the wrong one is ever
+       shown. Debounced, the page painted the empty band first and only snapped right a moment
+       later. Only the blocks ABOVE the table are watched, so the table's own new height can't
+       re-trigger this. */
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => recompute()) : null;
+    if (ro && scrollRef.current) {
+      for (let n: Element | null = scrollRef.current; n && n !== document.body; n = n.parentElement) {
+        // border-box: a block can change height through padding / borders, not only content.
+        for (let s = n.previousElementSibling; s; s = s.previousElementSibling) ro.observe(s, { box: 'border-box' });
+      }
+    }
+    void document.fonts?.ready.then(recompute);
+    return () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      clearTimeout(stripSettle);
+      window.removeEventListener('resize', recomputeDebounced);
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, search, loading, swapping, brefOpen, rpp, vendors.length > 0]);
 useEffect(() => {

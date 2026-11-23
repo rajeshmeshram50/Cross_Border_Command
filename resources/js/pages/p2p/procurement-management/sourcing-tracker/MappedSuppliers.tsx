@@ -319,6 +319,7 @@ export default function MappedSuppliers({ row, product, onClose, onAddSupplier, 
                       Converted
                     </span>
                   )}
+                  </div>
                 </div>
                 <div className="stsv-card-contacts">
                   {([['Contact Person', s.contact, 'user'], ['Mobile', s.mobile, 'phone'], ['Email', s.email, 'mail']] as const).map(([lbl, val, ico]) => (
