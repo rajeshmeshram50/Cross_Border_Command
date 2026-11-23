@@ -9,13 +9,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Inventory · one level inside a rack, and the thing an SPI box is scanned onto.
- *
- * used_weight_kg and boxes_count belong to the put-away, not to this master —
- * the form writes them as 0 and never touches them again. Occupancy (Available
- * / Full) is read off used vs max rather than stored, so it cannot go stale.
- */
 class Shelf extends Model
 {
     use BelongsToTenant;
@@ -42,15 +35,6 @@ class Shelf extends Model
         'status', 'created_by', 'updated_by',
     ];
 
-    /**
-     * A new row is ACTIVE until somebody says otherwise.
-     *
-     * The column already defaults to 1 in the database, but Eloquent does not
-     * read a default back after an insert — so the model the create endpoint
-     * serialised still held null, `(int) null` made it 0, and the response said
-     * the row was inactive while the stored row was active. Invisible on screen
-     * only because every save reloads the list.
-     */
     protected $attributes = ['status' => 1];
 
     protected $casts = [
@@ -71,20 +55,6 @@ class Shelf extends Model
 
     protected $appends = ['shelf_code', 'load_pct', 'occupancy'];
 
-    /**
-     * RC-001-SH-01 — the rack's STORED code plus the level.
-     *
-     * This was built from $this->rack_id, which produced the same string only
-     * while a rack's code WAS its id. Codes are counted per branch now, so a
-     * shelf on rack id 7 — RC-002 in its own branch — read RC-007-SH-01 and
-     * named a rack code that exists nowhere. The next-code preview already
-     * used $rack->rack_code, so the number the form promised and the one the
-     * saved shelf reported disagreed.
-     *
-     * Reads the loaded relation; lazy-loads only when the caller did not
-     * eager-load it, which is why every list that serialises shelves loads
-     * `rack` up front.
-     */
     public function getShelfCodeAttribute(): string
     {
         $rack = $this->relationLoaded('rack') ? $this->rack : ($this->rack_id ? $this->rack()->first() : null);
@@ -101,7 +71,6 @@ class Shelf extends Model
         return $max > 0 ? (int) round((float) $this->used_weight_kg / $max * 100) : 0;
     }
 
-    /** Derived from the load, so it cannot contradict used_weight_kg. */
     public function getOccupancyAttribute(): string
     {
         if ((int) $this->status !== 1)          return 'inactive';
