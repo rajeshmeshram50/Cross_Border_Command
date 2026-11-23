@@ -18,17 +18,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
-/**
- * Zoho Books for the P2P PO (same flow as the old PO module):
- *   PO → Zoho purchase order + bill; each payment → vendor payment against the bill.
- * Cancelling with money released:
- *   refund adjustment → vendor credit for the PO's items, applied to the bill's open balance;
- *   each recovery → vendor-credit refund, so the supplier's account ends at zero.
- * Every method throws RuntimeException with a message fit for the user.
- */
 class PoZohoService
 {
-    /** The single line every advance-refund vendor credit is raised on. */
     private const CREDIT_ITEM = 'Advance Refund Adjustment';
 
     public function __construct(private ZohoBooksService $books) {}
@@ -38,24 +29,12 @@ class PoZohoService
         return $this->books->isConfigured();
     }
 
-    /* ══════════════════════════ THE WHOLE CHAIN ══════════════════════════ */
-
-    /**
-     * Everything this PO still owes Zoho, in order — PO + bill, its payments, the
-     * cancellation's vendor credit applied to the bill, then each recovery's refund.
-     * Every Zoho Sync button runs this, so pressing any of them leaves the books complete.
-     * Each step is idempotent: what is already there is reused, never created twice.
-     *
-     * @return array{bill_number:string, already:bool, pushed:int, applied:float, credit:?string, refunds:int}
-     */
     public function syncAll(PurchaseOrder $po, ?int $userId): array
     {
         $this->assertConfigured();
         $this->preflight($po);
         $out = $this->syncPo($po, $userId) + ['credit' => null, 'refunds' => 0];
 
-        // Scoped to the PO's own tenant and branch, live rows only — the sync runs
-        // outside the global scope, so the filter is spelled out here.
         $adj = PoRefundAdjustment::withoutGlobalScope('tenant')
             ->where('client_id', $po->client_id)
             ->where('purchase_order_id', $po->id)
@@ -76,12 +55,6 @@ class PoZohoService
         return $out;
     }
 
-    /**
-     * Everything that can be checked BEFORE a single document is written to Zoho.
-     * Zoho cannot be rolled back, so a run that would fail halfway — a missing tax
-     * rate, no bank account — is stopped here instead, with every problem named at
-     * once rather than one refusal per press. Nothing in this method writes.
-     */
     public function preflight(PurchaseOrder $po): void
     {
         $this->assertConfigured();
@@ -101,7 +74,6 @@ class PoZohoService
             $problems[] = $this->clean($e);
         }
 
-        // Every GST rate the lines carry has to exist in Zoho, on the right side.
         if (!$international && !$problems) {
             $rates = $po->items()->get()->pluck('gst_pct')->map(fn($v) => round((float) $v, 2))
                 ->filter(fn($v) => $v > 0)->unique()->values();
@@ -117,7 +89,6 @@ class PoZohoService
         $adj = PoRefundAdjustment::withoutGlobalScope('tenant')
             ->where('client_id', $po->client_id)->where('purchase_order_id', $po->id)->latest('id')->first();
 
-        // The credit line carries the org's 0% rate; a refund needs an account to land in.
         if ($adj && !$problems) {
             try {
                 $this->books->resolveTaxId(0.0, $inter);
@@ -138,12 +109,6 @@ class PoZohoService
         }
     }
 
-    /** One line for the toast: what this run actually did in Zoho. */
-    /**
-     * What this PO looks like in Zoho Books right now, read only from our own columns.
-     * Same order as syncAll, so the tracker and the sync can never tell different stories:
-     * purchase order -> bill -> payments, and once cancelled, vendor credit -> refunds.
-     */
     public function tracker(PurchaseOrder $po): array
     {
         $step = function (string $key, string $title, string $sub, bool $done, ?string $ref, $at, ?string $note, ?string $error, ?float $amount = null, array $items = []) {
@@ -160,7 +125,6 @@ class PoZohoService
                 'error' => $error,
             ];
         };
-        // Each payment / refund as its own line, so a part-posted step says which one is missing.
         $line = fn(string $label, float $amount, bool $done, ?string $ref, $at, ?string $error) => [
             'label' => $label,
             'amount' => $amount,
@@ -216,7 +180,6 @@ class PoZohoService
             ),
         ];
 
-        // A cancelled PO carries two more steps: what is owed back, and what came back.
         $adj = PoRefundAdjustment::withoutGlobalScope('tenant')
             ->where('client_id', $po->client_id)->where('purchase_order_id', $po->id)
             ->latest('id')->first();
@@ -274,14 +237,6 @@ class PoZohoService
         return implode(', ', $parts);
     }
 
-    /* ══════════════════════════ PO + BILL ══════════════════════════ */
-
-    /**
-     * Create the Zoho PO and bill (once), then post any unposted payments.
-     * All-or-nothing for PO + bill: whatever this run created is deleted on failure.
-     *
-     * @return array{bill_number:string, pushed:int, applied:float, already:bool}
-     */
     public function syncPo(PurchaseOrder $po, ?int $userId): array
     {
         $this->assertConfigured();
@@ -304,7 +259,6 @@ class PoZohoService
                     $created = $this->books->createPurchaseOrder($this->poPayload($po, $ctx));
                     $zohoPoId = $createdPo = (string) $created['purchaseorder_id'];
                     $poLineIds = collect($created['line_items'] ?? [])->pluck('line_item_id')->map(fn($x) => (string) $x)->all();
-                    // A draft Zoho PO cannot be billed.
                     try {
                         $this->books->markPurchaseOrderOpen($zohoPoId);
                     } catch (\Throwable $e) {
@@ -325,9 +279,6 @@ class PoZohoService
                     'updated_by'            => $userId ?? $po->updated_by,
                 ])->save();
 
-                /* This currency is in the books now, so it is what every later
-                   order on this supplier has to use — Zoho will not let a
-                   contact's currency change once it carries transactions. */
                 if ($po->vendor_id) {
                     app(VendorCurrencyGuard::class)->rememberZohoCurrency(
                         (int) $po->client_id,
@@ -342,12 +293,8 @@ class PoZohoService
                 throw new RuntimeException($this->clean($e));
             }
 
-            /* The Stage 04 PDF onto the Zoho PO and its bill. Queued and after
-               the commit: two uploads must not hold the sync, and a refused
-               file must not undo records that were created fine. */
             AttachP2pPoDocumentToZoho::dispatch($po->id);
 
-            // Payments are best-effort: the bill stays even if one fails, and the row shows why.
             $pay = ['pushed' => 0, 'applied' => 0.0];
             try {
                 $pay = $this->postPayments($po->fresh());
@@ -359,12 +306,6 @@ class PoZohoService
         });
     }
 
-    /**
-     * Post unposted payments (or one) to the PO's bill as vendor payments.
-     * Idempotent through zoho_applied_amount; capped at the bill's open balance.
-     *
-     * @return array{pushed:int, applied:float}
-     */
     public function postPayments(PurchaseOrder $po, ?int $onlyPaymentId = null): array
     {
         $result = ['pushed' => 0, 'applied' => 0.0];
@@ -412,7 +353,6 @@ class PoZohoService
                 'zoho_error'          => null,
             ])->saveQuietly();
 
-            // The proof the user uploaded goes onto the bill this payment settled.
             if (!empty($p->proof_path)) AttachPoPaymentProofToZoho::dispatch($p->id);
 
             $remaining = round($remaining - $amt, 2);
@@ -422,16 +362,6 @@ class PoZohoService
         return $result;
     }
 
-    /* ══════════════════════════ DIRECT SPI (no PO) ══════════════════════════ */
-
-    /**
-     * A standalone (Direct) supplier invoice has no purchase order, so it carries
-     * its OWN Zoho bill — created straight from the invoice's line items — and its
-     * payments post against that bill. Same shape as the PO flow (idempotent,
-     * locked, compensating delete), minus the PO/convert-from linkage.
-     *
-     * @return array{bill_number:string, already:bool, pushed:int, applied:float}
-     */
     public function syncSpi(SupplierInvoice $spi, ?int $userId): array
     {
         $this->assertConfigured();
@@ -483,13 +413,6 @@ class PoZohoService
         });
     }
 
-    /**
-     * Post the Direct SPI's unposted payments as vendor payments against its bill.
-     * Direct-SPI payments are PoPayment rows carrying supplier_invoice_id with NO
-     * purchase_order_id. Idempotent via zoho_applied_amount, capped at the balance.
-     *
-     * @return array{pushed:int, applied:float}
-     */
     public function postSpiPayments(SupplierInvoice $spi): array
     {
         $result = ['pushed' => 0, 'applied' => 0.0];
@@ -562,7 +485,6 @@ class PoZohoService
         }
     }
 
-    /** Zoho vendor, GST registration, intra/inter state and currency for a Direct SPI. */
     private function spiContext(SupplierInvoice $spi): array
     {
         $vendor = Vendor::withTrashed()->with('primaryAddress')->findOrFail($spi->vendor_id);
@@ -582,8 +504,6 @@ class PoZohoService
         ];
     }
 
-    /** The SPI's items as Zoho bill lines — billed quantity (qty_spi) at its rate/GST. */
-
     private function spiLines(SupplierInvoice $spi, array $ctx): array
     {
         $items = $spi->items()->get();
@@ -601,14 +521,12 @@ class PoZohoService
 
             $gst = round((float) $it->gst_pct, 2);
 
-            // Validate supplier GST registration.
             if ($gst > 0 && !$ctx['registered']) {
                 throw new RuntimeException(
                     "Supplier GSTIN is missing, but product {$name} has GST of {$gst}%. Verify supplier GST details."
                 );
             }
 
-            // Resolve the applicable Zoho tax, including 0% where configured.
             $taxId = $this->books->resolveTaxId(
                 $gst,
                 (bool) $ctx['inter_state']
@@ -656,18 +574,15 @@ class PoZohoService
         })->all();
     }
 
-
     private function spiBillPayload(SupplierInvoice $spi, array $ctx): array
     {
         $payload = [
             'vendor_id'        => $ctx['vendor_id'],
-            // The supplier's own invoice number is the bill number; our code is the ref.
             'bill_number'      => (string) ($spi->invoice_no ?: $spi->code),
             'date'             => optional($spi->invoice_date)->toDateString() ?: now()->toDateString(),
             'reference_number' => (string) $spi->code,
             'line_items'       => $this->spiLines($spi, $ctx),
         ];
-        // TDS carried as a deduction, so the bill equals the net payable (same as the PO bill).
         $tds = ($spi->tds_updated_at && (float) $spi->tds_amount > 0) ? round((float) $spi->tds_amount, 2) : 0.0;
         if ($tds > 0) {
             $payload['adjustment'] = -$tds;
@@ -676,7 +591,6 @@ class PoZohoService
         return $this->withCurrency($payload, $ctx);
     }
 
-    /** Same HSN rule as the PO, named per product so a refusal is actionable. */
     private function assertSpiHsnCodes(SupplierInvoice $spi): void
     {
         $bad = DB::table('p2p_supplier_invoice_items as i')
@@ -697,12 +611,6 @@ class PoZohoService
         );
     }
 
-    /* ══════════════════════════ REFUND: VENDOR CREDIT ══════════════════════════ */
-
-    /**
-     * Vendor credit for all the PO's items (charges added; TDS and the retained amount deducted),
-     * applied to the bill's open balance. What stays open on it is the refund owed.
-     */
     public function pushVendorCredit(PoRefundAdjustment $adj, ?int $userId): void
     {
         $this->assertConfigured();
@@ -710,7 +618,6 @@ class PoZohoService
             $adj->refresh();
             $po = PurchaseOrder::withoutGlobalScope('tenant')->with('items')->findOrFail($adj->purchase_order_id);
             try {
-                // The credit reverses the bill, so the PO and its payments go to Zoho first.
                 if (empty($po->zoho_bill_id)) $this->syncPo($po, $userId);
                 else $this->postPayments($po);
                 $po->refresh();
@@ -724,14 +631,9 @@ class PoZohoService
                         'zoho_vendorcredit_id'     => $vcId,
                         'zoho_vendorcredit_number' => (string) ($vc['vendor_credit_number'] ?? $adj->code),
                     ])->save();
-                    // The supplier's refund reference goes onto the credit, off the
-                    // request: the sync must not wait on an upload, and a failed
-                    // upload must not fail a credit that was created fine.
                     if (!empty($adj->attachment_path)) AttachRefundAdjustmentToZoho::dispatch($adj->id);
                 }
 
-                // Not applied to the bill: the credit stands for money already released,
-                // so the whole of it has to come back in cash, refund by refund.
                 $adj->forceFill([
                     'zoho_sync_status'    => 'synced',
                     'zoho_synced_at'      => now(),
@@ -744,11 +646,6 @@ class PoZohoService
         });
     }
 
-    /**
-     * Exactly what the vendor credit carries — the PO's lines, the single adjustment
-     * (charges less TDS, less what the supplier keeps) and the credit total, worked out
-     * from our own data. Nothing is asked of Zoho, so it also answers before a sync.
-     */
     public function creditPreview(PoRefundAdjustment $adj): array
     {
         $po = PurchaseOrder::withoutGlobalScope('tenant')->with('items')->findOrFail($adj->purchase_order_id);
@@ -794,7 +691,6 @@ class PoZohoService
             'tax_total' => round(array_sum(array_column($lines, 'tax')), 2),
             'charges'   => $charges,
             'tds'       => $tds,
-            // The credit's own figures: raised on what was released, less what is kept.
             'po_total'  => $poTotal,
             'net'       => round($poTotal - $tds, 2),
             'paid'      => $paid,
@@ -804,9 +700,6 @@ class PoZohoService
         ];
     }
 
-    /* ══════════════════════════ REFUND: RECOVERY ══════════════════════════ */
-
-    /** Money received back → a refund against the vendor credit (credit created first if missing). */
     public function pushRecovery(PoRefundRecovery $rec, ?int $userId): void
     {
         $this->assertConfigured();
@@ -822,10 +715,6 @@ class PoZohoService
             try {
                 $account = $this->books->resolvePaidThroughAccountId(null);
                 if (!$account) throw new RuntimeException('Zoho Books has no bank account to receive the refund into — add one in Zoho, then sync.');
-                /* The credit is meant to come back as cash, so it is never applied to the
-                   bill from here. Someone can still apply it by hand in Zoho ("Apply
-                   Credits" on the bill), which leaves too little to refund — say so
-                   plainly instead of passing Zoho's own wording back. */
                 $amount = round((float) $rec->amount, 2);
                 $open = round((float) ($this->books->getVendorCredit((string) $adj->zoho_vendorcredit_id)['balance'] ?? 0), 2);
                 if ($open + 0.005 < $amount) {
@@ -851,8 +740,6 @@ class PoZohoService
                     'zoho_synced_at'   => now(),
                     'zoho_error'       => null,
                 ])->save();
-                /* The refund's own proof onto the credit it came off: a Zoho
-                   refund is a sub-record and takes no attachment of its own. */
                 AttachRefundRecoveryToZoho::dispatch($rec->id);
             } catch (\Throwable $e) {
                 $rec->forceFill(['zoho_sync_status' => 'failed', 'zoho_error' => $this->clean($e)])->save();
@@ -861,7 +748,6 @@ class PoZohoService
         });
     }
 
-    /** Remove a recovery's Zoho refund before it is edited or deleted, so the books never disagree. */
     public function removeRecovery(PoRefundRecovery $rec): void
     {
         if (empty($rec->zoho_refund_id)) return;
@@ -875,14 +761,11 @@ class PoZohoService
         $rec->forceFill(['zoho_refund_id' => null, 'zoho_sync_status' => null, 'zoho_synced_at' => null, 'zoho_error' => null])->save();
     }
 
-    /* ══════════════════════════ PAYLOADS ══════════════════════════ */
-
     private function assertSyncable(PurchaseOrder $po): void
     {
         if (!$po->vendor_id) throw new RuntimeException('Attach a supplier to this PO before syncing to Zoho Books.');
         if ($po->status === PurchaseOrder::STATUS_DRAFT) throw new RuntimeException('Submit the PO before syncing it to Zoho Books.');
         if (!$po->items()->exists()) throw new RuntimeException('Add at least one product line before syncing to Zoho Books.');
-        // The bill carries TDS as a deduction, so it must be decided first.
         if ($po->document_type !== 'international' && !$po->tds_updated_at) {
             throw new RuntimeException('Deduct the TDS on this PO first (0% if none applies) — the bill amount depends on it.');
         }
@@ -891,7 +774,6 @@ class PoZohoService
         }
     }
 
-    /** Zoho vendor, GST registration, intra/inter state and currency for a PO. */
     private function context(PurchaseOrder $po): array
     {
         $vendor = Vendor::withTrashed()->with('primaryAddress')->findOrFail($po->vendor_id);
@@ -911,7 +793,6 @@ class PoZohoService
         ];
     }
 
-    /** The PO's items as Zoho lines (same rate and GST on the PO, bill and vendor credit). */
     private function lines(PurchaseOrder $po, array $ctx, array $poLineIds = []): array
     {
         $items = $po->items()->get();
@@ -949,7 +830,6 @@ class PoZohoService
         return round((float) $po->shipping_charges + (float) $po->packaging_charges + (float) $po->other_charges, 2);
     }
 
-    /** TDS as a deduction, as the old sync does, so the bill equals our net payable. */
     private function tds(PurchaseOrder $po): float
     {
         return ($po->tds_updated_at && (float) $po->tds_amount > 0) ? round((float) $po->tds_amount, 2) : 0.0;
@@ -1005,18 +885,10 @@ class PoZohoService
         return $this->withCurrency($payload, $ctx);
     }
 
-    /**
-     * The credit is raised for the money actually released against the PO — not the
-     * order's value — less what the supplier keeps as cancellation charges. What stays
-     * open on it is therefore exactly the cash the supplier has to send back.
-     */
     private function vendorCreditPayload(PoRefundAdjustment $adj, PurchaseOrder $po, array $ctx): array
     {
         $paid = round((float) $adj->paid_amount, 2);
         $retained = round((float) $adj->retained_amount, 2);
-        /* Returning an advance is not itself a taxable supply, but Zoho refuses a line
-           that names no tax ("Specify either a Tax or Tax Exemption or Reverse Charge"),
-           so the org's own 0% rate carries it — it adds nothing to the credit. */
         $zeroTax = null;
         try {
             $zeroTax = $this->books->resolveTaxId(0.0, (bool) $ctx['inter_state']);
@@ -1041,10 +913,6 @@ class PoZohoService
             'line_items'           => [$line],
             'notes' => mb_substr('PO cancelled — ' . $adj->reason, 0, 500),
         ];
-        /* The org refuses a vendor credit that names no bill ("Select the associated
-           bill number or bill type"), so the PO's bill is stated here. Naming it only
-           associates the credit for GST reporting — it is NOT applied to the bill, so
-           the whole credit stays open for the supplier to refund in cash. */
         if (!empty($po->zoho_bill_id)) $payload['bill_id'] = (string) $po->zoho_bill_id;
         if ($retained > 0) {
             $payload['adjustment'] = -$retained;
@@ -1057,13 +925,6 @@ class PoZohoService
         return $this->withCurrency($payload, $ctx);
     }
 
-    /* ══════════════════════════ HELPERS ══════════════════════════ */
-
-    /**
-     * Zoho Books refuses an HSN that is not all digits, or longer than 8, and
-     * its message names no product — so the sync failed with nothing to act on.
-     * Checked here first so the refusal says which product and what its code is.
-     */
     private function assertHsnCodes(PurchaseOrder $po): void
     {
         $bad = DB::table('p2p_purchase_order_items as i')
@@ -1090,7 +951,6 @@ class PoZohoService
         }
     }
 
-    /** One sync per record at a time — a double click must not create two Zoho documents. */
     private function withLock(string $key, callable $work): mixed
     {
         $lock = Cache::lock($key, 120);
