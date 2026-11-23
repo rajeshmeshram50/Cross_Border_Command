@@ -23,11 +23,16 @@ export function MasterRecordModal({
   onClose,
   onSaved,
   defaults,
+  variant,
 }: {
   slug: string;
   onClose: () => void;
   onSaved: (row: Record<string, unknown>) => void;
   defaults?: Record<string, string>;
+  /** 'teal': the Master page's own Add form (same header, card and footer).
+      The caller loads its styles (master.css, warehouse-master.css,
+      p2p-common.css). Omitted, the form keeps its original look. */
+  variant?: 'teal';
 }) {
   const cfg = getMasterConfig(slug);
   const toast = useToast();
@@ -101,6 +106,62 @@ export function MasterRecordModal({
     }
   };
 
+  const fields = shownFields.map((f, i) =>
+    renderField(f, i, defaults ?? null, false, {}, () => 'name', fieldErrors, clearFieldError, 12, [], {}, () => {}, {}, radioValues, (name, value) => setRadioValues(prev => ({ ...prev, [name]: value }))),
+  );
+
+  if (variant === 'teal') {
+    return (
+      <>
+        <MasterFormStyles />
+        <Modal
+          isOpen
+          toggle={() => { /* explicit Cancel only */ }}
+          centered
+          modalClassName="master-modal mp-tealf"
+          contentClassName="whm-addmdl mp-tealf-content"
+          backdropClassName="mp-tealf-backdrop"
+          backdrop="static"
+          keyboard={false}
+          zIndex={1200}
+        >
+          <div className="spi-mdl-head">
+            <div className="spi-mdl-head-left">
+              <div className="spi-mdl-head-ico"><i className={cfg.icon} style={{ fontSize: 20 }} /></div>
+              <div className="min-w-0">
+                <div className="spi-mdl-title">Add {singular}</div>
+                <div className="spi-mdl-sub">Fill in the details to register a new {singular.toLowerCase()}</div>
+              </div>
+            </div>
+            <button type="button" className="spi-mdl-x" onClick={onClose} disabled={saving} aria-label="Close">
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+          </div>
+          <Form onSubmit={handleSave} noValidate>
+            <ModalBody className="mp-tealf-body">
+              <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+                <div className="whm-card">
+                  <Row className="g-2">{fields}</Row>
+                </div>
+              </fieldset>
+            </ModalBody>
+            <div className="spi-mdl-foot">
+              <span className="whm-footnote"><i className="ri-information-line" style={{ fontSize: 15, color: '#0891b2' }} /> Fields marked * are required</span>
+              <div className="spi-mdl-foot-btns">
+                <button type="button" className="spi-mdl-cancel" disabled={saving} onClick={onClose}>Cancel</button>
+                <button type="submit" className="spi-mdl-confirm" disabled={saving} aria-busy={saving || undefined}>
+                  {saving ? <span className="spi-mdl-spin" aria-hidden /> : <i className="ri-check-line" style={{ fontSize: 16 }} />}
+                  {saving ? 'Saving...' : `Save ${singular}`}
+                </button>
+              </div>
+            </div>
+          </Form>
+          {saving && <MasterSavingLock label={`Saving ${singular.toLowerCase()}…`} />}
+        </Modal>
+      </>
+    );
+  }
+
   return (
     <>
       <MasterFormStyles />
@@ -132,11 +193,7 @@ export function MasterRecordModal({
 
         <Form onSubmit={handleSave} noValidate>
           <ModalBody className="px-4 py-3">
-            <Row className="g-2">
-              {shownFields.map((f, i) =>
-                renderField(f, i, defaults ?? null, false, {}, () => 'name', fieldErrors, clearFieldError, 12, [], {}, () => {}, {}, radioValues, (name, value) => setRadioValues(prev => ({ ...prev, [name]: value }))),
-              )}
-            </Row>
+            <Row className="g-2">{fields}</Row>
           </ModalBody>
           <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <button type="button" className="master-modal-cancel" onClick={onClose} disabled={saving}>

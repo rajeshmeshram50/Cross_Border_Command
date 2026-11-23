@@ -23,6 +23,8 @@ import api from '../../../../api';
 import { SavingLock, ShimServiceForm } from './serviceLoading';
 import { Shimmer } from '../../../../components/ui/Shimmer';
 import AttachPicker from '../../procurement-management/sourcing-tracker/AttachPicker';
+import '../../../../../css/master.css';
+import '../../../inventory-management/warehouse/warehouse-master.css';
 import './service-form.css';
 
 export interface ServiceFormInput {
@@ -522,6 +524,7 @@ export default function ServiceFormModal({
       )}
       {quickAdd && quickAdd.slug !== 'segments' && (
         <MasterRecordModal
+          variant="teal"
           slug={quickAdd.slug}
           defaults={quickAdd.slug === 'service_categories'
             ? (kind === 'other'
