@@ -160,11 +160,9 @@ const DEFAULT_SIZE_OPTIONS = [10, 25, 50];
 const bottomReserve = (): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
-  /* The auto-hiding footer is `position: fixed` — it is out of the flow and
-     owns no height on the page, so reserving its 40px would leave exactly the
-     empty white band it exists to remove. It comes back OVER the table instead,
-     and passes clicks through (see .app-footer-auto in app.css). */
-  if (f?.classList.contains('app-footer-auto')) return 15;
+  /* The footer is in the flow and always on screen, so its real height is
+     reserved. (It used to auto-hide, and this short-circuited to 15px so the
+     table would not leave a white band where the hidden footer sat.) */
   const fh = f?.offsetHeight ?? 0;
   return fh > 0 ? fh + 8 : 15;
 };
@@ -532,10 +530,6 @@ export default function DataTable<T extends object>({
       const onPage = el.querySelectorAll('.dt-table tbody tr:not(.dt-empty-row)').length;
       return chrome + hBar + headH + Math.max(onPage, minRows) * rowH;
     };
-    const rowFloor = (): number => {
-      if (!autoFitRows) return 240;
-      return Math.max(240, contentHeight() ?? 240);
-    };
 
     const size = () => {
       /* On a phone the PAGE scrolls, not the card.
@@ -596,8 +590,9 @@ export default function DataTable<T extends object>({
        * the card, on the page background, rather than inside a white panel
        * where it reads as the table being broken.
        *
-       * A picked size TALLER than the window still grows past it and lets the
-       * page scroll — natural height does that on its own. */
+       * A picked size TALLER than the window is CAPPED at the space above
+       * the footer and scrolls inside the card — it used to grow past the
+       * viewport, which buried the last rows and the pager behind the footer. */
       /* …unless the caller asked to reach the footer regardless (`fillToFooter`).
        * Then the pin below applies whatever the picked size, which is the
        * always-stretch behaviour CLM Segment Master and Suppliers already
@@ -613,12 +608,24 @@ export default function DataTable<T extends object>({
         /* Nothing to measure means no rows — a filter that matched nothing, or
          * the first paint. The empty state still needs room to be read, so it
          * falls back to the flat floor the card used before. */
-        /* …with a floor of the table's own `minAutoRows`, capped by the size
-         * actually picked. Pick 50 against one record and the card collapsed
-         * to a single row under the toolbar; it now keeps the height the
-         * default shows. Pick 5 and the floor is 5, never 10. */
-        const floorRows = autoFitRows ? Math.min(minAutoRows, manualSize) : 0;
-        const mh = `${contentHeight(floorRows) ?? 240}px`;
+        /* …with a floor, capped by the size actually picked. Pick 50 against
+         * one record and the card collapsed to a single row under the toolbar;
+         * it now keeps roughly the height the default shows. Pick 5 and the
+         * floor is 5, never 10.
+         *
+         * FLOOR_ROWS, not `minAutoRows`: that prop floors the auto-fit row
+         * COUNT and defaults to 2 deliberately (five rows do not fit a short
+         * window). Borrowing it left every table that never set it — Clients
+         * among them — with a two-row floor, which still reads as collapsed.
+         * A table asking for MORE than ten still gets what it asked for. */
+        const FLOOR_ROWS = 10;
+        const floorRows = autoFitRows ? Math.min(Math.max(minAutoRows, FLOOR_ROWS), manualSize) : 0;
+        /* …and a CEILING of the space above the footer. A picked size used to
+         * grow the card past the viewport and let the page scroll, which ran
+         * the last rows and the pager in behind the footer. The rows scroll
+         * inside `.dt-scroll` instead, and the pager stays reachable. */
+        const avail = Math.max(240, window.innerHeight - top - bottomReserve());
+        const mh = `${Math.min(contentHeight(floorRows) ?? 240, avail)}px`;
         if (el.style.height === mh && !el.style.minHeight) return;
         el.style.flex = 'none';
         el.style.minHeight = '';
@@ -626,7 +633,12 @@ export default function DataTable<T extends object>({
         el.style.maxHeight = mh;
         return;
       }
-      const h = `${Math.max(rowFloor(), window.innerHeight - top - bottomReserve())}px`;
+      /* The space above the footer, and no more. This used to take
+         `max(rowFloor(), avail)` so a floored row count could push the card
+         past the viewport — with minAutoRows at 10 on a laptop that is exactly
+         what happened, and the last rows and the pager went behind the footer.
+         Rows that do not fit scroll inside `.dt-scroll` instead. */
+      const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
       if (el.style.height === h && !el.style.minHeight) return;
       el.style.flex = 'none';
       el.style.minHeight = '';
