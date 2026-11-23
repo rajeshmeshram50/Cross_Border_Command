@@ -12,7 +12,6 @@
 </head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;color:#1f2937;">
 
-{{-- Hidden pre-header --}}
 <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f4f5f7;">
   {{ $employeeName }}, your probation period at {{ $orgName }} is complete — your employment is now confirmed.
 </div>
@@ -31,11 +30,8 @@
 <tr><td align="center">
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 10px 40px rgba(15,23,42,0.08);">
 
-  {{-- ── Brand header — halftone dot design in the TOP-RIGHT corner, with the
-       org-name wordmark (accent bar + subline) on the left. ───────────────── --}}
   <tr>
     <td style="padding:0;position:relative;background-color:#ffffff;background-image:url('{{ $dotsUrl }}');background-repeat:no-repeat;background-position:top right;">
-      {{-- Fallback for clients that drop background images on <td>. --}}
       <img src="{{ $dotsUrl }}" alt="" width="102" height="102" style="position:absolute;top:0;right:0;border:0;display:block;" />
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
@@ -59,7 +55,6 @@
     </td>
   </tr>
 
-  {{-- ── Title ────────────────────────────────────────────────── --}}
   <tr><td style="padding:26px 24px 0;text-align:center;">
     <h1 style="margin:0;font-size:30px;line-height:1.2;font-weight:800;color:#1f2937;">Congratulations!</h1>
     <p style="margin:9px 0 0;font-size:16px;font-weight:700;color:#f97316;line-height:1.4;white-space:nowrap;">
@@ -67,12 +62,10 @@
     </p>
   </td></tr>
 
-  {{-- ── Circular people-with-check icon (sparkles) ───────────── --}}
   <tr><td style="padding:18px 32px 8px;text-align:center;">
     <img src="{{ $iconUrl }}" alt="" width="210" height="126" style="display:inline-block;border:0;outline:none;max-width:210px;" />
   </td></tr>
 
-  {{-- ── Body copy (formal confirmation letter to the employee) ─ --}}
   <tr><td style="padding:8px 48px 16px;">
     <p style="margin:0 0 18px;font-size:15px;color:#374151;line-height:1.7;">Dear <strong style="color:#1f2937;">{{ $employeeName }}</strong>,</p>
 
@@ -115,7 +108,6 @@
     </p>
   </td></tr>
 
-  {{-- ── Footer (orange → dark) contact bar ───────────────────── --}}
   <tr><td style="padding:0;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ea580c;background-image:linear-gradient(90deg,#0f172a 0%,#9a3412 55%,#f97316 100%);">
       <tr>
