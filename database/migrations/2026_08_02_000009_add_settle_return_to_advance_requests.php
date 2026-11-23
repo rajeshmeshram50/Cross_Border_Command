@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * When a finalised COMPANY advance settled as "return" (used less than the
- * advance), the employee returns the unused balance to the company. These
- * columns record that return payment (method + proof + timestamp) so the
- * "Make Payment" action flips to "Returned" and can't be actioned twice.
- */
 return new class extends Migration {
     public function up(): void
     {
