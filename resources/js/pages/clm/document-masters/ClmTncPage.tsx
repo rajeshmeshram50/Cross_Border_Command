@@ -513,7 +513,15 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <SubHead title="Terms and Conditions Entries" count={rows.length}
-          sub="Segment-wise Terms &amp; Conditions, matched to a product's segment." />
+          sub="Segment-wise Terms &amp; Conditions, matched to a product's segment."
+          tabs={[
+            { key: 'highly', label: 'Highly Regulatory', count: rows.filter(r => r.regulatory !== 'less').length,
+              icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> },
+            { key: 'less', label: 'Less Regulatory', count: rows.filter(r => r.regulatory === 'less').length,
+              icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> },
+          ]}
+          active={statusFilter}
+          onTab={(k) => { setStatusFilter(k as 'all' | 'highly' | 'less'); setPage(1); }} />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search Terms and Conditions library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -521,7 +529,8 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         </div>
         {/* 214, not 190: the funnel takes about 22px of the label's room and
             "Highly Regulatory" needs all of it. */}
-        <div className="clm-filter-ms" style={{ width: 214, flex: '0 0 auto' }}>
+        {/* Hidden on the Master Control Center, where the tabs above replace it. */}
+        <div className="clm-filter-ms clm-status-dd" style={{ width: 214, flex: '0 0 auto' }}>
           <svg className="clm-filter-ico" width="14" height="14" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
