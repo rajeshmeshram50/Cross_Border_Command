@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Adds the Basic-Purchase-Order-Details fields the standalone (Without-PO) SPI
- * flow captures directly (a Direct invoice has no PO to inherit them from):
- * transport / payment / delivery / inspection, the supplier type, and the
- * International-document extras (currency, exchange rate, INCO, ports, origin).
- */
 return new class extends Migration
 {
     public function up(): void
@@ -21,7 +15,6 @@ return new class extends Migration
             $table->date('expected_delivery_date')->nullable()->after('delivery_location');
             $table->boolean('physical_inspection')->default(false)->after('expected_delivery_date');
             $table->string('supplier_type', 128)->nullable()->after('supplier_name');
-            // International (document_type = International)
             $table->string('currency', 8)->nullable()->after('supplier_type');
             $table->decimal('exchange_rate', 14, 4)->nullable()->after('currency');
             $table->string('inco_term', 16)->nullable()->after('exchange_rate');
