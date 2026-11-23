@@ -10,17 +10,10 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Sent to the employee once their expense claim is fully paid AND every payment
- * is synced to Zoho Books — a reimbursement confirmation with the claimed /
- * added / deducted / net-paid breakdown, the payment installments, and the
- * uploaded proof files attached.
- */
 class ExpenseReimbursementMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    /** @param array<int,array{path:string,name:string}> $proofFiles */
     public function __construct(
         public ExpenseClaim $claim,
         public string $employeeName,
