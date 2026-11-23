@@ -283,8 +283,8 @@ export default function Permissions() {
            plain white surface. Back pill on the right (sub-page). */
         .pm-cstrip {
           position: relative; overflow: hidden;
-          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-          min-height: 70px; padding: 12px 18px;
+          display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+          min-height: 58px; padding: 0 10px;
           background: #ffffff;
           /* 1px violet border on all sides (the left accent strip stays). */
           border: 1px solid #c4b5fd;
@@ -293,26 +293,26 @@ export default function Permissions() {
           font-family: var(--font-sans);
         }
         .pm-cstrip-accent {
-          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          position: absolute; left: 0; top: 0; bottom: 0; width: 5px; z-index: 2;
           background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
           border-radius: 16px 0 0 16px;
         }
-        .pm-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .pm-cstrip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; position: relative; z-index: 1; min-width: 0; flex: 1; }
         .pm-cstrip-icon {
-          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          position: relative; width: 38px; height: 38px; border-radius: 12px;
           background: linear-gradient(135deg, #7c3aed, #5b21b6);
           display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-size: 22px; flex-shrink: 0;
+          color: #fff; font-size: 19px; flex-shrink: 0;
           box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
         }
-        .pm-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
-        .pm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+        .pm-cstrip-title { font-size: 14.5px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .pm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; max-width: 760px; }
         .pm-cstrip-back {
           display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-          padding: 0 18px; height: 44px; border-radius: 14px;
+          padding: 0 18px; height: 40px; border-radius: 999px;
           border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
           background: #fff; color: #6d28d9;
-          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          font-family: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
           transition: background .15s, border-color .15s, transform .15s;
         }
         .pm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }

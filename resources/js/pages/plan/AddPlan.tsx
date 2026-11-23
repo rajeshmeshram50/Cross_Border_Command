@@ -315,7 +315,7 @@ export default function AddPlan({ onBack, editId }: Props) {
           box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
         }
         .ap-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
-        .ap-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+        .ap-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; }
         .ap-cstrip-back {
           display: inline-flex; align-items: center; justify-content: center; gap: 7px;
           padding: 0 18px; height: 44px; border-radius: 14px;

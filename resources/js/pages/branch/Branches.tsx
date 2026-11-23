@@ -407,8 +407,8 @@ export default function Branches({ onNavigate }: Props) {
            Add button) but on a plain white surface (no violet wash). */
         .br-cstrip {
           position: relative; overflow: hidden;
-          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-          min-height: 70px; padding: 12px 18px;
+          display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+          min-height: 58px; padding: 0 10px;
           background: #ffffff;
           /* 1px violet border on all sides (the left accent strip stays). */
           border: 1px solid #c4b5fd;
@@ -417,31 +417,31 @@ export default function Branches({ onNavigate }: Props) {
           font-family: var(--font-sans);
         }
         .br-cstrip-accent {
-          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          position: absolute; left: 0; top: 0; bottom: 0; width: 5px; z-index: 2;
           background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
           border-radius: 16px 0 0 16px;
         }
-        .br-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .br-cstrip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; position: relative; z-index: 1; min-width: 0; flex: 1; }
         .br-cstrip-icon {
-          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          position: relative; width: 38px; height: 38px; border-radius: 12px;
           background: linear-gradient(135deg, #7c3aed, #5b21b6);
           display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-size: 22px; flex-shrink: 0;
+          color: #fff; font-size: 19px; flex-shrink: 0;
           box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
         }
         .br-cstrip-icon::after {
-          content: ''; position: absolute; bottom: -2px; right: -2px;
-          width: 11px; height: 11px; border-radius: 50%;
+          content: ''; position: absolute; bottom: -1px; right: -1px;
+          width: 10px; height: 10px; border-radius: 50%;
           background: #22c55e; border: 2px solid #ffffff;
           box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 2px 5px rgba(34,197,94,0.45);
         }
-        .br-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
-        .br-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+        .br-cstrip-title { font-size: 14.5px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .br-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; max-width: 760px; }
         .br-cstrip-add {
           position: relative; z-index: 1; overflow: hidden;
           display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-          padding: 0 22px; height: 44px; border: none; border-radius: 14px;
-          font-family: inherit; font-size: 13px; font-weight: 700; color: #fff;
+          padding: 0 22px; height: 40px; border: none; border-radius: 999px;
+          font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff;
           white-space: nowrap; cursor: pointer; flex-shrink: 0;
           background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
           box-shadow: 0 5px 16px rgba(124,58,237,.40), 0 2px 5px rgba(91,33,182,.25), 0 1px 0 rgba(255,255,255,.22) inset;
@@ -452,10 +452,10 @@ export default function Branches({ onNavigate }: Props) {
         .br-cstrip-add i { font-size: 16px; }
         .br-cstrip-export {
           display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-          padding: 0 18px; height: 44px; border-radius: 14px;
+          padding: 0 18px; height: 40px; border-radius: 999px;
           border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
           background: #fff; color: #6d28d9;
-          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          font-family: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
           transition: background .15s, border-color .15s, transform .15s;
         }
         .br-cstrip-export:hover:not(:disabled) { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }

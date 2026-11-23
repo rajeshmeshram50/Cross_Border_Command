@@ -197,7 +197,9 @@ html:has(#layout-wrapper.idims-active) #app {
   .pm-cstrip .pm-cstrip-title, .smc-cstrip .smc-cstrip-title,
   .smcg-cstrip .smcg-cstrip-title) {
   font-family: var(--font-sans);
-  font-size: 18px;
+  /* 14.5px, the HRMS/Supplier figure. This rule outranks every per-page
+     `.xx-cstrip-title`, so the size has to change here or not at all. */
+  font-size: 14.5px;
   font-weight: 800;
   letter-spacing: -.3px;
 }
@@ -211,6 +213,12 @@ html:has(#layout-wrapper.idims-active) #app {
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
+  /* Tight to the title: the per-page rules say 4 / 1.5, judged against an
+     18px title, and under 14.5px that reads as a hole. The leading does most
+     of the work — 1.5 puts 3px above the text before any margin applies.
+     This rule outranks every per-page one, so it settles here. */
+  margin-top: 1px;
+  line-height: 1.25;
 }
 
 div.frm-cstrip,
@@ -223,50 +231,39 @@ div.mp-cstrip {
   margin-bottom: 8px !important;
 }
 
+/* 40 / 12.5, the HRMS figure. These were 42 / 13 while HRMS alone was
+   brought down, which is the inconsistency QA filed four times over
+   (client, plan, payment, notification). One figure now, everywhere. */
 button.cl-cstrip-add,
 button.pl-cstrip-add,
 button.pmt-cstrip-add,
 button.br-cstrip-add,
 button.ms-cstrip-add {
-  height: 42px !important;
+  height: 40px !important;
   padding: 0 22px !important;
   border-radius: 999px !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-}
-
-:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box) :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
-  height: 42px !important;
-  border-radius: 999px !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-}
-
-:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box) :is(select, .form-select) {
-  height: 42px !important;
-  border-radius: 999px !important;
-}
-
-/* HRMS strips are 40, not the 42 the blanket rule above forces on every
-   button in every cstrip.
-
-   That rule is why a height set anywhere else kept losing: cand-pill-btn,
-   frm-cstrip-back, rec-btn-primary and the reactstrap <Button>s each
-   declare 40 and each was overruled by its !important. Matching the
-   !important here rather than editing the blanket rule leaves the client,
-   plan, payment, branch and master strips on their 42. */
-.frm-cstrip.hr-cstrip :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.ui-search-clear):not(.dt-tabrail *) {
-  height: 40px !important;
-  /* 12.5px, matching .rec-btn-*, .cand-pill-btn and the DataTable toolbar.
-     The blanket rule's 13px !important beat every one of them. */
   font-size: 12.5px !important;
-  /* min-height too, and this is the part that actually settles it.
-     .hr-cstrip > .d-flex .btn.rounded-pill carries min-height: 42px, and
-     min-height is resolved AFTER height — it clamps the used value back
-     up, so height: 40 !important was being applied and then overruled by
-     a rule with no !important at all. */
-  min-height: 40px !important;
+  font-weight: 600 !important;
 }
+
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .pm-cstrip, .ap-cstrip, .page-title-box) :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.ui-search-clear):not(.dt-tabrail *) {
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 999px !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+}
+
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .pm-cstrip, .ap-cstrip, .page-title-box) :is(select, .form-select) {
+  height: 42px !important;
+  border-radius: 999px !important;
+}
+
+/* The HRMS-only 40 / 12.5 override that used to sit here is now the blanket
+   rule above, so every strip carries it. The min-height stayed with it:
+   .hr-cstrip > .d-flex .btn.rounded-pill declares min-height: 42px, and
+   min-height is resolved AFTER height — without matching it, height: 40
+   applies and is then clamped straight back up. */
 
 .row.mb-3:has(> [class*="col"] > [class*="kpi"]),
 .row.mb-3:has(> [class*="col"] > [class*="stat-box"]),
@@ -280,7 +277,15 @@ button.ms-cstrip-add {
   --bs-gutter-y: 8px !important;
 }
 
-:is(.page-content :has(>.frm-cstrip.hr-cstrip), .page-content .pay-page)>* {
+/* The admin strips (client, plan, payment, branch, master) join the HRMS
+   rhythm: 8px between the strip, the KPI row and the list. They keep the 8px
+   on the LAST block too, so the table clears the page footer by the same
+   gap — an HRMS page ends against a different footer and zeroes it. */
+:is(
+  .page-content :has(>.frm-cstrip.hr-cstrip),
+  .page-content :has(>:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .pm-cstrip, .ap-cstrip)),
+  .page-content .pay-page
+)>* {
   margin-bottom: 8px !important;
 }
 
@@ -288,7 +293,11 @@ button.ms-cstrip-add {
   margin-bottom: 0 !important;
 }
 
-:is(.page-content :has(>.frm-cstrip.hr-cstrip), .page-content .pay-page)>.row {
+:is(
+  .page-content :has(>.frm-cstrip.hr-cstrip),
+  .page-content :has(>:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .pm-cstrip, .ap-cstrip)),
+  .page-content .pay-page
+)>.row {
   --vz-gutter-x: 8px !important;
   --vz-gutter-y: 8px !important;
   --bs-gutter-x: 8px !important;
@@ -331,28 +340,53 @@ button.ms-cstrip-add {
   font-size: 16px;
 }
 
+/* ── Native file inputs ──────────────────────────────────────────────
+   Bootstrap draws the picker as a grey chip (--bs-tertiary-bg) flush to
+   the field's edge with square corners, so it reads as a button dropped
+   inside the box rather than part of it. Same treatment .hrms-file-input
+   gives the HR forms — one surface, a divider, and real breathing room
+   before the filename — but applied to every file input so no screen has
+   to opt in.
+
+   Both halves ride one line-height equal to the field height: Bootstrap
+   pads the field and hangs the button off negative margins, which leaves
+   the label and the filename on two different baselines. */
+input.form-control[type="file"] {
+  height: 38px;
+  line-height: 38px;
+  padding: 0;
+}
+
+input.form-control[type="file"]::file-selector-button {
+  height: 38px;
+  line-height: 38px;
+  margin: 0 14px 0 0;
+  padding: 0 14px;
+  border: 0;
+  border-inline-end: 1px solid var(--vz-border-color);
+  border-radius: 7px 0 0 7px;
+  background: var(--vz-card-bg);
+  color: var(--vz-body-color);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+
+input.form-control[type="file"]::file-selector-button:hover {
+  background: #6366f1;
+  color: #fff;
+  border-inline-end-color: #6366f1;
+}
+
+input.form-control[type="file"]:disabled::file-selector-button {
+  cursor: default;
+  opacity: .6;
+}
+
 .footer {
   position: static;
-}
-
-.footer.app-footer-auto {
-  z-index: 3;
-  transform: translateY(100%);
-  opacity: 0;
-  transition: transform .22s cubic-bezier(.22, 1, .36, 1), opacity .18s ease;
-  will-change: transform;
-  pointer-events: none;
-}
-
-.footer.app-footer-auto.is-visible {
-  transform: none;
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .footer.app-footer-auto {
-    transition: none;
-  }
 }
 
 .wl-pager {
@@ -1481,10 +1515,10 @@ tbody tr:nth-child(10) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
-  min-height: 70px;
-  padding: 12px 18px;
+  min-height: 58px;
+  padding: 0 10px;
   background: #ffffff;
   border: 1px solid #c4b5fd;
   border-radius: 16px;
@@ -1496,7 +1530,8 @@ tbody tr:nth-child(10) {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 5px;
+  z-index: 2;
   background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
   border-radius: 16px 0 0 16px;
 }
@@ -1504,7 +1539,8 @@ tbody tr:nth-child(10) {
 .pmt-cstrip-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 13px;
+  padding-left: 10px;
   position: relative;
   z-index: 1;
   min-width: 0;
@@ -1513,15 +1549,15 @@ tbody tr:nth-child(10) {
 
 .pmt-cstrip-icon {
   position: relative;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   border-radius: 12px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 22px;
+  font-size: 19px;
   flex-shrink: 0;
   box-shadow: 0 4px 14px rgba(91, 33, 182, 0.40), 0 0 0 3px rgba(124, 58, 237, 0.10);
 }
@@ -1529,10 +1565,10 @@ tbody tr:nth-child(10) {
 .pmt-cstrip-icon::after {
   content: '';
   position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 11px;
-  height: 11px;
+  bottom: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #22c55e;
   border: 2px solid #ffffff;
@@ -1540,7 +1576,7 @@ tbody tr:nth-child(10) {
 }
 
 .pmt-cstrip-title {
-  font-size: 18px;
+  font-size: 14.5px;
   font-weight: 800;
   color: var(--vz-heading-color, #2e1065);
   letter-spacing: -.3px;
@@ -1551,8 +1587,6 @@ tbody tr:nth-child(10) {
   font-size: 12px;
   color: var(--vz-secondary-color, #6b7280);
   font-weight: 400;
-  margin-top: 4px;
-  line-height: 1.5;
   max-width: 760px;
 }
 
@@ -1562,13 +1596,13 @@ tbody tr:nth-child(10) {
   justify-content: center;
   gap: 7px;
   padding: 0 18px;
-  height: 44px;
-  border-radius: 14px;
+  height: 40px;
+  border-radius: 999px;
   border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
   background: #fff;
   color: #6d28d9;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
@@ -1610,6 +1644,8 @@ tbody tr:nth-child(10) {
   background: rgba(124, 58, 237, .14);
 }
 
+/* 58 on 0 10px — the HRMS figure, now the base so a plain .frm-cstrip
+   (the Inbox, among others) stands the same height as an HRMS one. */
 .frm-cstrip {
   margin-top: 0;
   position: relative;
@@ -1617,10 +1653,10 @@ tbody tr:nth-child(10) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
-  min-height: 70px;
-  padding: 12px 18px;
+  min-height: 58px;
+  padding: 0 10px;
   background: #ffffff;
   border: 1px solid #c4b5fd;
   border-radius: 16px;
@@ -1633,7 +1669,8 @@ tbody tr:nth-child(10) {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 5px;
+  z-index: 2;
   background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
   border-radius: 16px 0 0 16px;
 }
@@ -1641,7 +1678,8 @@ tbody tr:nth-child(10) {
 .frm-cstrip-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 13px;
+  padding-left: 10px;
   position: relative;
   z-index: 1;
   min-width: 0;
@@ -1650,21 +1688,21 @@ tbody tr:nth-child(10) {
 
 .frm-cstrip-icon {
   position: relative;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   border-radius: 12px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 22px;
+  font-size: 19px;
   flex-shrink: 0;
   box-shadow: 0 4px 14px rgba(91, 33, 182, 0.40), 0 0 0 3px rgba(124, 58, 237, 0.10);
 }
 
 .frm-cstrip-title {
-  font-size: 18px;
+  font-size: 14.5px;
   font-weight: 800;
   color: var(--vz-heading-color, #2e1065);
   letter-spacing: -.3px;
@@ -1835,8 +1873,8 @@ tbody tr:nth-child(10) {
   font-weight: 500;
   color: #6d28d9;
   opacity: .85;
-  margin-top: 3px;
-  line-height: 1.35;
+  margin-top: 1px;
+  line-height: 1.25;
 }
 
 .hr-cstrip>.d-flex .btn.rounded-pill,
@@ -2018,8 +2056,8 @@ tbody tr:nth-child(10) {
   justify-content: center;
   gap: 7px;
   padding: 0 18px;
-  height: 44px;
-  border-radius: 14px;
+  height: 40px;
+  border-radius: 999px;
   border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
   background: #fff;
   color: #6d28d9;

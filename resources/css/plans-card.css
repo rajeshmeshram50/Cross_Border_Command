@@ -23,32 +23,32 @@
    white container, 1px violet border, left accent strip, violet icon. */
 .pl-cstrip {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-  min-height: 70px; padding: 12px 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  min-height: 58px; padding: 0 10px;
   background: #ffffff;
   border: 1px solid #c4b5fd;
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
 }
 .pl-cstrip-accent {
-  position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  position: absolute; left: 0; top: 0; bottom: 0; width: 5px; z-index: 2;
   background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
   border-radius: 16px 0 0 16px;
 }
-.pl-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+.pl-cstrip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; position: relative; z-index: 1; min-width: 0; flex: 1; }
 .pl-cstrip-icon {
-  position: relative; width: 46px; height: 46px; border-radius: 12px;
+  position: relative; width: 38px; height: 38px; border-radius: 12px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: inline-flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 22px; flex-shrink: 0;
+  color: #fff; font-size: 19px; flex-shrink: 0;
   box-shadow: 0 4px 14px rgba(91, 33, 182, 0.40), 0 0 0 3px rgba(124, 58, 237, 0.10);
 }
-.pl-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
-.pl-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+.pl-cstrip-title { font-size: 14.5px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+.pl-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; }
 .pl-cstrip-add {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 0 22px; height: 44px; border: none; border-radius: 14px;
-  font-family: inherit; font-size: 13px; font-weight: 700; color: #fff;
+  padding: 0 22px; height: 40px; border: none; border-radius: 999px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff;
   white-space: nowrap; cursor: pointer; flex-shrink: 0;
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
   box-shadow: 0 5px 16px rgba(124, 58, 237, .40), 0 2px 5px rgba(91, 33, 182, .25), 0 1px 0 rgba(255, 255, 255, .22) inset;
@@ -59,10 +59,10 @@
 .pl-cstrip-add i { font-size: 16px; }
 .pl-cstrip-back {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 0 18px; height: 44px; border-radius: 14px;
+  padding: 0 18px; height: 40px; border-radius: 999px;
   border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
   background: #fff; color: #6d28d9;
-  font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
   transition: background .15s, border-color .15s, transform .15s;
 }
 .pl-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }

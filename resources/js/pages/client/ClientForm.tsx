@@ -1459,7 +1459,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Organization Logo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>PNG, JPG, WebP &middot; Recommended 200&times;400 px &middot; Max 2 MB</small>
               </Col>
@@ -1467,7 +1467,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Favicon</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {faviconPreview && <img src={faviconPreview} alt="favicon" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/x-icon,image/png,image/jpeg,image/svg+xml,image/webp,.ico" onChange={e => handleFaviconChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/x-icon,image/png,image/jpeg,image/svg+xml,image/webp,.ico" onChange={e => handleFaviconChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>ICO, PNG, JPG, SVG, WebP &middot; Recommended 32&times;32 or 64&times;64 px &middot; Max 512 KB</small>
               </Col>
@@ -1475,7 +1475,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Profile Photo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>JPG, PNG — Max 2MB</small>
               </Col>
