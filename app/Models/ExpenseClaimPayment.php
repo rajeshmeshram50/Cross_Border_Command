@@ -6,11 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * One settlement installment against an approved expense claim. A claim can be
- * paid in parts (partial payments) until its sanctioned amount is met — each
- * "Record Payment" adds a row here.
- */
 class ExpenseClaimPayment extends Model
 {
     use SoftDeletes;
@@ -42,11 +37,6 @@ class ExpenseClaimPayment extends Model
         return $this->belongsTo(User::class, 'paid_by');
     }
 
-    /**
-     * Live link to the expense-category master so the category name is always
-     * read fresh from `category_id` — the stored `category_name` is kept only as
-     * a fallback for a since-deleted category, never preferred on read.
-     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(\App\Models\Masters\ExpenseCategories::class, 'category_id');
