@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Tracks whether a settlement payment has been pushed to Zoho Books. For now the
- * status is toggled locally by the "Sync to Zoho" button (UI only) — the actual
- * Zoho Books push (createExpense) is a senior-owned ZohoBooksService addition and
- * will be wired here later. `not_synced` | `synced`.
- */
 return new class extends Migration {
     public function up(): void
     {
