@@ -2,18 +2,12 @@
 
 namespace App\Services\CredVault;
 
-/**
- * RFC 6238 time-based one-time codes — the authenticator step of Critical
- * Access Protection. SHA-1, 6 digits, 30-second period: what Google and
- * Microsoft Authenticator, Authy and every other TOTP app expect by default.
- */
 class Totp
 {
     private const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
     private const PERIOD   = 30;
     private const DIGITS   = 6;
 
-    /** A fresh 160-bit secret, base32 — 32 characters, as the apps prefer. */
     public static function newSecret(): string
     {
         $bytes = random_bytes(20);
@@ -26,7 +20,6 @@ class Totp
         return $out;
     }
 
-    /** otpauth:// URI for the QR code. */
     public static function uri(string $secret, string $label, string $issuer = 'Kryptone'): string
     {
         return 'otpauth://totp/' . rawurlencode($issuer . ':' . $label)
@@ -34,7 +27,6 @@ class Totp
             . '&algorithm=SHA1&digits=' . self::DIGITS . '&period=' . self::PERIOD;
     }
 
-    /** The code for a time step; defaults to now. */
     public static function code(string $secret, ?int $step = null): string
     {
         $step ??= intdiv(time(), self::PERIOD);
@@ -48,28 +40,16 @@ class Totp
         return str_pad((string) ($bin % (10 ** self::DIGITS)), self::DIGITS, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * Whether $code is valid now, allowing a window of clock drift either side.
-     * Compared in constant time so a timing attack learns nothing.
-     */
     public static function verify(string $secret, string $code): bool
     {
         return self::matchStep($secret, $code) !== null;
     }
 
-    /**
-     * Accepted drift either side, in 30-second steps. ONE step in production —
-     * the standard RFC 6238 tolerance. Wider in local only, where the dev box's
-     * clock is deliberately set to a future date and a phone authenticator can
-     * never sit within 30s of it, so the first scanned code would otherwise be
-     * rejected until the next window. Never loosen the production check.
-     */
     private static function window(): int
     {
         return app()->environment('local') ? 4 : 1;
     }
 
-    /** The time step $code belongs to (within the drift window), or null — callers store it to refuse a replay. */
     public static function matchStep(string $secret, string $code): ?int
     {
         if (!preg_match('/^\d{6}$/', $code)) return null;
