@@ -809,3 +809,19 @@ export const LEAD_ACK_CSS = `
 /* 8px between the buttons, as in the Customers actions column (gap-2). */
 .lam-table .lam-actions { gap: 8px; }
 `;
+
+const TEAL_MAP: [RegExp, string][] = [
+  [/#7c3aed/gi, '#0891b2'], [/#6d28d9/gi, '#0e7490'], [/#5b21b6/gi, '#155e75'], [/#4c1d95/gi, '#164e63'],
+  [/#8b5cf6/gi, '#06b6d4'], [/#a78bfa/gi, '#22d3ee'], [/#c4b5fd/gi, '#67e8f9'], [/#ddd6fe/gi, '#a5f3fc'],
+  [/#ede9fe/gi, '#cffafe'], [/#f5f3ff/gi, '#ecfeff'], [/#faf7ff/gi, '#f4fdff'], [/#faf5ff/gi, '#f4fdff'],
+  [/#f3e8ff/gi, '#e0f7fb'], [/#efe9fb/gi, '#e3f4f8'], [/#e2d8f7/gi, '#d4f3f9'], [/#e2d4fa/gi, '#c2ecf3'],
+  [/#1a1530/gi, '#0f1b2d'], [/#14101d/gi, '#0b1626'], [/#221a3a/gi, '#10233a'], [/#241c3a/gi, '#112640'], [/#322750/gi, '#1e3a52'],
+  [/rgba\(\s*124\s*,\s*58\s*,\s*237/gi, 'rgba(8,145,178'], [/rgba\(\s*167\s*,\s*139\s*,\s*250/gi, 'rgba(34,211,238'],
+  [/rgba\(\s*139\s*,\s*111\s*,\s*232/gi, 'rgba(8,145,178'], [/rgba\(\s*139\s*,\s*92\s*,\s*246/gi, 'rgba(6,182,212'],
+  [/rgba\(\s*76\s*,\s*29\s*,\s*149/gi, 'rgba(22,78,99'], [/rgba\(\s*196\s*,\s*181\s*,\s*253/gi, 'rgba(103,232,249'],
+  [/rgba\(\s*216\s*,\s*180\s*,\s*254/gi, 'rgba(165,243,252'],
+];
+
+export const toLeadAckTeal = (css: string) => TEAL_MAP.reduce((s, [re, to]) => s.replace(re, to), css);
+
+export const LEAD_ACK_CSS_TEAL = toLeadAckTeal(LEAD_ACK_CSS);

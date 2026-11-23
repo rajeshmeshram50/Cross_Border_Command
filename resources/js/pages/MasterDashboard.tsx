@@ -17,7 +17,7 @@ const INVENTORY_MASTER_PAGES: Record<string, string> = {
   'master.zone_master':      '/inventory-management/zone-master',
   'master.racks':            '/inventory-management/rack-master',
   'master.product_flags':    '/inventory-management/product-flags',
-  'sales.lead_ack_master': '/sales/lead-ack-master',
+  'sales.lead_ack_master': '/master/lead-ack',
   'hr.holiday':            '/hr/holiday',
   'clm.authority':         '/clm/authority',
   'clm.kyc':               '/clm/kyc',

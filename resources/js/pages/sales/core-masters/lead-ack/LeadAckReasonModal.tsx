@@ -4,7 +4,7 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
-import { LEAD_ACK_CSS } from './leadAckStyles';
+import { LEAD_ACK_CSS, LEAD_ACK_CSS_TEAL } from './leadAckStyles';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Lead Acknowledgement — Add / Edit Reason popup.
@@ -53,9 +53,11 @@ type Props = {
   presetType?: OppType | null;
   onClose: () => void;
   onSaved: (row: LeadAckReason, mode: 'add' | 'edit') => void;
+  /** teal when opened from the Master Control Center; violet (Sales) otherwise. */
+  variant?: 'violet' | 'teal';
 };
 
-export default function LeadAckReasonModal({ open, editing = null, presetType = null, onClose, onSaved }: Props) {
+export default function LeadAckReasonModal({ open, editing = null, presetType = null, onClose, onSaved, variant = 'violet' }: Props) {
   const toast = useToast();
   const { user } = useAuth();
   // Active branch (from the switcher) so writes are scoped to the SAME branch
@@ -190,7 +192,7 @@ export default function LeadAckReasonModal({ open, editing = null, presetType = 
 
   return createPortal((
     <div className="lam-modal-scope">
-      <style>{LEAD_ACK_CSS}{SCOPE_CSS}</style>
+      <style>{variant === 'teal' ? LEAD_ACK_CSS_TEAL : LEAD_ACK_CSS}{SCOPE_CSS}</style>
 
       {/* ── Opportunity-type selector ── */}
       {/* No backdrop-click-to-close — users were losing partially filled
