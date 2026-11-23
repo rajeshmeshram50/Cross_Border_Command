@@ -20,7 +20,6 @@
   $isExpired  = $remainingDays <= 0;
   $isUrgent   = $remainingDays > 0 && $remainingDays <= 7;
 
-  // Three-state pill in the top-right + matching headline copy.
   if ($isExpired) {
       $pillText   = 'EXPIRED';
       $pillBg     = '#fef2f2'; $pillFg = '#dc2626';
@@ -40,32 +39,25 @@
 @endphp
 <body style="margin:0;padding:0;background-color:#f3f4f6;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;color:#111827;">
 
-{{-- Preheader --}}
 <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f3f4f6;">
   {{ $headline }} &mdash; {{ $planName }} expires {{ $expiryDate }}
 </div>
 
-{{-- ============ WRAPPER ============ --}}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;padding:40px 16px;">
 <tr><td align="center">
 
-{{-- ============ CONTAINER ============ --}}
 <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="max-width:620px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(17,24,39,0.06);">
 
-  {{-- ============ HEADER (stacked wordmark + bars subtitle) ============ --}}
   @php
-    // Split vendor name → first word becomes the big title, rest is subtitle.
     $parts     = explode(' ', $vendorName, 2);
     $brandMain = strtoupper($parts[0] ?? $vendorName);
     $brandSub  = strtoupper(trim($parts[1] ?? ''));
   @endphp
   <tr><td style="padding:26px 32px 22px;text-align:center;border-bottom:2px solid #fbbf24;">
 
-    {{-- Big main word --}}
     <div style="font-size:28px;font-weight:800;color:#0f172a;letter-spacing:6px;line-height:1.1;text-transform:uppercase;">{{ $brandMain }}</div>
 
     @if($brandSub !== '')
-    {{-- Subtitle: amber bar · GROUP OF COMPANIES · amber bar --}}
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin-top:10px;">
     <tr>
       <td style="width:34px;height:4px;background-color:#f59e0b;border-radius:2px;font-size:0;line-height:0;">&nbsp;</td>
@@ -77,10 +69,8 @@
 
   </td></tr>
 
-  {{-- ============ HERO (compact: icon → headline → subtitle) ============ --}}
   <tr><td style="padding:24px 32px 18px;text-align:center;">
 
-    {{-- Warning triangle (no circle) --}}
     <img src="{{ asset('images/email-icons/warning-triangle.png') }}" alt="Renewal due"
          width="84" height="84"
          style="display:inline-block;border:0;outline:none;width:84px;height:84px;margin-bottom:14px;" />
@@ -96,7 +86,6 @@
     </p>
   </td></tr>
 
-  {{-- ============ RENEWAL AMOUNT CARD (cream/amber) ============ --}}
   <tr><td style="padding:6px 32px 18px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fef9e7;background:linear-gradient(135deg,#fef9e7 0%,#fef3c7 100%);border-radius:14px;">
     <tr><td style="padding:20px 24px;text-align:center;">
@@ -109,11 +98,9 @@
     </table>
   </td></tr>
 
-  {{-- ============ SUBSCRIPTION DETAILS ============ --}}
   <tr><td style="padding:0 32px 18px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #f3f4f6;border-radius:14px;overflow:hidden;">
 
-      {{-- Card title --}}
       <tr><td colspan="3" style="padding:14px 20px;border-bottom:1px solid #f3f4f6;font-size:11px;font-weight:800;color:#f59e0b;letter-spacing:1.6px;text-transform:uppercase;">
         Subscription Details
       </td></tr>
@@ -149,7 +136,6 @@
     </table>
   </td></tr>
 
-  {{-- ============ CTA ============ --}}
   <tr><td style="padding:8px 32px 8px;text-align:center;">
     @php($manageUrl = config('app.url') . '/payments')
     <!--[if mso]>
@@ -169,7 +155,6 @@
     <!--<![endif]-->
   </td></tr>
 
-  {{-- ============ IGNORE NOTE ============ --}}
   <tr><td style="padding:14px 32px 28px;text-align:center;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
     <tr>
@@ -188,9 +173,7 @@
     </table>
   </td></tr>
 
-  {{-- ============ FOOTER ============ --}}
   <tr><td style="padding:22px 32px 18px;text-align:center;background-color:#fafafa;border-top:1px solid #f3f4f6;">
-    {{-- Brand --}}
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin-bottom:14px;">
     <tr>
       <td style="width:28px;height:28px;background-color:#f59e0b;border-radius:7px;text-align:center;vertical-align:middle;line-height:28px;">
@@ -200,7 +183,6 @@
     </tr>
     </table>
 
-    {{-- Contact --}}
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin-bottom:14px;">
     <tr>
       <td valign="middle" style="padding:0 14px;">
@@ -221,7 +203,6 @@
     </tr>
     </table>
 
-    {{-- Copyright --}}
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="border-top:1px solid #f3f4f6;padding-top:14px;">
     <tr>
       <td valign="middle" style="padding-top:12px;">
@@ -236,11 +217,9 @@
   </td></tr>
 
 </table>
-{{-- /Container --}}
 
 </td></tr>
 </table>
-{{-- /Wrapper --}}
 
 </body>
 </html>
