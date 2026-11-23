@@ -7,17 +7,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Which SPI item, and how much of it, sits in a box.
- *
- * This table IS the packing tracker: packed quantity is SUM(quantity) here, and
- * pending is the item's qty_spi minus that sum. Nothing is stored on the item.
- * Every such sum must exclude soft-deleted rows, or a removed box still counts
- * as packed.
- *
- * Advanced Details and the product remark live here rather than on the box,
- * because one carton can hold two products from two batches.
- */
 class SpiBoxItem extends Model
 {
     use SoftDeletes;
@@ -40,8 +29,6 @@ class SpiBoxItem extends Model
     protected $casts = [
         'quantity'     => 'decimal:3',
         'is_stackable' => 'boolean',
-        // Master flag ids. A json column rather than a junction table while the
-        // flag master is not built; the ids already point at it.
         'flags'        => 'array',
         'expiry_date'  => 'date',
         'mfg_date'     => 'date',
@@ -49,7 +36,6 @@ class SpiBoxItem extends Model
 
     public function box(): BelongsTo         { return $this->belongsTo(SpiBox::class, 'box_id'); }
     public function invoiceItem(): BelongsTo { return $this->belongsTo(SupplierInvoiceItem::class, 'supplier_invoice_item_id'); }
-    /** Photos of THIS product inside the box, as opposed to the carton itself. */
     public function attachments(): HasMany   { return $this->hasMany(SpiBoxAttachment::class, 'box_item_id'); }
 
     public function isDamaged(): bool
