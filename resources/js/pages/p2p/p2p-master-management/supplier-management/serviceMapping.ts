@@ -10,7 +10,7 @@ export type ServiceBucket = {
 };
 
 /** A type name with spacing and case ignored: "Material / Goods" and "Material/ Goods" are one type. */
-const squash = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+export const squash = (s: string) => s.replace(/\s+/g, '').toLowerCase();
 
 /** Supplier Type → its bucket. Mirrors ServiceController::VENDOR_TYPE_BY_NAME on the server. */
 const BUCKET_BY_TYPE: Record<string, ServiceBucket> = {
