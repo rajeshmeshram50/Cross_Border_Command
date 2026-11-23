@@ -5,11 +5,6 @@ namespace App\Models\Masters;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Pivot row carrying the per-(plan, type) Setup configuration. Lives
- * as a full Eloquent model (not just a withPivot bag) so we can hydrate
- * it directly when persisting the 6-tab Setup popup payload.
- */
 class LeavePlanLeaveType extends Model
 {
     protected $table = 'leave_plan_leave_types';
