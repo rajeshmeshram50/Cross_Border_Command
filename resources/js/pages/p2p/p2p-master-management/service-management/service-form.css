@@ -1442,3 +1442,10 @@ body:has(.svm-page) .cfm-popup .cfm-btn { font-size: 12.5px !important; }
 .svf-body > .svf-section { animation: svfFieldsIn .22s ease-out; }
 @keyframes svfFieldsIn { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .svf-body > .svf-section { animation: none; } }
+
+/* Take photo (shared camera popup): one black from header to footer while
+   Service Management is open; other modules keep their own look. */
+body:has(.svm-page) .cam-card,
+body:has(.svm-page) .cam-card :is(.cam-head, .cam-stage, .cam-tray, .cam-bar) { background: #000; }
+body:has(.svm-page) .cam-card { border-color: rgba(34, 211, 238, .22); }
+body:has(.svm-page) .cam-card :is(.cam-head, .cam-bar) { border-color: rgba(34, 211, 238, .12); }
