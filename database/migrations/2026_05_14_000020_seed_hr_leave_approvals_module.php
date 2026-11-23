@@ -3,13 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Registers the hr.leave_approvals leaf under the existing hr.time_pay
- * category so the manager / HR Leave Approvals page surfaces in the menu.
- * Permission rows are copied from hr.leave (its closest sibling) so any
- * existing user with Leave access automatically sees the new Approvals
- * entry without HR having to manually toggle a permission.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -34,9 +27,6 @@ return new class extends Migration
             'updated_at'   => now(),
         ]);
 
-        // Copy permission rows from hr.leave (every user who can view
-        // Leave should also be able to view Leave Approvals — the
-        // controller enforces who can actually act on a request).
         $donorId = DB::table('modules')->where('slug', 'hr.leave')->value('id');
         if (!$donorId) return;
 
