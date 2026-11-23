@@ -1,9 +1,3 @@
-{{--
-  Advance Receipt Refund Adjustment — the credit note raised when a PO is cancelled
-  after money was released. It prints exactly what the vendor credit carries: the PO's
-  lines, the single adjustment (charges less TDS, less what the supplier keeps) and the
-  credit total. Same letterhead and table as pdf/purchase-order.blade.php.
---}}
 <!DOCTYPE html>
 <html>
 
@@ -51,7 +45,6 @@
         .content-wrapper { position: relative; z-index: 1; }
         .info-line { margin-bottom: 6px; }
 
-        /* break-all keeps a pasted run of characters with no spaces inside the page. */
         .why-cell {
             word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; white-space: normal;
         }
@@ -76,7 +69,6 @@
         if (trim((string) ($companyDetails->pan_no ?? '')) !== '') $__footerParts[] = 'PAN: ' . $companyDetails->pan_no;
         $__footerStrip = implode('  |  ', $__footerParts);
 
-        // Amount in words (Indian English lakhs/crores), same helper as the PO.
         $__total = (float) ($totals->credit_total ?? 0);
         $__rupees = (int) floor($__total);
         $__paise = (int) round(($__total - $__rupees) * 100);
@@ -146,7 +138,6 @@
         $taxLabel = $totals->tax_mode === 'export' ? 'Tax' : ($totals->tax_mode === 'inter' ? 'IGST' : 'CGST + SGST');
     @endphp
 
-    <!-- GLOBAL FOOTER -->
     <div class="pdf-footer">
         <table class="pf-row">
             <tr>
@@ -163,13 +154,10 @@
         </table>
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="content-wrapper">
 
-        <!-- HEADER -->
         <table style="width:100%; border-collapse:collapse;">
             <tr>
-                <!-- LEFT: LOGO + LETTERHEAD -->
                 <td style="width:50%; vertical-align:top; font-size:9px; padding:0; margin:0;">
                     <div style="height:80px;">
                         @if($logoData)
@@ -211,9 +199,7 @@
                     </div>
                 </td>
 
-                <!-- RIGHT: TITLE + ADR INFO + SUPPLIER -->
                 <td style="width:50%; vertical-align:top;">
-                    {{-- Title across the block, then the number/date beside the barcode. --}}
                     <div style="height:80px;">
                         <table style="width:100%; border-collapse:collapse;">
                             <tr>
@@ -271,7 +257,6 @@
 
         <hr style="border: 0.1px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
-        <!-- CREDITED LINES — the PO's products, as the credit carries them -->
         <section style="margin-top:10px;">
             <table class="prod_table" style="table-layout: fixed; font-size:9px; width:100%;">
                 <thead>
@@ -311,13 +296,11 @@
             </table>
         </section>
 
-        <!-- TOTALS -->
         <div style="margin-top: 16px; page-break-inside: avoid;">
             <hr style="border: 0.2px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
             <table style="width:100%; table-layout:fixed; border-collapse:collapse; margin-top:12px;">
                 <tr>
-                    {{-- Why the credit exists, beside the money it is made of. --}}
                     <td class="why-cell" style="width:58%; vertical-align: top; font-size:9px; line-height:13px; padding-right:16px;">
                         <div style="margin-bottom:6px;">
                             <strong style="color:#555;">Reason for cancellation :</strong> {{ $pdfClean($adr->reason) ?: '—' }}
@@ -330,7 +313,6 @@
                     </td>
 
                     <td style="width:42%; vertical-align: top;">
-                        {{-- The credit is raised on what was released, not on the order's value. --}}
                         <table style="width:100%; font-size:9px; line-height:14px; border-collapse:collapse;">
                             <tr>
                                 <td style="padding:3px 0; color:#555;">Total PO Amount</td>
@@ -369,14 +351,12 @@
                 </tr>
             </table>
 
-            <!-- AMOUNT IN WORDS -->
             <div style="width:100%; display:block; font-size:10px; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }}; margin-top:10px; margin-bottom:15px; text-align:left; padding:8px 14px; background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; box-sizing:border-box; line-height: 14px; font-weight:600;">
                 <strong style="text-transform:capitalize; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
                     Amount In Words : {{ $__ccyCode }} {{ $amountInWords }}
                 </strong>
             </div>
 
-            <!-- SIGNATURE -->
             <section style="margin-top:18px;">
                 <table style="width:100%;">
                     <tr>
