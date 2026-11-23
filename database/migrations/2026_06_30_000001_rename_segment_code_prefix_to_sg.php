@@ -3,16 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Re-prefix segment codes S-NNN -> SG-NNN.
- *
- * The code is stored in two coupled places and must move in lockstep:
- *   - clm_segments.code              (the source of truth shown in Segment Master)
- *   - clm_segment_rules.segment_code (a denormalised copy the DCP joins on)
- *
- * Only rows matching the old ^S-\d+$ shape are touched, so a re-run (or an env
- * already on SG-) is a no-op. Postgres regexp_replace keeps the numeric suffix.
- */
 return new class extends Migration
 {
     public function up(): void
