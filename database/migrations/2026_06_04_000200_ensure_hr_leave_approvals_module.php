@@ -3,26 +3,12 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Repair: ensure the hr.leave_approvals module exists.
- *
- * The original seeder migration (2026_05_14_000020) creates this leaf only if
- * its parent category hr.time_pay already exists, then bails. But hr.time_pay
- * is created by ModuleSeeder (a seeder run AFTER `migrate`), so on a fresh
- * migrate-then-seed bootstrap the original migration ran while the parent was
- * still absent and silently returned — leaving "Leave Approvals" with no module
- * row. Without it the leaf can never be granted on the Permissions sheet and so
- * never surfaces in any tenant user's sidebar, even though the route + page
- * (/hr/leave-approvals, HrLeaveApprovals) exist.
- *
- * This migration re-runs that logic idempotently now that the seeder has run.
- */
 return new class extends Migration
 {
     public function up(): void
     {
         $catId = DB::table('modules')->where('slug', 'hr.time_pay')->value('id');
-        if (!$catId) return; // parent still absent — nothing we can safely attach to
+        if (!$catId) return;
 
         $slug = 'hr.leave_approvals';
         $moduleId = DB::table('modules')->where('slug', $slug)->value('id');
@@ -43,10 +29,6 @@ return new class extends Migration
             ]);
         }
 
-        // Mirror the original intent: anyone who can view Leave should also see
-        // Leave Approvals. Copy from hr.leave for users who don't already have a
-        // hr.leave_approvals row. can_view is forced on per the action-implies-
-        // view rule whenever an action (approve/export) is carried over.
         $donorId = DB::table('modules')->where('slug', 'hr.leave')->value('id');
         if (!$donorId) return;
 
@@ -88,7 +70,5 @@ return new class extends Migration
 
     public function down(): void
     {
-        // No-op: the module is a legitimate part of the catalogue; the original
-        // 2026_05_14_000020 migration owns its teardown.
     }
 };
