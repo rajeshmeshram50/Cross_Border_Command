@@ -158,7 +158,7 @@ export default function ClmKycPage() {
                 own scrollbar inside it — a second scrollbar that no other CLM
                 list has. The page scrolls instead now, as it does everywhere
                 else in the module. */}
-            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>

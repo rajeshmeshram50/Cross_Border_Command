@@ -339,7 +339,7 @@ export default function ClmSegmentPage() {
           </div>
 
           <div className="clm-tab-body has-data">
-              <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+              <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
                 <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead><tr>
                     <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>

@@ -318,7 +318,7 @@ export default function ClmAuthorityPage() {
             <div
               className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`}
               ref={scrollRef}
-              style={{ minHeight: fillH }}
+              style={{ minHeight: fillH, maxHeight: fillH }}
             >
               <table className="clm-table">
                 <thead><tr>
