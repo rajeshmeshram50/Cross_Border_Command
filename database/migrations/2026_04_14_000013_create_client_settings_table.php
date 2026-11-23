@@ -12,10 +12,10 @@ return new class extends Migration
             $table->id();
             $table->foreignId('client_id')->nullable()->constrained('clients')->cascadeOnDelete();
 
-            $table->string('group', 50)->nullable()->default('general'); // general, branding, security, notification, approval
+            $table->string('group', 50)->nullable()->default('general');
             $table->string('key', 100)->nullable();
             $table->text('value')->nullable();
-            $table->string('type', 20)->nullable()->default('string'); // string, boolean, integer, json
+            $table->string('type', 20)->nullable()->default('string');
             $table->text('description')->nullable();
 
             $table->timestamps();
