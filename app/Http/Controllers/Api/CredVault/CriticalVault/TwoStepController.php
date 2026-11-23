@@ -11,27 +11,8 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Http\Request;
 
-/**
- * CredVault · Critical Vault 2-step setup — /api/credvault/critical-vault/two-step/*
- *
- * The form's "2-step verification" box, before the credential is saved. Two methods:
- *
- *   google  POST google/new → QR + setup key; POST google/verify checks one code
- *           from the app; the save sends totp_secret + totp_code and verifies it again.
- *   email   POST email/send mails a 6-digit code to the inbox (php@inhpl.com by
- *           default); POST email/verify checks it and returns the token the save
- *           sends as email_otp_token. The token works once, for that inbox.
- *
- * Nothing is stored on a credential here; the save stores the method only when
- * its code matched. In the Normal Vault 2-step is only a yes/no and never comes here.
- */
 class TwoStepController extends CredVaultController
 {
-    /**
-     * POST /critical-vault/two-step/google/new { label? } — a fresh authenticator
-     * secret: the QR image (qr_image), its otpauth URI and the setup key. Asking
-     * again simply gives a new one.
-     */
     public function googleNew(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -41,9 +22,6 @@ class TwoStepController extends CredVaultController
         ]);
         $secret = Totp::newSecret();
 
-        // credential_id is sent when linking 2FA to an existing credential, so
-        // both sides can tie this secret to one credential; a fresh add has no
-        // id yet and relies on the label alone. Resolved within the tenant.
         $credential = !empty($d['credential_id'])
             ? \App\Models\CredVault\Credential::where('client_id', $u->client_id)->find($d['credential_id'], ['id', 'code', 'name'])
             : null;
@@ -52,16 +30,12 @@ class TwoStepController extends CredVaultController
 
         return response()->json(['status' => true, 'data' => [
             'method'          => 'google',
-            // Echoed back so one response can be told from another when several
-            // credentials are being added. credential_code is null when the id
-            // did not resolve to a credential in this tenant.
             'credential_id'   => $credential?->id ?? ($d['credential_id'] ?? null),
             'credential_code' => $credential?->code,
             'label'           => $label,
             'secret'          => $secret,
             'secret_display'  => trim(chunk_split($secret, 4, ' ')),
             'otpauth_uri'     => $uri,
-            // The QR to scan, ready for <img src>: the otpauth URI drawn as an SVG data URI.
             'qr_image'        => (new QRCode(new QROptions([
                 'outputInterface' => QRMarkupSVG::class,
                 'outputBase64'    => true,
@@ -74,7 +48,6 @@ class TwoStepController extends CredVaultController
         ]], 200);
     }
 
-    /** POST /critical-vault/two-step/google/verify { secret, code } — does the app show the right code? Stores nothing. */
     public function googleVerify(Request $request)
     {
         $this->tenantUser($request);
@@ -93,11 +66,6 @@ class TwoStepController extends CredVaultController
             'data' => ['method' => 'google', 'verified' => true]], 200);
     }
 
-    /**
-     * POST /critical-vault/two-step/email/send { email?, label? } — mails a code.
-     * email defaults to the CredVault 2-step inbox (php@inhpl.com). One send per
-     * 30 s per inbox, ten an hour per person.
-     */
     public function emailSend(Request $request)
     {
         $u = $this->tenantUser($request);
@@ -111,7 +79,6 @@ class TwoStepController extends CredVaultController
             'data' => ['method' => 'email'] + $sent], 200);
     }
 
-    /** POST /critical-vault/two-step/email/verify { token, code } — five tries per code. */
     public function emailVerify(Request $request)
     {
         $u = $this->tenantUser($request);
