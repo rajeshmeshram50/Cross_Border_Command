@@ -8,10 +8,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
-/**
- * Public signed PDF links have no user — the tenant comes from the document itself.
- * Usage: ->middleware(['signed', 'tenant.document:proforma_invoices'])
- */
 class SetTenantFromDocument
 {
     private const TABLES = ['quotations', 'proforma_invoices', 'purchase_orders', 'debit_notes'];
