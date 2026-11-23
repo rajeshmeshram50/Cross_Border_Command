@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Branch;
 use App\Models\SalesMeeting;
 use App\Models\SalesReminder;
 use Illuminate\Http\Request;
@@ -11,21 +10,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-
 class SalesTodoController extends Controller
 {
-    /** Per-attachment cap. Aligns with the existing 20MB cap used by
-     *  Announcement attachments and HR doc uploads. */
     private const ATTACH_MAX_KB = 20 * 1024;
-    /** Reminder attachments are restricted to images + PDF. Word/Excel/CSV are
-     *  NOT supported — an uploaded .doc/.docx must be rejected with a 422 (QA
-     *  #23). Keep this in lock-step with the frontend `accept` on the reminder
-     *  file inputs (RemindersForLeadModal + SalesTodo). */
     private const ATTACH_MIMES  = 'png,jpg,jpeg,webp,pdf';
-
-    /* ─────────────────────────────────────────────────────────────────
-     *  REMINDERS — list / create / update / delete / status
-     * ───────────────────────────────────────────────────────────────── */
 
     public function listReminders(Request $request)
     {
@@ -64,8 +52,6 @@ class SalesTodoController extends Controller
         [$clientId, $branchId] = $this->resolveOwnership($user);
         $employeeId = $user->employee_id;
 
-        // Move the uploaded attachment to permanent storage AFTER row
-        // creation so the relative path can include the new id.
         $row = SalesReminder::create([
             'client_id'          => $clientId,
             'branch_id'          => $branchId,
@@ -147,10 +133,6 @@ class SalesTodoController extends Controller
         return response()->json(['message' => 'Reminder deleted', 'id' => $id]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  MEETINGS — list / create / update / delete / status / next-code
-     * ───────────────────────────────────────────────────────────────── */
-
     public function listMeetings(Request $request)
     {
         $user = $request->user();
@@ -211,7 +193,6 @@ class SalesTodoController extends Controller
             [$clientId, $branchId] = $this->resolveOwnership($user);
             $employeeId = $user->employee_id;
 
-            // Reject overlapping meetings for the same opportunity + time slot.
             $this->assertNoScheduleConflict($data, $clientId, $branchId);
 
             $code = $this->allocateMeetingCode($data['type'], $clientId, $branchId);
@@ -250,8 +231,6 @@ class SalesTodoController extends Controller
         $row = $this->findMeetingOrFail($user, $id);
         $data = $this->validateMeetingPayload($request, $id);
 
-        // Type can change (Virtual → Physical) but the code prefix must
-        // change with it. Allocate a fresh code when type flips.
         if (isset($data['type']) && $data['type'] !== $row->type) {
             $row->type = $data['type'];
             $row->code = $this->allocateMeetingCode($data['type'], $row->client_id, $row->branch_id);
@@ -262,8 +241,6 @@ class SalesTodoController extends Controller
         }
         if (isset($data['date'])) $row->date = $data['date'];
 
-        // Same conflict guard on edit — a reschedule must not overlap another
-        // meeting for the same opportunity (excluding this row itself).
         $this->assertNoScheduleConflict([
             'opp_id'     => $row->opp_id,
             'type'       => $row->type,
@@ -302,24 +279,11 @@ class SalesTodoController extends Controller
         return response()->json(['message' => 'Meeting deleted', 'id' => $id]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  VALIDATION
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Shared content rule for user-facing free-text fields. Allows letters,
-     * digits, spaces and common business punctuation ( , . ' - & ( ) / : )
-     * so real subjects / names like "sa, sa." or "O'Brien & Co." pass.
-     * Still rejects the abuse patterns QA reported ("!@#####mdsdsds",
-     * "!!!!!", "1234..." etc.) by (a) blocking out-of-list symbols and
-     * (b) requiring at least one letter, so pure punctuation/number junk
-     * never gets through.
-     */
     private function safeTextRule(int $min, int $max): \Closure
     {
         return function (string $attribute, $value, $fail) use ($min, $max) {
             $v = trim((string) $value);
-            if ($v === '') { return; } // 'required' is enforced separately
+            if ($v === '') { return; }
             $label = ucfirst(str_replace('_', ' ', $attribute));
             if (!preg_match('/^[A-Za-z0-9 ,.\'\-&()\/:]+$/u', $v)) { $fail("Special characters are not allowed in $label."); return; }
             if (!preg_match('/[A-Za-z]/u', $v)) { $fail("$label must contain letters."); return; }
@@ -335,12 +299,6 @@ class SalesTodoController extends Controller
             'opp_date'   => 'nullable|date',
             'subject'    => ['required','string','max:255', $this->safeTextRule(3, 255)],
             'set_date'   => ['required','date'],
-            /* Required (QA #61). TAT is the turnaround a reminder is chased
-               against — without one it can be neither late nor on time, and
-               the lead's reminder table prints a dash where the pill goes.
-               Safe for both callers: the Lead > Reminders form now validates
-               it, and the Sales To-Do form has always defaulted it to
-               '24 Hours' rather than sending it empty. */
             'tat'        => 'required|string|max:60',
             'remark'     => 'nullable|string|max:2000',
             'status'     => ['nullable', Rule::in(SalesReminder::STATUSES)],
@@ -355,7 +313,6 @@ class SalesTodoController extends Controller
             'opp_id'     => 'nullable|string|max:60',
             'customer'   => ['required','string','max:255', $this->safeTextRule(3, 255)],
             'email'      => 'nullable|email|max:191',
-            // Contact: 10–15 digits after stripping separators; allow + space -
             'contact'    => ['required','string','max:50','regex:/^\+?[\d\s\-]{10,20}$/',
                               function (string $attribute, $value, $fail) {
                                   $digits = preg_replace('/\D/', '', (string) $value);
@@ -365,13 +322,7 @@ class SalesTodoController extends Controller
             'platform'   => ['required','string','max:100'],
             'date'       => ['required','date'],
             'start_time' => ['required','date_format:H:i'],
-            // Strictly after start (not after_or_equal) — a zero-minute meeting
-            // (end == start) is invalid. Surfaces "The end time field must be a
-            // date after start time." inline under the End Time field.
             'end_time'   => ['required','date_format:H:i','after:start_time'],
-            // Link required for virtual; venue required for physical. Cross-field
-            // checks below the array-validate call would be cleaner, but Laravel's
-            // sometimes+required_if covers it inline.
             'link'       => ['nullable','string','max:2048','required_if:type,virtual','url'],
             'venue'      => ['nullable','string','max:1000','required_if:type,physical',
                               function (string $attribute, $value, $fail) use ($request) {
@@ -387,24 +338,8 @@ class SalesTodoController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Scheduling conflict guard: block a meeting that overlaps an existing
-     * (non-cancelled) meeting for the SAME opportunity on the SAME date within
-     * the same tenant. Two windows overlap when existing.start < new.end AND
-     * existing.end > new.start. No opportunity / times = nothing to clash on.
-     */
     private function assertNoScheduleConflict(array $data, $clientId, $branchId, ?int $ignoreId = null): void
     {
-        // PHYSICAL double-booking guard — block a DUPLICATE booking: another
-        // physical meeting at the SAME venue on the SAME date in the SAME exact
-        // time slot (same start AND end). Deliberately an exact-slot match, not
-        // a broad time-overlap — an overlap rule flagged legitimately different
-        // meetings as conflicts. Runs before the opp-only early-return below so
-        // it fires even when the meeting has no opp_id.
         $type  = $data['type'] ?? null;
         $venue = trim((string) ($data['venue'] ?? ''));
         if ($type === 'physical' && $venue !== ''
@@ -461,11 +396,6 @@ class SalesTodoController extends Controller
         }
     }
 
-    /**
-     * Resolve which (client_id, branch_id) tuple a new row should be
-     * stamped with based on the caller's account. Mirrors the helper
-     * used in AnnouncementController / RecruitmentController.
-     */
     private function resolveOwnership($user): array
     {
         if ($user->user_type === 'super_admin') {
@@ -480,29 +410,16 @@ class SalesTodoController extends Controller
         return [null, null];
     }
 
-    /**
-     * Constrain the query to rows the caller is allowed to read.
-     *
-     *   scope=mine (default) → only the caller's own rows
-     *   scope=all            → admin path; sees everything in their tenant
-     *
-     * Tenant isolation always applies on top — a client_admin asking for
-     * `scope=all` never sees another client's rows. Non-super_admin rows
-     * are pinned to the caller's client_id at the SQL layer.
-     */
     private function applyScope($q, $user, string $scope): void
     {
         $scope = $scope === 'all' ? 'all' : 'mine';
 
-        // Tenant isolation first (defense in depth).
         if ($user->user_type !== 'super_admin') {
             if ($user->client_id) {
                 $q->where(function ($w) use ($user) {
                     $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
                 });
             }
-            // Branch users are pinned to their own branch — every branch is
-            // an isolated peer.
             if ($user->user_type === 'branch_user') {
                 $q->where(function ($w) use ($user) {
                     $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
@@ -511,9 +428,6 @@ class SalesTodoController extends Controller
         }
 
         if ($scope === 'all') {
-            // Admin / HR scope — only privileged roles can request this
-            // and actually see other people's rows. Everyone else gets
-            // their own rows back even when they ask for "all".
             $allowedAll = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true);
             if ($allowedAll) return;
         }
@@ -524,10 +438,9 @@ class SalesTodoController extends Controller
     private function findReminderOrFail($user, int $id): SalesReminder
     {
         $q = SalesReminder::query();
-        $this->applyScope($q, $user, 'all'); // admins can edit anyone's; tenant isolation still applies
+        $this->applyScope($q, $user, 'all');
         $row = $q->whereKey($id)->first();
         if (!$row) abort(404, 'Reminder not found.');
-        // Non-admin users can only modify their own rows — re-check.
         $canTouchAnyone = in_array($user->user_type, ['super_admin', 'client_admin', 'client_user'], true);
         if (!$canTouchAnyone && (int) $row->created_by_user_id !== (int) $user->id) {
             abort(403, 'You cannot modify another user\'s reminder.');
@@ -548,19 +461,11 @@ class SalesTodoController extends Controller
         return $row;
     }
 
-    /**
-     * Allocate the next code for a meeting in this tenant. Atomic via
-     * SELECT … FOR UPDATE on the existing rows so two concurrent saves
-     * can't allocate the same code.
-     */
     private function allocateMeetingCode(string $type, ?int $clientId, ?int $branchId): string
     {
         $prefix = $type === SalesMeeting::TYPE_PHYSICAL ? 'P-' : 'M-';
 
         return DB::transaction(function () use ($prefix, $clientId, $branchId) {
-            // withTrashed() is essential: the unique index on
-            // (client_id, branch_id, code) still counts soft-deleted rows, so
-            // reusing a deleted meeting's code would violate it on insert.
             $q = SalesMeeting::withTrashed()
                 ->where('code', 'like', $prefix . '%')
                 ->lockForUpdate();
@@ -580,13 +485,9 @@ class SalesTodoController extends Controller
         });
     }
 
-    /** Non-locking preview — used by /next-code so the form can render
-     *  the expected next code as a placeholder before save. */
     private function peekNextCode(string $type, ?int $clientId, ?int $branchId): string
     {
         $prefix = $type === SalesMeeting::TYPE_PHYSICAL ? 'P-' : 'M-';
-        // Match allocateMeetingCode(): include trashed rows so the preview
-        // matches the code that will actually be assigned.
         $q = SalesMeeting::withTrashed()->where('code', 'like', $prefix . '%');
         if ($clientId !== null) $q->where('client_id', $clientId);
         else                    $q->whereNull('client_id');
@@ -603,10 +504,6 @@ class SalesTodoController extends Controller
         return $prefix . str_pad((string) ($maxN + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * Persist an attachment to the public disk under a tenant-scoped
-     * folder. Returns [relativePath, originalName].
-     */
     private function storeAttachment($file, ?int $clientId, string $kind, int $rowId): array
     {
         $tenantSeg = $clientId ? "c{$clientId}" : 'global';
