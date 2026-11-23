@@ -12,12 +12,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * Inventory · a warehouse, ours or a third party's.
- *
- * wh_type decides the whole downstream flow: an own site is zoned, racked and
- * scanned to a shelf; a 3PL is a summary drop with no structure beneath it.
- */
 class Warehouse extends Model
 {
     use BelongsToTenant;
@@ -52,15 +46,6 @@ class Warehouse extends Model
         'updated_by',
     ];
 
-    /**
-     * A new row is ACTIVE until somebody says otherwise.
-     *
-     * The column already defaults to 1 in the database, but Eloquent does not
-     * read a default back after an insert — so the model the create endpoint
-     * serialised still held null, `(int) null` made it 0, and the response said
-     * the row was inactive while the stored row was active. Invisible on screen
-     * only because every save reloads the list.
-     */
     protected $attributes = ['status' => 1];
 
     protected $casts = [
@@ -68,25 +53,14 @@ class Warehouse extends Model
         'status'    => 'integer',
     ];
 
-    /** The screen's WH-014. Derived, so it can never drift from the row. */
     protected $appends = ['wh_code'];
 
-    /**
-     * The stored code — WH-001, counted within this warehouse's own branch.
-     *
-     * The fallback to the id is for rows created before the column existed and
-     * for a model built in memory that has not been saved. It is only a
-     * fallback: the id is a database counter shared by every client and
-     * branch, so deriving a code from it produced numbers that counted the
-     * whole platform and left permanent gaps whenever a save failed.
-     */
     public function getWhCodeAttribute(): string
     {
         return $this->attributes['code']
             ?: 'WH-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
     }
 
-    /** 'WH-014' or '14' back to 14; anything else is not a warehouse code. */
     public static function idFromCode(?string $code): ?int
     {
         if (!preg_match('/(\d+)\s*$/', (string) $code, $m)) return null;
@@ -102,10 +76,6 @@ class Warehouse extends Model
         return $this->belongsTo(States::class, 'state_id');
     }
 
-    /**
-     * The master name for India, the typed one for anywhere else — the form
-     * only offers the States master when the country is India.
-     */
     public function stateLabel(): ?string
     {
         return $this->state?->name ?: $this->state_name;
