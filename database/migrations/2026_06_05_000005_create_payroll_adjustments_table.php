@@ -4,16 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Per-employee, per-month payroll adjustments — the source of truth for
- * Overtime (Rule 4) and Bonus / Incentive (Rule 10), plus ad-hoc one-off
- * deductions. Only APPROVED rows are picked up by the payroll engine; pending /
- * rejected rows are ignored (Rule 4/10 validation).
- *
- * Keyed by (employee, month, year) rather than payroll_period_id so HR can
- * record an adjustment before a period/run exists; the engine matches on the
- * cycle's month+year.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -27,11 +17,9 @@ return new class extends Migration
             $table->unsignedTinyInteger('month');
             $table->unsignedSmallInteger('year');
 
-            // overtime | bonus | incentive | deduction
             $table->string('type', 20);
             $table->string('label', 120)->nullable();
             $table->decimal('amount', 14, 2)->default(0);
-            // Overtime metadata (optional) — hours × rate = amount.
             $table->decimal('hours', 8, 2)->nullable();
             $table->decimal('rate', 10, 2)->nullable();
 
