@@ -5,20 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Mark Standard and VIP as the two fixed system "Customer
- * Classification" entries.
- *
- * Same pattern as address_types / customer_types / risk_levels:
- *   • Adds `is_system` boolean column to `master_customer_classifications`.
- *   • Upserts the two canonical rows at global scope with
- *     `is_system = true`. Standard = default new-customer tier.
- *     VIP = top tier with the largest credit + longest terms.
- *   • Cleans up every other globally-scoped non-system row so the
- *     list starts clean. Per-tenant rows are left alone.
- *
- * Idempotent — case-insensitive lookup, re-runs are safe.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -29,7 +15,6 @@ return new class extends Migration
             }
         });
 
-        // 1. Upsert the two fixed entries.
         $fixed = [
             [
                 'name'          => 'Standard',
@@ -71,7 +56,6 @@ return new class extends Migration
             }
         }
 
-        // 2. Clean up every other globally-scoped non-system row.
         DB::table('master_customer_classifications')
             ->whereNull('client_id')
             ->whereNull('branch_id')
