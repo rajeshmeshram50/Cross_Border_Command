@@ -7,7 +7,6 @@ use App\Models\Employee;
 use App\Models\PreviousEmployment;
 use Illuminate\Http\Request;
 
-
 class PreviousEmploymentController extends Controller
 {
     public function index(Request $request, Employee $employee)
@@ -49,16 +48,11 @@ class PreviousEmploymentController extends Controller
         return response()->json(['message' => 'Removed']);
     }
 
-    /* ── Helpers ───────────────────────────────────────────────────── */
-
     private function validatePayload(Request $request, ?int $rowId = null): array
     {
         return $request->validate([
             'company_name'   => 'required|string|max:255',
             'job_title'      => 'nullable|string|max:255',
-            // A PRIOR job can't lie in the future. Cap both ends at today; the
-            // before_or_equal on end_date also makes the after_or_equal guard
-            // meaningful even when start_date is null.
             'start_date'     => 'nullable|date|before_or_equal:today',
             'end_date'       => 'nullable|date|before_or_equal:today|after_or_equal:start_date',
             'hr_email_1'     => 'nullable|email|max:191',
