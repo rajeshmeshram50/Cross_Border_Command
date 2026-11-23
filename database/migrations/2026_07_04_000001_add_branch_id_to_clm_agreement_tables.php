@@ -5,16 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Branch-isolate the Agreement Master (CBC — "Branch 2 sees Branch 1's
- * agreements"). Adds branch_id to the agreement types + library tables so the
- * standard MasterVisibility read scope applies: branch users see globals +
- * client-level rows + their own branch's rows, sibling branches stay hidden.
- *
- * Backfill mirrors that model — a row inherits its creator's branch; rows
- * created by client-level users (creator branch_id NULL) stay client-level
- * (branch_id NULL = shared across all branches).
- */
 return new class extends Migration {
     private array $tables = ['clm_agreement_types', 'clm_agreement_library'];
 
@@ -28,9 +18,6 @@ return new class extends Migration {
                 });
             }
 
-            // Postgres UPDATE ... FROM: stamp branch-owned rows with their
-            // creator's branch. Client-level creators (branch_id NULL) are
-            // skipped, so those rows remain shared.
             DB::statement("
                 UPDATE {$table} AS t
                 SET branch_id = u.branch_id
