@@ -9,18 +9,11 @@ use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-
 class ClmTncController extends Controller
 {
- 
-
     public function categoriesIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        // The four standard categories are GLOBAL (client_id NULL) and show
-        // for every tenant; a client's own custom categories are merged on top.
-        // Branch-scoped read: branch users see globals + client-level rows +
-        // their own branch's rows; sibling branches stay hidden.
         $query = ClmTncCategory::query()->orderBy('id');
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
@@ -42,7 +35,7 @@ class ClmTncController extends Controller
             $code = $this->nextCode(ClmTncCategory::class, $user->client_id, $user->branch_id, 'DC-');
             return ClmTncCategory::create([
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'  => $user->branch_id,
                 'code'       => $code,
                 'short_code' => strtoupper(trim($data['short_code'])),
                 'name'       => trim($data['name']),
@@ -87,18 +80,15 @@ class ClmTncController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /* ── LIBRARY ── */
-
     public function libraryIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
         $query = ClmTncLibrary::query()
             ->where('scope', ClmTncLibrary::SCOPE_SEGMENT)
-            ->orderBy('id', 'desc');   // newest entry first
+            ->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
@@ -110,37 +100,19 @@ class ClmTncController extends Controller
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         $data = $request->validate([
-            // segment now holds a CSV (one for "highly", many for "less").
-            // Debit/Credit Note documents carry NO segment/regulatory — they're
-            // saved blank (rendered as "—" in the list), so regulatory accepts
-            // an empty string.
             'segment'    => 'nullable|string|max:1024',
             'regulatory' => 'nullable|string|max:16',
             'category'   => 'required|string|max:255',
             'content'    => 'nullable|string',
         ]);
 
-        // A T&C has NO applicable party — the "Applies To" picker was removed
-        // from the wizard. `party` stays on the table (NOT NULL) but is written
-        // blank on every save, so any value a client still posts is discarded
-        // and legacy rows clear themselves the next time they're edited.
         $data['party'] = '';
 
-        // Debit/Credit Note documents carry NO segment/regulatory. Force them
-        // blank HERE (not via the payload): Laravel's
-        // ConvertEmptyStringsToNull middleware turns the frontend's '' into
-        // null, so the "?? 'General'/'highly'" fallbacks below would otherwise
-        // wrongly backfill them. Empty string keeps the NOT-NULL columns valid
-        // and the list renders "—". Matched by category name.
         if ($this->isNoteCategory($data['category'] ?? '')) {
             $data['segment'] = '';
             $data['regulatory'] = '';
         }
 
-        // One Terms & Conditions entry per (segment, document category) within a
-        // branch — e.g. "Tobacco + Proforma Invoice" can exist only once. A row
-        // may scope many segments (CSV, for "less" regulatory), so any overlap
-        // with an existing same-category row is a duplicate. (CBC #18)
         if ($dup = $this->findDuplicate($user->client_id, $user->branch_id, $data['category'], $data['segment'] ?? null, null, $data['regulatory'] ?? null)) {
             return response()->json([
                 'status'  => false,
@@ -154,9 +126,8 @@ class ClmTncController extends Controller
             $code = $this->nextCode(ClmTncLibrary::class, $user->client_id, $user->branch_id, 'TNC-');
             return ClmTncLibrary::create([
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'  => $user->branch_id,
                 'code'       => $code,
-                // '' preserved (?? only catches null) so note docs stay blank.
                 'segment'    => $data['segment'] ?? 'General',
                 'segment_ids' => $this->segmentIdsFor($user->client_id, $user->branch_id, $data['segment'] ?? '', $data['regulatory'] ?? 'highly'),
                 'regulatory' => $data['regulatory'] ?? 'highly',
@@ -168,12 +139,6 @@ class ClmTncController extends Controller
                 'updated_by' => $user->id,
             ]);
         });
-        /* Without content. The caller just posted it, so echoing it back sends
-           the whole document a second time for nothing — the wizard awaits this
-           response and never reads it. On live a T&C carrying an imported Word
-           document made this a 1.5 MB reply to a save, which is most of the
-           40 s the save took. Every other column still goes back, so a caller
-           that wants the new row's id or code is unaffected. */
         return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
@@ -188,26 +153,18 @@ class ClmTncController extends Controller
         }
 
         $data = $request->validate([
-            // (see libraryStore) — keep the same relaxed rules on update.
             'segment'    => 'nullable|string|max:1024',
             'regulatory' => 'nullable|string|max:16',
             'category'   => 'sometimes|required|string|max:255',
             'content'    => 'nullable|string',
         ]);
         $data['updated_by'] = $user->id;
-        // No applicable party on a T&C (see libraryStore) — blanked on every
-        // update, which is what retires the legacy values on existing rows.
         $data['party'] = '';
-        // Same note-doc blanking as libraryStore (category may be omitted on a
-        // partial update, so fall back to the row's current category).
         if ($this->isNoteCategory($data['category'] ?? $row->category)) {
             $data['segment'] = '';
             $data['regulatory'] = '';
         }
 
-        // Re-run the segment+category uniqueness guard against the row's OWN
-        // branch, ignoring itself. Fall back to the stored values for whichever
-        // of category/segment this partial update omits. (CBC #18)
         $effCategory = $data['category'] ?? $row->category;
         $effSegment  = array_key_exists('segment', $data) ? $data['segment'] : $row->segment;
         $effRegulatory = array_key_exists('regulatory', $data) ? $data['regulatory'] : $row->regulatory;
@@ -220,11 +177,9 @@ class ClmTncController extends Controller
         }
         $data['segment_ids'] = $this->segmentIdsFor($row->client_id, $row->branch_id, $effSegment, $effRegulatory);
         $row->update($data);
-        // Without content — see libraryStore.
         return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
-    /** The segments this row covers, resolved by name + tier within its branch — what PI/PO T&C fetch matches. */
     private function segmentIdsFor(?int $clientId, ?int $branchId, ?string $segmentCsv, ?string $regulatory): ?array
     {
         $names = \App\Support\SegmentGuard::names($segmentCsv);
@@ -232,20 +187,11 @@ class ClmTncController extends Controller
         return \App\Support\SegmentGuard::resolveIds($clientId, $branchId, $names, [], $regulatory) ?: null;
     }
 
-    /** Debit/Credit Note documents store no segment / regulatory / party. */
     private function isNoteCategory(?string $name): bool
     {
         return in_array(mb_strtolower(trim((string) $name)), ['debit note', 'credit note'], true);
     }
 
-    /**
-     * Find an existing T&C library row that collides with (segment, category)
-     * for the given branch — the one-entry-per-segment-per-category rule (CBC
-     * #18). Segment is a CSV (many segments for "less" regulatory rows), so a
-     * collision is ANY same-category row whose segment set overlaps the incoming
-     * one. Note-category docs carry no segment, so they're exempt. Scoped to the
-     * SAME branch (T&C is branch-isolated — the same combo may exist per branch).
-     */
     private function findDuplicate(int $clientId, ?int $branchId, ?string $category, ?string $segmentCsv, $ignoreId = null, ?string $regulatory = null): ?ClmTncLibrary
     {
         $cat = mb_strtolower(trim((string) $category));
@@ -258,7 +204,6 @@ class ClmTncController extends Controller
             ->whereRaw('LOWER(TRIM(category)) = ?', [$cat]);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         if ($ignoreId !== null) $query->where('id', '!=', $ignoreId);
-        // "Sugar" Less and "Sugar" Highly are different segments.
         if ($regulatory !== null && $regulatory !== '') $query->whereRaw('LOWER(TRIM(regulatory)) = ?', [mb_strtolower(trim($regulatory))]);
 
         foreach ($query->get(['id', 'code', 'segment']) as $existing) {
@@ -269,7 +214,6 @@ class ClmTncController extends Controller
         return null;
     }
 
-    /** Normalise a segment CSV to a de-duplicated set of lowercased tokens. */
     private function segmentTokens(?string $csv): array
     {
         return array_values(array_unique(array_filter(array_map(
@@ -291,10 +235,6 @@ class ClmTncController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /**
-     * GET /clm/tnc-global - one row per document category. A category with nothing
-     * written yet comes back with a null id, so the screen always shows the full set.
-     */
     public function globalIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -309,7 +249,6 @@ class ClmTncController extends Controller
         MasterVisibility::applyReadScope($rows, $user, $branchId);
         $own = $branchId ?: ($user->branch_id ? (int) $user->branch_id : null);
         $byCategory = $rows->get()
-            // Own branch first, so it wins the keyBy over a client-level row.
             ->sortByDesc(fn ($r) => (int) ($own !== null && (int) $r->branch_id === $own))
             ->keyBy(fn ($r) => mb_strtolower(trim((string) $r->category)));
 
@@ -330,7 +269,6 @@ class ClmTncController extends Controller
         return response()->json(['status' => true, 'data' => $data, 'count' => $data->count()]);
     }
 
-    /** PUT /clm/tnc-global - write the global T&C of one document category. */
     public function globalSave(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -346,7 +284,6 @@ class ClmTncController extends Controller
         $row = ClmTncLibrary::query()
             ->where('scope', ClmTncLibrary::SCOPE_GLOBAL)
             ->where('client_id', $user->client_id)
-            // Edit the row at the caller's own level, never another branch's.
             ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
             ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
             ->whereRaw('LOWER(TRIM(category)) = ?', [mb_strtolower(trim($data['category']))])
@@ -361,7 +298,6 @@ class ClmTncController extends Controller
                 'status'     => $data['status'] ?? $row->status ?? 'active',
                 'updated_by' => $user->id,
             ]);
-            // Without content — see libraryStore.
             return response()->json(['status' => true, 'data' => $row->makeHidden('content')]);
         }
 
@@ -393,26 +329,11 @@ class ClmTncController extends Controller
                 'updated_by' => $user->id,
             ]);
         });
-        // Without content — see libraryStore.
         return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
-    /**
-     * Allocate the next per-tenant code (DC-NNN / TNC-NNN). Uses MAX(numeric
-     * suffix) + 1 rather than count()+1 so a deleted row in the middle of the
-     * sequence doesn't make the next allocation reuse a code that still
-     * exists — which throws a unique-constraint violation on save. Caller
-     * must already hold the client row lock; the composite UNIQUE
-     * (client_id, code) is the final guard.
-     *
-     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
-     */
     private function nextCode(string $modelClass, int $clientId, ?int $branchId, string $prefix): string
     {
-        // Branch-scoped so each branch restarts its own sequence from 001
-        // (DC-001 / TNC-001) rather than continuing another branch's tally —
-        // the T&C master is branch-isolated via MasterVisibility. A client-
-        // level creator ($branchId null) sequences the shared rows.
         $query = $modelClass::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();
