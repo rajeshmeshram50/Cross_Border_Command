@@ -738,6 +738,13 @@ export const CLM_CSS = `
 .clm-table-fill.clm-fill-empty { background: #fff; }
 [data-bs-theme="dark"] .clm-table-fill.clm-fill-empty { background: #0f172a; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
+/* Table scrollbar, not a page scrollbar: a fill wrap is capped at the space
+ * above the app footer, the rows scroll inside it under the sticky column
+ * headings, and the pager stays pinned to the bottom edge. */
+.clm-table-fill { overflow: auto; overscroll-behavior: contain; }
+.clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { position: sticky; bottom: 0; z-index: 4; }
+.clm-inscroll { overscroll-behavior: contain; }
+.clm-inscroll thead th { position: sticky; top: 0; z-index: 3; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
  * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
  * viewports the "Showing…" pill and the page arrows are pushed outside the

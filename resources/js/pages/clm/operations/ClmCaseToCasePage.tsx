@@ -515,7 +515,7 @@ export default function ClmCaseToCasePage() {
       </div>
 
       {/* CARD 3 — CONTRACTS LIST */}
-      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH, maxHeight: fillH }}>
         {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts.
             Padding was already 8 here; the gap was 10 down / 12 across. */}
         <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
@@ -556,7 +556,7 @@ export default function ClmCaseToCasePage() {
             {/* Only the table scrolls horizontally; the pager lives OUTSIDE this
                 container so it never inherits the table's 1380px min-width and
                 stays pinned to the visible card width when the table scrolls. */}
-            <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div className="clm-inscroll" style={{ overflow: 'auto', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               {/* 1560, not 1380. The eleven fixed columns come to 1378 on their own, so
     the old floor left Agreement Title two pixels and let the row spill past
     the card instead of scrolling. 1560 keeps the title usable at ~180. */}
