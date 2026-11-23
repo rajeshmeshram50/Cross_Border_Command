@@ -13,7 +13,6 @@ class PlanSeeder extends Seeder
     {
         $mods = Module::pluck('id', 'slug');
 
-        // Starter (Free)
         $p1 = Plan::updateOrCreate(['slug' => 'starter'], [
             'name' => 'Starter',
             'price' => 0,
@@ -30,7 +29,6 @@ class PlanSeeder extends Seeder
             PlanModule::updateOrCreate(['plan_id' => $p1->id, 'module_id' => $mods[$s]], ['access_level' => 'limited']);
         }
 
-        // Basic
         $p2 = Plan::updateOrCreate(['slug' => 'basic'], [
             'name' => 'Basic',
             'price' => 1999,
@@ -48,7 +46,6 @@ class PlanSeeder extends Seeder
             PlanModule::updateOrCreate(['plan_id' => $p2->id, 'module_id' => $mods[$s]], ['access_level' => $s === 'permissions' ? 'limited' : 'full']);
         }
 
-        // Pro
         $p3 = Plan::updateOrCreate(['slug' => 'pro'], [
             'name' => 'Pro',
             'price' => 4999,
@@ -69,7 +66,6 @@ class PlanSeeder extends Seeder
             PlanModule::updateOrCreate(['plan_id' => $p3->id, 'module_id' => $mods[$s]], ['access_level' => 'full']);
         }
 
-        // Business
         $p4 = Plan::updateOrCreate(['slug' => 'business'], [
             'name' => 'Business',
             'price' => 9999,
@@ -89,7 +85,6 @@ class PlanSeeder extends Seeder
             }
         }
 
-        // Enterprise
         $p5 = Plan::updateOrCreate(['slug' => 'enterprise'], [
             'name' => 'Enterprise',
             'price' => 14999,
