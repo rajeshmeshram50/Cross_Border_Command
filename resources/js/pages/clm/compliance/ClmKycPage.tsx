@@ -14,6 +14,7 @@ import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { ClmSkeletonRows, TruncCell, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 import { lazyPage } from '../../../utils/lazyPage';
+import { useLocation } from 'react-router-dom';
 
 export type Kyc = { id: number; code: string; name: string; authority: string; authority_names?: string; status: 'active'|'inactive'; in_use?: boolean; used_in?: string[] };
 export type Authority = { id: number; code: string; name: string };
@@ -28,6 +29,9 @@ export default function ClmKycPage() {
   const [booted, setBooted]     = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]     = useState('');
+  /* Opened from the Master Control Center (/master/...): one Bulk Data Import/Export
+     button with a guided popup. The CLM menu keeps the three toolbar buttons. */
+  const inMasterCenter = useLocation().pathname.startsWith('/master/');
   const [page, setPage]         = useState(1);
   const [rpp, setRpp]           = useState(PER_PAGE);
   const autoFitRef              = useRef(true);
@@ -148,6 +152,7 @@ export default function ClmKycPage() {
             samples={[{ name: 'PAN Card', validity: 'N/A' }, { name: 'GST Certificate', validity: '1 Year' }]}
             search={debouncedSearch}
             onImported={reload}
+            variant={inMasterCenter ? 'bulk' : undefined}
           />
         </div>
 
