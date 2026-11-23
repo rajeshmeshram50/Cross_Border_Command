@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Agreement Library — Stage 2 page-shell config columns.
- *
- * Mirrors the same pair on clm_trade_doc_library so the agreement wizard
- * can wrap its draft editor in the shared HeaderFooterPanel and the PDF
- * renderer can honour per-row logo / title / subtitle / footer settings.
- */
 return new class extends Migration
 {
     public function up(): void
