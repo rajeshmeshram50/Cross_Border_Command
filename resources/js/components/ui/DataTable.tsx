@@ -519,7 +519,7 @@ export default function DataTable<T extends object>({
     /** Exactly as tall as what is on the page: the fixed chrome, the column
      *  header, and the rows of the current page. Returns null when there is
      *  nothing to measure yet (no rows, first paint), so callers fall back. */
-    const contentHeight = (minRows = 0): number | null => {
+    const contentHeight = (rows?: number): number | null => {
       const scrollBox = el.querySelector('.dt-scroll') as HTMLElement | null;
       const rowEl = el.querySelector('.dt-table tbody tr:not(.dt-empty-row)') as HTMLElement | null;
       if (!scrollBox || !rowEl) return null;
@@ -528,7 +528,25 @@ export default function DataTable<T extends object>({
       const headH = (el.querySelector('.dt-table thead') as HTMLElement | null)?.offsetHeight || 0;
       const rowH = rowEl.offsetHeight || 44;
       const onPage = el.querySelectorAll('.dt-table tbody tr:not(.dt-empty-row)').length;
-      return chrome + hBar + headH + Math.max(onPage, minRows) * rowH;
+      return chrome + hBar + headH + (rows ?? onPage) * rowH;
+    };
+
+    /** The height the card should take, for both the auto fit and a picked size.
+     *
+     *  FLOOR first: ten rows are always on screen (or the page size, when that
+     *  is smaller), even if the card has to run past the viewport and let the
+     *  PAGE scroll. A ten-row page that shows six is the complaint this answers.
+     *
+     *  CEILING second: beyond the floor the card stops at the space above the
+     *  footer and the rest scrolls inside `.dt-scroll`. So raising rows-per-page
+     *  lengthens the scroll, not the page. */
+    const FLOOR_ROWS = 10;
+    const fittedHeight = (cardTop: number): number => {
+      const avail = Math.max(240, window.innerHeight - cardTop - bottomReserve());
+      const intended = manualSize ?? pageSize ?? FLOOR_ROWS;
+      const floorPx = contentHeight(Math.min(intended, FLOOR_ROWS)) ?? 240;
+      const contentPx = contentHeight() ?? 240;
+      return Math.max(floorPx, Math.min(contentPx, avail));
     };
 
     const size = () => {
@@ -557,88 +575,20 @@ export default function DataTable<T extends object>({
         return;
       }
       const top = viewportTop(el);
-      /* The shortest the card may be.
-       *
-       * A flat 240px assumed the rows would always get a usable share of it,
-       * and under `autoFitRows` + `minAutoRows` they do not. The two props pull
-       * in opposite directions: minAutoRows floors the row COUNT, this effect
-       * pins the card's HEIGHT to the space left below it, and when that space
-       * is smaller than the floored count needs, the count wins and the height
-       * does not. Expense Claims floors at 8 under a hero strip, five KPI
-       * tiles, a Spend Analytics panel and a two-line toolbar: on a 711px
-       * window the card came out 300px, the chrome took 187 of it, and eight
-       * rows were stuffed into the remaining 153 — two and a half rows visible,
-       * the rest behind an inner scrollbar. (QA #17)
-       *
-       * So the floor carries the rows with it: whatever is not the rows area,
-       * plus room for the rows actually on the page. Where they already fit,
-       * the space below the card is the larger number and nothing changes;
-       * where they do not, the card grows past the viewport and the PAGE
-       * scrolls — the same resolution the manual branch below already relies
-       * on when a picked size is taller than the window. */
-      /* A rows-per-page the user picked is an instruction about how many rows
-       * to show, so the card is exactly as tall as those rows and no taller.
-       * Pick 10 where 20 would fit and you get ten rows and a pager under
-       * them, not ten rows and a band of white.
-       *
-       * This reverses the floor added for QA #59, which padded the card down
-       * to the viewport so a short page would not leave a gap between the
-       * pager and the page footer. QA has since filed the padding itself as
-       * the defect, four times over (Employee, Employee Onboarding, Leave,
-       * Holiday: "should display only 10 records without unnecessary blank
-       * space"). Both complaints are about empty space; this keeps it outside
-       * the card, on the page background, rather than inside a white panel
-       * where it reads as the table being broken.
-       *
-       * A picked size TALLER than the window is CAPPED at the space above
-       * the footer and scrolls inside the card — it used to grow past the
-       * viewport, which buried the last rows and the pager behind the footer. */
-      /* …unless the caller asked to reach the footer regardless (`fillToFooter`).
-       * Then the pin below applies whatever the picked size, which is the
-       * always-stretch behaviour CLM Segment Master and Suppliers already
-       * have. See the prop's own note for why this is opt-in rather than the
-       * default: four screens were explicitly fixed the other way. */
-      if (manualSize !== null && !fillToFooter) {
-        /* Measured, not released. Clearing the height outright would let
-         * `.dt-scroll` — `flex: 1; min-height: 0` — resolve against an
-         * auto-height parent, where there is no free space to grow into and
-         * nothing stopping it at zero: the rows would vanish. Pinning the card
-         * to the height its own rows need keeps that flex child doing exactly
-         * what it does today, with no leftover for it to absorb. */
-        /* Nothing to measure means no rows — a filter that matched nothing, or
-         * the first paint. The empty state still needs room to be read, so it
-         * falls back to the flat floor the card used before. */
-        /* …with a floor, capped by the size actually picked. Pick 50 against
-         * one record and the card collapsed to a single row under the toolbar;
-         * it now keeps roughly the height the default shows. Pick 5 and the
-         * floor is 5, never 10.
-         *
-         * FLOOR_ROWS, not `minAutoRows`: that prop floors the auto-fit row
-         * COUNT and defaults to 2 deliberately (five rows do not fit a short
-         * window). Borrowing it left every table that never set it — Clients
-         * among them — with a two-row floor, which still reads as collapsed.
-         * A table asking for MORE than ten still gets what it asked for. */
-        const FLOOR_ROWS = 10;
-        const floorRows = autoFitRows ? Math.min(Math.max(minAutoRows, FLOOR_ROWS), manualSize) : 0;
-        /* …and a CEILING of the space above the footer. A picked size used to
-         * grow the card past the viewport and let the page scroll, which ran
-         * the last rows and the pager in behind the footer. The rows scroll
-         * inside `.dt-scroll` instead, and the pager stays reachable. */
-        const avail = Math.max(240, window.innerHeight - top - bottomReserve());
-        const mh = `${Math.min(contentHeight(floorRows) ?? 240, avail)}px`;
-        if (el.style.height === mh && !el.style.minHeight) return;
-        el.style.flex = 'none';
-        el.style.minHeight = '';
-        el.style.height = mh;
-        el.style.maxHeight = mh;
-        return;
-      }
-      /* The space above the footer, and no more. This used to take
-         `max(rowFloor(), avail)` so a floored row count could push the card
-         past the viewport — with minAutoRows at 10 on a laptop that is exactly
-         what happened, and the last rows and the pager went behind the footer.
-         Rows that do not fit scroll inside `.dt-scroll` instead. */
-      const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
+      /* How tall, in one place: see `fittedHeight` above — ten rows minimum,
+         then capped at the space above the footer with the rest scrolling
+         inside the card.
+
+         `fillToFooter` opts out of the floor and always stretches to that
+         space, which is what CLM Segment Master and Suppliers expect.
+
+         Measured, not released: clearing the height outright would let
+         `.dt-scroll` — flex: 1; min-height: 0 — resolve against an auto-height
+         parent, with no free space to grow into and nothing stopping it at
+         zero, and the rows would vanish. */
+      const h = `${fillToFooter
+        ? Math.max(240, window.innerHeight - top - bottomReserve())
+        : fittedHeight(top)}px`;
       if (el.style.height === h && !el.style.minHeight) return;
       el.style.flex = 'none';
       el.style.minHeight = '';
