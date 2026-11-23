@@ -522,12 +522,16 @@ export default function DataTable<T extends object>({
      *  nothing to measure yet (no rows, first paint), so callers fall back. */
     const contentHeight = (rows?: number): number | null => {
       const scrollBox = el.querySelector('.dt-scroll') as HTMLElement | null;
+      if (!scrollBox) return null;
       const rowEl = el.querySelector('.dt-table tbody tr:not(.dt-empty-row)') as HTMLElement | null;
-      if (!scrollBox || !rowEl) return null;
+      /* No data row to measure (empty table / "No records") still needs the
+         10-row FLOOR, or the card collapses to the 240px fallback. Estimate
+         the row at 44px — the same fallback the auto-fit uses — so the floor
+         holds its height when there is nothing in it. */
+      const rowH = rowEl?.offsetHeight || 44;
       const chrome = el.offsetHeight - scrollBox.offsetHeight;
       const hBar = Math.max(0, scrollBox.offsetHeight - scrollBox.clientHeight);
       const headH = (el.querySelector('.dt-table thead') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH = rowEl.offsetHeight || 44;
       const onPage = el.querySelectorAll('.dt-table tbody tr:not(.dt-empty-row)').length;
       return chrome + hBar + headH + (rows ?? onPage) * rowH;
     };
