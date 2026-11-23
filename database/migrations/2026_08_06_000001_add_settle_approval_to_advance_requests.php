@@ -5,20 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Approval gate on the employee's SETTLEMENT of a company advance.
- *
- * Previously the employee finalised their usage declaration and could then
- * immediately return the balance / raise a reimbursement. Now the finalised
- * settlement first goes to a branch admin or HR for approve/reject; only after
- * approval can the return / reimbursement / close proceed. A rejection reopens
- * the settlement (employee_settled_at cleared) so the employee can re-settle.
- *
- *   settle_approval_status : null → not finalised yet
- *                            pending  → finalised, awaiting branch/HR
- *                            approved → unlocked for return/reimburse/close
- *                            rejected → reopened; comment carries the reason
- */
 return new class extends Migration
 {
     public function up(): void
@@ -30,8 +16,6 @@ return new class extends Migration
             $table->string('settle_approval_comment', 500)->nullable()->after('settle_approved_at');
         });
 
-        // Grandfather settlements finalised BEFORE this approval gate existed as
-        // already-approved, so their return/reimburse isn't retroactively blocked.
         DB::table('advance_requests')
             ->whereNotNull('employee_settled_at')
             ->whereNull('settle_approval_status')
