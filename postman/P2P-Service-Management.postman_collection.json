@@ -2,7 +2,7 @@
   "info": {
     "name": "P2P · Service Management (/api/p2p/services)",
     "_postman_id": "8a2b6c1e-p2p-services-0002",
-    "description": "Service catalogue (Kryptone Service Master), organised like the screen: one folder per tab.\n\nRun order: 0. Auth → 1. Master bundle (fills every id) → then any tab: List → Add (Stage 1) → Stage 2 & row actions.\n\nTabs (service_type → sub-type / classification):\n• 2. Self-Consumable Services → trackable | consumable\n• 3. Soft / Digital Services → no sub-type\n• 4. Other Operational Services → professional | utility | facility | maintenance | outsourcing\n\nGST: every service carries gst_id (GST % master, mandatory in Stage 1); domestic suppliers always use that same GST id.\nMap Supplier: Domestic supplier (₹ price + service GST) or International supplier (price in its currency × exchange rate, no GST; ₹ equivalent in inr_amount).\nNOTHING IS DELETED in this module: services, supplier mappings and service categories are switched Active / Inactive.\nService status: draft (Stage 1 saved) → active (Stage 2 submitted) ⇄ inactive.\nEvery request has a saved example response (Postman → Examples). Use Postman's Code (</>) → cURL to get the curl command.\nFolders 5–7 and requests marked ♻ are existing APIs, listed in the order the screens use them.",
+    "description": "Service catalogue (Kryptone Service Master), organised like the screen: one folder per tab.\n\nRun order: 0. Auth → 1. Master bundle (fills every id) → then any tab: List → Add (Stage 1) → Stage 2 & row actions.\n\nTabs (service_type → sub-type / classification):\n• 2. Self-Consumable Services → trackable | consumable\n• 3. Soft / Digital Services → no sub-type\n• 4. Other Operational Services → professional | utility | facility | maintenance | outsourcing\n\nGST: every service carries gst_id (GST % master, mandatory in Stage 1); domestic suppliers always use that same GST id.\nMap Supplier: Domestic supplier (₹ price + service GST) or International supplier (price in its currency × exchange rate, no GST; ₹ equivalent in inr_amount).\nNOTHING IS DELETED in this module: services, supplier mappings and service categories are switched Active / Inactive.\nService status: draft (Stage 1 saved) → active (Stage 2 submitted) ⇄ inactive.\nEvery request has a saved example response (Postman → Examples). Use Postman's Code (</>) → cURL to get the curl command.\nFolders 5–7 and requests marked ♻ are existing APIs, listed in the order the screens use them.\n\n8. Map Services · Supplier Master side → map services to a supplier (same rows as the Map Supplier popup).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -223,6 +223,26 @@
       "value": "",
       "type": "string",
       "description": "Set by 4.1 + add (Professional)"
+    },
+    {
+      "key": "map_vendor_id",
+      "value": ""
+    },
+    {
+      "key": "map_vendor_id_intl",
+      "value": ""
+    },
+    {
+      "key": "material_vendor_id",
+      "value": ""
+    },
+    {
+      "key": "svc_map_id",
+      "value": ""
+    },
+    {
+      "key": "svc_map_id_intl",
+      "value": ""
     }
   ],
   "item": [
@@ -12872,6 +12892,1126 @@
                 }
               ],
               "body": "(binary file — the response is the file itself)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Map Services · Supplier Master side (/api/vendors/{id})",
+      "description": "Map Services step of the Supplier Master — the supplier side of p2p_service_suppliers. Same rows as the Map Supplier popup in folders 2.3 / 3.4 / 4.4: a mapping made here shows on the service, and vice versa.\n\nSet first: map_vendor_id = a Domestic supplier whose type serves the service (e.g. Soft Service Provider for {{soft_service_id}}), map_vendor_id_intl = an International one of the same type, material_vendor_id = a Material / Goods supplier. The service needs a GST % (Stage 1) for Domestic mappings.\n\nRules enforced: supplier visible + editable (403), service visible + editable (422 / 403), supplier type vs service type (422), origin vs country (422), service GST for Domestic (422), no duplicate service in one save (422). Full doc: docs/supplier/SUPPLIER_MAP_SERVICES_API.md",
+      "item": [
+        {
+          "name": "List mapped services of a supplier",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "service-mappings"
+              ]
+            },
+            "description": "Every mapping of this supplier, inactive ones included (filter status !== 'inactive' for the mapped list).\nPricing fields match the Service screen's ApiSupplierRow; service_* fields replace the vendor fields.\ngst_type / cgst_amount / sgst_amount / igst_amount are worked out on read (supplier state vs branch GST state) — not stored.\nmeta.supplier_service_type / supplier_classification = the service bucket this supplier may serve (use it to filter the service picker)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "service-mappings"
+                  ]
+                },
+                "description": "Every mapping of this supplier, inactive ones included (filter status !== 'inactive' for the mapped list).\nPricing fields match the Service screen's ApiSupplierRow; service_* fields replace the vendor fields.\ngst_type / cgst_amount / sgst_amount / igst_amount are worked out on read (supplier state vs branch GST state) — not stored.\nmeta.supplier_service_type / supplier_classification = the service bucket this supplier may serve (use it to filter the service picker)."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1000,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 30,\n      \"total_amount\": 1030,\n      \"inr_amount\": 1030,\n      \"remarks\": \"Annual plan\",\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 30\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 1,\n    \"international_count\": 0,\n    \"inactive_count\": 0,\n    \"total_amount\": 1030\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const row = (j.data || []).find(r => r.status === 'active');",
+                  "if (row) pm.collectionVariables.set('svc_map_id', row.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save step · map a Domestic service (₹ + GST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "Replace-all save, like step/products: each listed service is mapped (an unmapped row is revived, never inserted twice); any OTHER active mapping of this supplier is set inactive (never deleted).\nDomestic: price in ₹, GST = the service's gst_id (gst_id optional; if sent it must equal the service's).\nA mapped DRAFT service finishes Stage 2: step_completed = 2, status = active.\nResponse = same body as the list.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000,\n      \"remarks\": \"Annual plan\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "Replace-all save, like step/products: each listed service is mapped (an unmapped row is revived, never inserted twice); any OTHER active mapping of this supplier is set inactive (never deleted).\nDomestic: price in ₹, GST = the service's gst_id (gst_id optional; if sent it must equal the service's).\nA mapped DRAFT service finishes Stage 2: step_completed = 2, status = active.\nResponse = same body as the list.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000,\n      \"remarks\": \"Annual plan\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1000,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 30,\n      \"total_amount\": 1030,\n      \"inr_amount\": 1030,\n      \"remarks\": \"Annual plan\",\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 30\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 1,\n    \"international_count\": 0,\n    \"inactive_count\": 0,\n    \"total_amount\": 1030\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const row = (j.data || []).find(r => r.status === 'active');",
+                  "if (row) pm.collectionVariables.set('svc_map_id', row.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save step · map an International service (currency, no GST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id_intl}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "International supplier (country outside India): price in its currency × exchange_rate (₹ per unit) → inr_amount; NO GST.\ncurrency defaults to the supplier country's, exchange_rate to the Currency master (422 if none).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"currency\": \"{{currency}}\",\n      \"exchange_rate\": 85,\n      \"price\": 10,\n      \"remarks\": \"Per month\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id_intl}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "International supplier (country outside India): price in its currency × exchange_rate (₹ per unit) → inr_amount; NO GST.\ncurrency defaults to the supplier country's, exchange_rate to the Currency master (422 if none).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"currency\": \"{{currency}}\",\n      \"exchange_rate\": 85,\n      \"price\": 10,\n      \"remarks\": \"Per month\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 229,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 7,\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 10,\n      \"exchange_rate\": 85,\n      \"gst_id\": null,\n      \"gst_percentage\": 0,\n      \"gst_amount\": 0,\n      \"total_amount\": 10,\n      \"inr_amount\": 850,\n      \"remarks\": \"Per month\",\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"none\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 0\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 0,\n    \"international_count\": 1,\n    \"inactive_count\": 0,\n    \"total_amount\": 850\n  },\n  \"meta\": {\n    \"vendor_id\": 7,\n    \"vendor_code\": \"S-007\",\n    \"vendor_name\": \"arfgdhgsfadgf\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"international\",\n    \"country\": \"United States\",\n    \"currency\": \"USD\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const row = (j.data || []).find(r => r.status === 'active' && r.origin === 'international');",
+                  "if (row) pm.collectionVariables.set('svc_map_id_intl', row.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit price of one mapping",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "service-mappings",
+                "{{svc_map_id}}"
+              ]
+            },
+            "description": "price, gst_id, currency, exchange_rate, remarks — all optional. Origin stays (unmap + map to change it). Amounts recomputed server-side.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 1200,\n  \"remarks\": \"Revised quote\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "service-mappings",
+                    "{{svc_map_id}}"
+                  ]
+                },
+                "description": "price, gst_id, currency, exchange_rate, remarks — all optional. Origin stays (unmap + map to change it). Amounts recomputed server-side.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"price\": 1200,\n  \"remarks\": \"Revised quote\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 228,\n  \"service_id\": 10,\n  \"service_code\": \"SVC-001\",\n  \"service_name\": \"Microsoft 365 Business Premium\",\n  \"service_type\": \"soft_digital\",\n  \"service_type_label\": \"Soft / Digital Services\",\n  \"classification\": null,\n  \"classification_label\": null,\n  \"category\": \"Software Licence\",\n  \"service_status\": \"active\",\n  \"vendor_id\": 8,\n  \"origin\": \"domestic\",\n  \"currency\": \"INR\",\n  \"price\": 1200,\n  \"exchange_rate\": null,\n  \"gst_id\": 4,\n  \"gst_percentage\": 3,\n  \"gst_amount\": 36,\n  \"total_amount\": 1236,\n  \"inr_amount\": 1236,\n  \"remarks\": \"Revised quote\",\n  \"status\": \"active\",\n  \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n  \"gst_type\": \"inter\",\n  \"cgst_amount\": 0,\n  \"sgst_amount\": 0,\n  \"igst_amount\": 36\n}"
+            }
+          ]
+        },
+        {
+          "name": "Edit exchange rate (International)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/service-mappings/{{svc_map_id_intl}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id_intl}}",
+                "service-mappings",
+                "{{svc_map_id_intl}}"
+              ]
+            },
+            "description": "New rate → inr_amount = price × new rate. The rate is stored on the row.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exchange_rate\": 86.25\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/service-mappings/{{svc_map_id_intl}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id_intl}}",
+                    "service-mappings",
+                    "{{svc_map_id_intl}}"
+                  ]
+                },
+                "description": "New rate → inr_amount = price × new rate. The rate is stored on the row.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"exchange_rate\": 86.25\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 229,\n  \"service_id\": 10,\n  \"service_code\": \"SVC-001\",\n  \"service_name\": \"Microsoft 365 Business Premium\",\n  \"service_type\": \"soft_digital\",\n  \"service_type_label\": \"Soft / Digital Services\",\n  \"classification\": null,\n  \"classification_label\": null,\n  \"category\": \"Software Licence\",\n  \"service_status\": \"active\",\n  \"vendor_id\": 7,\n  \"origin\": \"international\",\n  \"currency\": \"USD\",\n  \"price\": 10,\n  \"exchange_rate\": 86.25,\n  \"gst_id\": null,\n  \"gst_percentage\": 0,\n  \"gst_amount\": 0,\n  \"total_amount\": 10,\n  \"inr_amount\": 862.5,\n  \"remarks\": \"Per month\",\n  \"status\": \"active\",\n  \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n  \"gst_type\": \"none\",\n  \"cgst_amount\": 0,\n  \"sgst_amount\": 0,\n  \"igst_amount\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "Unmap (soft · status = inactive)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "service-mappings",
+                "{{svc_map_id}}"
+              ]
+            },
+            "description": "Soft unmap: status = inactive, row kept. Calling it again is a no-op (200). service_suppliers_count = the service's active suppliers left."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "service-mappings",
+                    "{{svc_map_id}}"
+                  ]
+                },
+                "description": "Soft unmap: status = inactive, row kept. Calling it again is a no-op (200). service_suppliers_count = the service's active suppliers left."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 228,\n  \"service_id\": 10,\n  \"service_code\": \"SVC-001\",\n  \"service_name\": \"Microsoft 365 Business Premium\",\n  \"service_type\": \"soft_digital\",\n  \"service_type_label\": \"Soft / Digital Services\",\n  \"classification\": null,\n  \"classification_label\": null,\n  \"category\": \"Software Licence\",\n  \"service_status\": \"active\",\n  \"vendor_id\": 8,\n  \"origin\": \"domestic\",\n  \"currency\": \"INR\",\n  \"price\": 1200,\n  \"exchange_rate\": null,\n  \"gst_id\": 4,\n  \"gst_percentage\": 3,\n  \"gst_amount\": 36,\n  \"total_amount\": 1236,\n  \"inr_amount\": 1236,\n  \"remarks\": \"Revised quote\",\n  \"status\": \"inactive\",\n  \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n  \"gst_type\": \"inter\",\n  \"cgst_amount\": 0,\n  \"sgst_amount\": 0,\n  \"igst_amount\": 36,\n  \"service_suppliers_count\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "Map again · revives the same row",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "Mapping a previously unmapped service brings back the SAME row id (unique service + supplier) as active, with the new price.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1100\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "Mapping a previously unmapped service brings back the SAME row id (unique service + supplier) as active, with the new price.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1100\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 33,\n      \"total_amount\": 1133,\n      \"inr_amount\": 1133,\n      \"remarks\": null,\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 33\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 1,\n    \"international_count\": 0,\n    \"inactive_count\": 0,\n    \"total_amount\": 1133\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const row = (j.data || []).find(r => r.status === 'active');",
+                  "if (row) pm.collectionVariables.set('svc_map_id', row.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save step · empty list turns every mapping off",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "mappings: [] sets every active mapping of this supplier inactive; rows are kept.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "mappings: [] sets every active mapping of this supplier inactive; rows are kept.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 33,\n      \"total_amount\": 1133,\n      \"inr_amount\": 1133,\n      \"remarks\": null,\n      \"status\": \"inactive\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 33\n    }\n  ],\n  \"summary\": {\n    \"count\": 0,\n    \"domestic_count\": 0,\n    \"international_count\": 0,\n    \"inactive_count\": 1,\n    \"total_amount\": 0\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · Material / Goods supplier cannot supply a service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{material_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{material_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "Supplier type must serve the service's type + classification. Material / Goods and FFD / Transporter serve no service.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{material_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{material_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "Supplier type must serve the service's type + classification. Material / Goods and FFD / Transporter serve no service.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"A Material/ Goods supplier cannot supply a service. Only a supplier whose type serves Soft / Digital Services can be mapped to SVC-001.\",\n  \"errors\": {\n    \"mappings.0.service_id\": [\n      \"A Material/ Goods supplier cannot supply a service. Only a supplier whose type serves Soft / Digital Services can be mapped to SVC-001.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · supplier type does not serve this service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "A Soft Service Provider cannot be mapped to a Trackable service.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{trackable_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "A Soft Service Provider cannot be mapped to a Trackable service.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{trackable_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"This supplier's type (Soft Service Provider) does not serve Trackable — SVC-002 needs a Trackable supplier.\",\n  \"errors\": {\n    \"mappings.0.service_id\": [\n      \"This supplier's type (Soft Service Provider) does not serve Trackable — SVC-002 needs a Trackable supplier.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · origin does not match the supplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "An Indian supplier sent as International (or the other way round) is refused with the origin to use.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"price\": 1000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "An Indian supplier sent as International (or the other way round) is refused with the origin to use.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"price\": 1000\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"This supplier is based in India — map it as a Domestic supplier.\",\n  \"errors\": {\n    \"mappings.0.origin\": [\n      \"This supplier is based in India — map it as a Domestic supplier.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Expect 422 · same service twice in one save",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "A service can only be mapped once per supplier.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1000\n    },\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1200\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "A service can only be mapped once per supplier.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1000\n    },\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1200\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"A service can only be mapped once per supplier. (and 1 more error)\",\n  \"errors\": {\n    \"mappings.0.service_id\": [\n      \"A service can only be mapped once per supplier.\"\n    ],\n    \"mappings.1.service_id\": [\n      \"A service can only be mapped once per supplier.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
             }
           ]
         }
