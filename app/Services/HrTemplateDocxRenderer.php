@@ -13,48 +13,12 @@ use PhpOffice\PhpWord\Style\Table;
 use PhpOffice\PhpWord\SimpleType\TblWidth;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
-/**
- * Builds a DOCX from an HrDocumentTemplate-shaped row + streams it back as
- * a download response. Shared by the template editor's "Download DOCX"
- * button and the generated-document download in the Generate Document
- * wizard, so both produce identical output: header strip (logo + title +
- * subtitle), the body HTML, and footer strip (text + page number).
- *
- * Why a service: the renderer needs the full template's header_config /
- * footer_config to lay out the page, but the generated-document download
- * needs to substitute the BODY (rendered_html, with custom values already
- * filled in). The shared method takes a HrDocumentTemplate — for generated
- * docs, the caller passes a non-persisted clone with content_html swapped
- * for the resolved HTML. Same renderer, two callers, zero duplication.
- */
 class HrTemplateDocxRenderer
 {
-    /**
-     * Build the DOCX and return the absolute path to the generated tmp file.
-     * Callers that need to attach the file to email (and unlink afterwards)
-     * use this; callers that just want a download response use `render`.
-     *
-     * The row is duck-typed (no explicit class hint) so this works equally
-     * for HrDocumentTemplate, HrGeneratedDocument clones, and the signature
-     * runtime's HrDocumentSignature snapshots — they all carry the same
-     * `header_config` / `footer_config` / `content_html` triple.
-     */
-    /** A4 width (11906 twips) minus PhpWord's default 1440-twip side margins. */
     private const HEADER_WIDTH_TWIPS = 11906 - (2 * 1440);
 
     public static function buildPath($row): string
     {
-        /* PhpWord leaves output escaping OFF by default, so a company name
-         * containing & < > was written raw into header1.xml and produced a
-         * document Word refuses to open ("unreadable content").
-         *
-         * Settings is GLOBAL STATIC state, and php-fpm reuses a worker across
-         * requests -- so leaving this flipped on would silently change every
-         * later PhpWord export in the same process. HandlesDocxHtmlRoundtrip
-         * (the CLM agreement / trade-doc writer) escapes its own header text
-         * with htmlspecialchars(), and would then double-escape into a literal
-         * "&amp;amp;". The previous value is restored in the finally below so
-         * this renderer's requirement cannot leak out of it. */
         $prevEscaping = Settings::isOutputEscapingEnabled();
         Settings::setOutputEscapingEnabled(true);
         try {
@@ -64,16 +28,9 @@ class HrTemplateDocxRenderer
         }
     }
 
-    /** The actual builder; wrapped by buildPath() so the global PhpWord
-     *  escaping setting is always restored, on the error path too. */
     private static function build($row): string
     {
         $phpWord = new PhpWord();
-        // A4 in twips as INTEGERS — PhpWord's default computes these from
-        // inches with floating-point math and emits decimals (e.g.
-        // w:w="11905.51181..."), which Word rejects as a schema violation
-        // ("can't parse XML at line 2"). Hard-coding the spec values forces
-        // valid <w:pgSz> regardless of php's serialize_precision.
         $section = $phpWord->addSection([
             'pageSizeW'    => 11906,
             'pageSizeH'    => 16838,
@@ -85,12 +42,6 @@ class HrTemplateDocxRenderer
         self::writeFooter($section, is_array($row->footer_config) ? $row->footer_config : []);
 
         $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
-        // PhpWord's Html::addHtml uses loadXML (not loadHTML) so the body
-        // must be valid XML. Bare void tags from rich-text editors abort
-        // parsing silently and drop everything that follows. Self-close ALL of
-        // them, not only <br>/<hr>/<img>: the web editor writes a table as
-        // <colgroup><col style="width: 347px;"></colgroup>, and that one
-        // unclosed <col> is enough to lose the entire body. (#57)
         $html = preg_replace(
             '#<(br|hr|col|input|area|base|embed|link|meta|param|source|track|wbr)\b([^>]*?)/?>#i',
             '<$1$2/>',
@@ -101,24 +52,11 @@ class HrTemplateDocxRenderer
         $html = self::localiseImageSources($html);
         $wrapped = '<html><body>' . $html . '</body></html>';
 
-        /* Parse into a THROWAWAY document first, and only re-run it on the real
-         * section once it survives.
-         *
-         * The old shape was `try { addHtml($section) } catch { addText(...) }`,
-         * and addHtml writes as it walks: a failure part-way left the paragraphs
-         * it had already added AND then appended a flattened dump of the entire
-         * body, so the reader got the text twice — the second time as one
-         * run-on line with the raw {{tokens}} in it. Nothing can un-write those
-         * paragraphs, so the check has to happen somewhere disposable. */
         $parsedCleanly = true;
         try {
             $probe = new PhpWord();
             $probeSection = $probe->addSection();
             Html::addHtml($probeSection, $wrapped, false, false);
-            /* THE PROBE HAS TO COUNT, not just survive. addHtml swallows
-             * libxml's errors and returns normally having added nothing, so a
-             * try/catch alone called a body that produced an empty document
-             * "clean" and the reader got a blank page. */
             $parsedCleanly = count($probeSection->getElements()) > 0;
             if (!$parsedCleanly) {
                 Log::warning('DOCX body HTML parsed to nothing; falling back to plain paragraphs');
@@ -133,9 +71,6 @@ class HrTemplateDocxRenderer
         if ($parsedCleanly) {
             Html::addHtml($section, $wrapped, false, false);
         } else {
-            /* One addText for the whole body is ONE Word paragraph — the
-             * "everything on a single line" the ticket describes. Break on the
-             * block ends so the text keeps its shape even on this path. */
             $plain = preg_replace('#</t[dh]\s*>#i', "\t", $html);
             $plain = preg_replace('#<(?:br\s*/?|/p|/h[1-6]|/li|/tr|/div|/blockquote)\s*>#i', "\n", $plain);
             $plain = html_entity_decode(strip_tags($plain), ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -155,17 +90,6 @@ class HrTemplateDocxRenderer
         return $tmp;
     }
 
-    /**
-     * Turn the editor's page break into one Word understands.
-     *
-     * The editor emits `<div class="page-break" data-page-break="true"></div>`,
-     * which the PDF stylesheet turns into `page-break-after: always`. PhpWord's
-     * HTML reader has no `div` in its node map at all, so that element (and any
-     * class-based CSS) is skipped outright — the break silently vanished from
-     * the Word copy while the PDF broke correctly. PhpWord DOES honour
-     * `page-break-after: always` as an INLINE style on a <p>, which it turns
-     * into a real Word page break, so rewrite the div into exactly that.
-     */
     private static function pageBreaksToWord(string $html): string
     {
         return preg_replace(
@@ -174,54 +98,29 @@ class HrTemplateDocxRenderer
             $html
         ) ?? $html;
     }
-    /** Streams the freshly-built DOCX as a download response. */
     public static function render($row, string $filename): BinaryFileResponse
     {
         $tmp = self::buildPath($row);
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
-    /**
-     * Resolve a header logo into a path PhpWord can embed. PhpWord only accepts
-     * JPG/PNG/GIF/BMP, so an uploaded SVG/WEBP logo (fine in the web preview)
-     * silently fails addImage(). Convert WEBP via GD and SVG via Imagick (when
-     * available) to a temp PNG. Returns null when missing/unconvertible.
-     */
-    /**
-     * Guaranteed LOCAL path for a 'public'-disk file. On the server the public
-     * disk is Azure Blob (no local path), so stream the bytes into a temp file
-     * native libraries can open. On local disks return ->path() directly.
-     */
     private static function localFile(?string $path): ?string
     {
         if (!$path) return null;
 
-        /* Find the file on whichever disk it was actually written to.
-         *
-         * This hardcoded Storage::disk('public'), while FILESYSTEM_DISK is
-         * 'azure' in production. A logo stored in Azure Blob failed the
-         * exists() check on the public disk, localFile() returned null, and the
-         * header logo was silently dropped from the generated DOCX — the
-         * reported "company logo missing in downloaded doc". The format
-         * conversion below never even ran; it failed one line earlier, which is
-         * why a plain PNG went missing too.
-         *
-         * The configured disk is tried first, then 'public' for rows written
-         * before the move to Azure. Note the exists() check was also what made
-         * the remote-adapter fallback further down unreachable. */
         $disk = null;
         foreach (array_unique([(string) config('filesystems.default'), 'public']) as $name) {
             try {
                 $candidate = Storage::disk($name);
                 if ($candidate->exists($path)) { $disk = $candidate; break; }
-            } catch (Throwable $e) { /* disk not configured — try the next */ }
+            } catch (Throwable $e) { }
         }
         if (!$disk) return null;
 
         try {
             $local = $disk->path($path);
             if (is_string($local) && is_file($local)) return $local;
-        } catch (\Throwable $e) { /* non-local adapter → copy below */ }
+        } catch (\Throwable $e) { }
         try {
             $bytes = $disk->get($path);
             if ($bytes === null) return null;
@@ -234,16 +133,6 @@ class HrTemplateDocxRenderer
         }
     }
 
-    /**
-     * Rewrite every <img src> in the body to an absolute LOCAL file path.
-     *
-     * The resolved HTML carries `/storage/...` URLs — right for the browser
-     * preview and for DomPDF (which inlines them), but PhpWord reads the src as
-     * a filesystem path and a leading-slash URL resolves to nothing. It then
-     * threw mid-parse, and the catch below wrote the entire body a second time
-     * as flattened text. An image we cannot resolve is DROPPED rather than left
-     * to break the document.
-     */
     private static function localiseImageSources(string $html): string
     {
         return preg_replace_callback(
@@ -252,27 +141,19 @@ class HrTemplateDocxRenderer
                 [$full, $pre, $q, $src, $post] = $m;
                 if ($src === '' || str_starts_with($src, 'data:')) return $full;
 
-                // /storage/x → disk-relative x; a bare relative path is already one.
                 $path = parse_url($src, PHP_URL_PATH) ?: $src;
                 $path = ltrim(str_replace('\\', '/', $path), '/');
                 if (preg_match('#(?:^|/)storage/(.+)$#', $path, $sm)) $path = $sm[1];
-                elseif (str_starts_with($src, 'http')) return '';   // remote — not ours to embed
+                elseif (str_starts_with($src, 'http')) return '';
 
                 $abs = self::resolveDocxLogo($path);
-                if (!$abs) return '';   // unreadable / unsupported format
+                if (!$abs) return '';
                 return '<img' . $pre . 'src=' . $q . $abs . $q . $post . '/>';
             },
             $html,
         ) ?? $html;
     }
 
-    /**
-     * Last resort: fetch the logo over HTTP into a temp file PhpWord can embed.
-     *
-     * Restricted to the app's own origin and the configured Azure Blob account.
-     * The value comes from a tenant-editable header config, so an unrestricted
-     * fetch here would let a tenant point the server at any internal address.
-     */
     private static function logoFromUrl(?string $url): ?string
     {
         $url = trim((string) $url);
@@ -294,8 +175,6 @@ class HrTemplateDocxRenderer
             $ext = strtolower(pathinfo((string) parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION)) ?: 'png';
             $tmp = tempnam(sys_get_temp_dir(), 'cbc_logo_') . '.' . $ext;
             file_put_contents($tmp, $res->body());
-            // Route it back through the format guard: a fetched SVG/WEBP still
-            // needs converting before PhpWord will take it.
             return self::resolveDocxLogo($tmp) ?: null;
         } catch (Throwable $e) {
             Log::warning('DOCX header logo fetch failed', ['error' => $e->getMessage()]);
@@ -323,7 +202,7 @@ class HrTemplateDocxRenderer
                     imagedestroy($img);
                     return $tmp;
                 }
-            } catch (\Throwable $e) { /* fall through */ }
+            } catch (\Throwable $e) { }
         }
 
         if ($ext === 'svg' && class_exists('Imagick')) {
@@ -336,44 +215,18 @@ class HrTemplateDocxRenderer
                 $im->writeImage($tmp);
                 $im->clear();
                 return $tmp;
-            } catch (\Throwable $e) { /* fall through */ }
+            } catch (\Throwable $e) { }
         }
 
         return null;
     }
 
-    /**
-     * Image style that fits the logo INSIDE its header cell.
-     *
-     * addImage(['height' => N]) constrains one axis only and lets the width
-     * follow the aspect ratio, with nothing stopping it at the cell edge. A
-     * wide/banner logo — the common case, since most company logos are far
-     * wider than tall — then rendered several times wider than the column it
-     * lived in: a 1200x200 mark at 60pt height came out 360pt wide against a
-     * 112pt cell. The table has a FIXED layout, so Word keeps the columns where
-     * they are and the picture simply overruns the one beside it, covering the
-     * company name and running past the right margin. That is the reported
-     * "company name partially displayed" — the text was always written in full,
-     * it was being sat on by the logo.
-     *
-     * Scaling by whichever axis binds first keeps the aspect ratio and
-     * guarantees the image never exceeds the cell in either direction. A logo
-     * that already fits is scaled DOWN only, never enlarged, so the configured
-     * height still means what it says for ordinary square-ish marks.
-     *
-     * @param int $maxHeightPt Configured logo height, in points.
-     * @param int $cellWidthTwips Width of the logo cell, in twips.
-     */
     public static function logoFitStyle(string $absLogo, int $maxHeightPt, int $cellWidthTwips): array
     {
-        $maxWidthPt = $cellWidthTwips / 20.0;   // 20 twips per point
+        $maxWidthPt = $cellWidthTwips / 20.0;
 
         $dim = @getimagesize($absLogo);
         if (!is_array($dim) || ($dim[0] ?? 0) <= 0 || ($dim[1] ?? 0) <= 0) {
-            /* Intrinsic size unknown (a format getimagesize cannot read). Cap
-               BOTH axes rather than the height alone — a squashed logo is
-               recoverable, a header with the company name buried under it is
-               what we are fixing. */
             return ['height' => $maxHeightPt, 'width' => $maxWidthPt];
         }
 
@@ -391,17 +244,8 @@ class HrTemplateDocxRenderer
         $title    = (string) ($cfg['title']    ?? '');
         $subtitle = (string) ($cfg['subtitle'] ?? '');
         $hAlign   = (string) ($cfg['align']    ?? 'right');
-        // Honour the SPA's configured logo height (clamped 24-200) instead of a
-        // fixed size, so the rendered Word logo matches the on-screen preview.
         $logoH    = (int) max(24, min(200, $cfg['logo_height'] ?? 60));
 
-        /* Header table sized in TWIPS against the real printable width.
-         * It used to declare a PERCENT width while handing addCell() raw
-         * twips (2500 + 7500 = 10000), and PhpWord treats cell widths as
-         * twips regardless of the table unit -- so the row was ~1000 twips
-         * wider than A4's printable area (11906 - 2 * 1440 = 9026). Word
-         * clipped the overflow at the right margin, which is why a long
-         * company name came out cut off in the generated .docx. */
         $usable    = self::HEADER_WIDTH_TWIPS;
         $logoW     = (int) round($usable * 0.25);
         $titleW    = $usable - $logoW;
@@ -414,29 +258,14 @@ class HrTemplateDocxRenderer
             'layout' => Table::LAYOUT_FIXED,
         ]);
         $row1 = $table->addRow();
-        /* noWrap => false is essential: PhpWord's Cell style defaults noWrap
-         * to TRUE, which emits <w:noWrap/> and forbids the cell from wrapping.
-         * A company name longer than the cell then runs off the right margin
-         * and Word clips it -- the reported truncation. */
         $logoCell  = $row1->addCell($logoW,  ['valign' => 'center', 'noWrap' => false]);
         $titleCell = $row1->addCell($titleW, ['valign' => 'center', 'noWrap' => false]);
 
-        /* logo_path first, then logo_url.
-         *
-         * The PDF renders <img src="{logo_url}"> and has always worked; the
-         * DOCX read logo_path alone, and PhpWord needs a real local file. So
-         * whenever logo_path was null, stale, or not resolvable on the current
-         * disk, the Word file came out with NO logo while the PDF still showed
-         * one -- and silently, because the block below only ran when a path
-         * resolved. Falling back to the URL the PDF already trusts makes the
-         * two exports agree. */
         $absLogo = self::resolveDocxLogo($logoPath) ?: self::logoFromUrl($cfg['logo_url'] ?? null);
         if ($absLogo) {
             try { $logoCell->addImage($absLogo, self::logoFitStyle($absLogo, $logoH, $logoW)); }
             catch (Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
         } elseif ($logoPath || !empty($cfg['logo_url'])) {
-            /* A logo WAS configured but could not be resolved. Say so in the
-               document and in the log rather than shipping a silent gap. */
             Log::warning('DOCX header logo unresolved', ['logo_path' => $logoPath, 'logo_url' => $cfg['logo_url'] ?? null]);
             $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']);
         }
