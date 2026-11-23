@@ -2356,6 +2356,14 @@ export default function AddVendorModal(props: {
   const saveMapDraft = async () => {
     if (!mapDraft.productId)             { toast.error('Missing field', 'Pick a Product Name'); return; }
     {
+      // CS-2327: a product with no GST rate (empty, not a real 0%) can't be mapped.
+      const opt = productOpts.find(o => o.value === mapDraft.productId);
+      if (opt && (opt.gstPercentage === '' || opt.gstPercentage == null)) {
+        toast.error('GST required', `${mapDraft.productCode || 'This product'} has no GST rate — set a GST on the product before mapping it to a supplier.`);
+        return;
+      }
+    }
+    {
       const segSet = new Set((segment ?? []).map(Number).filter(n => n > 0));
       const opt = productOpts.find(o => o.value === mapDraft.productId);
       if (segSet.size > 0 && opt && opt.segmentId != null && !segSet.has(opt.segmentId)) {
