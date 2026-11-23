@@ -12,6 +12,7 @@ import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useCardFloor } from '../../../hooks/useCardFloor';
 import { useToast } from '../../../contexts/ToastContext';
 import { WarehouseApiError, warehouseApi, type Warehouse, type WarehouseCounts, type WarehouseTab } from './warehouse-data';
+import MasterBackButton from '../../../components/ui/MasterBackButton';
 const WarehouseQrModal = lazy(() => import('./WarehouseQrModal'));
 const AddWarehouseModal = lazy(() => import('./AddWarehouseModal'));
 
@@ -244,6 +245,7 @@ export default function WarehouseMaster() {
             </div>
           </div>
         </div>
+        <MasterBackButton />
         <button type="button" className="spi-head-btn" onClick={() => setFormFor('new')}>
           <IcoPlus /> Add Warehouse
         </button>

@@ -318,7 +318,7 @@ export default function MasterDashboard() {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const goTo   = (leaf: MenuChild) => navigate(INVENTORY_MASTER_PAGES[leaf.id] ?? `/master/${leaf.id.replace('master.', '')}`);
+  const goTo   = (leaf: MenuChild) => navigate(INVENTORY_MASTER_PAGES[leaf.id] ?? `/master/${leaf.id.replace('master.', '')}`, { state: { fromMaster: true } });
 
   if (groups.length === 0) {
     return (

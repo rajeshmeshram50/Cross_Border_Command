@@ -20,6 +20,7 @@ import '../../../css/master.css';
 import '../p2p/p2p-common.css';
 import '../p2p/purchase-management/order/po-list/order.css';
 import '../inventory-management/warehouse/warehouse-master.css';
+import MasterBackButton from '../../components/ui/MasterBackButton';
 
 const MP_TEAL_TONE = { bg: '#ecfeff', fg: '#0e7490', border: '#22d3ee', star: '#0891b2' };
 
@@ -1516,6 +1517,7 @@ function MasterPageInner({
           </div>
         </div>
         <div className="mp-head-right">
+          <MasterBackButton />
           {caps.add ? (
             <button type="button" className="spi-head-btn" onClick={openAdd}>
               <i className="ri-add-line" />

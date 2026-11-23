@@ -14,6 +14,7 @@ import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useCardFloor } from '../../../hooks/useCardFloor';
 import { useToast } from '../../../contexts/ToastContext';
 import { ZoneApiError, zoneApi, type Zone, type ZoneCounts, type ZoneTab, type ZoneWarehouse } from './zone-data';
+import MasterBackButton from '../../../components/ui/MasterBackButton';
 
 const ZoneQrModal = lazy(() => import('./ZoneQrModal'));
 const AddZoneModal = lazy(() => import('./AddZoneModal'));
@@ -244,6 +245,7 @@ export default function ZoneMaster() {
             </div>
           </div>
         </div>
+        <MasterBackButton />
         <button type="button" className="spi-head-btn" onClick={() => setFormFor('new')}>
           <IcoPlus /> Add Zone
         </button>

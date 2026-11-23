@@ -13,6 +13,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useServerList } from '../../../hooks/useServerList';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { ProductFlagApiError, productFlagApi, type ProductFlag, type ProductFlagTab } from './product-flag-data';
+import MasterBackButton from '../../../components/ui/MasterBackButton';
 
 /* Fetched as soon as the page mounts (below), not on the first Edit click -
    Suspense showed nothing while the chunk downloaded, so Edit looked dead
@@ -179,6 +180,7 @@ export default function ProductFlagMaster() {
             </div>
           </div>
         </div>
+        <MasterBackButton />
         <button type="button" className="spi-head-btn" onClick={() => setFormFor('new')}>
           <IcoPlus /> Add Product Flag
         </button>

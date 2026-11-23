@@ -10,6 +10,7 @@ import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { LEAD_ACK_CSS, LEAD_ACK_CSS_TEAL } from './leadAckStyles';
 import '../../../p2p/p2p-common.css';
 import LeadAckReasonModal, { LEAD_ACK_TYPE_LABELS, type OppType, type LeadAckReason as Reason } from './LeadAckReasonModal';
+import MasterBackButton from '../../../../components/ui/MasterBackButton';
 
 type GroupedReasons = {
   qualified: Reason[];
@@ -257,6 +258,7 @@ export default function SalesLeadAckMaster({ variant = 'violet' }: { variant?: '
               <div className="spi-head-sub">Manage qualification reasons for the sales pipeline</div>
             </div>
           </div>
+          <MasterBackButton />
           {canAdd && (
             <button type="button" className="spi-head-btn" onClick={openAdd}>
               <i className="ri-add-line" />

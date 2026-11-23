@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import MasterBackButton from '../../../components/ui/MasterBackButton';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Standard CLM page chrome — cyan-gradient header strip + expandable
@@ -45,6 +46,7 @@ export function ClmPageHeader({ icon, title, sub, addLabel, onAdd, addClassName,
           <div className="clm-head-strip-sub">{sub}</div>
         </div>
       </div>
+      <MasterBackButton />
       {rightSlot}
       {addLabel && onAdd && (
         <button className={`clm-add-btn ${addClassName ?? ''}`} onClick={onAdd}>
