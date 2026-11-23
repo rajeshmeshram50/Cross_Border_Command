@@ -19,14 +19,6 @@ class PasswordResetOtpMail extends Mailable
     public string $requestedAt;
     public array $branding;
 
-    /**
-     * @param  array  $branding  Optional per-tenant overrides. Keys: brandName,
-     *                           brandShort, brandTagline, logoUrl, supportEmail,
-     *                           supportPhone, websiteUrl, facebookUrl,
-     *                           linkedinUrl, twitterUrl, youtubeUrl.
-     *                           Any key omitted falls back to the platform default
-     *                           defined in the blade template.
-     */
     public function __construct(
         string $otp,
         string $userName,
@@ -39,9 +31,6 @@ class PasswordResetOtpMail extends Mailable
         $this->userEmail     = $userEmail;
         $this->expiryMinutes = $expiryMinutes;
         $this->requestedAt   = now('Asia/Kolkata')->format('M d, Y \· h:i A');
-        // Keep empty strings — callers use '' to *intentionally suppress* a
-        // template default (e.g. client orgs that don't want the IGC-specific
-        // "GROUP OF COMPANIES" subline). Only drop true nulls.
         $this->branding      = array_filter($branding, fn ($v) => $v !== null);
     }
 
