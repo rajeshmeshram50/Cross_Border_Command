@@ -6,11 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * One row per tap on the face-attendance terminal. Multiple per day, strictly
- * alternating direction (the controller enforces in→out→in→out…). The parent
- * Attendance row holds the daily roll-up.
- */
 class AttendancePunch extends Model
 {
     use SoftDeletes;
@@ -19,7 +14,6 @@ class AttendancePunch extends Model
         'attendance_id', 'employee_id',
         'punched_at', 'direction', 'label', 'method',
         'match_distance', 'ip', 'lat', 'lng', 'notes',
-        // eSSL device-import provenance (method='device').
         'device_serial', 'device_user_id', 'raw_status',
     ];
 
@@ -35,8 +29,6 @@ class AttendancePunch extends Model
         return $this->belongsTo(Attendance::class);
     }
 
-    /** withTrashed() — same reason as Attendance::employee(): a leaver's
-     *  punches stay on the record and must still resolve to a name. (#91) */
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class)->withTrashed();
