@@ -7,20 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ShipmentOrder extends Model
 {
-    /* Export-only vs domestic-only columns are deliberately separate — see the
-     * add_domestic_fields_to_shipment_orders_table migration. A row populates
-     * one set or the other, never both, according to its PI's doc_type. */
     protected $fillable = [
         'client_id', 'branch_id', 'shipment_code', 'lead_id', 'proforma_invoice_id',
         'shipping_liability', 'cold_chain', 'shipping_mode',
         'attachments', 'remarks', 'created_by',
-        // International only
-        // inco_term_id is the real reference into master_incoterms; inco_term is
-        // the label snapshot kept for rows created before the id column existed.
         'zip_code', 'freight_cost', 'inco_term', 'inco_term_id',
         'port_of_loading', 'port_of_unloading',
         'final_destination', 'origin_country',
-        // Domestic only
         'pin_code', 'shipping_cost', 'place_of_dispatch', 'place_of_delivery',
     ];
 
@@ -46,17 +39,11 @@ class ShipmentOrder extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /** Master row behind the INCO term — null on pre-id shipments. */
     public function incoterm(): BelongsTo
     {
         return $this->belongsTo(\App\Models\Masters\Incoterms::class, 'inco_term_id');
     }
 
-    /**
-     * What the UI should show for INCO Term: the live master value when the
-     * shipment carries an id (so renames propagate), else the label snapshot
-     * saved with older rows.
-     */
     public function incoTermLabel(): ?string
     {
         $m = $this->relationLoaded('incoterm') ? $this->incoterm : null;
