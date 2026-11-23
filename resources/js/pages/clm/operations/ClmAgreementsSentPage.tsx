@@ -1,3 +1,4 @@
+import { clmFillHeight } from '../shared/clmShared';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -257,7 +258,7 @@ export default function ClmAgreementsSentPage() {
       const el = cardRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const fh = Math.max(240, window.innerHeight - top - 56);
+      const fh = clmFillHeight(el, 240);
       setFillH(prev => (prev === fh ? prev : fh));
 
       const toolbarH = (el.querySelector('.aws-toolbar') as HTMLElement | null)?.offsetHeight || 0;

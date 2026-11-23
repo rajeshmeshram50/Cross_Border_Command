@@ -1,3 +1,4 @@
+import { clmFillHeight } from '../shared/clmShared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -374,7 +375,7 @@ export default function ClmCaseToCasePage() {
       // Leave room at the bottom for the layout footer + the scroll container's
       // padding — with only a 24px gap the card overshot the main-content scroll
       // area and the pagination footer landed at the fold (cut off).
-      const fh = Math.max(240, window.innerHeight - top - 56);
+      const fh = clmFillHeight(el, 240);
       setFillH(prev => (prev === fh ? prev : fh));
 
       // Dynamic rows-per-page — fit as many rows as the card height allows so

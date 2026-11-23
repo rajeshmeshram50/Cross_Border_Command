@@ -739,10 +739,20 @@ export const CLM_CSS = `
 [data-bs-theme="dark"] .clm-table-fill.clm-fill-empty { background: #0f172a; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
 /* Table scrollbar, not a page scrollbar: a fill wrap is capped at the space
- * above the app footer, the rows scroll inside it under the sticky column
- * headings, and the pager stays pinned to the bottom edge. */
-.clm-table-fill { overflow: auto; overscroll-behavior: contain; }
-.clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { position: sticky; bottom: 0; z-index: 4; }
+ * above the app footer and only the rows scroll (.clm-tscroll), under the
+ * sticky column headings; the pager sits below the scrollbar, as in DataTable. */
+.clm-table-fill { overflow: hidden; }
+.clm-tscroll {
+  flex: 1 1 0; min-height: 0; min-width: 0;
+  overflow: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #a5e8f5 transparent;
+}
+.clm-tscroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.clm-tscroll::-webkit-scrollbar-track { background: transparent; }
+.clm-tscroll::-webkit-scrollbar-thumb { background: #a5e8f5; border-radius: 8px; }
+.clm-tscroll::-webkit-scrollbar-thumb:hover { background: #67e8f9; }
+[data-bs-theme="dark"] .clm-tscroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+[data-bs-theme="dark"] .clm-tscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
 .clm-inscroll { overscroll-behavior: contain; }
 .clm-inscroll thead th { position: sticky; top: 0; z-index: 3; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
@@ -2254,6 +2264,41 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   return { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
 }
 
+/* Height a CLM list's table box (or card) may take so the page itself never
+ * scrolls: the scroll area's height, less where the box starts in it, less
+ * everything that sits below the box -- the card's own bottom padding and
+ * border, any content after it, gaps, .page-content's padding, and the app
+ * footer when it lives inside the scroll area. A flat allowance (64 / 56 /
+ * footer + 8) left out the card chrome, so the page ran a few pixels past the
+ * screen and showed a full-page scrollbar next to the table's own one. */
+export function clmFillHeight(el: HTMLElement, min = 0): number {
+  const scroller = el.closest('.main-content') as HTMLElement | null;
+  const rect = el.getBoundingClientRect();
+  const top = scroller
+    ? rect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
+    : rect.top + (document.scrollingElement?.scrollTop ?? 0);
+  const space = scroller ? scroller.clientHeight : window.innerHeight;
+  const px = (v: string) => parseFloat(v) || 0;
+  let below = 0;
+  for (let node: HTMLElement | null = el; node && node !== scroller && node !== document.body; node = node.parentElement) {
+    below += px(getComputedStyle(node).marginBottom);
+    const parent = node.parentElement;
+    const ps = parent ? getComputedStyle(parent) : null;
+    const gap = ps && /flex|grid/.test(ps.display) ? px(ps.rowGap) : 0;
+    for (let s = node.nextElementSibling as HTMLElement | null; s; s = s.nextElementSibling as HTMLElement | null) {
+      const ss = getComputedStyle(s);
+      if (ss.display === 'none' || ss.position === 'absolute' || ss.position === 'fixed') continue;
+      below += s.offsetHeight + px(ss.marginTop) + px(ss.marginBottom) + gap;
+    }
+    if (parent && parent !== scroller && ps) below += px(ps.paddingBottom) + px(ps.borderBottomWidth);
+  }
+  if (!scroller) {
+    const f = document.querySelector('footer.footer') as HTMLElement | null;
+    below += f ? f.offsetHeight + 8 : 15;
+  }
+  return Math.max(min, Math.floor(space - top - below));
+}
+
 /* Rows that fit the visible table, never fewer than PER_PAGE (10).
  * Grow-only: a tall screen uses the room it has, a short one still gets a full
  * standard page. The old floor was 4, which served four-row pages on a laptop
@@ -2295,7 +2340,7 @@ export function useAutoFitRows(
         setRpp(prev => (prev === fit ? prev : fit));
       }
 
-      const fh = Math.max(0, window.innerHeight - top - bottomReserve);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
