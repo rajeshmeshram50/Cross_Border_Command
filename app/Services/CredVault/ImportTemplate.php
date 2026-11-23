@@ -6,28 +6,16 @@ use App\Models\CredVault\Credential;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
-/**
- * Import by category — one sheet layout per credential type, built from the type's own
- * form (Credential::TYPES), so a sheet holds exactly what the Add form asks for:
- *
- *   Credential Name · the form's fields (files excepted) · 2FA · Registered Email ·
- *   Registered Phone · Recovery Key · Risk · Rotation (days) · Notes
- *
- * A header ending in " *" is required. Headers are matched by label or by field key,
- * case and spacing ignored, so a sheet saved from Excel or typed by hand both read.
- * The sample's two rows per type pass every check the form makes.
- */
 class ImportTemplate
 {
     public const NAME = 'Credential Name';
 
-    /** @return array<int, array{key:string, header:string, label:string, required:bool, kind:string, options:?array, group:string, hint:string}> */
     public static function columns(string $type): array
     {
         $def  = Credential::typeDef($type);
         $cols = [['key' => 'credential_name', 'label' => self::NAME, 'required' => true, 'kind' => 'text', 'options' => null, 'group' => 'name', 'hint' => '2 to 150 characters, unique for this type in your vault']];
         foreach ($def['fields'] as $f) {
-            if ($f['kind'] === 'file') continue;   // files are attached in the form after the import
+            if ($f['kind'] === 'file') continue;
             $cols[] = ['key' => $f['key'], 'label' => $f['label'], 'required' => (bool) $f['required'], 'kind' => $f['kind'],
                 'options' => $f['kind'] === 'toggle' ? ['Yes', 'No'] : $f['options'], 'group' => 'field', 'hint' => self::hint($type, $f)];
         }
@@ -48,20 +36,17 @@ class ImportTemplate
         return array_map(fn ($c) => $c + ['header' => $c['label'] . ($c['required'] ? ' *' : '')], $cols);
     }
 
-    /** The files a type's form takes that a sheet cannot carry (Certificate File, Document File …). */
     public static function fileFields(string $type): array
     {
         return array_values(array_map(fn ($f) => ['key' => $f['key'], 'label' => $f['label'], 'required' => $f['required']],
             array_filter(Credential::typeDef($type)['fields'], fn ($f) => $f['kind'] === 'file')));
     }
 
-    /** The sheet (tab) name of a type — its label, as Excel allows (31 characters, no / \ ? * [ ]). */
     public static function sheetName(string $type): string
     {
         return mb_substr(str_replace(['/', '\\', '?', '*', '[', ']', ':'], '-', Credential::typeDef($type)['label']), 0, 31);
     }
 
-    /** The type a sheet name stands for, or null. */
     public static function typeOfSheet(string $sheet): ?string
     {
         $n = self::norm($sheet);
@@ -71,17 +56,11 @@ class ImportTemplate
         return null;
     }
 
-    /** "Website / URL *" → "website/url". */
     public static function norm(string $h): string
     {
         return preg_replace('/[\s_]+/', '', Str::lower(rtrim(trim($h), " *")));
     }
 
-    /**
-     * Which file header feeds which column: by label or by key.
-     *
-     * @return array{0: array<string,string>, 1: string[], 2: string[]} key => header, the required columns missing, headers not used
-     */
     public static function mapHeaders(string $type, array $headers): array
     {
         $cols = self::columns($type);
@@ -99,10 +78,6 @@ class ImportTemplate
         return [$map, $missing, $unknown];
     }
 
-    /**
-     * One sheet row as the Add form's request: name, fields[…], twofa, reg_*, risk,
-     * rotation_days, notes. Empty cells are left out, so the form's own rules decide.
-     */
     public static function toPayload(string $type, array $row, array $map): array
     {
         $cols = collect(self::columns($type))->keyBy('key');
@@ -123,7 +98,6 @@ class ImportTemplate
         return $out;
     }
 
-    /** A date Excel stored as a serial number (46843) or typed as 31/03/2028 → 2028-03-31. Anything else as it is. */
     public static function excelDate(string $v): string
     {
         if (preg_match('/^\d{5}(\.\d+)?$/', $v)) return Carbon::create(1899, 12, 30)->addDays((int) $v)->format('Y-m-d');
@@ -131,9 +105,6 @@ class ImportTemplate
         return $v;
     }
 
-    /* ═════════════════════════════ SAMPLE ═════════════════════════════ */
-
-    /** Two example rows for a type — every value passes the form's checks. @return array<int, array<string,string>> key => value */
     public static function sampleRows(string $type): array
     {
         $label = Credential::typeDef($type)['label'];
@@ -219,7 +190,6 @@ class ImportTemplate
 
     private static function sampleDate(string $key, int $i): string
     {
-        // Expiry dates in the future; birth / issue / created dates in the past.
         return in_array($key, ['dob', 'issue', 'created', 'issued'], true) ? ['1984-06-15', '2019-01-20'][$i] : ['2028-03-31', '2029-12-31'][$i];
     }
 
@@ -245,9 +215,6 @@ class ImportTemplate
         };
     }
 
-    /* ═════════════════════════════ FILES ═════════════════════════════ */
-
-    /** One type's sheet: the header row, then $rows (key => value). */
     public static function sheet(string $type, array $rows): array
     {
         $cols = self::columns($type);
@@ -258,7 +225,6 @@ class ImportTemplate
         ];
     }
 
-    /** The "How to fill" sheet: one line per column of every type in $types. */
     public static function guideSheet(array $types): array
     {
         $rows = [['Sheet (type)', 'Column', 'Required', 'What to enter']];
