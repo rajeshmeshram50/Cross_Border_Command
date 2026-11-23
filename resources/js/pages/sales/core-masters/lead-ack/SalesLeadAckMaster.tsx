@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { fillHeight } from '../../../../utils/fillHeight';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -9,25 +10,6 @@ import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { LEAD_ACK_CSS, LEAD_ACK_CSS_TEAL } from './leadAckStyles';
 import '../../../p2p/p2p-common.css';
 import LeadAckReasonModal, { LEAD_ACK_TYPE_LABELS, type OppType, type LeadAckReason as Reason } from './LeadAckReasonModal';
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Lead Acknowledgement Master
- *
- * React port of the IDIMS Lead Acknowledgement Master design. Three tabs —
- * Qualified / Disqualified / Clarity Pending — each backed by a row in
- * `lead_ack_reasons` (opportunity_type column). Only the Disqualified tab
- * carries a dq_status (Positive/Negative) — the column appears for that tab
- * only and the modal exposes the picker only for that opportunity type.
- *
- * Perm-gated on sales.lead_ack_master per the Sales Matrix permission sheet.
- * The trash icon flips status to inactive (PUT) rather than deleting — same
- * semantics as the source design. The mark-inactive action is routed through
- * the project's DeleteConfirmModal (with a "Mark Inactive" verb) so a stray
- * click can't silently disable a reason.
- *
- * Visual recipe matches the wider Sales module — violet hero strip, KPI
- * ribbon, pill-style tabs, sticky lavender table header, dark-mode aware.
- * ──────────────────────────────────────────────────────────────────────── */
 
 type GroupedReasons = {
   qualified: Reason[];
@@ -80,6 +62,26 @@ export default function SalesLeadAckMaster({ variant = 'violet' }: { variant?: '
   // CLM Segment Master / the QPI list). Stops overriding once the user manually
   // picks a value in the footer dropdown.
   const scrollRef  = useRef<HTMLDivElement>(null);
+  /* The page fills down to the app footer: the root's height is measured
+     (fillHeight), not the calc(100vh - 130px) guess in the CSS, which ran past
+     the screen or stopped short of the footer depending on the header, footer
+     and zoom, and gave the page its own scrollbar beside the table's. Only
+     when opened from the Master Control Center (teal). */
+  const rootRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    /* Master Control Center (teal) only; the Sales menu page keeps its CSS height. */
+    if (!el || !teal) return;
+    const fit = () => {
+      if (window.innerWidth < 768) { el.style.height = ''; return; }
+      const h = `${fillHeight(el, 320)}px`;
+      if (el.style.height !== h) el.style.height = h;
+    };
+    fit();
+    const raf = requestAnimationFrame(fit);
+    window.addEventListener('resize', fit);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', fit); };
+  });
   const autoFitRef = useRef(true);
   useEffect(() => {
     const recompute = () => {
@@ -241,7 +243,7 @@ export default function SalesLeadAckMaster({ variant = 'violet' }: { variant?: '
   }
 
   return (
-    <div className="lam-root">
+    <div className="lam-root" ref={rootRef}>
       <style>{SCOPED_CSS}</style>
 
       {/* ── Header strip — the Supplier list's header (.sup-fig .cstrip), same as

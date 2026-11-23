@@ -28,6 +28,10 @@ export const LEAD_ACK_CSS = `
   font-size: 13.5px;
 }
 .lam-root *, .lam-root *::before, .lam-root *::after { box-sizing: border-box; }
+/* Header insets as on the CLM pages and the Master list: 12px sides plus 6px
+   before the icon. */
+.lam-root .spi-head { padding: 0 12px; }
+.lam-root .spi-head-left { padding-left: 6px; }
 
 /* ─── No-access placeholder ─── */
 .lam-no-access {
