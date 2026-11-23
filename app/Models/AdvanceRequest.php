@@ -6,11 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * Recoverable salary / travel / medical advance — mirrors ExpenseClaim
- * with advance-specific form fields and the same two-stage approval
- * surface (manager_status + hr_status).
- */
 class AdvanceRequest extends Model
 {
     protected $table = 'advance_requests';
@@ -21,17 +16,12 @@ class AdvanceRequest extends Model
         'advance_type', 'advance_type_other',
         'amount', 'used_for', 'requested_date', 'recovery_start', 'expected_use_date',
         'recovery_mode', 'recovery_months', 'monthly_emi',
-        // One-time DIRECT repayments against a self advance's pending recovery
-        // (paid from profile, not payroll — e.g. at exit).
         'recovery_direct_payments',
         'reason', 'attachments',
-        // Company advance amount distribution: rows of {amount, purpose,
-        // payment_type, proof_index} that sum to the total amount.
         'request_items',
         'status', 'manager_status', 'manager_acted_at', 'manager_acted_by', 'manager_comment',
         'hr_status', 'hr_user_id', 'hr_acted_at', 'hr_comment',
         'created_by',
-        // Settlement (post-approval payout) — mirrors ExpenseClaim.
         'sanctioned_amount', 'deduction_amount', 'deduction_reason', 'deductions',
         'additions', 'addition_amount',
         'total_paid', 'settlement_status', 'settled_at',
@@ -59,7 +49,6 @@ class AdvanceRequest extends Model
         'request_items'    => 'array',
         'recovery_months'  => 'integer',
         'recovery_direct_payments' => 'array',
-        // Settlement
         'sanctioned_amount' => 'decimal:2',
         'deduction_amount'  => 'decimal:2',
         'deductions'        => 'array',
@@ -107,8 +96,6 @@ class AdvanceRequest extends Model
         return $this->belongsTo(User::class, 'hr_user_id');
     }
 
-    /** The user who acted at the reporting-manager stage (any logged-in
-     *  approver — assigned manager, branch admin, etc.). */
     public function managerActor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'manager_acted_by');
