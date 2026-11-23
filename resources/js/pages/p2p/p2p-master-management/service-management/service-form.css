@@ -1443,9 +1443,37 @@ body:has(.svm-page) .cfm-popup .cfm-btn { font-size: 12.5px !important; }
 @keyframes svfFieldsIn { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .svf-body > .svf-section { animation: none; } }
 
-/* Take photo (shared camera popup): one black from header to footer while
-   Service Management is open; other modules keep their own look. */
-body:has(.svm-page) .cam-card,
-body:has(.svm-page) .cam-card :is(.cam-head, .cam-stage, .cam-tray, .cam-bar) { background: #000; }
-body:has(.svm-page) .cam-card { border-color: rgba(34, 211, 238, .22); }
-body:has(.svm-page) .cam-card :is(.cam-head, .cam-bar) { border-color: rgba(34, 211, 238, .12); }
+[data-bs-theme="dark"] body:has(.svm-page) .cam-card,
+[data-bs-theme="dark"] body:has(.svm-page) .cam-card :is(.cam-head, .cam-stage, .cam-tray, .cam-bar) { background: #000; }
+[data-bs-theme="dark"] body:has(.svm-page) .cam-card { border-color: rgba(34, 211, 238, .22); }
+[data-bs-theme="dark"] body:has(.svm-page) .cam-card :is(.cam-head, .cam-bar) { border-color: rgba(34, 211, 238, .12); }
+
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card {
+  background: #fff;
+  border-color: #bfe9f1;
+  color: #0f172a;
+  box-shadow: 0 28px 70px rgba(8, 145, 178, .22), 0 4px 14px rgba(15, 23, 42, .08);
+}
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card :is(.cam-head, .cam-tray, .cam-bar) { background: #fff; border-color: #e3f1f5; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-head { background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 40%, #d8f8fc 100%); }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-head__t { color: #0f172a; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-head__s { color: #0891b2; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-x { color: #64748b; background: #fff; border-color: #d7eef4; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-x:hover { color: #0e7490; background: #ecfeff; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-stage { background: #eef7fa; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-msg { color: #475569; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-msg--err { background: radial-gradient(circle at 50% 40%, #f8fdff, #e6f4f8); }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-msg__t { color: #0f172a; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-msg__s { color: #64748b; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-msg__ico { color: #d97706; background: #fef3c7; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-spin { border-color: #cdeef5; border-top-color: #0891b2; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-btn { color: #0e7490; background: #fff; border-color: #bfe9f1; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-btn:hover { background: #ecfeff; border-color: #67e8f9; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-btn--primary { color: #fff; border-color: transparent; background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4); }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-round { color: #0e7490; background: #fff; border-color: #bfe9f1; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-round:hover:not(:disabled) { background: #ecfeff; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-shutter { border-color: #0891b2; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-shutter > span { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-shutter:active:not(:disabled) > span { background: #0e7490; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-thumb { background: #eef7fa; }
+html:not([data-bs-theme="dark"]) body:has(.svm-page) .cam-card .cam-attach:disabled { opacity: .45; }
