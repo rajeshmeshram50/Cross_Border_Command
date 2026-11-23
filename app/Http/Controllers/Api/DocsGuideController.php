@@ -9,23 +9,8 @@ use Illuminate\Http\Request;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
-/**
- * Serves — and lets users edit — the project documentation guide.
- *
- * Every module keeps its docs under docs/<group>/<entity>/ as a set of up to four
- * markdown files, one per doc type (functional / technical / api / walkthrough).
- * This controller scans that whole tree, groups the entities by their top-level
- * folder (masters, hrms, sales-matrix, …) and serves the markdown, plus a PUT to
- * save edits straight back to the file.
- *
- * These docs are the same for the whole product (not tenant data), so the routes
- * live in the plain auth:sanctum group with no permission/branch scoping — any
- * signed-in user of any role can read and, by request, edit the sheets. Every
- * path is realpath-checked to stay inside docs/, so there is no traversal surface.
- */
 class DocsGuideController extends Controller
 {
-    /** Doc-type key => filename suffix that identifies the file inside an entity folder. */
     private const TYPES = [
         'functional'  => '_FUNCTIONAL_DOCUMENTATION.md',
         'technical'   => '_TECHNICAL_DOCUMENTATION.md',
@@ -40,7 +25,6 @@ class DocsGuideController extends Controller
         'walkthrough' => 'Code Walkthrough',
     ];
 
-    /** Nice labels for the top-level groups; anything else is title-cased on the fly. */
     private const GROUP_LABELS = [
         'masters'      => 'Masters',
         'hrms'         => 'HRMS',
@@ -57,7 +41,6 @@ class DocsGuideController extends Controller
         'credvault'    => 'CredVault',
     ];
 
-    /** Preferred group ordering; unlisted groups fall to the end, alphabetically. */
     private const GROUP_ORDER = [
         'saas', 'masters', 'sales-matrix', 'hrms',
         'client', 'branch', 'plan', 'payment', 'payroll', 'permission', 'p2p', 'credvault', 'integrations',
@@ -78,13 +61,6 @@ class DocsGuideController extends Controller
         return self::GROUP_LABELS[$key] ?? $this->titleize($key);
     }
 
-    /**
-     * Walk docs/ and collect every folder that holds a doc set, keyed by its
-     * path relative to docs/ (posix). Loose files at the docs root are ignored —
-     * the canonical SaaS overview lives under docs/saas/.
-     *
-     * @return array<string, array{path:string, group:string, title:string, types:array<string,bool>}>
-     */
     private function collectUnits(): array
     {
         $realBase = realpath($this->baseDir());
@@ -110,7 +86,7 @@ class DocsGuideController extends Controller
                 $dirPosix = str_replace('\\', '/', $file->getPath());
                 $rel = trim(substr($dirPosix, strlen($basePosix)), '/');
                 if ($rel === '') {
-                    break; // skip root-level loose docs
+                    break;
                 }
                 if (!isset($units[$rel])) {
                     $segments = explode('/', $rel);
@@ -129,7 +105,6 @@ class DocsGuideController extends Controller
         return $units;
     }
 
-    /** Order a unit's available types by the canonical tab order. */
     private function orderedTypes(array $have): array
     {
         return array_values(array_filter(
@@ -138,10 +113,6 @@ class DocsGuideController extends Controller
         ));
     }
 
-    /**
-     * GET /docs-guide
-     * Returns the doc entities grouped by module, ready for the sidebar.
-     */
     public function index(): JsonResponse
     {
         $units = $this->collectUnits();
@@ -178,10 +149,6 @@ class DocsGuideController extends Controller
         ]);
     }
 
-    /**
-     * Resolve a (relative path, type) pair to an absolute file, or null.
-     * Guards against traversal by requiring the resolved folder to sit inside docs/.
-     */
     private function resolveFile(string $path, string $type): ?string
     {
         if (!isset(self::TYPES[$type])) {
@@ -206,10 +173,6 @@ class DocsGuideController extends Controller
         return (!empty($matches) && is_file($matches[0])) ? $matches[0] : null;
     }
 
-    /**
-     * GET /docs-guide/content?path=hrms/leave&type=api
-     * Returns the raw markdown for one entity + doc type.
-     */
     public function show(Request $request): JsonResponse
     {
         $path = (string) $request->query('path', '');
@@ -228,11 +191,6 @@ class DocsGuideController extends Controller
         ]);
     }
 
-    /**
-     * PUT /docs-guide/content  { path, type, content }
-     * Saves edited markdown straight back to the source file. Open to any authed
-     * user by product request; the path is validated the same way as reads.
-     */
     public function update(Request $request): JsonResponse
     {
         $data = $request->validate([
