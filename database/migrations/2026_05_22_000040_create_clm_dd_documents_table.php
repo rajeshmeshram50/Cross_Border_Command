@@ -4,14 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Central CLM → Due Diligence master.
- *
- * Entity-level diligence documents (incorporation cert, MOA/AOA, board
- * resolution, audited financials, CIBIL report, …). Same shape as KYC —
- * code, name, free-text authority, expiry — but counts as a separate
- * category for the Document Control Panel matrix.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -21,7 +13,7 @@ return new class extends Migration
 
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
 
-            $table->string('code', 16);          // DD-001
+            $table->string('code', 16);
             $table->string('name', 255);
             $table->string('authority', 255);
             $table->string('expiry', 32)->default('N/A');
