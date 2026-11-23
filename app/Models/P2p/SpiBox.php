@@ -12,47 +12,30 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Stage 03 · one physical carton on an SPI.
- *
- * Only what belongs to the CARTON lives here. Anything that varies per product
- * inside it — remark, batch, expiry, flags — is on SpiBoxItem, because one box
- * can hold two products from two batches.
- *
- * Tenant-scoped (unlike the line tables) because a box is scanned by code on
- * the warehouse floor, independently of its invoice.
- */
 class SpiBox extends Model
 {
     use BelongsToTenant, SoftDeletes;
 
     protected $table = 'p2p_spi_boxes';
 
-    /** s1 one product -> one box · s2 one product -> many boxes · s3 many products -> one box */
     public const SCENARIOS  = ['s1', 's2', 's3'];
     public const CONDITIONS = ['perfect', 'minor', 'major', 'severe'];
 
-    /** Divisor for volumetric weight in centimetres: (L x B x H) / 6000. */
     public const VOLUMETRIC_DIVISOR = 6000;
 
     protected $fillable = [
-        // One list for the carton: the packing screen has only ever
-        // offered one picker, and every reader wants one answer.
         'flags',
         'client_id', 'branch_id', 'supplier_invoice_id',
         'scenario', 'box_code',
         'length_cm', 'width_cm', 'height_cm',
         'weight_kg', 'net_weight_kg', 'gross_weight_kg',
         'condition', 'is_stackable',
-        // Cold-chain range, in the same units and names inventory_zones uses.
         'temp_min_c', 'temp_max_c',
         'sticker_printed_at', 'created_by',
     ];
 
     protected $casts = [
         'flags' => 'array',
-        // 0/1, not a boolean: a carton is not stackable until someone says so,
-        // and the column is the 0/1 flag convention the masters use.
         'is_stackable'       => 'integer',
         'temp_min_c'         => 'decimal:2',
         'temp_max_c'         => 'decimal:2',
@@ -72,13 +55,8 @@ class SpiBox extends Model
 
     public function items(): HasMany       { return $this->hasMany(SpiBoxItem::class, 'box_id'); }
     public function attachments(): HasMany { return $this->hasMany(SpiBoxAttachment::class, 'box_id'); }
-    /** A box rests in one place at a time, hence the unique on box_id. */
     public function putaway(): HasOne      { return $this->hasOne(SpiPutaway::class, 'box_id'); }
 
-    /**
-     * Once the label is on the carton the code is fixed: it is being scanned at
-     * put-away, so renumbering it would point the floor at the wrong box.
-     */
     public function isCodeLocked(): bool
     {
         return $this->sticker_printed_at !== null;
@@ -89,7 +67,6 @@ class SpiBox extends Model
         return $this->condition !== 'perfect';
     }
 
-    /** Computed, never stored — dimensions change and a stale copy would lie. */
     public function volumetricWeightKg(): ?float
     {
         if (!$this->length_cm || !$this->width_cm || !$this->height_cm) return null;
