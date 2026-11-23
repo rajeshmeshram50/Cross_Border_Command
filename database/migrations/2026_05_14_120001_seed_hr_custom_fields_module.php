@@ -3,14 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Registers the HR > Document & Evidence > "Custom Fields" module
- * (slug: hr.custom_fields) and back-fills permission rows from a donor
- * (hr.doc_templates — its sibling under the same parent, so anyone who can
- * manage templates can manage the variables those templates reference).
- *
- * Mirrors 2026_05_14_000004_seed_hr_doc_templates_module.php in every step.
- */
 return new class extends Migration
 {
     public function up(): void
