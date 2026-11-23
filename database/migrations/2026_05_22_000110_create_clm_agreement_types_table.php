@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Central CLM → Agreements · Types tab.
- *
- * Top-level agreement type catalogue (Sales Contract, MSA, NDA, Supplier,
- * Buyer, Distribution, …). The Library tab rows tag themselves with one
- * of these type names.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -20,7 +13,7 @@ return new class extends Migration
 
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
 
-            $table->string('code', 16);          // AT-001
+            $table->string('code', 16);
             $table->string('name', 255);
             $table->string('description', 500);
 
