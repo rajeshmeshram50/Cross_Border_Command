@@ -1273,8 +1273,8 @@ const IDIMS_CSS = `
 .idims-brand .idims-theme-toggle { background: var(--bp, #7C3AED); }
 .idims-brand .idims-theme-toggle::after { transform: translateX(20px); }
 
-.idims-brand .idims-nav-btn:hover, .idims-brand .idims-nav-btn.dd-open, .idims-brand .idims-nav-btn.is-current { color: var(--bp) !important; }
-.idims-brand .idims-nav-btn:hover .idims-ico, .idims-brand .idims-nav-btn.dd-open .idims-ico, .idims-brand .idims-nav-btn.is-current .idims-ico { color: var(--bp) !important; }
+.idims-brand .idims-nav-btn.dd-open, .idims-brand .idims-nav-btn.is-current { color: var(--bp) !important; }
+.idims-brand .idims-nav-btn.dd-open .idims-ico, .idims-brand .idims-nav-btn.is-current .idims-ico { color: var(--bp) !important; }
 .idims-brand .idims-nav-btn::after { background: var(--bp); }
 .idims-brand .idims-action-btn:hover { color: var(--bp); background: color-mix(in srgb, var(--bp) 10%, transparent); }
 .idims-brand .idims-mob-item:hover, .idims-brand .idims-mob-item.open { color: var(--bp); background: color-mix(in srgb, var(--bp) 10%, transparent); }
@@ -1343,9 +1343,14 @@ const IDIMS_CSS = `
 .idims-nav-btn { position: relative; height: 36px; padding: 0 9px; border-radius: 9px; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: #5B6478; background: transparent; border: none; cursor: pointer; font-family: var(--font-sans); transition: color .2s ease; white-space: nowrap; flex-shrink: 0; }
 .idims-nav-btn .idims-ico { display: flex; align-items: center; flex-shrink: 0; color: #A2ABBD; transition: color .2s ease, transform .25s cubic-bezier(.34,1.56,.64,1); }
 .idims-nav-btn::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 0; height: 2.5px; border-radius: 99px; transform: translateX(-50%); background: linear-gradient(90deg,#94A3B8 0%,#8B5CF6 55%,#7C3AED 100%); opacity: 0; transition: width .26s cubic-bezier(.22,1,.36,1), opacity .2s ease; }
-.idims-nav-btn:hover { color: #6D28D9; }
-.idims-nav-btn:hover .idims-ico { color: #8B5CF6; transform: scale(1.12); }
-.idims-nav-btn:hover::after { width: 100%; opacity: 1; }
+/* Hover is "under the pointer", not "selected": darker ink only - no fill,
+   no accent colour and no underline. Hover used to paint the
+   accent and the full underline, so moving the mouse across the bar left a
+   second item looking selected next to the current page. The accent and the
+   underline now belong only to the current page and an open menu. */
+.idims-nav-btn:not(.is-current):not(.dd-open):hover { color: #1F2937; }
+.idims-nav-btn:not(.is-current):not(.dd-open):hover .idims-ico { color: #5B6478; }
+.idims-nav-btn:hover .idims-ico { transform: scale(1.12); }
 .idims-nav-btn.dd-open { font-weight: 500; color: #6D28D9; }
 .idims-nav-btn.dd-open .idims-ico { color: #8B5CF6; }
 .idims-nav-btn.dd-open::after { width: 100%; opacity: 1; }
@@ -1358,10 +1363,10 @@ const IDIMS_CSS = `
    selection; the current page's item drops back to rest until it closes,
    instead of both carrying the colour and the underline. !important to beat
    the Brand rules (.idims-brand ... color: var(--bp) !important). */
-.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover) { font-weight: 500; color: #5B6478 !important; }
-.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover) .idims-ico { color: #A2ABBD !important; }
-.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover)::after { width: 0; opacity: 0; }
-.idims-dark .idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover) { color: #9CA3AF !important; }
+.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open) { font-weight: 500; color: #5B6478 !important; }
+.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open) .idims-ico { color: #A2ABBD !important; }
+.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open)::after { width: 0; opacity: 0; }
+.idims-dark .idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open) { color: #9CA3AF !important; }
 
 .idims-dropdown { position: fixed; top: 116px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 48px)); max-height: calc(100vh - 128px); display: flex; flex-direction: column; background: #fff; border: 1.5px solid #E8ECF5; border-radius: 18px; box-shadow: 0 24px 70px rgba(15,23,42,.28); z-index: 1050; overflow: hidden; animation: idimsDD .18s cubic-bezier(.22,1,.36,1) both; }
 .idims-dd-wide { width: min(1480px, calc(100vw - 28px)); }
@@ -1516,7 +1521,9 @@ const IDIMS_CSS = `
 .idims-dark .idims-more-sub-item { color: #AEB7CC; }
 .idims-dark .idims-more-sub-item:hover { background: #252A3A; color: #A78BFA; }
 .idims-dark .idims-nav-btn { color: #9CA3AF; }
-.idims-dark .idims-nav-btn:hover, .idims-dark .idims-nav-btn.dd-open, .idims-dark .idims-nav-btn.is-current { color: #C4B5FD; }
+.idims-dark .idims-nav-btn.dd-open, .idims-dark .idims-nav-btn.is-current { color: #C4B5FD; }
+.idims-dark .idims-nav-btn:not(.is-current):not(.dd-open):hover { color: #E5E7EB; }
+.idims-dark .idims-nav-btn:not(.is-current):not(.dd-open):hover .idims-ico { color: #CBD5E1; }
 .idims-dark .idims-nav-btn.is-current .idims-ico { color: #A78BFA; }
 .idims-dark .idims-action-btn { color: #9CA3AF; }
 .idims-dark .idims-action-btn:hover { color: #C4B5FD; background: #221E36; }
