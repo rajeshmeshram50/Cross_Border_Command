@@ -1816,6 +1816,12 @@ body > .dropdown-menu.master-select-menu,
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 3px rgba(6,182,212,.20);
 }
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
+/* The search's clear (x) in dark. The shared rule (app.css .ui-search-clear)
+   fills it solid #cbd5e1 on hover - a white square in a dark field. In CLM the
+   hover is a stronger wash of the button's own colour with a light x, so it
+   suits the teal masters and the violet CTC pages alike. Here, not in app.css,
+   so nothing outside CLM changes. */
+[data-bs-theme="dark"] :is(.clm-root, .clm-search, .ops-search, .clm-modal, .ctc-cp-modal, .clm-mc) .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent); color: #f8fafc; }
 [data-bs-theme="dark"] .clm-search > svg { stroke: #67e8f9; }
 [data-bs-theme="dark"] .clm-search input::placeholder { color: #5b8ca3; }
 /* Chrome/WebKit paints autofilled (and "previously-searched") inputs with a

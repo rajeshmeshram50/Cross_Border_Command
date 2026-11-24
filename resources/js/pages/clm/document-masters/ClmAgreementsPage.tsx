@@ -146,12 +146,14 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     // Not observing the page root: the "What We Are Doing Here" box animates its
     // height on expand/collapse, so observing the root fired this recompute every
     // animation frame and visibly disturbed the layout. Recompute only on mount
     // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
@@ -231,7 +233,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                 <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Click + Add Agreement Type to create the first record.'}</div>
               </div>
             )}
-            {!loading && filtered.length > 0 && (
+            {!loading && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -300,12 +302,14 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     // Not observing the page root: the "What We Are Doing Here" box animates its
     // height on expand/collapse, so observing the root fired this recompute every
     // animation frame and visibly disturbed the layout. Recompute only on mount
     // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   const onDelete = async () => {
@@ -572,7 +576,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                 <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Click + Add Agreement to create the first record.'}</div>
               </div>
             )}
-            {!loading && filtered.length > 0 && (
+            {!loading && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>

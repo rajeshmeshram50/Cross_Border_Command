@@ -224,7 +224,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Add Trade Document Type to create the first record.'}</div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {!loading && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -565,7 +565,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                 <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Draft New Trade Document to create the first record.'}</div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {!loading && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>

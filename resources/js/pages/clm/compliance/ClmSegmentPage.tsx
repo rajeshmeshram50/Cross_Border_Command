@@ -408,7 +408,7 @@ export default function ClmSegmentPage() {
                     <div className="clm-empty-sub">{!narrowed && counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
                   </div>
                 )}
-                {!loading && total > 0 && (
+                {!loading && (
                   <WorklistPager total={total} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
                 )}
               </div>

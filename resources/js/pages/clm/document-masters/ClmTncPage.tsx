@@ -35,6 +35,11 @@ export function deriveShortCode(name: string): string {
 
 type Cat = { id: number; code: string; name: string };
 type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; content: string | null };
+
+/* Segment names are cut at 15 characters with an ellipsis, the full name in a
+   tooltip - in the column chip and in the +N popover alike. */
+const SEG_CUT = 15;
+const cutSeg = (s: string) => (s.length > SEG_CUT ? `${s.slice(0, SEG_CUT)}…` : s);
 /* One per document category. `id` is null until something is written against it. */
 type GlobalTnc = {
   category_id: number; category_code: string; category: string;
@@ -176,12 +181,14 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     // Not observing the page root: the "What We Are Doing Here" box animates its
     // height on expand/collapse, so observing the root fired this recompute every
     // animation frame and visibly disturbed the layout. Recompute only on mount
     // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   // Document categories are read-only — they're owned by the Quotation &
@@ -242,7 +249,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
                 <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Document categories are set up for your Quotation & Proforma Invoice documents.'}</div>
               </div>
             )}
-            {!loading && filtered.length > 0 && (
+            {!loading && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -308,8 +315,10 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   // A global entry exists per document category and no further: once all six are
@@ -419,7 +428,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
               <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Add one per document category — it prints on every document of that category.'}</div>
             </div>
           )}
-          {!loading && filtered.length > 0 && (
+          {!loading && (
             <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
           )}
         </div>
@@ -488,12 +497,14 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     // Not observing the page root: the "What We Are Doing Here" box animates its
     // height on expand/collapse, so observing the root fired this recompute every
     // animation frame and visibly disturbed the layout. Recompute only on mount
     // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   const onDelete = async () => {
@@ -562,7 +573,9 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 170, textAlign: 'center' }}>Terms and Conditions ID</th>
-                <th style={{ width: 150, textAlign: 'center' }}>SEGMENT</th>
+                {/* Left, header and cells: the chips differ in width, and centred
+                    they started at a different x on every row (QA #45). */}
+                <th style={{ width: 150, textAlign: 'left' }}>SEGMENT</th>
                 <th style={{ width: 150, textAlign: 'center' }}>STATUS</th>
                 <th>DOCUMENT CATEGORY</th>
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
@@ -577,15 +590,15 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         <span className="clm-code-pill">{r.code}</span>
                       </Tooltip>
                     </td>
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'left' }}>
                       {(() => {
                         const list = (r.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
                         if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
                         const extra = list.length - 1;
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-start' }}>
                             <Tooltip label={`Segment scope · ${list[0]}`}>
-                              <span className="clm-badge clm-badge-teal" style={{ display: 'inline-block', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{list[0]}</span>
+                              <span className="clm-badge clm-badge-teal" style={{ display: 'inline-block', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{cutSeg(list[0])}</span>
                             </Tooltip>
                             {extra > 0 && (
                               <Tooltip label="View all segments">
@@ -643,7 +656,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                 <div className="clm-empty-sub">{search.trim() || statusFilter !== 'all' ? 'No results match the current search.' : 'Click + Add Terms and Conditions to create the first record.'}</div>
               </div>
             )}
-            {!loading && filtered.length > 0 && (
+            {!loading && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -655,11 +668,16 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       {segPop && createPortal(
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.flipUp ? undefined : segPop.y, bottom: segPop.flipUp ? (window.innerHeight - segPop.y) : undefined, zIndex: 601, width: 210, maxHeight: segPop.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          {/* overflowX hidden and every name cut at 15 characters (full name in
+              the tooltip): a long segment name used to widen its pill past the
+              210px card and put a horizontal scrollbar under the list. */}
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.flipUp ? undefined : segPop.y, bottom: segPop.flipUp ? (window.innerHeight - segPop.y) : undefined, zIndex: 601, width: 210, maxHeight: segPop.maxH, overflowY: 'auto', overflowX: 'hidden', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
-              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, minWidth: 0 }}>
+                <Tooltip label={name} position="top" zIndex={700} disabled={name.length <= SEG_CUT}>
+                  <span className="clm-badge clm-badge-teal" style={{ whiteSpace: 'nowrap' }}>{cutSeg(name)}</span>
+                </Tooltip>
               </div>
             ))}
           </div>
@@ -672,6 +690,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         existing={editing}
         cats={cats}
         segments={segOpts}
+        library={rows}
         nextCode={editing?.code ?? nextTncCode}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
