@@ -2580,6 +2580,15 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-add-btn {
   height: 40px; padding: 0 16px; gap: 7px; border-radius: 11px; font-size: 12.5px;
 }
+/* QA #43: the search beside Map Product / Map Service was still the old 34px against the 40px
+   button — same 40px now, so the toolbar reads as one row. */
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-toolbar .avm-mapped-search {
+  height: 40px; box-sizing: border-box; border-radius: 11px;
+  /* Wider than the old 340px cap: the placeholder (product, code, HSN/SAC, segment, price…) fits
+     with room to type; still stops well short of the Map button. */
+  max-width: 480px;
+}
+:is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-mapped-toolbar { align-items: center; }
 
 /* Additional contacts: card sized to its rows, no empty well under the table */
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page)) .avm-section-grow .avm-section-body { min-height: 0; }

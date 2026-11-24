@@ -104,13 +104,9 @@ export const SUPPLIER_CATEGORY_OPTS: { value: string; label: string }[] = [
   { value: 'blacklisted', label: 'Blacklisted' },
 ];
 
-/* Fixed vocabulary, like SUPPLIER_CATEGORY_OPTS above.
-   This was read from master_vendor_behaviour, which meant the four values had
-   to be typed into the master for every client — and they were not: "Genuine"
-   existed only under one tenant, so everyone else saw three options with
-   nothing to indicate one was missing. The list is product vocabulary, not
-   tenant data, so it belongs here. The form sends the NAME and the server
-   resolves it to a master row per tenant (same as Supplier Type). */
+/* FALLBACK only. Supplier Behaviour now reads the Supplier Behaviour master (its active rows come in
+   the vendor master bundle); these four show only while a tenant's master is still empty. The form
+   sends the NAME and the server resolves it to a master row per tenant (firstOrCreate). */
 export const SUPPLIER_BEHAVIOUR_OPTS: { value: string; label: string }[] = [
   { value: 'Genuine',                      label: 'Genuine' },
   { value: 'Cooperative & Responsive',     label: 'Cooperative & Responsive' },
@@ -448,6 +444,8 @@ export default function AddVendorModal(props: {
   type Opt = { value: string; label: string; reg?: string; code?: string };
   const [vendorTypeOpts, setVendorTypeOpts]     = useState<Opt[]>([]);
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
+  /** Supplier Behaviour, from the Supplier Behaviour master (active rows, by name). */
+  const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
   const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
   const [stateRows, setStateRows] = useState<Array<{
@@ -568,6 +566,14 @@ export default function AddVendorModal(props: {
   );
   const [riskLevel,   setRiskLevel]   = useState('');
   const [vendorBehaviour, setVendorBehaviour] = useState('');
+  /* The master's active behaviours; the fixed list only if the master has none yet (a new tenant).
+     A saved behaviour that is no longer active stays in the list, so editing never blanks it. */
+  const supplierBehaviourOptions = useMemo(() => {
+    const base = behaviourOpts.length ? behaviourOpts : SUPPLIER_BEHAVIOUR_OPTS;
+    return vendorBehaviour && !base.some(o => o.value.toLowerCase() === vendorBehaviour.toLowerCase())
+      ? [...base, { value: vendorBehaviour, label: vendorBehaviour }]
+      : base;
+  }, [behaviourOpts, vendorBehaviour]);
   const [segment,     setSegment]     = useState<string[]>([]);
   const [lockedSegments, setLockedSegments] = useState<string[]>([]);
   const [lockedSegmentReasons, setLockedSegmentReasons] = useState<Record<string, string>>({});
@@ -1032,6 +1038,16 @@ export default function AddVendorModal(props: {
     const hydrate = (b: Bundle) => {
       setVendorTypeOpts(toOpt(b.vendor_types));
       setRiskLevelOpts(toOpt(b.risk_levels));
+      /* Supplier Behaviour follows its master (Masters → Supplier Behaviour, active rows). Valued
+         by NAME, as before: the server resolves the name to the tenant's master row. Same name
+         twice (case / spacing) shows once. */
+      {
+        const seen = new Set<string>();
+        setBehaviourOpts((b.vendor_behaviour || [])
+          .map(r => String(r.name ?? '').trim())
+          .filter(n => { const k = n.toLowerCase(); if (!n || seen.has(k)) return false; seen.add(k); return true; })
+          .map(n => ({ value: n, label: n })));
+      }
       setSegmentOpts(
         (b.segments || [])
           .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? ''), reg: (r as { regulatory_status?: string }).regulatory_status, code: (r as { code?: string }).code }))
@@ -2797,7 +2813,7 @@ export default function AddVendorModal(props: {
                   // One line per segment: code, name and its own High / Low badge.
                   tip: segment.length ? <SegmentNameList items={segment.map(id => { const o = segmentOpts.find(x => x.value === String(id)); return { name: o?.label ?? String(id), code: o?.code ?? null, regulatory_status: o?.reg ?? null }; })} /> : undefined },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
-                { label: 'Supplier Behaviour',   value: (SUPPLIER_BEHAVIOUR_OPTS.find(o => o.value === vendorBehaviour)?.label) || '—' },
+                { label: 'Supplier Behaviour',   value: vendorBehaviour || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
               ];
               /* One column, two identities — the same field carries a GSTIN for
@@ -3106,7 +3122,7 @@ export default function AddVendorModal(props: {
                   </div>
                   <div className="avm-grid-3">
                     <Field label="Supplier Behaviour" required error={fieldErrors.vendorBehaviour}>
-                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={SUPPLIER_BEHAVIOUR_OPTS} />
+                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={supplierBehaviourOptions} />
                     </Field>
                     <Field label="Supplier Category">
                       <SelectInput
@@ -3884,9 +3900,14 @@ export default function AddVendorModal(props: {
                 break;
               }
               case 'vendor_behaviour': {
-                /* Fixed vocabulary — see SUPPLIER_BEHAVIOUR_OPTS. Nothing to
-                   add, and selecting by id would put an id into a name-valued
-                   select and blank the field. */
+                /* A behaviour added from the "+" quick-add: into the list and selected, by NAME
+                   (the select is name-valued, like the server's resolution). */
+                const label = String(row.name ?? '').trim();
+                if (label) {
+                  setBehaviourOpts(prev => prev.some(o => o.value.toLowerCase() === label.toLowerCase()) ? prev : [...prev, { value: label, label }]);
+                  setVendorBehaviour(label);
+                  clearFieldError('vendorBehaviour');
+                }
                 break;
               }
               case 'segments': {
