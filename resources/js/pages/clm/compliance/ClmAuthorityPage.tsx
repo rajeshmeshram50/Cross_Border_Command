@@ -265,6 +265,7 @@ export default function ClmAuthorityPage() {
         .clm-root .auth-xl-btn:hover:not(:disabled) { background: #ecfeff; }
         .clm-root .auth-xl-btn:disabled { opacity: .6; cursor: progress; }
         [data-bs-theme="dark"] .clm-root .auth-xl-btn { background: #0f172a; color: #67e8f9; }
+        [data-bs-theme="dark"] .clm-root .auth-xl-btn:hover:not(:disabled) { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.55); color: #a5f3fc; }
       `}</style>
 
       <ClmPageHeader
@@ -413,7 +414,7 @@ export default function ClmAuthorityPage() {
               )}
               {/* Outside the scroll box — the pager is how you leave a page, so
                   it must not scroll away with the rows it pages through. */}
-              {!loading && count > 0 && (
+              {!loading && (
                 <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>

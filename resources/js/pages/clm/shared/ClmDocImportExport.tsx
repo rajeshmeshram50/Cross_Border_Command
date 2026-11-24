@@ -406,6 +406,9 @@ export const CLM_IE_CSS = `
 .clm-root .clm-ie-btn:hover:not(:disabled) { background: #ecfeff; }
 .clm-root .clm-ie-btn:disabled { opacity: .6; cursor: progress; }
 [data-bs-theme="dark"] .clm-root .clm-ie-btn { background: #0f172a; color: #67e8f9; }
+/* Dark hover: a teal wash, not the light #ecfeff - that turned the button
+   white under light-cyan text, unreadable (QA #51). */
+[data-bs-theme="dark"] .clm-root .clm-ie-btn:hover:not(:disabled):not(.cie-bulk-btn) { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.55); color: #a5f3fc; }
 
 /* ── Bulk Data Import/Export (variant="bulk") ── */
 .clm-root .clm-ie-btn.cie-bulk-btn {

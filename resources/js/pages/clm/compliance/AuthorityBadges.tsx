@@ -26,7 +26,14 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
   const popClass = v ? 'clm-pop clm-pop-violet' : 'clm-pop';
   const pillClass = v ? 'clm-pop-pill-violet' : 'clm-code-pill';
 
-  const [pop, setPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
+  /* CLM (teal) cuts every name at 15 characters, full name in a tooltip - the
+     same rule as the T&C Segment Wise segments, so a long authority no longer
+     wraps over three lines in the popover. The violet Customer-form variant
+     keeps its old look. */
+  const CUT = 15;
+  const cut = (s: string) => (!v && s.length > CUT ? `${s.slice(0, CUT)}…` : s);
+
+  const [pop, setPop] = useState<{ x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
 
   // Scroll / resize / Escape / tab switch — see useDismissPopover.
   useDismissPopover(!!pop, () => setPop(null));
@@ -37,7 +44,7 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-      <Tooltip label={list[0]}><span className={badgeClass} style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>{list[0]}</span></Tooltip>
+      <Tooltip label={list[0]}><span className={badgeClass} style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>{cut(list[0])}</span></Tooltip>
       {extra > 0 && (
         <Tooltip label="View all issuing authorities">
           <button
@@ -49,10 +56,18 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
               // Estimate the popover height (title + a row per authority, capped
               // at 280px) and flip it above the badge when there's not enough
               // room below — otherwise the bottom rows clip off-screen.
-              const estH = Math.min(280, 30 + list.length * 32);
-              const spaceBelow = window.innerHeight - b.bottom;
-              const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
-              setPop({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
+              // 48px a row (a 6px-padded row around a ~34px pill, measured) and
+              // 46 for the title and card padding. It was 32 a row, which made a
+              // three-authority list look short enough to open downwards on the
+              // last table row, and it ran off the bottom of the page (QA #54).
+              const estH = Math.min(280, 46 + list.length * 48);
+              const spaceBelow = window.innerHeight - b.bottom - 12;
+              const spaceAbove = b.top - 12;
+              const flipUp = spaceBelow < estH && spaceAbove > spaceBelow;
+              // And never taller than the side it opened on: if neither side
+              // holds it all, it scrolls inside rather than off-screen.
+              const maxH = Math.max(120, Math.min(280, flipUp ? spaceAbove : spaceBelow));
+              setPop({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH });
             }}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -82,13 +97,19 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
               position: 'fixed', left: Math.min(pop.x, window.innerWidth - 340),
               top: pop.flipUp ? undefined : pop.y,
               bottom: pop.flipUp ? (window.innerHeight - pop.y) : undefined,
-              zIndex: 200101, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
+              zIndex: 200101, width: 320, maxHeight: pop.maxH, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
             }}
           >
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px', }}>Issuing Authorities ({list.length})</div>
             {list.map((name, i) => (
-              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className={pillClass} style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{name}</span>
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, minWidth: 0 }}>
+                {v ? (
+                  <span className={pillClass} style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{name}</span>
+                ) : (
+                  <Tooltip label={name} position="top" zIndex={200200} disabled={name.length <= CUT}>
+                    <span className={pillClass} style={{ whiteSpace: 'nowrap' }}>{cut(name)}</span>
+                  </Tooltip>
+                )}
               </div>
             ))}
           </div>

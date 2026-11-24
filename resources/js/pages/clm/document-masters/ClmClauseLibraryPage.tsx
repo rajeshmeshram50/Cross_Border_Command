@@ -12,7 +12,7 @@ import { CLM_CSS, loadFailed, usePagedList, useAutoFitRows } from '../shared/clm
 const CLAUSE_TYPES_URL   = '/clm/clause-types';
 const CLAUSE_LIBRARY_URL = '/clm/clause-library';
 import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
-import { DeleteConf } from '../shared/clmCommon';
+import { DeleteConf, TruncCell } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
@@ -238,7 +238,10 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td className="clm-td-name">{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30) + '…'}</span></Tooltip> : r.name}</td>
+                    {/* Fills the column, then ellipsis with the full name in a
+                        tooltip - as the DD document name does (QA #49). A flat
+                        30-character cut left most of a 46% column empty. */}
+                    <TruncCell value={r.name} />
                     <td style={{ textAlign: 'center' }}>
                       <Tooltip label={(r.in_use ?? 0) > 0 ? `Used by ${r.in_use} clause${r.in_use === 1 ? '' : 's'} in the Clause Library` : 'Not used by any clause yet'}>
                         <span className={`clm-use-count${(r.in_use ?? 0) > 0 ? ' is-used' : ''}`}>{r.in_use ?? 0}</span>
@@ -296,7 +299,8 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 </div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {/* Shown when empty too (QA #47): the footer is part of the card, and without it an empty list was a bare box with nothing at the bottom. */}
+            {!loading && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -398,10 +402,16 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td style={{ textAlign: 'center' }}>{r.clause_type.length > 30
-                      ? <Tooltip label={r.clause_type}><span className={`clm-badge ${typeBadge(r.clause_type)}`}>{r.clause_type.slice(0, 30) + '…'}</span></Tooltip>
-                      : <span className={`clm-badge ${typeBadge(r.clause_type)}`}>{r.clause_type}</span>}</td>
-                    <td className="clm-td-name">{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30) + '…'}</span></Tooltip> : r.name}</td>
+                    {/* The badge stops at the column's edge with an ellipsis. A
+                        30-character cut made it wider than its 170px column, so it
+                        ran under the Clause Name beside it. */}
+                    <td style={{ textAlign: 'center' }}>
+                      <Tooltip label={r.clause_type} disabled={r.clause_type.length <= 22}>
+                        <span className={`clm-badge ${typeBadge(r.clause_type)}`} style={{ display: 'inline-block', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{r.clause_type}</span>
+                      </Tooltip>
+                    </td>
+                    {/* Fills the column, then ellipsis (QA #50) - see Clause Types. */}
+                    <TruncCell value={r.name} />
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         <Tooltip label="Edit"><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
@@ -430,7 +440,8 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                 </div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {/* Shown when empty too (QA #47): the footer is part of the card, and without it an empty list was a bare box with nothing at the bottom. */}
+            {!loading && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>

@@ -197,7 +197,7 @@ export default function ClmKycPage() {
                   <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add KYC Document to create the first record.'}</div>
                 </div>
               )}
-              {!loading && count > 0 && (
+              {!loading && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>

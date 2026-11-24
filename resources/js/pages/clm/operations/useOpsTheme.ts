@@ -137,6 +137,11 @@ export const OPS_SEARCH_CSS = `
 }
 [data-bs-theme="dark"] .ops-search input,
 [data-layout-mode="dark"] .ops-search input { color: #e2e8f0; }
+/* The clear (x) on hover: a stronger wash of its own colour with a light x,
+   not the shared solid #cbd5e1 square (app.css .ui-search-clear). Same rule as
+   the CLM masters (clmShared.ts). */
+[data-bs-theme="dark"] .ops-search .ui-search-clear:hover,
+[data-layout-mode="dark"] .ops-search .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent); color: #f8fafc; }
 /* Chrome paints an autofilled / previously-searched input with its own pale
    fill, which shows through as a tinted band across the bar. The 1000px inset
    shadow is the only way to repaint that internal surface. */

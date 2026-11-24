@@ -97,11 +97,14 @@ interface Props {
   segments: SegOpt[];
   nextCode: string;
   scope?: 'segment' | 'global';
+  /** Every Terms and Conditions row already on file, so the Segment picker can
+   *  leave out the segments that already have this document's T&C. */
+  library?: Lib[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function ClmTncWizardModal({ open, existing, cats: initialCats, segments, nextCode, scope = 'segment', onClose, onSaved }: Props) {
+export default function ClmTncWizardModal({ open, existing, cats: initialCats, segments, nextCode, scope = 'segment', library = [], onClose, onSaved }: Props) {
   const isGlobal = scope === 'global';
   const toast = useToast();
   useSelectionLock(open);
@@ -195,9 +198,41 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     return Array.from(set).filter(Boolean);
   }, [segments, localSegs, regulatory, segment, segmentsMulti]);
 
+  /* Segments that already have a Terms and Conditions for this document name
+     and regulatory type - the same rule the server enforces on save
+     (ClmTncController::findDuplicate: same category, same regulatory, any
+     shared segment, another row). They are left out of the picker instead of
+     being offered and then refused (QA #46). Lower-cased, as the server
+     compares. The row being edited does not count against itself. */
+  const takenSegs = useMemo(() => {
+    const set = new Set<string>();
+    const cat = category.trim().toLowerCase();
+    if (!cat || isGlobal || isNoteDocName(category)) return set;
+    library.forEach(r => {
+      if (r.id === editingId) return;
+      if ((r.category ?? '').trim().toLowerCase() !== cat) return;
+      if ((r.regulatory ?? '') !== regulatory) return;
+      (r.segment ?? '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean).forEach(s => set.add(s));
+    });
+    return set;
+  }, [library, category, regulatory, editingId, isGlobal]);
+
+  /* A segment already picked stays listed even if it is taken (say the
+     document name was changed after picking it) so it can be seen and removed;
+     validateStep1 names it under Segment. */
+  const picked = useMemo(
+    () => new Set((regulatory === 'highly' ? [segment] : Array.from(segmentsMulti)).filter(Boolean)),
+    [regulatory, segment, segmentsMulti],
+  );
   const segmentOptions = useMemo(
-    () => tierSegmentNames.map(s => ({ value: s, label: s })),
-    [tierSegmentNames],
+    () => tierSegmentNames
+      .filter(s => picked.has(s) || !takenSegs.has(s.toLowerCase()))
+      .map(s => ({ value: s, label: s })),
+    [tierSegmentNames, takenSegs, picked],
+  );
+  const hiddenTaken = useMemo(
+    () => tierSegmentNames.filter(s => !picked.has(s) && takenSegs.has(s.toLowerCase())).length,
+    [tierSegmentNames, takenSegs, picked],
   );
 
   const changeRegulatory = (next: Reg) => {
@@ -221,6 +256,12 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
         if (!segment.trim()) next.segment = 'Select a segment';
       } else {
         if (segmentsMulti.size === 0) next.segment = 'Select at least one segment';
+      }
+      if (!next.segment) {
+        const clash = Array.from(picked).filter(s => takenSegs.has(s.toLowerCase()));
+        if (clash.length) {
+          next.segment = `${clash.length === 1 ? `"${clash[0]}" already has` : `${clash.map(s => `"${s}"`).join(', ')} already have`} a "${category.trim()}" Terms and Conditions - remove ${clash.length === 1 ? 'it' : 'them'} to continue`;
+        }
       }
     }
     setErrors(next);
@@ -271,7 +312,19 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       onSaved();
     } catch (e: any) {
       const fieldErrs = e?.response?.data?.errors as Record<string, string[]> | undefined;
-      if (fieldErrs) setErrors(Object.fromEntries(Object.entries(fieldErrs).map(([k, v]) => [k, v[0]])));
+      if (fieldErrs) {
+        const mapped: Record<string, string> = Object.fromEntries(Object.entries(fieldErrs).map(([k, v]) => [k, v[0]]));
+        /* The server files its duplicate-segment refusal under `category`
+           ("This segment already has a ... entry."), which put it under the
+           Document Name field. It is about the segment, so it goes there, and
+           the wizard goes back to the step that shows it (QA #46). */
+        if (mapped.category && /segment already has/i.test(mapped.category)) {
+          mapped.segment = mapped.category;
+          delete mapped.category;
+          setStep(1);
+        }
+        setErrors(mapped);
+      }
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
     } finally {
       setSaving(false);
@@ -525,7 +578,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                         </button>
                       </div>
-                      <div className="tnw-hint">One segment for highly-regulated Terms and Conditions</div>
+                      <div className="tnw-hint">
+                        One segment for highly-regulated Terms and Conditions
+                        {hiddenTaken > 0 && <> · {hiddenTaken} already {hiddenTaken === 1 ? 'has' : 'have'} a "{category.trim()}" T&amp;C and {hiddenTaken === 1 ? 'is' : 'are'} not listed</>}
+                      </div>
                     </>
                   ) : (
                     <>
@@ -537,6 +593,13 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                             invalid={!!errors.segment}
                             placeholder="— Select Segments —"
                             options={segmentOptions}
+                            /* One chip, then "+N" with the rest in a popover
+                               (each still removable) - the field stays one row.
+                               Every pick used to add a chip and the field grew
+                               into a scrolling box. Same as the Issuing
+                               Authorities field on KYC / DD / TL. */
+                            overflowAfter={1}
+                            overflowTitle="Segments"
                             onChange={(next) => { setSegmentsMulti(new Set(next)); setErrors(p => ({ ...p, segment: '' })); }}
                           />
                         </div>
@@ -549,7 +612,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                         </button>
                       </div>
-                      <div className="tnw-hint">Pick one or more segments this Terms and Conditions applies to</div>
+                      <div className="tnw-hint">
+                        Pick one or more segments this Terms and Conditions applies to
+                        {hiddenTaken > 0 && <> · {hiddenTaken} already {hiddenTaken === 1 ? 'has' : 'have'} a "{category.trim()}" T&amp;C and {hiddenTaken === 1 ? 'is' : 'are'} not listed</>}
+                      </div>
                     </>
                   )}
                   {errors.segment && <div className="tnw-err">{errors.segment}</div>}

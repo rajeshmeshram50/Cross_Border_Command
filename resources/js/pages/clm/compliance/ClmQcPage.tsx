@@ -165,7 +165,8 @@ export default function ClmQcPage() {
                           before the ellipsis ever bit. The cell keeps its CSS
                           truncation as the narrow-window fallback, and the
                           Tooltip around it still carries the full name. */}
-                      <TruncCell value={r.name} shown={r.name.length > 41 ? `${r.name.slice(0, 40).trimEnd()}…` : r.name} />
+                      {/* Fills the column, then ellipsis - as DD (QA #52). */}
+                      <TruncCell value={r.name} />
                       <TruncCell value={r.purpose} cellClass="clm-td-desc" />
                       <td style={{ textAlign: 'left' }}>
                         <AuthorityBadges value={r.issued_by_names} />
@@ -187,7 +188,7 @@ export default function ClmQcPage() {
                   <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add QC Document to create the first record.'}</div>
                 </div>
               )}
-              {!loading && count > 0 && (
+              {!loading && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>

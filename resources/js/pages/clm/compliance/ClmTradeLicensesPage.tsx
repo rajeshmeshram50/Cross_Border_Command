@@ -179,7 +179,8 @@ export default function ClmTradeLicensesPage() {
                           read depended on the window. The cell keeps its CSS
                           truncation as the narrow-window fallback, and the
                           Tooltip still carries the full name. */}
-                      <TruncCell value={r.name} shown={r.name.length > 41 ? `${r.name.slice(0, 40).trimEnd()}…` : r.name} />
+                      {/* Fills the column, then ellipsis - as DD (QA #53). */}
+                      <TruncCell value={r.name} />
                       <td className="clm-td-desc"><AuthorityBadges value={r.authority_names} /></td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
@@ -198,7 +199,7 @@ export default function ClmTradeLicensesPage() {
                   <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add Trade Licence to create the first record.'}</div>
                 </div>
               )}
-              {!loading && count > 0 && (
+              {!loading && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>

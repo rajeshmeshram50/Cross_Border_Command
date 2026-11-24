@@ -535,7 +535,7 @@ export default function ClmDcpPage() {
                   <div className="clm-empty-sub">{rows.length === 0 ? 'Click "+ Add Segment Rule" to create your first rule.' : 'No segment rules match the current tab / search / filters.'}</div>
                 </div>
               )}
-              {!loading && filtered.length > 0 && (
+              {!loading && (
                 <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
