@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
 import SegmentBadge, { SegmentNameBadge, segmentLabel, useSegmentStatusByName } from '../../../../components/ui/SegmentBadge';
-import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
+import { RowsPerPageSelect } from '../../../../components/ui/TablePager';
 import './product-management.css';
 import '../supplier-management/supplier-management.css';   // .sup-fig .cstrip / .bref-box — the shared list header
 import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-root header overrides
@@ -1037,7 +1037,7 @@ function ProductPagination(props: {
       <div className="prd-pag-right">
         <div className="prd-rows-sel">
           Rows per page:
-          <RowsPerPageSelect value={pageSize} options={rowOptions} onChange={onRowsPerPage} />
+          <RowsPerPageSelect pageSize={pageSize} options={rowOptions} onChange={onRowsPerPage} />
         </div>
         <span className="prd-pag-range">{page} / {totalPages}</span>
         <div className="prd-page-nav">
