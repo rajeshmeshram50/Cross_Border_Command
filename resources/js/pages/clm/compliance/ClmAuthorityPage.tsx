@@ -244,6 +244,13 @@ export default function ClmAuthorityPage() {
           flex: 0 0 auto; width: 500px; max-width: 100%;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
+        /* 40px, the height of the Sample Sheet / Import / Export buttons beside
+           it. This toolbar has no tab rail, so the shared 48px CLM search (sized
+           to a rail) stood 8px taller than the buttons. The .clm-mc line beats
+           the shared 48px rules there, and pins the buttons to 40 as well. */
+        .clm-root .clm-tabs-bar .clm-search.auth-search,
+        .clm-mc .clm-root .clm-tabs-bar .clm-search.auth-search { height: 40px; }
+        .clm-mc .clm-root .clm-tabs-bar .auth-xl-btn { height: 40px; }
         /* Width stays fixed on focus — only the border/shadow change — so the
            search bar never shifts position when it gains or loses focus. */
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
@@ -253,7 +260,7 @@ export default function ClmAuthorityPage() {
         .clm-root .auth-xl-btn {
           display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px;
           border: 1px solid rgba(8,145,178,.35); border-radius: 8px; background: #fff;
-          color: #0e7490; font-size: 13px; font-weight: 600; cursor: pointer;
+          color: #0e7490; font-size: 12.5px; font-weight: 600; cursor: pointer;
         }
         .clm-root .auth-xl-btn:hover:not(:disabled) { background: #ecfeff; }
         .clm-root .auth-xl-btn:disabled { opacity: .6; cursor: progress; }
