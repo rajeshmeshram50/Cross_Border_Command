@@ -774,8 +774,13 @@ export default function Clients({ onNavigate }: Props) {
                   : `${clients.length} ${clients.length === 1 ? 'organization' : 'organizations'} on the platform`
               }
               minWidth={1400}
+              /* fillToFooter pins the card to 8px above the footer (no leftover
+                 gap below the rows); minAutoRows floors the fit at 10. Same fix
+                 the HRMS lists took. */
               fitToViewport
               autoFitRows
+              fillToFooter
+              minAutoRows={10}
               loading={loading}
               searchValue={searchInput}
               onSearchChange={setSearchInput}
