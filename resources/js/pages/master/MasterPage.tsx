@@ -1781,6 +1781,7 @@ function MasterPageInner({
         onClose={() => { if (!deleting) { setDeleteOpen(false); setDeleteTarget(null); } }}
         onConfirm={confirmDelete}
         loading={deleting}
+        loadingOverlay={<MasterSavingLock label={`Deleting ${singular.toLowerCase()}…`} />}
       />
 
       <AuditHistoryModal
