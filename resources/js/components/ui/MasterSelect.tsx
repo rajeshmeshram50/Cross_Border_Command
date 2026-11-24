@@ -5,16 +5,8 @@ import Tooltip from './Tooltip';
 import SegmentBadge from './SegmentBadge';
 import './MasterSelect.css';
 
-/* A small pill shown beside an option label. `tone` picks the palette —
-   green/red/gray for status, violet for a category/segment tag.
-   `title` overrides the hover tooltip (defaults to `text`).
-   `items` turns the pill into a click target — e.g. a "+2 more" overflow
-   pill opens a mini popup listing the hidden tags. */
-// `reg` adds the segment Reg-High / Reg-Low badge after the pill (text '' = badge only).
 type OptBadgeItem = string | { text: string; reg?: string | null };
-// `lock` draws a padlock icon before the text (used for locked options).
 type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: OptBadgeItem[]; reg?: string | null; lock?: boolean;
-  /** Shown only in the open list, never on the closed field. */
   listOnly?: boolean };
 
 const LOCK_ICON = (
@@ -23,11 +15,6 @@ const LOCK_ICON = (
   </svg>
 );
 
-// Follow the active app theme: light pastel pills in light mode, translucent
-// tints + lighter text in dark mode (QA #123 — the option badges were fixed
-// light colours and read wrong on the dark surface). Read from the <html>
-// attribute the ThemeContext maintains; a theme toggle re-renders the tree so
-// this recomputes.
 const isDarkTheme = (): boolean =>
   typeof document !== 'undefined' &&
   (document.documentElement.getAttribute('data-bs-theme') === 'dark' ||
@@ -41,27 +28,12 @@ const badgeToneStyle = (tone?: OptBadgeSpec['tone']): CSSProperties => {
   return dark ? { background: 'rgba(34,197,94,.18)', color: '#86efac' } : { background: '#dcfce7', color: '#16a34a' };
 };
 
-/* A pill rendered beside an option label. When the spec carries `items`
-   (and it isn't forced static), the pill becomes clickable and pops a mini
-   list of those items — used by a "+N more" overflow pill to reveal the
-   hidden tags. The popup is portalled to <body> with fixed positioning so
-   it isn't clipped by the option list's `overflow: auto`. `staticPill`
-   forces the plain, non-interactive span (used inside the toggle, which is
-   itself a <button> — a nested interactive control there would be invalid). */
-/* Does the option's row show every word it has? True when the id has been
-   lifted into a chip and the label beside it is the rest of the full text,
-   untruncated — the test is separator-agnostic, so "WH-001 · Mumbai" counts
-   whether the caller joined it with a dot, a dash or a space. A row like that
-   needs no tooltip; one with a shortened name, or no chip at all (where the
-   label can still be clipped by width), keeps it. */
 function drawsWhole(opt: { label: string; code?: string; fullLabel?: string }) {
   if (!opt.code) return false;
   if (!opt.fullLabel) return true;
   return opt.fullLabel.startsWith(opt.code) && opt.fullLabel.endsWith(opt.label);
 }
 
-/* `noTitle`: the row already shows its own styled tooltip, so the chip adds no
-   native one — otherwise both open together over the same row. */
 export function OptBadge({ b, staticPill, shrink, noTitle }: { b: OptBadgeSpec; staticPill?: boolean; shrink?: boolean; noTitle?: boolean }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -77,7 +49,6 @@ export function OptBadge({ b, staticPill, shrink, noTitle }: { b: OptBadgeSpec; 
       setOpen(false);
     };
     const close = () => setOpen(false);
-    // Capture so we run before reactstrap's own document handlers.
     document.addEventListener('mousedown', onDocDown, true);
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
@@ -91,13 +62,10 @@ export function OptBadge({ b, staticPill, shrink, noTitle }: { b: OptBadgeSpec; 
   const style: CSSProperties = {
     marginLeft: 8, padding: '1px 8px', borderRadius: 999,
     fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
-    // Only the segment chip may shrink; a status pill (Active/Inactive) stays whole.
-    // `shrink`: a row carrying two pills lets them ellipsise rather than spill past the list edge.
     maxWidth: 160, minWidth: shrink ? 44 : 0, flexShrink: (shrink || b.reg !== undefined) ? 1 : 0, overflow: 'hidden', textOverflow: 'ellipsis',
     ...badgeToneStyle(b.tone),
   };
 
-  // Segment + Reg status read as ONE chip, same as the customer/supplier lists.
   if (b.reg !== undefined) {
     if (!b.text) return <SegmentBadge status={b.reg} style={{ marginLeft: 6, flexShrink: 0 }} />;
     return (
@@ -108,11 +76,6 @@ export function OptBadge({ b, staticPill, shrink, noTitle }: { b: OptBadgeSpec; 
     );
   }
 
-  /* A native `title` repeating the pill's own visible text put a second,
-     slower tooltip under the row's styled one — two pills over the same row,
-     one of them saying what was already written on the badge. It is kept only
-     where something is actually hidden: a caller-supplied title that differs
-     from the text, or a pill allowed to shrink, which ellipsises. */
   const hint = noTitle ? undefined : b.title && b.title !== b.text ? b.title : (shrink ? b.text : undefined);
 
   if (!interactive) {
@@ -128,33 +91,13 @@ export function OptBadge({ b, staticPill, shrink, noTitle }: { b: OptBadgeSpec; 
   };
   const toggle = () => { place(); setOpen(o => !o); };
 
-  /* Hover says what the pill DOES; click does it (#87).
-   *
-   * The pill carried a `title`, so the hidden names were reachable — but only
-   * through the browser's own tooltip, which waits about a second and renders
-   * one flat comma-joined line. QA read that as no tooltip at all.
-   *
-   * The app already answers this elsewhere: a "+N" pill shows the shared dark
-   * "View N more" tooltip on hover and opens its list on click (Consignee's
-   * chip columns, SegmentTags on the sourcing cards). Same component and the
-   * same wording here, so every "+N" in the product and supplier screens now
-   * behaves like the ones QA was comparing it against.
-   *
-   * Hover deliberately does NOT open the list itself: the list is a popover
-   * you read and click inside, and opening it on pointer-over makes it appear
-   * while you are only passing across the row. */
   return (
     <Tooltip label={`View ${b.items!.length} more`}>
     <span
       ref={ref}
       role="button"
       tabIndex={0}
-      /* No `title`: the Tooltip above supplies the hover text, and the native
-         one would float a second, slower pill over it. The names themselves
-         stay on aria-label, which is what a screen reader reads — it never
-         sees the popover. */
       aria-label={b.title ?? b.text}
-      // Stop the pill's clicks from selecting the option / closing the menu.
       onMouseDown={e => e.stopPropagation()}
       onClick={e => { e.preventDefault(); e.stopPropagation(); toggle(); }}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); } }}
@@ -186,7 +129,6 @@ export function OptBadge({ b, staticPill, shrink, noTitle }: { b: OptBadgeSpec; 
 }
 
 
-/** Local options rendered per scroll step. */
 const OPTION_PAGE = 10;
 
 export function MasterSelect({
@@ -216,79 +158,24 @@ export function MasterSelect({
   name?: string;
   value?: string;
   defaultValue?: string;
-  /* Each option may carry a primary `badge` (e.g. status) plus any number
-     of extra `badges` (e.g. a segment/category tag). All render to the right
-     of the label, badges first, then the primary badge.
-     `disabled` greys the row and blocks selection (e.g. a product whose
-     segment doesn't match the customer's); `disabledReason` is its tooltip. */
-  /* `fullLabel` — when the visible `label` is deliberately shortened (e.g. a
-     30-char-capped agreement type), the full text shows in the hover tooltip.
-     `selectedLabel` — an alternate, shorter text shown in the CLOSED trigger
-     when this option is picked (e.g. options list "CLT-004 - Risk", but the
-     trigger shows just "Risk"); falls back to `label`.
-     `code` — an identifier (WH-001, ZN-137) drawn as a monospace chip at the
-     head of the row, ahead of the label. Run into the label as text it reads
-     as part of the name and the column of ids is lost; as a chip the eye can
-     scan the ids down one edge and the names down the other. */
   options: { value: string; label: string; fullLabel?: string; selectedLabel?: string; code?: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
   placeholder?: string;
-  /* Label to show for the current value when it is NOT among `options`
-   * (e.g. the option was deliberately excluded from the pickable list, or an
-   * async list hasn't loaded it). Prevents the toggle from falling back to
-   * printing the raw value/id. */
   currentValueLabel?: string;
-  /* Replaces the bare "No options" when the list arrives empty. A picker whose
-     contents depend on configuration (a department, a branch, a permission)
-     leaves the user staring at two words that do not say WHICH setting is
-     missing or who can change it. Only shown for a genuinely empty list — a
-     search that matches nothing still says "No results". */
   emptyText?: string;
-  /* Badges help while choosing but say nothing once a value is picked — this
-     keeps them in the open list and off the closed trigger. */
   listBadgesOnly?: boolean;
   disabled?: boolean;
   invalid?: boolean;
-  /* When true, the toggle renders a shimmer block instead of the
-   * placeholder text. Use this on dropdowns whose options come from an
-   * async master fetch — gives users a polished "fetching the master"
-   * cue instead of the grey "Loading…" placeholder. */
   loading?: boolean;
-  /* Opt-in toggle behaviour: clicking the already-selected option clears
-   * the field back to empty (single-select acts like a toggle). Off by
-   * default so every other dropdown keeps the standard "pick replaces"
-   * behaviour — only fields that explicitly want a clearable selection
-   * (e.g. Classification & Flags) pass this. */
   allowDeselect?: boolean;
   onChange?: (value: string) => void;
   onOpen?: () => void;
-  /* Infinite-scroll: called when the option list is scrolled near the bottom.
-   * The parent appends the next page (and guards with its own hasMore/loading
-   * flags). When provided, the option list pages in instead of loading all. */
   onScrollEnd?: () => void;
-  /* Server-side search: called (debounced) as the user types. When provided,
-   * MasterSelect stops client-side filtering — the parent supplies the
-   * already-filtered `options` for the current query. */
   onSearchChange?: (query: string) => void;
-  /* Shows a "Loading…" row at the bottom of the list while the parent fetches
-   * the next page. */
   loadingMore?: boolean;
-  /* Set false to hide the in-menu search input entirely. Use on short, fixed
-   * option lists (e.g. a 3-value filter) so opening the dropdown on mobile
-   * doesn't auto-focus the search field and pop up the on-screen keyboard. */
   searchable?: boolean;
-  /** What the search box asks for, when "Search…" is vaguer than it needs to
-      be (e.g. "Search warehouse ID or name"). */
   searchPlaceholder?: string;
-  /* Called when a DISABLED option is clicked. Without it a disabled option is
-     simply inert; with it the click is intercepted (still no selection) so the
-     caller can explain why — e.g. a toast "segment must match". The menu stays
-     open so the message lands in context. */
   onDisabledClick?: (opt: { value: string; label: string; disabledReason?: string }) => void;
-  /* Extra class on the portalled menu. The menu renders under <body>, so a
-     page-scoped skin can't reach it through the trigger's ancestors. */
   menuClassName?: string;
-  /* Keep the menu exactly the field's width instead of growing to its widest
-     row: long names ellipsise and the badges stay inside the field's edge. */
   fitWidth?: boolean;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
@@ -298,23 +185,13 @@ export function MasterSelect({
   const currentValue = value !== undefined ? value : internal;
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  // Reset the search filter each time the menu closes so the next open is fresh.
-  // Also surface the open→true transition so consumers can refresh their
-  // option source (e.g. reload the Departments master) before the user picks.
   useEffect(() => {
     if (!open) { setSearch(''); onSearchChange?.(''); }
     else onOpen?.();
   }, [open]);
-  // Debounce timer for server-side search so we don't fire a request per keystroke.
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Auto-flip — when the menu would extend below the viewport (or sit close to
-  // the bottom edge of a parent modal), open upward instead so it doesn't hide
-  // action buttons below the field.
   const wrapRef = useRef<HTMLDivElement>(null);
   const [dropDir, setDropDir] = useState<'up' | 'down'>('down');
-  // Width that the (portalled) menu should adopt — read straight off the
-  // trigger so the dropdown opens at the trigger's width rather than
-  // stretching to the full body width when container="body" is set.
   const [menuWidth, setMenuWidth] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (!open || !wrapRef.current) return;
@@ -324,43 +201,13 @@ export function MasterSelect({
       setMenuWidth(rect.width);
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      // Estimated menu height: search row (~40) + 4 visible items (~32 each) + chrome.
       const ESTIMATED_HEIGHT = 220;
       setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
     };
     update();
-    /* Resize / browser-zoom reflows the layout and can strand the portalled
-     * menu away from its trigger, so it closes instead of showing
-     * mispositioned. But only on a WIDTH change.
-     *
-     * A phone fires `resize` constantly at a fixed width: the address bar
-     * collapsing on the first scroll, the on-screen keyboard opening, the URL
-     * bar coming back. Each one closed the menu the instant it opened, which is
-     * why dropdowns looked dead on mobile while working on a desktop.
-     * A height-only resize does not move the trigger horizontally and does not
-     * strand the menu — Popper repositions it. Width is the one that reflows. */
     const openWidth = window.innerWidth;
     const closeMenu = () => { if (window.innerWidth !== openWidth) setOpen(false); };
     window.addEventListener('resize', closeMenu);
-    // The menu is portalled to <body> with fixed positioning, so a page/ancestor
-    // scroll moves the trigger but leaves the menu behind — it drifts out of
-    // alignment (bug #70). Close it on scroll (capture:true catches scrolls in
-    // any ancestor: page, modal bodies, side panels). EXCEPTION: a scroll that
-    // originates INSIDE the menu's own option list (infinite-scroll paging)
-    // must not close it.
-    /* Ignore the scrolls that a TAP itself produces.
-     *
-     * On a touch screen a tap almost always emits a scroll event — momentum
-     * settling, rubber-band, the mobile browser's address bar collapsing. This
-     * handler fired on that and closed the menu in the same gesture that opened
-     * it, so on a phone the dropdown looked like it never opened at all.
-     *
-     * Two guards, both narrow:
-     *  - a short grace window, so the opening tap's own scroll is ignored;
-     *  - a movement check, so only a scroll that actually MOVED the trigger
-     *    closes the menu. That is the case this handler exists for (bug #70:
-     *    a fixed-positioned menu drifting away from a scrolled trigger), and
-     *    it is unaffected by a stray 0px scroll event. */
     const openedAt = Date.now();
     const anchorTop = wrapRef.current?.getBoundingClientRect().top ?? 0;
     const onScroll = (e: Event) => {
@@ -378,45 +225,28 @@ export function MasterSelect({
     };
   }, [open]);
   const selected = options.find(o => o.value === currentValue);
-  /* Show the search input by default — keeps every MasterSelect across the
-   * project visually consistent (Risk Level / Active-Inactive / Customer
-   * Segment all look the same). Callers with a short, fixed option list can
-   * pass `searchable={false}` to hide it (avoids the mobile keyboard popping
-   * up on a 3-option filter). */
   const showSearch = searchable;
-  // Server-search mode (onSearchChange provided): the parent owns filtering +
-  // paging, so render `options` as-is. Otherwise keep the client-side filter.
   const serverMode = typeof onSearchChange === 'function';
   const filtered = serverMode
     ? options
     : (search.trim()
-        /* The code and the full label are searched as well as the visible
-           one: once an id is lifted out into a chip, or a label shortened,
-           typing that id would otherwise match nothing. */
         ? options.filter(o => `${o.label} ${o.code ?? ''} ${o.fullLabel ?? ''}`.toLowerCase()
           .includes(search.trim().toLowerCase()))
         : options);
-  // Long local lists render 10 options at a time and add 10 more on scroll,
-  // so a 250-country list never puts 250 rows in the DOM at once.
   const clientPaged = !serverMode && !onScrollEnd;
   const [shown, setShown] = useState(OPTION_PAGE);
   const [paging, setPaging] = useState(false);
   useEffect(() => { setShown(OPTION_PAGE); setPaging(false); }, [search, open]);
   const visible = clientPaged ? filtered.slice(0, shown) : filtered;
   const moreToShow = clientPaged && shown < filtered.length;
-  /* The next ten, on scroll or on clicking the footer. The short wait is what
-     makes the loader visible — without it the rows appear with no sign why. */
   const loadMore = () => {
     if (paging || !moreToShow) return;
     setPaging(true);
     window.setTimeout(() => { setShown((n) => n + OPTION_PAGE); setPaging(false); }, 180);
   };
-  // Collect an option's badges in render order: extra tags first, then the
-  // primary status badge at the far right.
   const badgesOf = (o: { badge?: OptBadgeSpec; badges?: OptBadgeSpec[] }): OptBadgeSpec[] =>
     [...(o.badges ?? []), ...(o.badge ? [o.badge] : [])];
   const handlePick = (val: string) => {
-    // With allowDeselect, re-clicking the current selection clears it.
     const next = allowDeselect && val === currentValue ? '' : val;
     if (value === undefined) setInternal(next);
     onChange?.(next);
@@ -436,40 +266,22 @@ export function MasterSelect({
           className="master-select-toggle"
         >
           {selected ? (
-            /* Long labels truncate with an ellipsis (see .master-select-value-text);
-               the full text shows on hover in the project's styled dark pill
-               (Tooltip) instead of the plain native title. Any badge sits after
-               the truncating label and stays visible. */
             <Tooltip label={selected.fullLabel ?? selected.label} position="bottom">
               <span className="master-select-value">
-                {/* The chip belongs on the closed field as much as in the
-                    list: the id is how the record is named everywhere else on
-                    the form, and run back into the sentence it stops being
-                    one. The name beside it truncates; the tooltip above
-                    carries the whole thing. */}
                 {selected.code && <span className="master-select-code">{selected.code}</span>}
                 <span className="master-select-value-text">{selected.code ? selected.label : (selected.selectedLabel ?? selected.label)}</span>
                 {!listBadgesOnly && badgesOf(selected).filter((b) => !b.listOnly).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
           ) : currentValue && currentValueLabel ? (
-            /* Value set but not in the currently-loaded options (e.g. a
-               paginated/async list before its page loads, or an owner
-               excluded from the pickable list). A caller-supplied label
-               shows a NAME instead of the raw value/id. */
             <Tooltip label={currentValueLabel} position="bottom">
               <span className="master-select-value">
                 <span className="master-select-value-text">{currentValueLabel}</span>
               </span>
             </Tooltip>
           ) : loading ? (
-            /* Options still fetching — shimmer instead of the placeholder
-               AND instead of an unresolvable value: a saved id whose label
-               hasn't loaded yet must never flash as a raw number. */
             <span className="master-select-shimmer" aria-label="Loading" />
           ) : currentValue ? (
-            /* Value not in options and nothing is loading — last-resort raw
-               value fallback (kept so a stale/orphaned id stays visible). */
             <Tooltip label={currentValue} position="bottom">
               <span className="master-select-value">
                 <span className="master-select-value-text">{currentValue}</span>
@@ -480,35 +292,15 @@ export function MasterSelect({
           )}
           <i className="ri-arrow-down-s-line master-select-chev" />
         </DropdownToggle>
-        {/* container="body" + strategy="fixed" portals the menu to <body>
-            with Popper using fixed positioning. This is what stops the
-            dropdown from being clipped by ancestor overflow:hidden /
-            scroll containers (e.g. the onboarding modal's scrollable
-            main area). Without these props the menu sits inside the
-            wrap and dies at the first clipping ancestor.
-            The inline width binds the portalled menu to the trigger's
-            measured width — without this the menu inherits the body's
-            width and renders as a full-screen strip. */}
         <DropdownMenu
           className={`master-select-menu${menuClassName ? ` ${menuClassName}` : ''}`}
           container="body"
           strategy="fixed"
-          /* Pin the portalled menu to the viewport so it can never drift
-             off-screen or strand away from its trigger on smaller screens /
-             browser zoom: preventOverflow clamps it inside the viewport (both
-             axes), and flip swaps top/bottom when space runs out. */
           modifiers={[
             { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8, altAxis: true } },
             { name: 'flip', options: { boundary: 'viewport', fallbackPlacements: ['top', 'bottom'] } },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ] as any}
-          /* The trigger's width is the MINIMUM, not the width: in a narrow field a
-             long option plus its badge used to be cut off at the menu's edge. The
-             menu grows to fit its widest row and stops before the viewport edge.
-             With no rows to show, the empty / "No results" sentence must not drive
-             that growth: it stays at the trigger's width and wraps, so a long
-             message (e.g. Assign Lead's "No Sales-department employees…") no
-             longer pushes the panel past the popup's edge. */
           style={menuWidth ? (
             fitWidth || (filtered.length === 0 && !loadingMore)
               ? { width: menuWidth, maxWidth: 'calc(100vw - 24px)' }
@@ -544,7 +336,6 @@ export function MasterSelect({
             className="master-select-list"
             onScroll={(onScrollEnd || moreToShow) ? (e) => {
               const el = e.currentTarget;
-              // Near the bottom → the parent's next page, or the next 10 local options.
               if (el.scrollHeight - el.scrollTop - el.clientHeight >= 48) return;
               if (onScrollEnd) onScrollEnd();
               else loadMore();
@@ -559,18 +350,8 @@ export function MasterSelect({
                 {visible.map(opt => (
                   <DropdownItem
                     key={opt.value}
-                    /* The row's value, for callers that style a row by what it is (CredVault's risk dots) —
-                       position breaks as soon as the search filters the list. No effect on its own. */
                     data-value={opt.value}
                     active={opt.value === currentValue}
-                    /* Disabled options (e.g. a product outside the customer's
-                       segment) render greyed and can't be selected. When an
-                       onDisabledClick handler is given we keep the row CLICKABLE
-                       (reactstrap `disabled` would swallow the event) and route
-                       the click there instead of selecting — so the caller can
-                       toast a reason. Without the handler it stays truly disabled.
-                       toggle=false either way keeps the menu open on a blocked
-                       pick. */
                     disabled={opt.disabled && !onDisabledClick}
                     toggle={!opt.disabled}
                     aria-disabled={opt.disabled || undefined}
@@ -582,35 +363,15 @@ export function MasterSelect({
                     className="master-select-item"
                     style={opt.disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                   >
-                    {/* Full label (or the disabled reason) shows on hover in the
-                        project's styled dark pill (Tooltip) so a truncated (long)
-                        option name stays readable — replaces the plain native title. */}
-                    {/* The row's tooltip stands down when the chip and the
-                        label between them already show every word of the
-                        option (see drawsWhole) — otherwise it reads the row
-                        back at you, a second pill over a row that needs
-                        none. */}
                     <Tooltip
                       label={opt.disabled ? (opt.disabledReason ?? opt.fullLabel ?? opt.label) : (opt.fullLabel ?? opt.label)}
                       disabled={!opt.disabled && drawsWhole(opt)}
-                      /* Beside the row, outside the list: above it covered the
-                         row before and, on the first row, the Search field. */
                       position="right"
                     >
                       {(opt.badge || opt.badges?.length) ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
-                          {/* Label GROWS to take all free space (flex 1 1 auto)
-                              and only truncates when it would actually collide with
-                              the badge — a short badge like "food" now leaves the
-                              product code+name almost the whole row instead of being
-                              hard-capped at 55%. The badge wrapper never shrinks, so
-                              it always stays fully readable on the right. */}
                           {opt.code && <span className="master-select-code">{opt.code}</span>}
                           <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
-                          {/* The product NAME wins the row: the segment chip shrinks (its own
-                              text ellipsises) before the label gives up any width. */}
-                          {/* fitWidth: the menu can't grow, so the badges keep their size
-                              and only the name ellipsises. */}
                           <span style={fitWidth
                             ? { marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 0 auto' }
                             : { marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', overflow: 'hidden' }}>
@@ -626,8 +387,6 @@ export function MasterSelect({
                     </Tooltip>
                   </DropdownItem>
                 ))}
-                {/* How much of the list is on screen, and the way to the rest —
-                    without it a long list looks complete at ten. */}
                 {moreToShow && (
                   <button type="button" className="master-select-more" onClick={loadMore} aria-live="polite">
                     {paging ? (

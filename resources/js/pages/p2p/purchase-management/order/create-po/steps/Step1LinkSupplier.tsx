@@ -1,20 +1,10 @@
-// Create PO — Step 01: PO Link Supplier Details.
-// Section 1: Purchase Order (basic details). Section 2: Supplier, read from the
-// supplier master — address, legal status, GST scrutiny and risk alerts.
 import { lazy, Suspense, useEffect, useMemo, useState, useRef } from 'react';
 import { EditSelect, Field, FitTip } from '../form-fields';
 import { gstCheck } from '../gst-check';
-// Only fetched when "+ Add Supplier" is clicked.
-/** Highest exchange rate a PO may carry — the same 10,000 the API enforces in
- *  App\Support\FxRate. Declared here because the frontend cannot import a PHP
- *  constant; if one side moves, the other must be moved with it. */
 const FX_RATE_MAX = 10000;
 
 const AddSupplierFlow = lazy(() => import('../AddSupplierFlow'));
-// The Supplier master's wizard, opened from the pencil beside Select Supplier to edit that supplier.
 const AddVendorModal = lazy(() => import('../../../../p2p-master-management/supplier-management/AddVendorModal'));
-// The Supplier master's own Evidence Vault — fetched on first open, and on
-// hover before that, so the click itself never waits for the download.
 const SupplierEvidenceVaultModal = lazy(() => import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 import { RISK_GUIDELINES, SevIcon, categoryLabel, isRiskMandatory, riskItems, riskLabel, vaultTargetOf, type Severity } from '../supplier-checks';
@@ -29,20 +19,15 @@ import type { SupplierDetail } from '../../api/po-api';
 import { squash as squashType } from '../../../../p2p-master-management/supplier-management/serviceMapping';
 import { IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPencil, IcoPin, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn } from '../../shared/icons';
 
-// Fixed choices with no master behind them; saved as the chosen text.
 const PO_TYPES = PO_TYPE_OPTIONS.map((o) => o.label);
 const DOC_TYPES = DOC_TYPE_OPTIONS.map((o) => o.label);
-// The same lists the server accepts (PurchaseOrder::TRANSPORT_MODES / INCO_TERMS).
 const TRANSPORT_MODES = ['Sea', 'Road', 'Air'];
 const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
 const PAYMENT_TYPES = PAYMENT_TYPE_OPTIONS;
-// Listed so the choice is visible, but only Material / Goods can be raised today.
 const LOCKED_PO_TYPES = Object.fromEntries(PO_TYPES.filter((t) => t !== OPEN_PO_TYPE).map((t) => [t, 'Not available yet — only Material / Goods POs can be raised']));
 
 const v = (x: string | null | undefined) => x ?? '';
-// International supplier: GST fields read N/A instead of the stored GST record.
 const NA = 'N/A — Not applicable';
-// An international PO is never in INR — listed, but locked with the reason.
 const INR_LOCK = { INR: 'An international PO cannot be in INR' };
 
 type Props = {
@@ -65,10 +50,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   const [gstOpen, setGstOpen] = useState(true);
   const [legalOpen, setLegalOpen] = useState(true);
   const [riskOpen, setRiskOpen] = useState(true);
-  // "+ Add Supplier": the Supplier master's own Domestic / International chooser, then its wizard.
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
-  // Editing the picked supplier's own record (not which supplier the PO uses) — supplier maintainers only.
   const { user } = useAuth();
   const canEditSupplier = user?.user_type === 'super_admin' || user?.user_type === 'client_admin'
     || !!user?.permissions?.['p2p.supplier']?.can_edit;
@@ -77,9 +60,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     setEditingSupplier(false);
     lookups.reloadSuppliers();
     if (!draft.vendorId) return;
-    // Reload so the updated details (category, risk, GST) show at once and the supplier stays selected.
     const fresh = await onPickSupplier(draft.vendorId);
-    // Only a blacklist removes it — any other edit (e.g. General → High Risk) keeps it on the PO.
     if (fresh && (fresh.category ?? '').toLowerCase().includes('blacklist')) {
       clearSupplier();
       toast.warning('Supplier removed from this PO', 'This supplier is now blacklisted — a purchase order cannot be raised on it.');
@@ -90,19 +71,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   const isInternational = draft.docType === 'International';
   const sup = draft.supplier;
-  /* Zoho Books pins a contact to one currency for life, so a supplier already in
-     the books leaves only one option open. Said as the supplier is picked rather
-     than refused once the form is filled — the server still has the final word. */
   const zohoCurrency = (sup?.zohoCurrency ?? '').toUpperCase();
-  /* The list stays ours. Zoho's is only checked against: a currency it has not
-     enabled posts there in the org's base currency without a word, which is how
-     SGD orders came to sit in the books as rupees — so it is said here, and the
-     save refuses it, rather than the list quietly hiding the option. */
   const currencyOptions = lookups.currencies;
-  /* Only a currency a transaction of ours already put in Zoho leaves no choice.
-     A contact merely showing INR was made before we sent a currency at all, and
-     an international PO may not be in INR — locking to it would leave the field
-     with nothing usable, so it is offered and the sync settles the contact. */
   const currencySettled = !!sup?.zohoCurrencySettled && !(zohoCurrency === 'INR' && isInternational);
   const currencyLock = useMemo(() => {
     if (!currencySettled) return INR_LOCK;
@@ -111,24 +81,18 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
       currencyOptions.filter((c) => c.toUpperCase() !== zohoCurrency).map((c) => [c, reason]),
     );
   }, [currencySettled, zohoCurrency, currencyOptions]);
-  // Supplier and document type go together: a picked supplier fixes the document type.
-  // The supplier stays changeable until the PO is sent for senior approval (pending or approved).
   const approval = ctx.detail?.gst_approval?.status;
   const supplierLocked = approval === 'pending' || approval === 'approved';
-  // Every supplier is listed with its own type; one that doesn't fit the PO type
-  // is shown locked (CS-559/CS-560) rather than hidden, so the reason is visible.
   const needType = draft.poType || OPEN_PO_TYPE;
   const docTypeLocked = !!draft.vendorId;
   const clearSupplier = () => set({ vendorId: null, supplier: null, vault: null, legal: null });
 
-  // Why a locked field can't be changed, shown when it is clicked.
   const lockedPoType = () => toast.info('PO Type not available', 'Only Material / Goods purchase orders can be raised for now.');
   const lockedDocType = () => toast.warning('Document Type is locked', supplierLocked
     ? 'This PO has gone for senior approval — the supplier and document type can no longer change.'
     : 'It follows the selected supplier. Clear the supplier first to change the document type.');
   const lockedSupplier = () => toast.warning('Supplier is locked', 'This PO has gone for senior approval — the supplier can no longer change.');
 
-  // Dropdown shows "S-004 — Company"; the option text maps back to the vendor id.
   const supplierOptions = useMemo(() => lookups.suppliers
     .map((s) => {
       const type = (s.supplier_type ?? '').trim();
@@ -138,8 +102,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
         doc: s.document_type,
         type,
         blacklisted: (s.supplier_category ?? '').toLowerCase().includes('blacklist'),
-        // The supplier already on the PO stays pickable even if the PO type was changed after.
-        // Spacing-insensitive: the master may hold "Material/ Goods" against the PO's "Material / Goods".
         wrongType: s.id !== draft.vendorId && squashType(type) !== squashType(needType),
       };
     }),
@@ -147,8 +109,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   [lookups.suppliers, needType, draft.vendorId]);
   const pickedOption = supplierOptions.find((o) => o.id === draft.vendorId)?.label ?? (sup ? `${sup.code} — ${sup.name}` : '');
 
-  // Each option carries the supplier's origin, set when it was onboarded.
-  // Every supplier is listed; picking one sets the document type to its origin (badge).
   const supplierSelectOptions = useMemo(() => supplierOptions.map((o) => ({
     value: String(o.id), label: o.label,
     ...(o.blacklisted
@@ -156,11 +116,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
       : o.wrongType
         ? { disabled: true, disabledReason: `${o.type || 'Untyped'} supplier — this is a ${needType} purchase order.` }
         : {}),
-    // The supplier's own type sits beside its origin, so a locked row explains
-    // itself. It stays in the list only — off the field once picked (CS-561).
     badges: [{ text: o.type || 'No type', tone: 'gray' as const, listOnly: true, ...(o.wrongType ? { lock: true } : {}) }],
     badge: o.blacklisted ? { text: 'Blacklisted', tone: 'red' as const, lock: true }
-      // Short so the row fits the field's width; the tooltip names it in full.
       : o.doc === 'international' ? { text: 'Int', title: 'International', tone: 'violet' as const } : { text: 'Dom', title: 'Domestic', tone: 'green' as const },
   })), [supplierOptions, needType]);
 
@@ -168,7 +125,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     const opt = supplierOptions.find((o) => o.label === label);
     if (!opt) return;
     if (opt.blacklisted) { toast.warning('Blacklisted supplier', 'A purchase order cannot be raised on a blacklisted supplier.'); return; }
-    // The PO's document type follows the supplier: Indian = domestic, else international.
     const docType = opt.doc === 'international' ? 'International' : 'Domestics';
     if (docType !== draft.docType) {
       set({ docType });
@@ -179,16 +135,12 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   const { state: gst, scrutinyAge, filingAge } = gstCheck(draft);
 
-  /* Changing the supplier decides inspection afresh: on for a high-risk one, off
-     for everybody else — the user turns it back on where an order needs it. The
-     switch only ever came on before, so the first high-risk supplier left
-     inspection on for every supplier picked after it. */
   const mandatory = sup ? isRiskMandatory({ risk: v(sup.risk), category: v(sup.category) }) : false;
   const pickedSupRef = useRef(sup?.id ?? null);
   useEffect(() => {
-    if (pickedSupRef.current === (sup?.id ?? null)) return;   // a reopened PO keeps its saved choice
+    if (pickedSupRef.current === (sup?.id ?? null)) return;
     pickedSupRef.current = sup?.id ?? null;
-    if (mandatory === draft.physInsp) return;                 // already where this supplier wants it
+    if (mandatory === draft.physInsp) return;
     set({ physInsp: mandatory });
     toast.info(
       mandatory ? 'Physical Inspection set to Yes' : 'Physical Inspection reset to No',
@@ -202,7 +154,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
 
-  // Risk alerts are re-derived from the supplier record, never stored.
   const risks = useMemo(() => (sup ? riskItems({
     risk: v(sup.risk), category: v(sup.category), gstStatus: v(sup.gstStatus), gstNo: v(sup.gstNo),
     filing: v(sup.filing), scrutiny: v(sup.scrutiny), legal, international: isInternational,
@@ -219,7 +170,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
   const vaultTarget = sup ? vaultTargetOf(sup) : null;
 
-  // The PO is raised today (or on its saved date) — shown read-only, never typed in.
   const poDate = formatDmy(ctx.detail?.po_date ?? new Date().toISOString().slice(0, 10));
 
   return (
@@ -237,7 +187,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     )}
     {vaultOpen && vaultTarget && (
       <Suspense fallback={null}>
-        {/* Not view-only: missing documents can be uploaded here, and the legal status refreshes. */}
         <SupplierEvidenceVaultModal open supplier={vaultTarget} onVaultChange={ctx.refreshVault} onClose={() => setVaultOpen(false)} />
       </Suspense>
     )}
@@ -261,8 +210,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           <Field label="PO Type" req error={err.poType}>
             <EditSelect value={draft.poType} options={PO_TYPES} locked={LOCKED_PO_TYPES} onLockedClick={lockedPoType} onChange={(x) => set({ poType: x })} invalid={!!err.poType} />
           </Field>
-          {/* It follows the supplier, so it shimmers with it rather than showing
-              a value the supplier being applied may be about to change. */}
           <Field label="Document Type" req error={err.docType}>
             <div className={supplierLoading ? 'cpf-sup-loading' : undefined}>
               <EditSelect value={draft.docType} options={DOC_TYPES} readOnly={docTypeLocked} onLockedClick={lockedDocType} onChange={(x) => set({ docType: x })} invalid={!!err.docType} />
@@ -281,7 +228,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             </div>
           </Field>
           <Field label="Expected Delivery Date" req error={err.deliveryDate}>
-            {/* Built from a div, so the view-only fieldset does not reach it. */}
             <MasterDatePicker value={draft.deliveryDate} onChange={(x) => set({ deliveryDate: x })} invalid={!!err.deliveryDate}
               disabled={ctx.viewOnly} minDate={new Date().toISOString().slice(0, 10)} />
           </Field>
@@ -292,8 +238,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             <EditSelect value={draft.paymentType} options={PAYMENT_TYPES} onChange={(x) => set({ paymentType: x })} invalid={!!err.paymentType} />
           </Field>
           <Field label="Physical Inspection Required">
-            {/* On by default for a high-risk supplier; the user decides otherwise,
-                and picking another supplier sets it from that supplier again. */}
             <button type="button" className={`spi-dt-toggle ${draft.physInsp ? 'cpf-toggle-req' : ''}`}
               onClick={() => set({ physInsp: !draft.physInsp })}>
               <span className={`spi-dt-toggle-sw ${draft.physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
@@ -307,9 +251,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
           {isInternational && (
             <>
-              {/* No Zoho hint under the field: the currency check speaks once,
-                  in the dialog the submit raises, rather than twice in two
-                  different wordings. */}
               <Field label="Currency" req
                 error={err.currency}
                 hint={currencySettled
@@ -325,12 +266,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                     )} />
               </Field>
               <Field label="Exchange Rate" req error={err.exchangeRate}>
-                {/* Capped at 10,000 — the same ceiling the API enforces
-                    (App\Support\FxRate). The 16-character slice bounded the
-                    TEXT and not the VALUE, so a held-down key produced a
-                    sixteen-digit rate that looked accepted until save. A rate
-                    is a multiplier: a typo here does not add one digit to the
-                    order, it adds as many as the typo is long. */}
                 <input className={`spi-dt-inp${inv('exchangeRate')}`} inputMode="decimal" placeholder="e.g. 83.25" value={draft.exchangeRate}
                   onChange={(e) => {
                     const v = e.target.value.replace(/[^\d.]/g, '').slice(0, 16);
@@ -377,7 +312,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
         <div className="spi-dt-card">
           <div className="spi-dt-card-head cpf-clickable" onClick={() => setSupCardOpen((o) => !o)}>
             <div className="spi-dt-card-title"><span className="spi-dt-card-ico"><IcoUser /></span> Supplier Details</div>
-            {/* Onboard a supplier that isn't in the list yet. */}
             <button type="button" className="cpf-addbtn" title="Onboard a supplier that is not in this list" onClick={(e) => { e.stopPropagation(); setAddingSupplier(true); }}>
               <IcoPlus /> Add Supplier
             </button>
@@ -420,7 +354,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   ? <span className="cpf-lockhint"><IcoLock /> Fixed — the PO has gone for senior approval</span>
                   : <span className="cpf-lockhint">Only {needType} suppliers can be picked — the rest are listed locked</span>}
             </Field>
-            {/* Everything below comes from the supplier master and is read-only here. */}
             <Field label="COMPANY LEGAL NAME">
               <input className="spi-dt-inp" readOnly value={supplierLoading ? '' : v(sup?.legalName || sup?.name)} placeholder="—" />
             </Field>
@@ -476,7 +409,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
               </>
             ) : (
               <>
-                {/* No supplier yet: the badge's slot still shows, as a dash. */}
                 <span className="cpf-push spi-dt-legal-badge cpf-lgbadge--none">–</span>
                 <span className="cpf-lgbar"><span className="cpf-lgbar__fill is-empty" /></span>
                 <span className="cpf-lgpct">0%</span>
@@ -504,9 +436,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   ))}
                 </div>
               ) : (
-                /* The vault lands after the supplier's own record, so this card
-                   keeps waiting for a moment after the fields have filled — it
-                   says so rather than reading as "nothing on file". */
                 <div className="spi-dt-legal-note">
                   {supplierLoading || draft.vendorId
                     ? 'Reading the supplier’s Evidence Vault…'
@@ -528,7 +457,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
           </div>
 
           {gstOpen && (<>
-          {/* Compliance verdict for the two dates below. */}
           <div className={`cpf-gst cpf-gst--${gst.tone}`}>
             <span className="cpf-gst__ico">{gst.tone === 'ok' ? <IcoOk /> : gst.tone === 'stop' ? <IcoStop /> : gst.tone === 'warn' ? <IcoWarn /> : <IcoClock />}</span>
             <span className="cpf-gst__txt">
@@ -561,7 +489,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
         <div className="spi-dt-card">
           <div className="spi-dt-card-head cpf-clickable" onClick={() => setRiskOpen((o) => !o)}>
             <div className="spi-dt-card-title"><span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoAlert /></span> Supplier Risk Alert</div>
-            {/* The badge only says something once a supplier is chosen. */}
             <span className={`cpf-risk__badge cpf-risk__badge--${riskSev} ${sup ? '' : 'cpf-hide'}`}>
               {!sup ? ''
                 : nHigh ? `${nHigh} critical${nMed ? ` · ${nMed} warning` : ''}`
