@@ -434,6 +434,18 @@ export default function AddProductModal(props: {
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
+  const [vendorErrors, setVendorErrors] = useState<Record<string, string>>({});
+  const vendorBodyRef = useRef<HTMLDivElement | null>(null);
+  const clearVendorError = (k: string) => setVendorErrors(prev => (prev[k] ? (() => { const n = { ...prev }; delete n[k]; return n; })() : prev));
+  /* QA-97: scroll to + focus the first missing field in the Map Supplier popup. */
+  const focusFirstVendorError = () => {
+    requestAnimationFrame(() => {
+      const el = vendorBodyRef.current?.querySelector('.apm-field.has-error') as HTMLElement | null;
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el.querySelector('input, textarea, select, button, [tabindex]') as HTMLElement | null)?.focus({ preventScroll: true });
+    });
+  };
   const [supplierPopupOpen, setSupplierPopupOpen] = useState(false);
   const [segGatePending, setSegGatePending] = useState('');
   const [segChecking, setSegChecking] = useState(false);
@@ -704,20 +716,26 @@ export default function AddProductModal(props: {
       toast.error('GST rate required', 'Select a GST rate for this product (Sales Config step) before you can map a supplier — 0% is allowed.');
       return;
     }
+    const errs: Record<string, string> = {};
     const missing: string[] = [];
-    if (!vendorSelected)        missing.push('Vendor');
-    if (String(vendorPurchasePrice ?? '').trim() === '') missing.push('Purchase Price');
+    if (!vendorSelected)        { errs.vendor = 'Supplier is required'; missing.push('Vendor'); }
+    if (String(vendorPurchasePrice ?? '').trim() === '') { errs.price = 'Purchase Price is required'; missing.push('Purchase Price'); }
     // Without a rate there is no rupee equivalent, and the mapping cannot be
     // compared with a domestic one.
-    if (vendorIsIntl && !(parseFloat(vendorFxRate) > 0)) missing.push('Exchange Rate');
+    if (vendorIsIntl && !(parseFloat(vendorFxRate) > 0)) { errs.fx = 'Exchange Rate is required'; missing.push('Exchange Rate'); }
     if (missing.length || !vendorSelected) {
+      setVendorErrors(errs);
+      focusFirstVendorError();
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
     }
     if (!(vendorPp >= 1)) {
+      setVendorErrors({ price: 'Purchase Price must be 1 or greater' });
+      focusFirstVendorError();
       toast.error('Invalid Purchase Price', 'Purchase Price must be 1 or greater.');
       return;
     }
+    setVendorErrors({});
 
     const selId   = String(vendorSelected.id);
     const selCode = String(vendorSelected.code ?? '');
@@ -821,6 +839,7 @@ export default function AddProductModal(props: {
     setVendorPurchasePrice('');
     setVendorCurrency('USD');
     setVendorFxRate('');
+    setVendorErrors({});
   };
 
   const closeSupplierPopup = () => {
@@ -1922,7 +1941,7 @@ export default function AddProductModal(props: {
                       </button>
                     </div>
 
-                    <div className="apm-mv-popup-body">
+                    <div className="apm-mv-popup-body" ref={vendorBodyRef}>
                       <div className="apm-mv-sec">
                         {vendorIsIntl ? <IcoGlobe /> : <IcoFlag />}
                         Supplier Details
@@ -1931,11 +1950,12 @@ export default function AddProductModal(props: {
                         <Field
                           label="Supplier Name"
                           required
+                          error={vendorErrors.vendor}
                           addNew
                           addTitle="Add a new supplier"
                           onAdd={() => setSupplierGateOpen(true)}
                         >
-                          <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
+                          <SelectInput value={vendorSelectedCode} onChange={(v) => { setVendorSelectedCode(v); clearVendorError('vendor'); }} placeholder="Select Supplier Name"
                             disabled={saving}
                             options={vendorPickOpts.map(v => {
                               const segOpts = (v.segmentIds ?? [])
@@ -2009,13 +2029,13 @@ export default function AddProductModal(props: {
                                 options={INTL_CURRENCIES.map(c => ({ value: c, label: c }))}
                               />
                             </Field>
-                            <Field label={`Price (${vendorCurrency})`} required>
+                            <Field label={`Price (${vendorCurrency})`} required error={vendorErrors.price}>
                               <input className="apm-input" type="number" placeholder="Price in supplier currency"
-                                value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} disabled={saving} />
+                                value={vendorPurchasePrice} onChange={e => { setVendorPurchasePrice(e.target.value); clearVendorError('price'); }} disabled={saving} />
                             </Field>
-                            <Field label={`Exchange Rate (₹ per ${vendorCurrency})`} required>
+                            <Field label={`Exchange Rate (₹ per ${vendorCurrency})`} required error={vendorErrors.fx}>
                               <input className="apm-input" type="number" placeholder="e.g. 83.50"
-                                value={vendorFxRate} onChange={e => setVendorFxRate(e.target.value)} disabled={saving} />
+                                value={vendorFxRate} onChange={e => { setVendorFxRate(e.target.value); clearVendorError('fx'); }} disabled={saving} />
                             </Field>
                             <Field label="INR Equivalent (₹)" auto>
                               <div className="apm-input-icon">
@@ -2028,10 +2048,10 @@ export default function AddProductModal(props: {
                           </>
                         ) : (
                           <>
-                            <Field label="Purchase Price (₹)" required>
+                            <Field label="Purchase Price (₹)" required error={vendorErrors.price}>
                               <div className="apm-input-icon">
                                 <span className="apm-input-icon-prefix">₹</span>
-                                <input className="apm-input has-prefix" type="number" placeholder="Enter purchase price" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} disabled={saving} />
+                                <input className="apm-input has-prefix" type="number" placeholder="Enter purchase price" value={vendorPurchasePrice} onChange={e => { setVendorPurchasePrice(e.target.value); clearVendorError('price'); }} disabled={saving} />
                               </div>
                             </Field>
 
