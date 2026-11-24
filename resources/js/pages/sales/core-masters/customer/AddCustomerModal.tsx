@@ -4523,6 +4523,27 @@ const SCOPED_CSS = `
 
 [data-bs-theme="dark"] .acm-tab-off { color: #a89fc7; }
 [data-bs-theme="dark"] .acm-tab-on { color: #c4b5fd; border-bottom-color: #a78bfa; }
+.acm-tab { border-radius: 9px 9px 0 0; transition: color .15s, border-color .15s, background .15s; }
+.acm-tab-off:hover { color: #6d28d9; background: rgba(124,58,237,.05); border-bottom-color: #c4b5fd; }
+.acm-tab-on { color: #5b21b6; background: rgba(124,58,237,.08); border-bottom-color: #7c3aed; }
+.acm-tab:focus-visible { outline: 2px solid #a78bfa; outline-offset: -2px; }
+[data-bs-theme="dark"] .acm-tab-off:hover { color: #ddd6fe; background: rgba(167,139,250,.08); border-bottom-color: rgba(167,139,250,.45); }
+[data-bs-theme="dark"] .acm-tab-on { background: rgba(167,139,250,.12); }
+.acm-root .master-select-wrap:not(.show):not(.disabled) .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(124,58,237,.55) !important;
+  box-shadow: 0 2px 6px rgba(124,58,237,.08) !important;
+}
+.acm-root .master-select-wrap.show .master-select-toggle {
+  background: var(--vz-card-bg, #fff) !important;
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15), 0 4px 12px rgba(124,58,237,.12) !important;
+}
+.acm-root .master-select-wrap.show .master-select-chev { color: #7c3aed; }
+.acm-root .master-select-wrap.invalid .master-select-toggle { border-color: #ef4444 !important; }
+.acm-root .master-select-wrap.invalid.show .master-select-toggle { box-shadow: 0 0 0 3px rgba(239,68,68,.15) !important; }
+[data-bs-theme="dark"] .acm-root .master-select-wrap:not(.show):not(.disabled) .master-select-toggle:hover:not(:disabled) { border-color: #a78bfa !important; box-shadow: 0 2px 8px rgba(0,0,0,.3) !important; }
+[data-bs-theme="dark"] .acm-root .master-select-wrap.show .master-select-toggle { background: #1a1430 !important; border-color: #a78bfa !important; box-shadow: 0 0 0 3px rgba(167,139,250,.2) !important; }
+[data-bs-theme="dark"] .acm-root .master-select-wrap.show .master-select-chev { color: #c4b5fd; }
 
 [data-bs-theme="dark"] .acm-section {
   background: #1f2942;
