@@ -910,3 +910,22 @@ body:has(.master-modal) .master-select-menu[style*="min-width"] { width: 0 !impo
   background: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
   box-shadow: 0 3px 12px rgba(8, 145, 178, .4), 0 1px 0 rgba(255, 255, 255, .2) inset;
 }
+
+:is(body:has(.mc-back-btn), body:has(.md-page)) :is(
+  .spi-head-btn, .spi-mdl-cancel, .spi-mdl-confirm,
+  .clm-add-btn, .clm-ie-btn, .clm-btn-save, .clm-btn-cancel, .cie-export-btn,
+  .tnw-btn, .tdw-btn, .agw-btn, .clp-btn, .itm-btn, .ihr-btn, .lam-btn,
+  .mc-back-btn, .cstrip__action-btn, .dt-filter-btn, .auth-xl-btn,
+  .btn:not(td .btn):not(.btn-icon):not(.btn-close)
+) {
+  height: 40px !important;
+  min-height: 40px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  font-size: 12.5px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  box-sizing: border-box;
+}

@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
+import '../../../css/master.css';
 
 
 const CSS = `
