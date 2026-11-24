@@ -2682,16 +2682,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
          warns about, arrived at by a different road. (QA #15) */
       if (noSettlementDue || !docsReleased) return 100;
       const total = exitTemplates.length;
-      /* No exit-document template matches this employee → there is nothing to
-         generate and nothing to sign, so the stage holds no work. Reads 100,
-         not 0: same reasoning as fnfNothingToSettle above, where a measure with
-         a zero denominator would otherwise sit at 0% forever.
-         This was the 0% in bug #81. It mattered because every completion gate
-         that mentions documents is written `exitTemplates.length > 0 && …`, so
-         with no templates the stage showed Pending while nothing blocked the
-         close — and once completion gates on all stages being Completed (see
-         completeExit), a permanent 0% here would deadlock the case instead. */
-      if (total === 0) return 100;
+      /* Documents ARE released (the switch is on) but no exit document is
+         available/configured for this employee — the HR asked for documents and
+         there are none, so the stage is genuinely unfinished: 0%, not 100
+         (#201). The stage already reads "In Progress" here, so completion was
+         blocked all along; this only stops the ring from contradicting that by
+         showing 100%. The escape is to turn the release switch OFF (nothing to
+         do → 100 / Completed via the !docsReleased + effStatusOf paths) — so
+         this does not deadlock the way the old 100 guarded against (that case
+         was !docsReleased, handled above and unchanged). */
+      if (total === 0) return 0;
       // Measured against the FINALISED ticked set — signing + the finalise step.
       // Before finalising, the stage is at most "in progress".
       if (docSetLoaded && !docFinalized) {
