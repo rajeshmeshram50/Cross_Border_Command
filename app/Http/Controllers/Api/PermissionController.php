@@ -217,7 +217,7 @@ class PermissionController extends Controller
 
         $request->validate([
             'permissions' => 'required|array',
-            'permissions.*.module_id' => 'required|exists:modules,id',
+            'permissions.*.module_id' => 'required|integer',
             'permissions.*.can_view' => 'boolean',
             'permissions.*.can_add' => 'boolean',
             'permissions.*.can_edit' => 'boolean',
@@ -227,6 +227,16 @@ class PermissionController extends Controller
             'permissions.*.can_approve' => 'boolean',
             'permissions.*.is_auto'   => 'boolean',
         ]);
+
+        // Validate every module_id in one query instead of the per-row `exists`
+        // rule, which issued a SELECT for each of the 100+ rows the UI sends.
+        $moduleIds = collect($request->permissions)->pluck('module_id')->map(fn($v) => (int) $v)->unique();
+        $missing = $moduleIds->diff(DB::table('modules')->whereIn('id', $moduleIds)->pluck('id'));
+        if ($missing->isNotEmpty()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'permissions' => ['Unknown module id(s): ' . $missing->implode(', ')],
+            ]);
+        }
 
         if ($authUser->isSuperAdmin()) {
             if (!$targetUser->isClientAdmin()) {
@@ -513,7 +523,7 @@ class PermissionController extends Controller
 
         $data = $request->validate([
             'permissions' => 'required|array',
-            'permissions.*.module_id' => 'required|integer|exists:modules,id',
+            'permissions.*.module_id' => 'required|integer',
             'permissions.*.can_view'    => 'boolean',
             'permissions.*.can_add'     => 'boolean',
             'permissions.*.can_edit'    => 'boolean',
@@ -523,6 +533,15 @@ class PermissionController extends Controller
             'permissions.*.can_approve' => 'boolean',
             'permissions.*.is_auto'   => 'boolean',
         ]);
+
+        // One query to validate module ids, not one SELECT per row (see savePermissions).
+        $deptModuleIds = collect($data['permissions'])->pluck('module_id')->map(fn($v) => (int) $v)->unique();
+        $deptMissing = $deptModuleIds->diff(DB::table('modules')->whereIn('id', $deptModuleIds)->pluck('id'));
+        if ($deptMissing->isNotEmpty()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'permissions' => ['Unknown module id(s): ' . $deptMissing->implode(', ')],
+            ]);
+        }
 
         $clientId  = $authUser->client_id;
         $deptId    = (int) $departmentId;

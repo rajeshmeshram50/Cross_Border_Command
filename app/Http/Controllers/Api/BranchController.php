@@ -649,7 +649,8 @@ class BranchController extends Controller
 
                     if ($passwordChanged && Settings::shouldSendMail()) {
                         try {
-                            Mail::to($branchUser->email)->send(new PasswordChangedMail(
+                            // queue, not send: keep SMTP latency off the branch-update request.
+                            Mail::to($branchUser->email)->queue(new PasswordChangedMail(
                                 $branchUser->name,
                                 $branchUser->email,
                                 $request->user_password,
@@ -858,20 +859,9 @@ class BranchController extends Controller
 
     private function recomputeBranchPayslips(Branch $branch): void
     {
-        try {
-            $employeeIds = \App\Models\Payslip::query()
-                ->whereHas('run', fn($q) => $q->whereIn('status', ['draft', 'generated']))
-                ->whereIn('employee_id', Employee::where('branch_id', $branch->id)->pluck('id'))
-                ->distinct()
-                ->pluck('employee_id');
-
-            $payroll = app(\App\Services\PayrollService::class);
-            foreach ($employeeIds as $id) {
-                $payroll->recomputeEmployeePayslips((int) $id);
-            }
-        } catch (\Throwable $e) {
-            Log::warning('Branch policy payslip recompute failed for branch ' . $branch->id . ': ' . $e->getMessage());
-        }
+        // Heavy per-employee recompute runs off-request so a policy edit returns
+        // immediately; afterCommit so it only fires once the update is persisted.
+        \App\Jobs\RecomputeBranchPayslips::dispatch($branch->id)->afterCommit();
     }
 
     private function normalizeShifts($raw): array
