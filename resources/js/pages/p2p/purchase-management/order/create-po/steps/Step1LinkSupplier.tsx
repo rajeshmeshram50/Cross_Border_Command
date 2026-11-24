@@ -160,7 +160,8 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
     // itself. It stays in the list only — off the field once picked (CS-561).
     badges: [{ text: o.type || 'No type', tone: 'gray' as const, listOnly: true, ...(o.wrongType ? { lock: true } : {}) }],
     badge: o.blacklisted ? { text: 'Blacklisted', tone: 'red' as const, lock: true }
-      : o.doc === 'international' ? { text: 'International', tone: 'violet' as const } : { text: 'Domestic', tone: 'green' as const },
+      // Short so the row fits the field's width; the tooltip names it in full.
+      : o.doc === 'international' ? { text: 'Int', title: 'International', tone: 'violet' as const } : { text: 'Dom', title: 'Domestic', tone: 'green' as const },
   })), [supplierOptions, needType]);
 
   const pickSupplier = async (label: string) => {
@@ -395,6 +396,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
                   value={draft.vendorId ? String(draft.vendorId) : ''}
                   currentValueLabel={pickedOption}
                   options={supplierSelectOptions}
+                  fitWidth
                   allowDeselect
                   onChange={(id) => {
                     if (!id) { clearSupplier(); return; }

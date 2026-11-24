@@ -60,7 +60,9 @@ function drawsWhole(opt: { label: string; code?: string; fullLabel?: string }) {
   return opt.fullLabel.startsWith(opt.code) && opt.fullLabel.endsWith(opt.label);
 }
 
-export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPill?: boolean; shrink?: boolean }) {
+/* `noTitle`: the row already shows its own styled tooltip, so the chip adds no
+   native one — otherwise both open together over the same row. */
+export function OptBadge({ b, staticPill, shrink, noTitle }: { b: OptBadgeSpec; staticPill?: boolean; shrink?: boolean; noTitle?: boolean }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
@@ -99,7 +101,7 @@ export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPil
   if (b.reg !== undefined) {
     if (!b.text) return <SegmentBadge status={b.reg} style={{ marginLeft: 6, flexShrink: 0 }} />;
     return (
-      <span title={b.title ?? b.text} style={{ ...style, display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden', maxWidth: '100%' }}>
+      <span title={noTitle ? undefined : (b.title ?? b.text)} style={{ ...style, display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden', maxWidth: '100%' }}>
         <span style={{ flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 34 }}>{b.text}</span>
         <SegmentBadge status={b.reg} style={{ flexShrink: 0 }} />
       </span>
@@ -111,7 +113,7 @@ export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPil
      one of them saying what was already written on the badge. It is kept only
      where something is actually hidden: a caller-supplied title that differs
      from the text, or a pill allowed to shrink, which ellipsises. */
-  const hint = b.title && b.title !== b.text ? b.title : (shrink ? b.text : undefined);
+  const hint = noTitle ? undefined : b.title && b.title !== b.text ? b.title : (shrink ? b.text : undefined);
 
   if (!interactive) {
     if (b.lock) return <span title={hint} style={{ ...style, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{LOCK_ICON}{b.text}</span>;
@@ -209,6 +211,7 @@ export function MasterSelect({
   searchPlaceholder,
   onDisabledClick,
   menuClassName,
+  fitWidth,
 }: {
   name?: string;
   value?: string;
@@ -284,6 +287,9 @@ export function MasterSelect({
   /* Extra class on the portalled menu. The menu renders under <body>, so a
      page-scoped skin can't reach it through the trigger's ancestors. */
   menuClassName?: string;
+  /* Keep the menu exactly the field's width instead of growing to its widest
+     row: long names ellipsise and the badges stay inside the field's edge. */
+  fitWidth?: boolean;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -504,7 +510,7 @@ export function MasterSelect({
              message (e.g. Assign Lead's "No Sales-department employees…") no
              longer pushes the panel past the popup's edge. */
           style={menuWidth ? (
-            filtered.length === 0 && !loadingMore
+            fitWidth || (filtered.length === 0 && !loadingMore)
               ? { width: menuWidth, maxWidth: 'calc(100vw - 24px)' }
               : { minWidth: menuWidth, width: 'max-content', maxWidth: `min(${Math.round(menuWidth) + 260}px, calc(100vw - 24px))` }
           ) : undefined}
@@ -587,7 +593,9 @@ export function MasterSelect({
                     <Tooltip
                       label={opt.disabled ? (opt.disabledReason ?? opt.fullLabel ?? opt.label) : (opt.fullLabel ?? opt.label)}
                       disabled={!opt.disabled && drawsWhole(opt)}
-                      position="top"
+                      /* Beside the row, outside the list: above it covered the
+                         row before and, on the first row, the Search field. */
+                      position="right"
                     >
                       {(opt.badge || opt.badges?.length) ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
@@ -601,8 +609,12 @@ export function MasterSelect({
                           <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
                           {/* The product NAME wins the row: the segment chip shrinks (its own
                               text ellipsises) before the label gives up any width. */}
-                          <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', overflow: 'hidden' }}>
-                            {badgesOf(opt).map((b, i, all) => <OptBadge key={i} b={b} shrink={all.length > 1} />)}
+                          {/* fitWidth: the menu can't grow, so the badges keep their size
+                              and only the name ellipsises. */}
+                          <span style={fitWidth
+                            ? { marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 0 auto' }
+                            : { marginLeft: 8, display: 'inline-flex', alignItems: 'center', flex: '0 1 auto', minWidth: 0, maxWidth: '55%', overflow: 'hidden' }}>
+                            {badgesOf(opt).map((b, i, all) => <OptBadge key={i} b={b} shrink={!fitWidth && all.length > 1} noTitle={opt.disabled || !drawsWhole(opt)} />)}
                           </span>
                         </span>
                       ) : (
