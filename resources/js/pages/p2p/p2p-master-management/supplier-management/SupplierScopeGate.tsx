@@ -41,7 +41,7 @@ const SCOPED_CSS = `
   position: fixed; inset: 0; z-index: 1090;
   display: flex; align-items: center; justify-content: center;
   padding: 20px; box-sizing: border-box;
-  background: rgba(20,10,40,.68);
+  background: rgba(var(--sv-rgb-20-10-40, 20, 10, 40),.68);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   animation: supchFade .18s ease;
 }
@@ -55,14 +55,14 @@ const SCOPED_CSS = `
   background: #fff; border-radius: 22px;
   width: min(680px, calc(100vw - 28px)); max-height: calc(100vh - 44px);
   display: flex; flex-direction: column; overflow: hidden;
-  box-shadow: 0 40px 100px -16px rgba(76,29,149,.45), 0 0 0 1px rgba(167,139,250,.25);
+  box-shadow: 0 40px 100px -16px rgba(var(--sv-rgb-76-29-149, 76, 29, 149),.45), 0 0 0 1px rgba(var(--sv-rgb-167-139-250, 167, 139, 250),.25);
   animation: supchIn .28s cubic-bezier(.34,1.4,.64,1);
 }
 
 /* ── Header ── */
 .supch-header {
   position: relative; overflow: hidden; padding: 22px 24px;
-  background: linear-gradient(135deg,#2e1065 0%,#4c1d95 35%,#6d28d9 70%,#7c3aed 100%);
+  background: linear-gradient(135deg,var(--sv-2e1065, #2e1065) 0%,var(--sv-4c1d95, #4c1d95) 35%,var(--sv-6d28d9, #6d28d9) 70%,var(--sv-7c3aed, #7c3aed) 100%);
 }
 .supch-header-pattern {
   position: absolute; inset: 0; pointer-events: none;
@@ -90,7 +90,7 @@ const SCOPED_CSS = `
 .supch-close:hover { background: rgba(255,255,255,.26); }
 
 /* ── The two choices ── */
-.supch-body { padding: 22px 24px 6px; background: #fbfaff; overflow-y: auto; }
+.supch-body { padding: 22px 24px 6px; background: var(--sv-fbfaff, #fbfaff); overflow-y: auto; }
 .supch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 560px) { .supch-grid { grid-template-columns: 1fr; } }
 
@@ -98,16 +98,16 @@ const SCOPED_CSS = `
   position: relative; overflow: hidden;
   display: flex; flex-direction: column; align-items: stretch; text-align: left; gap: 10px;
   border-radius: 16px; padding: 18px;
-  border: 2px solid #ece7fc; background: #fff; cursor: pointer;
+  border: 2px solid var(--sv-ece7fc, #ece7fc); background: #fff; cursor: pointer;
   font-family: inherit; width: 100%;
   transition: all .22s cubic-bezier(.34,1.4,.64,1);
 }
-.supch-card:hover { border-color: #c4b5fd; box-shadow: 0 10px 28px -8px rgba(124,58,237,.22); transform: translateY(-3px); }
-.supch-card:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; }
+.supch-card:hover { border-color: var(--sv-c4b5fd, #c4b5fd); box-shadow: 0 10px 28px -8px rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.22); transform: translateY(-3px); }
+.supch-card:focus-visible { outline: 2px solid var(--sv-7c3aed, #7c3aed); outline-offset: 2px; }
 .supch-card.is-selected {
-  border-color: #7c3aed;
-  background: linear-gradient(180deg,#faf8ff,#f5f3ff);
-  box-shadow: 0 12px 30px -10px rgba(124,58,237,.32), 0 0 0 4px rgba(124,58,237,.08);
+  border-color: var(--sv-7c3aed, #7c3aed);
+  background: linear-gradient(180deg,var(--sv-faf8ff, #faf8ff),var(--sv-f5f3ff, #f5f3ff));
+  box-shadow: 0 12px 30px -10px rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.32), 0 0 0 4px rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.08);
   transform: translateY(-2px);
 }
 /* Soft radial bloom off the top-right corner — the thing that makes a hovered
@@ -115,59 +115,59 @@ const SCOPED_CSS = `
 .supch-glow {
   position: absolute; top: -35px; right: -35px; width: 130px; height: 130px;
   border-radius: 50%; pointer-events: none; opacity: 0; transition: opacity .3s;
-  background: radial-gradient(circle, rgba(124,58,237,.16) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.16) 0%, transparent 70%);
 }
 .supch-card:hover .supch-glow, .supch-card.is-selected .supch-glow { opacity: 1; }
 /* Corner tick — hidden until the card is the chosen one, so at a glance the
    dialog says which way you are about to go. */
 .supch-check {
   position: absolute; top: 12px; right: 12px; width: 22px; height: 22px;
-  border-radius: 50%; background: #fff; border: 2px solid #ddd6fe;
+  border-radius: 50%; background: #fff; border: 2px solid var(--sv-ddd6fe, #ddd6fe);
   display: flex; align-items: center; justify-content: center;
   color: transparent; opacity: 0; transform: scale(.6);
   transition: all .2s cubic-bezier(.34,1.56,.64,1);
 }
 .supch-card.is-selected .supch-check {
-  background: linear-gradient(135deg,#a78bfa,#7c3aed); border-color: transparent;
+  background: linear-gradient(135deg,var(--sv-a78bfa, #a78bfa),var(--sv-7c3aed, #7c3aed)); border-color: transparent;
   color: #fff; opacity: 1; transform: scale(1);
-  box-shadow: 0 3px 8px rgba(124,58,237,.4);
+  box-shadow: 0 3px 8px rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.4);
 }
 .supch-iconbox {
   width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg,#ede9fe,#c4b5fd); color: #7c3aed;
-  box-shadow: 0 4px 14px rgba(124,58,237,.22);
+  background: linear-gradient(135deg,var(--sv-ede9fe, #ede9fe),var(--sv-c4b5fd, #c4b5fd)); color: var(--sv-7c3aed, #7c3aed);
+  box-shadow: 0 4px 14px rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.22);
   transition: transform .22s cubic-bezier(.34,1.56,.64,1);
 }
 .supch-card:hover .supch-iconbox, .supch-card.is-selected .supch-iconbox { transform: scale(1.08) rotate(-3deg); }
-.supch-card-title { font-family: inherit; font-size: 13.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; }
-.supch-card-desc { font-family: inherit; font-size: 11.5px; color: #6b6485; font-weight: 500; line-height: 1.4; margin-top: -4px; }
-.supch-divider { height: 1px; margin: 2px 0; background: linear-gradient(90deg, transparent, #e9e4fb, transparent); }
+.supch-card-title { font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--sv-1e1b4b, #1e1b4b); letter-spacing: -0.01em; }
+.supch-card-desc { font-family: inherit; font-size: 11.5px; color: var(--sv-6b6485, #6b6485); font-weight: 500; line-height: 1.4; margin-top: -4px; }
+.supch-divider { height: 1px; margin: 2px 0; background: linear-gradient(90deg, transparent, var(--sv-e9e4fb, #e9e4fb), transparent); }
 .supch-pills { display: flex; gap: 5px; flex-wrap: wrap; }
 .supch-pill {
   display: inline-flex; align-items: center; gap: 3px;
   font-family: inherit; font-size: 10px; font-weight: 600;
   padding: 4px 9px; border-radius: 999px;
-  background: #f5f3ff; color: #7c3aed; border: 1px solid #ddd6fe;
+  background: var(--sv-f5f3ff, #f5f3ff); color: var(--sv-7c3aed, #7c3aed); border: 1px solid var(--sv-ddd6fe, #ddd6fe);
 }
 
 /* ── Footer ── */
-.supch-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px 22px; background: #fbfaff; }
+.supch-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px 22px; background: var(--sv-fbfaff, #fbfaff); }
 .supch-btn-cancel {
-  font-family: inherit; font-size: 13px; font-weight: 600; color: #6b6485;
-  background: #fff; border: 1.5px solid #e5e0f5; border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: var(--sv-6b6485, #6b6485);
+  background: #fff; border: 1.5px solid var(--sv-e5e0f5, #e5e0f5); border-radius: 10px;
   height: 40px; padding: 0 18px; cursor: pointer; transition: all .15s;
 }
-.supch-btn-cancel:hover { background: #f5f3ff; border-color: #ddd6fe; }
+.supch-btn-cancel:hover { background: var(--sv-f5f3ff, #f5f3ff); border-color: var(--sv-ddd6fe, #ddd6fe); }
 .supch-btn-continue {
   display: inline-flex; align-items: center; gap: 7px;
   font-family: inherit; font-size: 13px; font-weight: 600; color: #fff;
-  background: linear-gradient(135deg,#a78bfa,#7c3aed 60%,#6d28d9);
+  background: linear-gradient(135deg,var(--sv-a78bfa, #a78bfa),var(--sv-7c3aed, #7c3aed) 60%,var(--sv-6d28d9, #6d28d9));
   border: none; border-radius: 10px; height: 40px; padding: 0 18px; cursor: pointer;
-  transition: all .18s; box-shadow: 0 6px 18px -4px rgba(124,58,237,.5);
+  transition: all .18s; box-shadow: 0 6px 18px -4px rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.5);
 }
-.supch-btn-continue:hover { box-shadow: 0 8px 22px -4px rgba(124,58,237,.6); transform: translateY(-1px); }
-.supch-btn-continue:disabled { background: #e5e0f5; color: #a9a0c9; cursor: not-allowed; box-shadow: none; transform: none; }
+.supch-btn-continue:hover { box-shadow: 0 8px 22px -4px rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.6); transform: translateY(-1px); }
+.supch-btn-continue:disabled { background: var(--sv-e5e0f5, #e5e0f5); color: var(--sv-a9a0c9, #a9a0c9); cursor: not-allowed; box-shadow: none; transform: none; }
 
 /* ── Dark ──
    Only the white surfaces are restated. The header keeps its violet ramp (it
@@ -180,17 +180,17 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .supch-card,
 [data-layout-mode="dark"] .supch-card { background: rgba(255,255,255,.03); border-color: var(--vz-border-color); }
 [data-bs-theme="dark"] .supch-card.is-selected,
-[data-layout-mode="dark"] .supch-card.is-selected { background: rgba(124,58,237,.16); border-color: #8b5cf6; }
+[data-layout-mode="dark"] .supch-card.is-selected { background: rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.16); border-color: var(--sv-8b5cf6, #8b5cf6); }
 [data-bs-theme="dark"] .supch-card-title,
 [data-layout-mode="dark"] .supch-card-title { color: var(--vz-heading-color, #fff); }
 [data-bs-theme="dark"] .supch-card-desc,
 [data-layout-mode="dark"] .supch-card-desc { color: var(--vz-body-color); }
 [data-bs-theme="dark"] .supch-pill,
-[data-layout-mode="dark"] .supch-pill { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.32); }
+[data-layout-mode="dark"] .supch-pill { background: rgba(var(--sv-rgb-124-58-237, 124, 58, 237),.2); color: var(--sv-c4b5fd, #c4b5fd); border-color: rgba(var(--sv-rgb-167-139-250, 167, 139, 250),.32); }
 [data-bs-theme="dark"] .supch-check,
-[data-layout-mode="dark"] .supch-check { background: var(--vz-card-bg); border-color: rgba(167,139,250,.35); }
+[data-layout-mode="dark"] .supch-check { background: var(--vz-card-bg); border-color: rgba(var(--sv-rgb-167-139-250, 167, 139, 250),.35); }
 [data-bs-theme="dark"] .supch-divider,
-[data-layout-mode="dark"] .supch-divider { background: linear-gradient(90deg, transparent, rgba(167,139,250,.28), transparent); }
+[data-layout-mode="dark"] .supch-divider { background: linear-gradient(90deg, transparent, rgba(var(--sv-rgb-167-139-250, 167, 139, 250),.28), transparent); }
 [data-bs-theme="dark"] .supch-btn-cancel,
 [data-layout-mode="dark"] .supch-btn-cancel { background: transparent; color: var(--vz-body-color); border-color: var(--vz-border-color); }
 [data-bs-theme="dark"] .supch-btn-continue:disabled,

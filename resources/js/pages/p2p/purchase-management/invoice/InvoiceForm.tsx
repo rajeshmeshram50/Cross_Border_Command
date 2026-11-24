@@ -13,6 +13,7 @@ import {
   IcoPencil, IcoShield, IcoUser, IcoVan, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
+import { usePoSupplierTheme } from '../order/create-po/usePoSupplierTheme';
 import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
@@ -119,6 +120,8 @@ export default function InvoiceForm({
     shipmentId: input.direct?.shipmentId, procurementCode: input.direct?.procurementCode,
     piNumber: input.direct?.shipmentPi,
   });
+  // Supplier popups opened from the invoice take the PO's teal theme.
+  usePoSupplierTheme();
   const toast = useToast();
   const confirm = useConfirm();
 

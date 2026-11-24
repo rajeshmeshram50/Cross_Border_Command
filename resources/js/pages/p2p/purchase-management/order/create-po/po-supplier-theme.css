@@ -1,0 +1,92 @@
+/* "+ Add Supplier" from the PO opens the Supplier master's own chooser and wizard
+   (SupplierScopeGate, AddVendorModal). Their violets are CSS variables that fall
+   back to violet, so the Supplier master is unchanged; while they are open from
+   the PO, AddSupplierFlow puts this class on <body> (they portal there) and the
+   variables take the PO's teal / cyan on navy instead.
+   Generated from the violets in add-vendor-modal.css and SupplierScopeGate.tsx:
+   a new violet there needs a var(--sv-<hex>, <hex>) and an entry here. */
+body.po-supplier-teal {
+  --sv-0e0a20: #0a1820;
+  --sv-110c25: #0c1c25;
+  --sv-14102a: #10202a;
+  --sv-171126: #111e26;
+  --sv-17112e: #11232e;
+  --sv-1a1430: #142630;
+  --sv-1a1538: #152b38;
+  --sv-1e1b2e: #1b272e;
+  --sv-1e1b4b: #0f2f44;
+  --sv-221852: #183d52;
+  --sv-221940: #193240;
+  --sv-241a47: #1a3647;
+  --sv-251d47: #1d3847;
+  --sv-2a1d5c: #1d455c;
+  --sv-2a2150: #213f50;
+  --sv-2e1065: #082f49;
+  --sv-3b0764: #083344;
+  --sv-3b2a6b: #2a536b;
+  --sv-4c1d95: #0c4a6e;
+  --sv-5b21b6: #155e75;
+  --sv-6b6485: #647e85;
+  --sv-6d28d9: #0e7490;
+  --sv-6d5f9e: #5f919e;
+  --sv-6d6391: #638891;
+  --sv-7c3aed: #0891b2;
+  --sv-8b5cf6: #06b6d4;
+  --sv-8b7bb8: #7bacb8;
+  --sv-8b7fb0: #7fa6b0;
+  --sv-8d86a8: #86a1a8;
+  --sv-9a93b3: #93adb3;
+  --sv-9b94b3: #94adb3;
+  --sv-a78bfa: #22d3ee;
+  --sv-a89fc7: #9fbfc7;
+  --sv-a9a0c9: #a0c1c9;
+  --sv-c4b5fd: #67e8f9;
+  --sv-cdc6e3: #c6dde3;
+  --sv-ddd6fe: #a5f3fc;
+  --sv-e0d9f7: #d9f1f7;
+  --sv-e2d4fa: #d4f2fa;
+  --sv-e5e0f5: #e0f1f5;
+  --sv-e7defb: #def5fb;
+  --sv-e9d5ff: #a5f3fc;
+  --sv-e9e2f7: #e2f3f7;
+  --sv-e9e4fb: #e4f6fb;
+  --sv-ece4fb: #e4f6fb;
+  --sv-ece7f8: #e7f5f8;
+  --sv-ece7fc: #e7f8fc;
+  --sv-ede9fe: #cffafe;
+  --sv-efe9fd: #e9f9fd;
+  --sv-f1ebfe: #ebfafe;
+  --sv-f1ecfb: #ecf8fb;
+  --sv-f3e8ff: #cffafe;
+  --sv-f3eefc: #eef9fc;
+  --sv-f3eefe: #eefbfe;
+  --sv-f5f1fe: #f1fbfe;
+  --sv-f5f2fc: #f2fafc;
+  --sv-f5f3fb: #f3f9fb;
+  --sv-f5f3ff: #ecfeff;
+  --sv-f6f2ff: #f2fcff;
+  --sv-f7f3fd: #f3fbfd;
+  --sv-f7f4ff: #f4fdff;
+  --sv-faf5ff: #f0fdff;
+  --sv-faf7ff: #f7fdff;
+  --sv-faf8ff: #f8feff;
+  --sv-fbf9ff: #f9feff;
+  --sv-fbfaff: #fafeff;
+  --sv-rgb-124-58-237: 8, 145, 178;
+  --sv-rgb-124-92-252: 92, 220, 252;
+  --sv-rgb-167-139-250: 34, 211, 238;
+  --sv-rgb-196-181-253: 103, 232, 249;
+  --sv-rgb-20-10-40: 10, 29, 40;
+  --sv-rgb-216-180-254: 165, 243, 252;
+  --sv-rgb-245-241-254: 241, 251, 254;
+  --sv-rgb-245-243-255: 236, 254, 255;
+  --sv-rgb-76-29-149: 12, 74, 110;
+}
+
+/* The PO popups' header icon container (cancel-po .porec-hd__ico). */
+body.po-supplier-teal .avm-head-icon,
+body.po-supplier-teal .supch-hicon {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .1));
+  border: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .32);
+}

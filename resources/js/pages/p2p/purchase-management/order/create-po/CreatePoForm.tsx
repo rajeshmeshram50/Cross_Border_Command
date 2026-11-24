@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import Step1LinkSupplier from './steps/Step1LinkSupplier';
+import { usePoSupplierTheme } from './usePoSupplierTheme';
 import Step2ProductDetails from './steps/Step2ProductDetails';
 import Step3Terms from './steps/Step3Terms';
 import Step4Documents from './steps/Step4Documents';
@@ -98,6 +99,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
   // Freeze the page behind the form, but never the form's own scroller —
   // without the exception the hook locks this overlay too and nothing scrolls.
   useScrollLock(true, '.spi-dt-overlay');
+  usePoSupplierTheme();
   const toast = useToast();
   const { draft, set: setDraft, replace } = usePoDraft();
   // Errors appear after the first Save on a step, then follow the user's edits live.
