@@ -3289,43 +3289,47 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
   //  2. The Customer tab still hides the party already chosen as the consignee
   //     on THIS agreement (a company can't be both roles picked separately).
   const norm = (s: string) => s.trim().toLowerCase();
-  const excludedName = tab === 'buyer' ? taken.consignee : undefined;
-  const list = dir[tab].filter(p => {
-    if (!(p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase())) return false;
-    if (tab === 'consignee' && p.sameAsCustomer) return false;
-    if (excludedName && norm(p.name) === norm(excludedName)) return false;
-    // Every counterparty shares ONE category. Once ANY of them is added, the
-    // remaining lists — Customer, Consignee AND Supplier — are restricted to
-    // that same category (Domestic/India or International), so a mismatched
-    // party can't even be picked. No anchor yet means no restriction.
-    if (requiredDomestic !== null && isDomesticCountry(p.country) !== requiredDomestic) return false;
-    return true;
-  });
+  /* The parties a tab can offer, before the search. Split out so each tab can
+     show its own count; the list below is this plus the search, exactly the
+     rules it always had. */
+  const pickable = (tb: 'buyer' | 'consignee' | 'supplier') => {
+    const excludedName = tb === 'buyer' ? taken.consignee : undefined;
+    return dir[tb].filter(p => {
+      if (tb === 'consignee' && p.sameAsCustomer) return false;
+      if (excludedName && norm(p.name) === norm(excludedName)) return false;
+      // Every counterparty shares ONE category. Once ANY of them is added, the
+      // remaining lists — Customer, Consignee AND Supplier — are restricted to
+      // that same category (Domestic/India or International), so a mismatched
+      // party can't even be picked. No anchor yet means no restriction.
+      if (requiredDomestic !== null && isDomesticCountry(p.country) !== requiredDomestic) return false;
+      return true;
+    });
+  };
+  const list = pickable(tab).filter(p => (p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase()));
+  const tabName = (tb: 'buyer' | 'consignee' | 'supplier') => tb === 'buyer' ? 'Customer' : tb === 'consignee' ? 'Consignee' : 'Supplier';
+  const noun = tabName(tab).toLowerCase();
   const tabBadge = tab === 'buyer'
     ? { label: 'Customer', bg: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', bd: t.dark ? 'rgba(6,182,212,.4)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0891b2' }
     : tab === 'supplier'
       ? { label: 'Supplier', bg: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', bd: t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0', fg: t.dark ? '#6ee7b7' : '#059669' }
       : { label: 'Consignee', bg: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', bd: t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD', fg: t.dark ? '#c4b5fd' : '#7C3AED' };
 
-  // No backdrop-click-to-close: this modal dismisses ONLY via the ✕ / Back /
-  // Confirm & Add buttons, so a stray click outside never loses the picked
+  // No backdrop-click-to-close: this modal dismisses ONLY via the ✕ / Cancel /
+  // Back / Confirm & Add buttons, so a stray click outside never loses the picked
   // counter-party or a typed "referred as" name.
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,5,40,.42)', backdropFilter: 'blur(6px)' }} />
-      <div style={{ position: 'relative', zIndex: 1, /* One width for both steps. It used to be 460 for the list and 440 for the
-             confirm panel, so the box jumped 20px sideways the moment a party was
-             picked. 640 also stops the long company names in the list from
-             ellipsing: at 460 a name had roughly 300px left once the avatar, the
-             code chip and the gutters were taken out. */
-          width: 640, maxWidth: 'calc(100vw - 32px)', background: t.surface, borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
-        {/* The house modal head — .clm-modal-head in clmShared.ts, read off the
-            violet ramp: a 46px translucent icon tile, a 16px/500 title over a
-            10.5px sub, and a 32px close. It used to be a bare gradient strip
-            carrying a 12.5px bold label and a 24px cross, which read as a
-            coloured bar rather than a modal header beside the rest of the app.
-            The sheen and the soft corner disc are ::before / ::after in
-            CTC_FORM_CSS, as they are on .clm-modal-head. */}
+      {/* One width for both steps (760), so the box never jumps sideways when a
+          party is picked. The look lives in .ctc-cp-* (CTC_FORM_CSS); the theme
+          tokens and the tab's colour come in as CSS variables, so light and
+          dark are one set of rules. */}
+      <div className={`ctc-cp-modal${t.dark ? ' is-dark' : ''}`}
+        style={{
+          '--cp-surface': t.surface, '--cp-text': t.text, '--cp-strong': t.textStrong, '--cp-muted': t.textMuted,
+          '--cp-sub': t.textSub, '--cp-border': t.searchBorder,
+          '--cp-fg': tabBadge.fg, '--cp-bg': tabBadge.bg, '--cp-bd': tabBadge.bd,
+        } as React.CSSProperties}>
         <div className="ctc-cp-head">
           <div className="ctc-cp-head-left">
             <div className="ctc-cp-head-ico">
@@ -3334,9 +3338,6 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
                 : <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
             </div>
             <div style={{ minWidth: 0 }}>
-              {/* "Confirm CP 1" spelt out. The list step said "Counter Party"
-                  and the confirm step said "CP", so the same thing had two
-                  names one click apart. */}
               <div className="ctc-cp-head-title">{pending ? `Confirm Counter Party ${slot}` : `Add Counter Party ${slot}`}</div>
               <div className="ctc-cp-head-sub">{pending ? 'Check the name this party is referred as inside the agreement.' : 'Pick the company that signs this agreement as this counter party.'}</div>
             </div>
@@ -3346,104 +3347,135 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
           </button>
         </div>
         {!pending ? (
-          <div style={{ padding: '12px 16px 16px' }}>
-            <div style={{ display: 'flex', gap: 3, background: t.dark ? 'rgba(255,255,255,.05)' : '#F3F0FD', borderRadius: 9, padding: 3, marginBottom: 9 }}>
-              {(['buyer', 'consignee', 'supplier'] as const).map(tb => {
-                const isUsed = used.has(tb);
-                return (
-                  <button key={tb} disabled={isUsed} onClick={() => { if (isUsed) return; setTab(tb); setSearch(''); }}
-                    title={isUsed ? 'Already added — only one allowed' : undefined}
-                    style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', cursor: isUsed ? 'not-allowed' : 'pointer', opacity: isUsed ? .4 : 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textTransform: 'capitalize', background: tab === tb && !isUsed ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb && !isUsed ? '#fff' : t.textMuted, boxShadow: tab === tb && !isUsed ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>
-                    {tb === 'buyer' ? 'Customer' : tb}{isUsed ? ' ✓' : ''}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="ui-search-abs" style={{ position: 'relative', marginBottom: 8 }}>
-              <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <input autoComplete="off" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', padding: '10px 12px 10px 32px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
-              <SearchClear show={search} onClear={() => { setSearch(''); }} />
-            </div>
-            {/* Five rows, then scroll. A row stands 58px — a 38px avatar inside
-                10px of padding top and bottom, which is taller than the name +
-                e-mail stack beside it — and the rows sit 1px apart, so five of
-                them come to 5 x 58 + 4 x 1 = 294. The vh guard stays, for a
-                short window where even five would push the card off screen;
-                there it simply shows fewer. It used to cap at 440, which is
-                seven and a half rows. */}
-            <div style={{ overflowY: 'auto', maxHeight: 'min(60vh, 294px)', display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {/* The row reads left to right now: who they are on the left,
-                  where they are on the right. The country pill used to sit on a
-                  second line under the name, which left the right half of a
-                  640px row empty, and the e-mail — already carried on the
-                  entry, and shown on the confirm step — was not shown at all.
-                  Hover is CSS (.ctc-cp-row:hover) rather than two inline
-                  handlers writing style.background. */}
-              {list.map(p => (
-                <div key={p.id} className="ctc-cp-row" onClick={() => { setPending(p); setReferred(p.name); }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${p.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{p.initials}</span></div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                      <span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{p.id}</span>
-                      <Tooltip label={p.name} position="top" zIndex={10000001} disabled={!p.name || p.name === '—'}><span style={{ fontSize: 13, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span></Tooltip>
-                    </div>
-                    <Tooltip label={p.email} position="bottom" zIndex={10000001} disabled={!p.email || p.email === '—'}>
-                      <div style={{ fontSize: 10.5, fontWeight: 500, color: t.textMuted, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.email && p.email !== '—' ? p.email : 'No e-mail on record'}</div>
-                    </Tooltip>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
-                      {/* Tab already says the party type (Customer/Consignee/Supplier),
-                          so the redundant type badge is dropped — show the country
-                          in the badge instead. */}
-                      {p.country && p.country !== '—'
-                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 9.5, fontWeight: 700, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '3px 10px', borderRadius: 20, maxWidth: 160, overflow: 'hidden' }}>
-                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
-                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
-                          </span>
-                        : <span style={{ fontSize: 10, color: t.textMuted }}>No country</span>}
-                      <svg className="ctc-cp-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                  </div>
-                </div>
-              ))}
-              {/* An empty list is usually the category lock, not missing data —
-                  say so, otherwise "No suppliers found" reads as a bug when the
-                  suppliers exist but sit on the other side of the rule. */}
-              {!list.length && (
-                <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 12, color: t.textMuted }}>
-                  {loading ? 'Loading…' : (
-                    <>
-                      No {tab === 'buyer' ? 'customer' : tab}s found
-                      {requiredDomestic !== null && (
-                        <div style={{ marginTop: 6, fontSize: 11 }}>
-                          This agreement is <strong>{requiredDomestic ? 'Domestic (India)' : 'International'}</strong> — only {requiredDomestic ? 'Domestic' : 'International'} parties can be added.
-                        </div>
-                      )}
-                    </>
-                  )}
+          <>
+            <div className="ctc-cp-body">
+              {/* 48px track, 40px tabs. Each tab carries its count; a type already
+                  on this agreement shows "Added" and can't be opened. */}
+              <div className="ctc-cp-tabs" role="tablist">
+                {(['buyer', 'consignee', 'supplier'] as const).map(tb => {
+                  const isUsed = used.has(tb);
+                  const on = tab === tb && !isUsed;
+                  return (
+                    <button key={tb} type="button" role="tab" aria-selected={on} disabled={isUsed}
+                      className={`ctc-cp-tab${on ? ' is-on' : ''}`}
+                      onClick={() => { if (isUsed) return; setTab(tb); setSearch(''); }}
+                      title={isUsed ? 'Already added — only one allowed' : undefined}>
+                      <span>{tabName(tb)}</span>
+                      {isUsed
+                        ? <span className="ctc-cp-tab-added"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Added</span>
+                        : <span className="ctc-cp-tab-n">{ready[tb] ? pickable(tb).length : '…'}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ui-search-abs ctc-cp-search">
+                <svg className="ctc-cp-search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input autoComplete="off" className="ctc-cp-search-in" value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${noun} name, code or e-mail`} />
+                <SearchClear show={search} onClear={() => { setSearch(''); }} />
+              </div>
+              {/* The category rule, said up front instead of only when a list
+                  comes back empty. */}
+              {requiredDomestic !== null && (
+                <div className="ctc-cp-rule">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                  <span>This agreement is <strong>{requiredDomestic ? 'Domestic (India)' : 'International'}</strong> — only {requiredDomestic ? 'Domestic' : 'International'} parties are listed.</span>
                 </div>
               )}
+              {/* Five 58px rows (2px apart), then the list scrolls. */}
+              <div className="ctc-cp-list">
+                {list.map(p => (
+                  <div key={p.id} className="ctc-cp-row" onClick={() => { setPending(p); setReferred(p.name); }}>
+                    <div className="ctc-cp-av" style={{ background: `linear-gradient(135deg,${p.grad})` }}><span>{p.initials}</span></div>
+                    <div className="ctc-cp-main">
+                      <div className="ctc-cp-line">
+                        <span className="ctc-cp-code">{p.id}</span>
+                        <Tooltip label={p.name} position="top" zIndex={10000001} disabled={!p.name || p.name === '—'}><span className="ctc-cp-name">{p.name}</span></Tooltip>
+                      </div>
+                      <Tooltip label={p.email} position="bottom" zIndex={10000001} disabled={!p.email || p.email === '—'}>
+                        <div className="ctc-cp-mail">{p.email && p.email !== '—' ? p.email : 'No e-mail on record'}</div>
+                      </Tooltip>
+                    </div>
+                    <div className="ctc-cp-side">
+                      {p.country && p.country !== '—'
+                        ? <span className="ctc-cp-country">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
+                            <span>{p.country}</span>
+                          </span>
+                        : <span className="ctc-cp-nocountry">No country</span>}
+                      <svg className="ctc-cp-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                    </div>
+                  </div>
+                ))}
+                {/* An empty list is usually the category lock, not missing data. */}
+                {!list.length && (
+                  <div className="ctc-cp-empty">
+                    {loading ? (
+                      <><span className="ctc-cp-spin" />Loading {noun}s…</>
+                    ) : (
+                      <>
+                        <div className="ctc-cp-empty-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>
+                        <div className="ctc-cp-empty-t">No {noun}s found</div>
+                        <div className="ctc-cp-empty-s">
+                          {search
+                            ? 'Try a different name, code or e-mail.'
+                            : requiredDomestic !== null
+                              ? `Only ${requiredDomestic ? 'Domestic' : 'International'} parties can be added to this agreement.`
+                              : `There are no ${noun}s to pick yet.`}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+            <div className="ctc-cp-foot">
+              <div className="ctc-cp-count">
+                {loading ? 'Loading…' : <><b>{list.length}</b> {noun}{list.length === 1 ? '' : 's'}{search ? ' match' : ''}</>}
+              </div>
+              <button type="button" className="ctc-cp-btn ctc-cp-btn--ghost" onClick={onClose}>Cancel</button>
+            </div>
+          </>
         ) : (
-          /* The confirm panel is read at the same scale as the list behind it.
-             It used to run its own much smaller type — a 7px code chip and
-             label, an 11px name, an 8px email, a 10.5px input — against the
-             list's 9.5 / 13 / 12.5, so picking a party shrank everything. The
-             values below are the list's, so the two steps agree.
-             A braced JSX comment cannot stand here: this branch of the ternary
-             has to BE the element, and a JSX comment is not an expression. */
-          <div style={{ padding: '14px 18px 18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 13 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${pending.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{pending.initials}</span></div>
-              <div style={{ minWidth: 0, flex: 1 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}><span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{pending.id}</span><Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span style={{ fontSize: 13, fontWeight: 700, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.name}</span></Tooltip></div><Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}><div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.email}</div></Tooltip></div>
+          <>
+            <div className="ctc-cp-body ctc-cp-body--confirm">
+              <div className="ctc-cp-picked">
+                <div className="ctc-cp-av" style={{ background: `linear-gradient(135deg,${pending.grad})` }}><span>{pending.initials}</span></div>
+                <div className="ctc-cp-main">
+                  <div className="ctc-cp-line">
+                    <span className="ctc-cp-code">{pending.id}</span>
+                    <Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span className="ctc-cp-name">{pending.name}</span></Tooltip>
+                  </div>
+                  <Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}>
+                    <div className="ctc-cp-mail">{pending.email && pending.email !== '—' ? pending.email : 'No e-mail on record'}</div>
+                  </Tooltip>
+                </div>
+                <div className="ctc-cp-side">
+                  <span className="ctc-cp-type">{tabName(tab)}</span>
+                  {pending.country && pending.country !== '—' && (
+                    <span className="ctc-cp-country">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
+                      <span>{pending.country}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="ctc-cp-field">
+                <label className="ctc-cp-label" htmlFor="ctc-cp-referred">Referred As In Agreement</label>
+                <input id="ctc-cp-referred" className="ctc-cp-input" value={referred} onChange={e => setReferred(e.target.value)} placeholder={pending.name} />
+                <div className="ctc-cp-hint">The name used for this party inside the agreement text. Left empty, the company name is used.</div>
+              </div>
             </div>
-            <label style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
-            <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, lineHeight: 1.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 5 }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 13 }}>
-              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id, sourceDbId: pending.dbId })} style={{ flex: 1, padding: '11px 0', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
-              <button onClick={() => setPending(null)} style={{ padding: '11px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, color: t.textSub }}>Back</button>
+            <div className="ctc-cp-foot">
+              <button type="button" className="ctc-cp-btn ctc-cp-btn--ghost" onClick={() => setPending(null)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                Back
+              </button>
+              <button type="button" className="ctc-cp-btn ctc-cp-btn--primary" onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id, sourceDbId: pending.dbId })}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                Confirm &amp; Add
+              </button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
@@ -3502,22 +3534,235 @@ const CTC_FORM_CSS = `
 }
 .ctc-cp-close:hover { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.45); color: #fff; }
 
+/* ── Picker shell ── one 760px card for both steps: head, body, footer. The
+   theme tokens arrive as --cp-* variables set on the card, so the rules below
+   serve light and dark alike; .is-dark only swaps the violet tints. */
+.ctc-cp-modal {
+  position: relative; z-index: 1;
+  width: 760px; max-width: 100%; max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
+  background: var(--cp-surface); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 20px 56px rgba(76,29,149,.32), 0 2px 8px rgba(76,29,149,.12);
+  font-family: var(--font-sans);
+  --cp-line: #EEEAFB; --cp-field: #fff; --cp-tint: #F7F4FF; --cp-tint-bd: #EAE3FC;
+}
+.ctc-cp-modal.is-dark {
+  --cp-line: rgba(255,255,255,.08); --cp-field: rgba(255,255,255,.04);
+  --cp-tint: rgba(124,58,237,.10); --cp-tint-bd: rgba(167,139,250,.22);
+  box-shadow: 0 20px 56px rgba(0,0,0,.55), 0 0 0 1px rgba(167,139,250,.18);
+}
+.ctc-cp-body {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px 12px;
+}
+
+/* ── Tabs ── a 48px track holding 40px tabs (1px border + 3px padding each side). */
+.ctc-cp-tabs {
+  flex: 0 0 auto; box-sizing: border-box;
+  display: flex; gap: 4px; height: 48px; padding: 3px;
+  background: #F3F0FD; border: 1px solid #E7E0FB; border-radius: 12px;
+}
+.ctc-cp-tab {
+  flex: 1 1 0; min-width: 0; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: 0; border-radius: 9px; background: transparent;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; line-height: 1;
+  color: var(--cp-muted); cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.ctc-cp-tab:hover:not(:disabled):not(.is-on) { background: rgba(124,58,237,.08); color: #6D28D9; }
+.ctc-cp-tab.is-on {
+  background: linear-gradient(135deg, #7C3AED, #6D28D9); color: #fff;
+  box-shadow: 0 3px 10px rgba(109,40,217,.32);
+}
+.ctc-cp-tab:disabled { cursor: not-allowed; opacity: .8; }
+.ctc-cp-tab-n {
+  min-width: 22px; height: 20px; padding: 0 6px; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: rgba(124,58,237,.12); color: #6D28D9;
+}
+.ctc-cp-tab.is-on .ctc-cp-tab-n { background: rgba(255,255,255,.22); color: #fff; }
+.ctc-cp-tab-added {
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px;
+  border-radius: 10px; font-size: 10px; font-weight: 700;
+  color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0;
+}
+.ctc-cp-modal.is-dark .ctc-cp-tabs { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.18); }
+.ctc-cp-modal.is-dark .ctc-cp-tab:hover:not(:disabled):not(.is-on) { background: rgba(167,139,250,.12); color: #ddd6fe; }
+.ctc-cp-modal.is-dark .ctc-cp-tab-n { background: rgba(167,139,250,.16); color: #c4b5fd; }
+.ctc-cp-modal.is-dark .ctc-cp-tab-added { color: #6ee7b7; background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.35); }
+
+/* ── Search ── 40px, the house violet focus ring. */
+.ctc-cp-search { position: relative; flex: 0 0 auto; }
+.ctc-cp-search-ico { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #A78BFA; pointer-events: none; }
+.ctc-cp-search-in {
+  width: 100%; height: 40px; box-sizing: border-box; padding: 0 36px 0 36px;
+  border: 1.5px solid var(--cp-border); border-radius: 10px;
+  background: var(--cp-field); color: var(--cp-text);
+  font-family: inherit; font-size: 13px; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.ctc-cp-search-in::placeholder { color: var(--cp-muted); opacity: .85; }
+.ctc-cp-search-in:focus { border-color: #8B5CF6; box-shadow: 0 0 0 3px rgba(139,92,246,.16); }
+
+/* ── Category rule ── said up front, not only when a list comes back empty. */
+.ctc-cp-rule {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 8px 11px; border-radius: 9px;
+  font-size: 11.5px; font-weight: 500; line-height: 1.4; color: #5B21B6;
+  background: var(--cp-tint); border: 1px dashed #D8CCFB;
+}
+.ctc-cp-rule svg { flex-shrink: 0; color: #7C3AED; }
+.ctc-cp-rule strong { font-weight: 700; }
+.ctc-cp-modal.is-dark .ctc-cp-rule { color: #ddd6fe; border-color: rgba(167,139,250,.35); }
+.ctc-cp-modal.is-dark .ctc-cp-rule svg { color: #c4b5fd; }
+
+/* ── List ── 58px rows 2px apart; five rows (5 x 58 + 4 x 2 = 298) then it
+   scrolls on a thin violet bar. The vh guard keeps the card on short screens. */
+.ctc-cp-list {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; max-height: min(50vh, 298px);
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0 -6px; padding: 0 6px;
+  scrollbar-width: thin; scrollbar-color: rgba(124,58,237,.35) transparent;
+}
+.ctc-cp-list::-webkit-scrollbar { width: 6px; }
+.ctc-cp-list::-webkit-scrollbar-track { background: transparent; }
+.ctc-cp-list::-webkit-scrollbar-thumb { background: rgba(124,58,237,.3); border-radius: 6px; }
+.ctc-cp-list::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.5); }
 .ctc-cp-row {
+  position: relative; flex: 0 0 58px; height: 58px; box-sizing: border-box;
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-radius: 10px; cursor: pointer;
-  background: transparent;
-  transition: background .14s ease;
+  padding: 0 12px 0 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid transparent; background: transparent;
+  transition: background .14s ease, border-color .14s ease;
 }
-.ctc-cp-row:hover { background: #F5F0FF; }
-[data-bs-theme="dark"] .ctc-cp-row:hover { background: rgba(124,58,237,.14); }
-/* The chevron is the only thing that says a row is clickable; it rides in on
-   hover so a still list stays quiet. */
-.ctc-cp-chev {
-  color: #7C3AED; opacity: 0;
-  transition: opacity .14s ease, transform .14s ease;
+/* A 3px violet bar on the left edge marks the row under the pointer. */
+.ctc-cp-row::before {
+  content: ''; position: absolute; left: 0; top: 11px; bottom: 11px; width: 3px;
+  border-radius: 0 3px 3px 0; background: #7C3AED; opacity: 0; transition: opacity .14s ease;
 }
-.ctc-cp-row:hover .ctc-cp-chev { opacity: 1; transform: translateX(2px); }
-[data-bs-theme="dark"] .ctc-cp-chev { color: #c4b5fd; }
+.ctc-cp-row:hover { background: var(--cp-tint); border-color: var(--cp-tint-bd); }
+.ctc-cp-row:hover::before { opacity: 1; }
+.ctc-cp-modal.is-dark .ctc-cp-row::before { background: #a78bfa; }
+.ctc-cp-av {
+  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2);
+}
+.ctc-cp-av span { font-size: 11px; font-weight: 800; color: #fff; letter-spacing: .02em; }
+.ctc-cp-main { flex: 1 1 auto; min-width: 0; }
+.ctc-cp-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ctc-cp-code {
+  flex-shrink: 0; font-family: 'Geist Mono', monospace; font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+  padding: 2px 7px; border-radius: 6px;
+  color: var(--cp-fg); background: var(--cp-bg); border: 1px solid var(--cp-bd);
+}
+.ctc-cp-name {
+  display: block; min-width: 0; font-size: 13px; font-weight: 700; color: var(--cp-strong);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ctc-cp-mail {
+  margin-top: 4px; font-size: 11px; font-weight: 500; color: var(--cp-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ctc-cp-side { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+.ctc-cp-country {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 150px; height: 24px; box-sizing: border-box;
+  padding: 0 10px; border-radius: 12px; font-size: 10.5px; font-weight: 700;
+  color: var(--cp-fg); background: var(--cp-bg); border: 1px solid var(--cp-bd);
+}
+.ctc-cp-country span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctc-cp-nocountry { font-size: 10.5px; color: var(--cp-muted); }
+/* The chevron stays faintly in view so every row reads as clickable, and
+   steps forward in violet on hover. */
+.ctc-cp-chev { color: var(--cp-muted); opacity: .4; transition: opacity .14s ease, transform .14s ease, color .14s ease; }
+.ctc-cp-row:hover .ctc-cp-chev { opacity: 1; color: #7C3AED; transform: translateX(2px); }
+.ctc-cp-modal.is-dark .ctc-cp-row:hover .ctc-cp-chev { color: #c4b5fd; }
+
+/* ── Empty / loading ── */
+.ctc-cp-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 30px 16px; text-align: center; font-size: 12px; color: var(--cp-muted);
+}
+.ctc-cp-empty-ico {
+  width: 44px; height: 44px; border-radius: 12px; margin-bottom: 4px;
+  display: flex; align-items: center; justify-content: center;
+  color: #7C3AED; background: var(--cp-tint); border: 1px solid var(--cp-tint-bd);
+}
+.ctc-cp-empty-t { font-size: 13px; font-weight: 700; color: var(--cp-strong); }
+.ctc-cp-empty-s { font-size: 11.5px; max-width: 360px; line-height: 1.5; }
+.ctc-cp-spin {
+  display: inline-block; width: 18px; height: 18px; margin-bottom: 4px; border-radius: 50%;
+  border: 2px solid rgba(124,58,237,.2); border-top-color: #7C3AED;
+  animation: ctc-cp-spin .7s linear infinite;
+}
+@keyframes ctc-cp-spin { to { transform: rotate(360deg); } }
+.ctc-cp-modal.is-dark .ctc-cp-empty-ico { color: #c4b5fd; }
+
+/* ── Confirm step ── the picked party as a card, then the "referred as" field. */
+.ctc-cp-picked {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: 12px; background: var(--cp-tint); border: 1px solid var(--cp-tint-bd);
+}
+/* The party type in the tab's own colour (cyan Customer, violet Consignee,
+   green Supplier) - filled, so it reads apart from the outlined code chip and
+   country pill beside it, but in the same family. */
+.ctc-cp-type {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px;
+  font-size: 10.5px; font-weight: 700; color: #fff;
+  background: var(--cp-fg);
+}
+.ctc-cp-modal.is-dark .ctc-cp-type { color: var(--cp-fg); background: var(--cp-bg); border: 1px solid var(--cp-bd); }
+.ctc-cp-body--confirm { gap: 8px; }
+.ctc-cp-field { display: flex; flex-direction: column; gap: 6px; }
+.ctc-cp-label { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--cp-sub); margin: 0; }
+.ctc-cp-input {
+  width: 100%; height: 40px; box-sizing: border-box; padding: 0 12px;
+  border: 1.5px solid var(--cp-border); border-radius: 10px;
+  background: var(--cp-field); color: var(--cp-text);
+  font-family: inherit; font-size: 13px; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.ctc-cp-input::placeholder { color: var(--cp-muted); opacity: .8; }
+.ctc-cp-input:focus { border-color: #8B5CF6; box-shadow: 0 0 0 3px rgba(139,92,246,.16); }
+.ctc-cp-hint { font-size: 10.5px; color: var(--cp-muted); line-height: 1.45; }
+
+/* ── Footer ── count on the left, 40px buttons on the right (Back left /
+   Confirm right on the confirm step). */
+.ctc-cp-foot {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-top: 1px solid var(--cp-line);
+  background: var(--cp-surface);
+}
+.ctc-cp-count { font-size: 12px; color: var(--cp-muted); }
+.ctc-cp-count b { font-weight: 700; color: var(--cp-strong); font-variant-numeric: tabular-nums; }
+.ctc-cp-btn {
+  height: 40px; box-sizing: border-box; padding: 0 18px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .15s;
+}
+.ctc-cp-btn--ghost { background: var(--cp-surface); color: #5B21B6; border: 1.5px solid #DDD6FE; }
+.ctc-cp-btn--ghost:hover { background: #F5F0FF; border-color: #C4B5FD; }
+.ctc-cp-btn--primary {
+  border: 0; color: #fff; padding: 0 20px;
+  background: linear-gradient(135deg, #6D28D9, #7C3AED);
+  box-shadow: 0 4px 14px rgba(109,40,217,.34);
+}
+.ctc-cp-btn--primary:hover { box-shadow: 0 6px 18px rgba(109,40,217,.42); transform: translateY(-1px); }
+.ctc-cp-modal.is-dark .ctc-cp-btn--ghost { background: transparent; color: #ddd6fe; border-color: rgba(167,139,250,.35); }
+.ctc-cp-modal.is-dark .ctc-cp-btn--ghost:hover { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.55); }
+
+@media (max-width: 560px) {
+  .ctc-cp-tab { font-size: 11.5px; gap: 5px; }
+  .ctc-cp-country { max-width: 96px; }
+  .ctc-cp-body { padding: 12px 12px 10px; }
+  .ctc-cp-foot { padding: 10px 12px; }
+}
 /* ── Mobile / narrow-screen layout ─────────────────────────────────────────
    The workspace is a desktop-first 3-panel flex row locked to 100vh. Below
    820px that crushes each panel to ~1/3 width (unusable), so here we: unlock
