@@ -161,6 +161,8 @@ export default function HrCandidates() {
   const [sampleOpen, setSampleOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  /* Which row's CV is downloading — the whole row is disabled until it ends. */
+  const [downloadingCvId, setDownloadingCvId] = useState<number | null>(null);
 
   const [confirming, setConfirming] = useState<{ row: CandidateRow; mode: 'select' | 'reject' } | null>(null);
 
@@ -371,6 +373,7 @@ export default function HrCandidates() {
         <CvCell
           candidate={info.row.original}
           onUploaded={(updated) => setCandidates(prev => prev.map(r => r.id === updated.id ? updated : r))}
+          onDownloadingChange={(busy) => setDownloadingCvId(busy ? info.row.original.id : null)}
         />
       ),
     },
@@ -657,6 +660,7 @@ export default function HrCandidates() {
                  viewport served a two-row page. */
               minAutoRows={10}
               loading={loading}
+              rowClassName={(row) => row.id === downloadingCvId ? 'cand-row-busy' : undefined}
               searchValue={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search name, email, mobile…"
@@ -1138,10 +1142,11 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
 }
 
 function CvCell({
-  candidate, onUploaded,
+  candidate, onUploaded, onDownloadingChange,
 }: {
   candidate: CandidateRow;
   onUploaded: (updated: CandidateRow) => void;
+  onDownloadingChange?: (busy: boolean) => void;
 }) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -1152,6 +1157,7 @@ function CvCell({
     const handleDownload = async () => {
       if (downloading) return;
       setDownloading(true);
+      onDownloadingChange?.(true);
       try {
         const resp = await api.get(`/candidates/${candidate.id}/cv`, { responseType: 'blob' });
         const blob = resp.data as Blob;
@@ -1168,6 +1174,7 @@ function CvCell({
         toast.error('Could not download CV', err?.response?.data?.message || 'Please try again.');
       } finally {
         setDownloading(false);
+        onDownloadingChange?.(false);
       }
     };
     return (
@@ -1186,7 +1193,7 @@ function CvCell({
         {downloading
           ? <Spinner size="sm" style={{ width: 12, height: 12, marginRight: 2 }} />
           : <i className="ri-download-line" />}
-        <span>{downloading ? 'Downloading…' : 'CV'}</span>
+        <span>CV</span>
       </button>
     );
   }
