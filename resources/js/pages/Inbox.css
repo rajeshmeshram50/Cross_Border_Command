@@ -38,6 +38,10 @@
 .ib-tab-btn.is-active .ib-tab-count {
   background: rgba(255,255,255,.25); color: #fff;
 }
+/* Dark: unselected tabs get a faint fill and no outline - the border-colour
+   hairline drew a box round each one (QA #42). The selected tab keeps its tone. */
+[data-bs-theme="dark"] .ib-tab-btn:not(.is-active) { background: rgba(255,255,255,.04); border-color: transparent; }
+[data-bs-theme="dark"] .ib-tab-btn:not(.is-active):hover { background: rgba(255,255,255,.08); }
 
 .ib-head-chip {
   width: 32px; height: 32px; border-radius: 8px;

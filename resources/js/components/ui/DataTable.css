@@ -925,9 +925,11 @@
 [data-bs-theme="dark"] .dt-tab.off,
 [data-layout-mode="dark"] .dt-tab.off {
   color: var(--vz-secondary-color);
-  /* The light outline + white fill both glare here. */
-  background: rgba(255, 255, 255, .04);
-  border-color: rgba(255, 255, 255, .12);
+  /* No fill and no outline in dark: an unselected tab is the rail showing
+     through, so only the selected tab is an object. A .12 white outline here
+     drew a box round every tab (QA #42) - the HRMS rail already clears both. */
+  background: transparent;
+  border-color: transparent;
   box-shadow: none;
 }
 [data-bs-theme="dark"] .dt-tab.off:hover,
