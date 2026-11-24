@@ -387,7 +387,7 @@ export default function TemplateEditor({
                           that appears straight away beats the OS box that waits
                           a second and ignores dark mode. Carries the FULL label
                           and token, since both may be truncated on screen. */}
-                      <Tooltip label={`${f.label} — ${f.token}${tokenPreviews?.[f.token] ? ` → ${tokenPreviews[f.token]}` : ''}`}>
+                      <Tooltip label={`Click to insert, or drag into the document — ${f.token}`}>
                         <button
                           type="button"
                           className="tpl-token-btn"
