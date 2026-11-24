@@ -498,7 +498,11 @@ export default function IdimsHeader() {
     return order.map(id => hrGroups.filter(g => g.id === id)).filter(c => c.length);
   }, [hrGroups]);
 
-  const p2pCols: Group[][] = useMemo(() => P2P_GROUPS.map(g => [g as unknown as Group]), []);
+  const p2pCols: Group[][] = useMemo(() => (P2P_GROUPS as unknown as Group[])
+    .map(g => ({ ...g, children: g.children.filter(leaf => isSuperAdmin || !!perms[permSlugFor(leaf.id)]?.can_view) }))
+    .filter(g => g.children.length > 0)
+    .map(g => [g]),
+  [user]);
 
   const invCols: Group[][] = useMemo(
     () => INVENTORY_GROUPS.map(g => [g as unknown as Group]), [],
@@ -948,11 +952,16 @@ export default function IdimsHeader() {
                       <span className="idims-ico">{item.icon}</span>{item.label}
                       <span className="dd-chev">{IC.chevSm}</span>
                     </button>
-                    {openDD === item.dd && (
+                    {openDD === item.dd && (() => {
+                      // P2P with sections hidden by permission: fit the panel to what's left and
+                      // open it under the button (as Inventory does) instead of the full 4-column width.
+                      const p2pFit = item.dd === 'p2p' && p2pCols.length < P2P_GROUPS.length;
+                      const anchored = item.dd === 'inv' || p2pFit;
+                      return (
                       <div
-                        className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}${item.dd === 'inv' ? ' idims-dd-inv' : ''}`}
-                        ref={item.dd === 'inv' ? anchorDd : undefined}
-                        style={item.dd === 'inv' && ddAnchor
+                        className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? (p2pFit ? 'idims-dd-p2p-fit' : 'idims-dd-p2p') : ''}${item.dd === 'inv' ? ' idims-dd-inv' : ''}`}
+                        ref={anchored ? anchorDd : undefined}
+                        style={anchored && ddAnchor
                           ? { left: ddAnchor.left, top: ddAnchor.top, transform: 'none' }
                           : undefined}
                       >
@@ -963,19 +972,28 @@ export default function IdimsHeader() {
                               const acc = item.dd === 'p2p' ? P2P_ACCENT : COL_ACCENT;
                               const bgs = item.dd === 'p2p' ? P2P_BG : COL_BG;
                               const allCols = colsFor(item.dd!);
-                              const gridTpl = item.dd === 'p2p' && allCols.length > 1
-                                ? `repeat(${allCols.length - 1}, 1fr) 1.22fr`
-                                : `repeat(${allCols.length || 1}, 1fr)`;
+                              const gridTpl = p2pFit
+                                ? `repeat(${allCols.length || 1}, minmax(280px, max-content))`
+                                : item.dd === 'p2p' && allCols.length > 1
+                                  ? `repeat(${allCols.length - 1}, 1fr) 1.22fr`
+                                  : `repeat(${allCols.length || 1}, 1fr)`;
                               return (
                                 <div className="idims-dd-grid" style={{ gridTemplateColumns: gridTpl }}>
-                                  {allCols.map((groups, i) => renderCol(groups, item.dd!, acc[i], bgs[i], i))}
+                                  {allCols.map((groups, i) => {
+                                    // P2P columns can be removed, so colour each by its original group position.
+                                    const ci = item.dd === 'p2p'
+                                      ? Math.max(0, P2P_GROUPS.findIndex(pg => pg.id === groups[0]?.id))
+                                      : i;
+                                    return renderCol(groups, item.dd!, acc[ci], bgs[ci], ci);
+                                  })}
                                 </div>
                               );
                             })()
                           )}
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 ) : (
                   <button type="button" key={item.id}
@@ -1397,6 +1415,8 @@ const IDIMS_CSS = `
 /* P2P has 4 columns but compact content — narrower than the CLM/HR wide menu,
    yet roomy enough that the longer labels don't crowd. */
 .idims-dd-p2p { width: min(1320px, calc(100vw - 28px)); }
+/* P2P with some sections hidden by permission: width follows the sections left. */
+.idims-dd-p2p-fit { width: max-content; min-width: 320px; max-width: calc(100vw - 40px); }
 /* Inventory Management is a single column of four. At the shared 1060px it
    would be a strip of whitespace with the items stranded on the left, so it
    takes its width from its content, as the prototype's panel does. */
