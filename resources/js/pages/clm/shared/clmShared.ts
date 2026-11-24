@@ -1792,10 +1792,11 @@ body > .dropdown-menu.master-select-menu,
  * this rule was clobbering .clm-tab.active's white text (same specificity,
  * later in the cascade wins), leaving the active tab readable as a muddy
  * grey-blue against the teal gradient. */
-/* Dark: the light rule's accent wash, inverted — a translucent accent fill and
-   an accent label, as CTC does it, rather than the flat slate panel this used
-   to be. */
-[data-bs-theme="dark"] .clm-tab:not(.active) { color: #67e8f9; background: linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10)); border-color: rgba(6,182,212,.28); }
+/* Dark: the same as light - an unselected tab is transparent, no fill and no
+   border, with the accent as its ink, so only the selected tab is an object.
+   It used to be a filled chip under a .28 accent border, which read as every
+   tab being outlined (QA #38). */
+[data-bs-theme="dark"] .clm-tab:not(.active) { color: #67e8f9; background: transparent; border-color: transparent; }
 [data-bs-theme="dark"] .clm-tab.active { color: #fff; border-color: transparent; }
 /* Dark has no white to lift with, so the chip is the lightest surface the
    rail can carry — but the border goes here too, for the same reason. */

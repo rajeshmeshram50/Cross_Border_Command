@@ -187,7 +187,7 @@ const CSS = `
 [data-bs-theme="dark"] .bref-box__header-sub   { color: #7dd3fc !important; }
 [data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
 [data-bs-theme="dark"] .bpa-seg { background: rgba(6,182,212,.10) !important; border-color: rgba(6,182,212,.22) !important; }
-[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: linear-gradient(135deg,rgba(6,182,212,.16),rgba(6,182,212,.10)) !important; border-color: rgba(6,182,212,.3) !important; }
+[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; }
 /* light cyan gradient strips / surfaces (matched by their distinctive stop
  * colours) → dark */
 /* NOTE: browsers serialise inline hex colours as rgb() in the style
@@ -315,9 +315,10 @@ const spWosLogiData: PartyRow[] = [
 /* ───────────────────────── Shared styles ───────────────────────── */
 const TH: CSSProperties = {
   padding: '9px 10px',
-  fontSize: '7px',
+  /* 9.5px/800 at .07em - the house table header (DataTable.css, Customers). */
+  fontSize: '9.5px',
   fontWeight: 800,
-  letterSpacing: '.09em',
+  letterSpacing: '.07em',
   textTransform: 'uppercase',
   color: '#0891b2',
   opacity: 0.85,

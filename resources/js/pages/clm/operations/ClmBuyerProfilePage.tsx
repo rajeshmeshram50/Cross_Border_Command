@@ -400,7 +400,15 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bref-box__header-sub   { color: #7dd3fc !important; }
 [data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
 [data-bs-theme="dark"] .bpa-seg { background: rgba(6,182,212,.10) !important; border-color: rgba(6,182,212,.22) !important; }
-[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: linear-gradient(135deg,rgba(6,182,212,.16),rgba(6,182,212,.10)) !important; border-color: rgba(6,182,212,.3) !important; }
+/* Dark unselected tabs are transparent, no fill and no border, same as light -
+   only the selected tab is an object (QA #40/#42). .bpx-tab is the
+   International/Domestic pair, which the light-fill catch-all above was
+   turning into a navy chip. */
+[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; }
+[data-bs-theme="dark"] .seg-page .bpx-tab:not(:hover),
+[data-bs-theme="dark"] .bcm-overlay .bpx-tab:not(:hover) { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+[data-bs-theme="dark"] .seg-page .bpx-tab:hover,
+[data-bs-theme="dark"] .bcm-overlay .bpx-tab:hover { color: #a5f3fc !important; background: rgba(255,255,255,.08) !important; border-color: transparent !important; box-shadow: 0 2px 6px rgba(0,0,0,.35) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(224, 249, 253)"],
 [data-bs-theme="dark"] .seg-page .bpx-9,
 [data-bs-theme="dark"] .seg-page [style*="rgb(206, 248, 255)"],
@@ -595,11 +603,14 @@ const BP_CSS = `
 }
 `;
 
+/* 9.5px/800 at .07em - the house table header (DataTable.css .dt-table thead
+   th, the Customers table). 7px read as a third of the size of the same
+   header in every other module. */
 const thStyle: CSSProperties = {
-  padding: '9px 10px', fontSize: '7px', fontWeight: 800, letterSpacing: '.09em',
+  padding: '9px 10px', fontSize: '9.5px', fontWeight: 800, letterSpacing: '.07em',
   textTransform: 'uppercase', color: '#0891b2', opacity: .85, whiteSpace: 'nowrap',
 };
-const thTxt: CSSProperties = { fontSize: '7px', fontWeight: 800, letterSpacing: '.09em', textTransform: 'uppercase', color: '#0891b2', opacity: .85 };
+const thTxt: CSSProperties = { fontSize: '9.5px', fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: '#0891b2', opacity: .85 };
 
 /* The KPI tile, as the employee list builds it (HrEmployees.tsx, KPI_CARDS) and
    as Agreements We Sent and Agreements To Approve now do: a 3px accent rule
