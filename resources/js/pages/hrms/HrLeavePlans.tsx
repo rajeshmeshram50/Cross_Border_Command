@@ -2793,14 +2793,14 @@ function CheckRow({
   const inert = locked || disabled;
   return (
     <div className="lts-check-row" style={disabled ? { opacity: 0.55 } : undefined}>
-      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: inert ? 'default' : 'pointer' }}>
+      <label className={`d-flex gap-2 mb-0 ${sub ? 'align-items-start' : 'align-items-center'}`} style={{ cursor: inert ? 'default' : 'pointer' }}>
         <input
           type="checkbox"
-          className="form-check-input mt-1"
+          className={`form-check-input ${sub ? 'mt-1' : ''}`}
           checked={locked ? true : checked}
           disabled={inert}
           onChange={e => { if (!inert) onChange(e.target.checked); }}
-          style={{ accentColor: '#7c5cfc' }}
+          style={{ accentColor: '#7c5cfc', marginTop: sub ? undefined : 0, flexShrink: 0 }}
         />
         <div className="flex-grow-1 min-w-0">
           <div className="fw-semibold d-flex align-items-center gap-1" style={{ fontSize: 13 }}>
