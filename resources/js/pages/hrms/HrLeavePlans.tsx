@@ -2793,12 +2793,10 @@ function CheckRow({
   const inert = locked || disabled;
   return (
     <div className="lts-check-row" style={disabled ? { opacity: 0.55 } : undefined}>
-      {/* Single-line rows (incl. ones with an inline number input) centre the
-         box with the label; only multi-line rows (with `sub`) top-align it. */}
-      <label className={`d-flex gap-2 mb-0 ${sub ? 'align-items-start' : 'align-items-center'}`} style={{ cursor: inert ? 'default' : 'pointer' }}>
+      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: inert ? 'default' : 'pointer' }}>
         <input
           type="checkbox"
-          className={`form-check-input ${sub ? 'mt-1' : ''}`}
+          className="form-check-input mt-1"
           checked={locked ? true : checked}
           disabled={inert}
           onChange={e => { if (!inert) onChange(e.target.checked); }}
