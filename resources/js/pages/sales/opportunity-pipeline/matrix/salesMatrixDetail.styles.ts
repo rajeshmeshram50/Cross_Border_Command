@@ -1030,8 +1030,20 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border: 1.5px solid #c4b5fd;
   border-radius: 8px;
   color: #5b21b6;
-  padding: 5px 10px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
 }
+.smd-deal-form .smd-input,
+.smd-deal-form .master-datepicker-toggle {
+  height: 34px;
+  min-height: 34px;
+  box-sizing: border-box;
+}
+.smd-deal-form .master-datepicker-toggle :is(.master-datepicker-value, .master-datepicker-placeholder) {
+  font-size: 11px;
+}
+.smd-deal-form .master-datepicker-value { font-weight: 600; }
 .smd-deal-form .master-datepicker-toggle.open {
   border-color: #7c3aed;
   background: #ede9fe;

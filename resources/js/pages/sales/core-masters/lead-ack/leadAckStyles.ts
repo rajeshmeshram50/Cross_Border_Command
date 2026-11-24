@@ -262,6 +262,23 @@ export const LEAD_ACK_CSS = `
    global rule bleeds -16px into a padded wrap; this card has no padding, so
    pin the band flush inside the rounded card (same reset as SalesCustomers). */
 .lam-table-card .tc-wl-pag { margin: 0; }
+.lam-table-card {
+  --tcwl-accent: #7c3aed;
+  --tcwl-text: #6d28d9;
+  --tcwl-border: #ddd6fe;
+  --tcwl-band: #f5f3ff;
+  --tcwl-range-bg: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #6d28d9 100%);
+  --tcwl-glow: rgba(124, 58, 237, .4);
+}
+[data-bs-theme="dark"] .lam-table-card {
+  --tcwl-text-dark: #c4b5fd;
+  --tcwl-border-dark: rgba(167, 139, 250, .35);
+}
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-btn { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu { background: #1a1530; border-color: rgba(167, 139, 250, .35); }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu button { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu button:hover { background: rgba(124, 58, 237, .22); color: #fff; }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu button.is-on { background: #7c3aed; color: #fff; }
 
 /* ─── Modals (opp selector + form) — overlay scrolls when the
    modal body taller than the viewport (long forms on small

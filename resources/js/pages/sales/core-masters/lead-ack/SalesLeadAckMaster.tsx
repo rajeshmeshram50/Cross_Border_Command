@@ -11,6 +11,7 @@ import { LEAD_ACK_CSS, LEAD_ACK_CSS_TEAL } from './leadAckStyles';
 import '../../../p2p/p2p-common.css';
 import LeadAckReasonModal, { LEAD_ACK_TYPE_LABELS, type OppType, type LeadAckReason as Reason } from './LeadAckReasonModal';
 import MasterBackButton from '../../../../components/ui/MasterBackButton';
+import { RowsPerPageSelect } from '../../../../components/ui/TablePager';
 
 type GroupedReasons = {
   qualified: Reason[];
@@ -433,15 +434,11 @@ export default function SalesLeadAckMaster({ variant = 'violet' }: { variant?: '
           <div className="tc-wl-right">
             <span className="tc-wl-rows">
               Rows per page:
-              <select
-                value={rpp}
-                onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}
-                aria-label="Rows per page"
-              >
-                {[...new Set([rpp, 5, 10, 15, 25, 50])].sort((a, b) => a - b).map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
+              <RowsPerPageSelect
+                pageSize={rpp}
+                options={[5, 10, 15, 25, 50]}
+                onChange={n => { autoFitRef.current = false; setRpp(n); setPage(1); }}
+              />
             </span>
             <span className="tc-wl-range">{safePage} / {pages}</span>
             <div className="tc-wl-nav">
