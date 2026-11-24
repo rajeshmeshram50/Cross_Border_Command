@@ -1946,7 +1946,7 @@ export default function AddProductModal(props: {
                         {vendorIsIntl ? <IcoGlobe /> : <IcoFlag />}
                         Supplier Details
                       </div>
-                      <div className="apm-grid-3">
+                      <div className="apm-mv-grid apm-mv-grid-sup">
                         <Field
                           label="Supplier Name"
                           required
@@ -2015,7 +2015,7 @@ export default function AddProductModal(props: {
                         {vendorIsIntl ? 'Price & Currency' : 'Price & GST'}
                         {vendorIsIntl && <span className="apm-mv-sec-note">No GST — overseas supplier</span>}
                       </div>
-                      <div className="apm-grid-12">
+                      <div className="apm-mv-grid">
                         {vendorIsIntl ? (
                           <>
                             {/* No GST: an overseas supplier does not charge it. The

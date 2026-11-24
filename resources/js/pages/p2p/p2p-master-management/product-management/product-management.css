@@ -5630,7 +5630,6 @@ body.apm-supplier-wizard-open .avm-qa-backdrop,
 body.apm-supplier-wizard-open .avm-cp-backdrop {
   z-index: 1210;
 }
-
 /* Map Supplier's Domestic / International chooser.
    It is opened FROM the Mapped Suppliers popup (.apm-sup-overlay 1095), so the
    gate's own 1090 put it behind the thing that launched it. Lifted above that
@@ -8016,6 +8015,10 @@ body.apm-map-gate-open .supch-ov {
   margin-top: 16px;
 }
 
+.apm-mv-popup .apm-field-label {
+  min-height: 22px;
+}
+
 /* "Auto" chip beside the label of a field the form fills in itself. */
 .apm-auto-chip {
   display: inline-flex;
@@ -8078,21 +8081,43 @@ body.apm-map-gate-open .supch-ov {
   flex-shrink: 0;
 }
 
-/* Price row: a 12-column track, each field spanning 3, so the four price
-   fields sit on one line instead of leaving Total alone underneath. */
-.apm-grid-12 {
+/* QA #98: both sections on ONE 4-column track, so every column edge in
+   Supplier Details lines up with Purchase Price / GST % / GST Amount / Total
+   below (a 3-column grid over a 4-column one left the price fields looking
+   uneven). Supplier Name, the long dropdown, takes two columns. minmax(0, 1fr)
+   keeps the columns equal whatever the placeholders' widths. */
+.apm-mv-grid {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
-.apm-grid-12 > .apm-field {
-  grid-column: span 3;
+.apm-mv-grid > .apm-field {
   min-width: 0;
 }
 
-.apm-grid-12 + .apm-mv-sec {
+.apm-mv-grid-sup > .apm-field:first-child {
+  grid-column: span 2;
+}
+
+.apm-mv-grid + .apm-mv-sec {
   margin-top: 16px;
+}
+
+@media (max-width: 880px) {
+  .apm-mv-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .apm-mv-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .apm-mv-grid-sup > .apm-field:first-child {
+    grid-column: auto;
+  }
 }
 
 /* Section mark, and the rule-side note ("No GST — overseas supplier"). */
