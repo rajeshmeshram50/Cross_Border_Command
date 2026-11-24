@@ -1354,6 +1354,14 @@ const IDIMS_CSS = `
 .idims-nav-btn.is-current::after { width: 100%; opacity: 1; }
 .dd-chev { display: flex; align-items: center; opacity: .45; transition: transform .18s, opacity .13s; margin-left: 2px; }
 .idims-nav-btn.dd-open .dd-chev { transform: rotate(180deg); opacity: .9; }
+/* One selected item at a time. While a menu is open, the open item is the
+   selection; the current page's item drops back to rest until it closes,
+   instead of both carrying the colour and the underline. !important to beat
+   the Brand rules (.idims-brand ... color: var(--bp) !important). */
+.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover) { font-weight: 500; color: #5B6478 !important; }
+.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover) .idims-ico { color: #A2ABBD !important; }
+.idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover)::after { width: 0; opacity: 0; }
+.idims-dark .idims-nav-items:has(.idims-nav-btn.dd-open) .idims-nav-btn.is-current:not(.dd-open):not(:hover) { color: #9CA3AF !important; }
 
 .idims-dropdown { position: fixed; top: 116px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 48px)); max-height: calc(100vh - 128px); display: flex; flex-direction: column; background: #fff; border: 1.5px solid #E8ECF5; border-radius: 18px; box-shadow: 0 24px 70px rgba(15,23,42,.28); z-index: 1050; overflow: hidden; animation: idimsDD .18s cubic-bezier(.22,1,.36,1) both; }
 .idims-dd-wide { width: min(1480px, calc(100vw - 28px)); }
