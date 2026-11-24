@@ -1923,6 +1923,18 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-input,
 [data-bs-theme="dark"] .clm-textarea,
 [data-bs-theme="dark"] .clm-select { background-color: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
+/* The light field's lit top edge (inset 0 1px 0 white .9, at rest AND on
+   focus) was never cleared in dark, so every CLM form field - the KYC name,
+   which opens focused, most visibly - drew a white line along its top. Dark
+   gets a .05 sheen, a dark drop, and the teal ring on focus. */
+[data-bs-theme="dark"] .clm-input,
+[data-bs-theme="dark"] .clm-textarea,
+[data-bs-theme="dark"] .clm-select { box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 1px 3px rgba(0,0,0,.25); }
+[data-bs-theme="dark"] .clm-input:focus,
+[data-bs-theme="dark"] .clm-textarea:focus,
+[data-bs-theme="dark"] .clm-select:focus { border-color: #22d3ee; box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 0 3px rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .clm-input::placeholder,
+[data-bs-theme="dark"] .clm-textarea::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .clm-btn-cancel { background: #1e293b; border-color: #334155; color: #cbd5e1; }
 [data-bs-theme="dark"] .clm-btn-cancel:hover:not(:disabled) { background: rgba(8,145,178,.16); border-color: #0891b2; color: #67e8f9; box-shadow: 0 4px 12px rgba(8,145,178,.28); }
 
@@ -2085,12 +2097,21 @@ body > .dropdown-menu.master-select-menu,
  * row visibly white. We also paint each th explicitly so the cells
  * pick up the dark band even when the row's own background is hidden
  * behind any default browser th rule. */
+/* Opaque: the th is sticky, and the old rgba(8,145,178,.22) band let the
+ * rows scrolling under it show through - codes, names and the row checkbox
+ * read on top of the headings. Same teal tint, laid over a solid base, and
+ * the labels in the CLM dark header ink. */
 [data-bs-theme="dark"] .dcp-thead-row,
 [data-bs-theme="dark"] .dcp-thead-row > th {
-  background: rgba(8,145,178,.22) !important;
-  border-bottom-color: rgba(6,182,212,.30) !important;
+  background: linear-gradient(rgba(8,145,178,.22), rgba(8,145,178,.22)), #0f1c2b !important;
+  border-bottom: 1px solid rgba(34,211,238,.28) !important;
 }
-[data-bs-theme="dark"] .dcp-thead-row > th > span { color: #cffafe !important; }
+[data-bs-theme="dark"] .dcp-thead-row > th > span { color: #67e8f9 !important; }
+/* Checkboxes: a white box on the dark row. Dark field, teal hairline; the
+ * checked / indeterminate gradient is the same in both modes. */
+[data-bs-theme="dark"] .clm-doc-check-box { background: rgba(15,23,42,.9); border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .clm-doc-check input:checked + .clm-doc-check-box,
+[data-bs-theme="dark"] .clm-doc-check-box.is-indet { background: linear-gradient(135deg,#06b6d4,#0891b2); border-color: #22d3ee; }
 
 /* Stage 2 — Mandatory / Optional segmented buttons. Unselected state uses
  * an inline rgba(248,250,252,.8) bg + #94a3b8 text — both light-mode

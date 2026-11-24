@@ -468,6 +468,13 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page .bpx-94 ,
 [data-bs-theme="dark"] .seg-page .bpx-100 ,
 [data-bs-theme="dark"] .seg-page .bpx-101 { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+/* The search's light-mode lit top edge (inset 0 1px 0 white .95) survived the
+   dark fill above and drew a white line along the top (QA #39). Dark gets the
+   .clm-search treatment instead: a .06 sheen, and the teal ring on focus. */
+[data-bs-theme="dark"] .seg-page .bpx-62,
+[data-bs-theme="dark"] .bcm-overlay .bpx-62 { box-shadow: inset 0 1px 0 rgba(255,255,255,.06) !important; }
+[data-bs-theme="dark"] .seg-page .bpx-62:focus-within,
+[data-bs-theme="dark"] .bcm-overlay .bpx-62:focus-within { border-color: #22d3ee !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 3px rgba(6,182,212,.20) !important; }
 /* The two scope toggles' rails — International/Domestic Customers and the
    same pair for Transactions. Both carry a near-white gradient with
    !important, and the only dark rule that named them set border-color, so the
