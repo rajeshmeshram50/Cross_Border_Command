@@ -615,7 +615,7 @@ export default function Permissions() {
                   )}
                   <Button
                     color="primary"
-                    className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+                    className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
                     disabled={saving || !activeId}
                     onClick={handleSave}
                     style={{
@@ -634,7 +634,7 @@ export default function Permissions() {
                       </>
                     ) : (
                       <>
-                        <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                        <i className="ri-shield-check-line align-middle fs-16"></i>
                         Save Permissions
                       </>
                     )}
@@ -833,7 +833,7 @@ export default function Permissions() {
                   </span>
                   <Button
                     color="primary"
-                    className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+                    className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
                     disabled={saving || !activeId}
                     onClick={handleSave}
                     style={{
@@ -851,7 +851,7 @@ export default function Permissions() {
                       </>
                     ) : (
                       <>
-                        <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                        <i className="ri-shield-check-line align-middle fs-16"></i>
                         Save Permissions
                       </>
                     )}

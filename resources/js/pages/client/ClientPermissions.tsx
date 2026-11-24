@@ -151,7 +151,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
               <Col className="text-end">
                 <Button
                   color="primary"
-                  className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+                  className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
                   onClick={handleSave}
                   disabled={saving}
                   style={{ minWidth: 180, justifyContent: 'center' }}
@@ -163,7 +163,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
                     </>
                   ) : (
                     <>
-                      <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      <i className="ri-shield-check-line align-middle fs-16"></i>
                       Save Permissions
                     </>
                   )}
@@ -186,7 +186,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
             </span>
             <Button
               color="primary"
-              className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+              className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
               onClick={handleSave}
               disabled={saving}
               style={{ minWidth: 180, justifyContent: 'center' }}
@@ -198,7 +198,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
                 </>
               ) : (
                 <>
-                  <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                  <i className="ri-shield-check-line align-middle fs-16"></i>
                   Save Permissions
                 </>
               )}
