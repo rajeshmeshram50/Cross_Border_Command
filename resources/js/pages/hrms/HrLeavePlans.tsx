@@ -862,7 +862,12 @@ export default function HrLeavePlans() {
                     />
                     <SearchClear show={planSearch} onClear={() => { setPlanSearch(''); }} />
                   </div>
-                  <div className="lp-section-label">LEAVE PLANS</div>
+                  <div className="lp-section-label">
+                    <span>LEAVE PLANS</span>
+                    {!hasMorePlans && planTotal > 0 && (
+                      <span className="lp-plan-count-note">{planTotal} {planTotal === 1 ? 'plan' : 'plans'}</span>
+                    )}
+                  </div>
                   <div className="lp-plan-list">
                     {filteredPlans.map(p => (
                       <button
@@ -895,13 +900,6 @@ export default function HrLeavePlans() {
                       </div>
                     )}
                   </div>
-                  {/* Only once the whole set is in hand — a count that keeps
-                      changing while more loads is noise. */}
-                  {!hasMorePlans && planTotal > 0 && (
-                    <div className="lp-plan-count-note">
-                      {planTotal} {planTotal === 1 ? 'plan' : 'plans'}
-                    </div>
-                  )}
                   {canAdd && (
                     <button
                       type="button"
@@ -1248,6 +1246,10 @@ function ConfigurationTab({
         subtitle="Quota and year-end rule for each leave type on this plan"
         accent="violet"
         minWidth={760}
+        /* Fill to 8px above the footer instead of hugging the rows, so the
+           panel doesn't leave a big blank below a short list. */
+        fitToViewport
+        fillToFooter
         emptyMessage="No leave types yet — use “+ Assign Leave Type” to configure categories for this plan."
       />    </div>
   );
@@ -2791,10 +2793,12 @@ function CheckRow({
   const inert = locked || disabled;
   return (
     <div className="lts-check-row" style={disabled ? { opacity: 0.55 } : undefined}>
-      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: inert ? 'default' : 'pointer' }}>
+      {/* Single-line rows (incl. ones with an inline number input) centre the
+         box with the label; only multi-line rows (with `sub`) top-align it. */}
+      <label className={`d-flex gap-2 mb-0 ${sub ? 'align-items-start' : 'align-items-center'}`} style={{ cursor: inert ? 'default' : 'pointer' }}>
         <input
           type="checkbox"
-          className="form-check-input mt-1"
+          className={`form-check-input ${sub ? 'mt-1' : ''}`}
           checked={locked ? true : checked}
           disabled={inert}
           onChange={e => { if (!inert) onChange(e.target.checked); }}
