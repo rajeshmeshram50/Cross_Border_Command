@@ -2209,12 +2209,15 @@ status: facetParam(facets.status),
                a half-loaded cycle is the same mistake as running on one. */
             disabled={busy || loading || (cycleLocked && !canReopenCycle)}
             style={{
-              padding: '10px 18px',
-              fontSize: 13,
+              padding: '10px 15px',
+              fontSize: 12,
+              minWidth: 150,
+              justifyContent: 'center',
               color: '#fff',
               background: canReopenCycle
                 ? 'linear-gradient(135deg,#f7a325 0%,#d9820a 100%)'
                 : 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
+              border: 'none',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
               opacity: (busy || loading || (cycleLocked && !canReopenCycle)) ? 0.6 : 1,
             }}
