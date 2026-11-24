@@ -44,6 +44,18 @@ function MpKpiCards({ items }: { items: MpKpi[] }) {
   );
 }
 
+function createdDateText(raw: unknown): string {
+  if (!raw) return '';
+  const d = new Date(String(raw));
+  if (isNaN(d.getTime())) return '';
+  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const y = d.getFullYear();
+  const mon = months[d.getMonth()];
+  return [`${dd}-${mon}-${y}`, `${dd} ${mon} ${y}`, `${dd}/${mm}/${y}`, `${dd}-${mm}-${y}`, `${y}-${mm}-${dd}`].join(' | ');
+}
+
 type MpStatusTab = 'all' | 'active' | 'inactive';
 const mpStatusOf = (row: any): 'active' | 'inactive' =>
   String(row?.status ?? '').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active';
@@ -115,6 +127,7 @@ function MasterPageInner({
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(10);
   const [totalRows, setTotalRows] = useState(0);
+  const [serverCounts, setServerCounts] = useState<{ all: number; active: number; inactive: number } | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   useEffect(() => {
@@ -140,6 +153,11 @@ function MasterPageInner({
   };
   useEffect(() => () => window.clearTimeout(tabShimTimer.current), []);
   const hasStatus = cfg.slug !== 'roles' && cfg.fields.some(ff => ff.n === 'status');
+  const bumpCounts = (row: any, by: 1 | -1) => setServerCounts(c => c && ({
+    ...c,
+    all: Math.max(0, c.all + by),
+    [mpStatusOf(row)]: Math.max(0, c[mpStatusOf(row)] + by),
+  }));
   const matchesStatusTab = (row: any) => !hasStatus || statusTab === 'all' || mpStatusOf(row) === statusTab;
   const [kpiRoleFilter, setKpiRoleFilter] = useState<string>('all');
   const [kpiTargetFilter, setKpiTargetFilter] = useState<string>('all');
@@ -243,12 +261,13 @@ function MasterPageInner({
 
     const loadRecords = serverPaged
       ? api.get(masterEndpoint(cfg), {
-          params: { per_page: perPage, page: page + 1, q: debouncedSearch || undefined },
+          params: { per_page: perPage, page: page + 1, q: debouncedSearch || undefined, tz: debouncedSearch ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined },
         }).then(r => {
           if (aborted) return;
           const body: any = r.data ?? {};
           setRecords(Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : []));
           setTotalRows(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
+          setServerCounts(body.status_counts ?? null);
         }).catch(() => { if (!aborted) { setRecords([]); setTotalRows(0); } })
       : api.get(masterEndpoint(cfg)).then(r => {
           if (!aborted) setRecords(Array.isArray(r.data) ? r.data : []);
@@ -279,7 +298,7 @@ function MasterPageInner({
     return records;
   }, [records, user]);
 
-  const filteredRecords = useMemo(() => {
+  const searchMatched = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
     const isRole = cfg.slug === 'roles';
     const searchableKeys = [
@@ -303,8 +322,8 @@ function MasterPageInner({
           if (String(row.priority ?? '') !== kpiPriorityFilter) return false;
         }
       }
-      if (!matchesStatusTab(row)) return false;
       if (!q) return true;
+      if (createdDateText(row.created_at).includes(q)) return true;
       for (const key of searchableKeys) {
         const f = cfg.fields.find(ff => ff.n === key);
         const val = f?.ref ? resolveRefLabel(f.ref, f.refL, row[key]) : row[key];
@@ -312,7 +331,9 @@ function MasterPageInner({
       }
       return false;
     });
-  }, [records, searchInput, cfg, refData, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter, statusTab]);
+  }, [records, searchInput, cfg, refData, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter]);
+
+  const filteredRecords = useMemo(() => searchMatched.filter(matchesStatusTab), [searchMatched, statusTab, hasStatus]);
 
   const roleTabs = useMemo(() => {
     const isAncillary = (rt: string) => /ancillary|auxiliary|operational|administrative|functional/i.test(rt);
@@ -775,12 +796,14 @@ function MasterPageInner({
         const { data } = filesToUpload.length > 0
           ? await api.post(url, body, { headers })
           : await api.put(url, body);
+        if (editing && mpStatusOf(editing) !== mpStatusOf(data)) { bumpCounts(editing, -1); bumpCounts(data, 1); }
         setRecords(prev => prev.map(r => r.id === editingId ? data : r));
         toast.success('Updated', `${cfg.titleSingular || cfg.title} updated successfully`);
       } else {
         const { data } = await api.post(base, body, headers ? { headers } : undefined);
         setRecords(prev => [data, ...prev]);
         setTotalRows(t => t + 1);
+        bumpCounts(data, 1);
         toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }
       bustAllMasterBundles();
@@ -829,6 +852,7 @@ function MasterPageInner({
       await api.delete(`${masterEndpoint(cfg)}/${deleteTarget.id}`);
       setRecords(prev => prev.filter(r => r.id !== deleteTarget.id));
       setTotalRows(t => Math.max(0, t - 1));
+      bumpCounts(deleteTarget, -1);
       bustAllMasterBundles();
       toast.success('Deleted', `"${label}" removed successfully`);
       setDeleteOpen(false);
@@ -1379,9 +1403,14 @@ function MasterPageInner({
 
   const singular = cfg.titleSingular || cfg.title;
   const statusCounts = useMemo(() => {
-    const active = records.filter(r => mpStatusOf(r) === 'active').length;
-    return { all: serverPaged ? totalRows : records.length, active, inactive: records.length - active };
-  }, [records, serverPaged, totalRows]);
+    if (serverPaged) {
+      if (serverCounts) return serverCounts;
+      const active = records.filter(r => mpStatusOf(r) === 'active').length;
+      return { all: totalRows, active, inactive: records.length - active };
+    }
+    const active = searchMatched.filter(r => mpStatusOf(r) === 'active').length;
+    return { all: searchMatched.length, active, inactive: searchMatched.length - active };
+  }, [records, searchMatched, serverPaged, serverCounts, totalRows]);
 
   if (!caps.view) {
     return (

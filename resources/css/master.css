@@ -865,3 +865,48 @@ body:has(.master-modal) .master-select-menu[style*="min-width"] { width: 0 !impo
 [data-bs-theme="dark"] .mp-tealf .master-lock { background: rgba(11, 22, 38, .66); }
 [data-bs-theme="dark"] .mp-tealf .master-lock__box { color: #67e8f9; }
 [data-bs-theme="dark"] .mp-tealf .master-lock__spin { border-color: rgba(34, 211, 238, .2); border-top-color: #22d3ee; }
+
+.master-modal.mp-tealf .form-control:disabled,
+.master-modal.mp-tealf .form-select:disabled,
+.master-modal.mp-tealf .master-select-toggle:disabled,
+.master-modal.mp-tealf .master-datepicker-toggle:disabled,
+.master-modal.mp-tealf .form-check-input:disabled,
+.master-modal.mp-tealf .mp-seg__opt.is-disabled {
+  cursor: default !important;
+  caret-color: transparent;
+}
+.master-modal.mp-tealf textarea.form-control:disabled { resize: none; }
+
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-pag {
+  background: linear-gradient(90deg, #0c1e27 0%, #0b2430 45%, #0c1e27 100%);
+  border-top-color: #0e5063;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root :is(.tc-wl-info, .tc-wl-rows) {
+  background: rgba(255, 255, 255, .04);
+  border-color: #173947;
+  color: #67e8f9;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-info .tc-wl-hl,
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-rows-btn { color: #a5f3fc; }
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-rows-menu {
+  background: #0f1b2d;
+  border-color: #1e3a52;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-rows-menu button { color: #a5f3fc; }
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-rows-menu button:hover { background: rgba(34, 211, 238, .14); color: #fff; }
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-rows-menu button.is-on { background: #0891b2; color: #fff; }
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-btn {
+  background: rgba(34, 211, 238, .08);
+  border-color: #173947;
+  color: #67e8f9;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-btn:hover:not(:disabled) {
+  background: rgba(34, 211, 238, .18);
+  border-color: #22d3ee;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(8, 145, 178, .35);
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .mp-inv .dt-root .tc-wl-range {
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 3px 12px rgba(8, 145, 178, .4), 0 1px 0 rgba(255, 255, 255, .2) inset;
+}

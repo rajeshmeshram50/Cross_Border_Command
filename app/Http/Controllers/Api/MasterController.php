@@ -320,6 +320,37 @@ class MasterController extends Controller
         ]);
     }
 
+    /**
+     * A search term that reads as a date ("23-Nov-2026", "23/11/2026", "2026-11-23")
+     * or a month ("Nov-2026", "11/2026") becomes a created_at range for that day or
+     * month in the viewer's time zone, in the app's storage time zone.
+     */
+    private function searchDateRange(string $term, string $tz): ?array
+    {
+        $term = preg_replace('/\s+/', ' ', trim($term));
+        $zone = in_array($tz, \DateTimeZone::listIdentifiers(), true) ? $tz : config('app.timezone');
+        $store = config('app.timezone');
+        $try = function (array $formats) use ($term, $zone) {
+            foreach ($formats as $fmt) {
+                $d = \DateTime::createFromFormat('!' . $fmt, $term, new \DateTimeZone($zone));
+                $err = \DateTime::getLastErrors();
+                if ($d && (!$err || ($err['warning_count'] === 0 && $err['error_count'] === 0))) return $d;
+            }
+            return null;
+        };
+        $day = $try(['d-M-Y', 'j-M-Y', 'd M Y', 'j M Y', 'd-M-y', 'd/m/Y', 'j/n/Y', 'd-m-Y', 'j-n-Y', 'd.m.Y', 'Y-m-d', 'd-F-Y', 'd F Y']);
+        if ($day) {
+            $from = \Carbon\Carbon::instance($day)->setTimezone($store);
+            return [$from, $from->copy()->addDay()];
+        }
+        $month = $try(['M-Y', 'M Y', 'F Y', 'F-Y', 'm/Y', 'n/Y', 'm-Y', 'Y-m']);
+        if ($month) {
+            $start = \Carbon\Carbon::instance($month)->startOfMonth();
+            return [$start->copy()->setTimezone($store), $start->copy()->addMonth()->setTimezone($store)];
+        }
+        return null;
+    }
+
     private function paginateMaster($q, Request $request, array $cols)
     {
         $requested = (int) $request->query('per_page', 24);
@@ -350,14 +381,29 @@ class MasterController extends Controller
         }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
-        if ($search = $request->query('search')) {
+        $search = trim((string) ($request->query('search') ?? $request->query('q') ?? ''));
+        if ($search !== '') {
             $schema = self::SCHEMAS[$slug] ?? ['fields' => []];
-            $fields = $schema['fields'] ?? [];
-            $q->where(function ($w) use ($fields, $search) {
-                foreach ($fields as $f) {
-                    if (in_array($f['t'], ['text', 'email', 'textarea', 'select'])) {
-                        $w->orWhere($f['n'], 'ilike', "%{$search}%");
-                    }
+            $model = new $modelClass;
+            $columns = \Illuminate\Support\Facades\Schema::getColumnListing($model->getTable());
+            $textCols = collect($schema['fields'] ?? [])
+                ->filter(fn($f) => in_array($f['t'] ?? '', ['text', 'email', 'textarea', 'select'], true)
+                    && empty($f['ref'])
+                    && !str_ends_with($f['n'], '_id')
+                    && in_array($f['n'], $columns, true))
+                ->pluck('n')
+                ->all();
+            $date = $this->searchDateRange($search, (string) $request->query('tz', ''));
+            $like = '%' . addcslashes($search, '%_\\') . '%';
+            $q->where(function ($w) use ($textCols, $like, $date, $columns, $model) {
+                foreach ($textCols as $col) {
+                    $w->orWhere($col, 'ilike', $like);
+                }
+                if (method_exists($model, 'creator')) {
+                    $w->orWhereHas('creator', fn($u) => $u->where('name', 'ilike', $like));
+                }
+                if ($date && in_array('created_at', $columns, true)) {
+                    $w->orWhere(fn($m) => $m->where('created_at', '>=', $date[0])->where('created_at', '<', $date[1]));
                 }
             });
         }
@@ -401,9 +447,19 @@ class MasterController extends Controller
         }
 
         if ($request->has('per_page') || $request->has('page')) {
+            $statusCounts = null;
+            if (\Illuminate\Support\Facades\Schema::hasColumn((new $modelClass)->getTable(), 'status')) {
+                $byStatus = (clone $q)->reorder()->toBase()
+                    ->select(\Illuminate\Support\Facades\DB::raw('LOWER(CAST(status AS TEXT)) as s'), \Illuminate\Support\Facades\DB::raw('COUNT(*) as c'))
+                    ->groupBy(\Illuminate\Support\Facades\DB::raw('LOWER(CAST(status AS TEXT))'))
+                    ->pluck('c', 's');
+                $inactive = (int) ($byStatus['inactive'] ?? 0);
+                $total = (int) $byStatus->sum();
+                $statusCounts = ['all' => $total, 'active' => $total - $inactive, 'inactive' => $inactive];
+            }
             $page = $this->paginateMaster($q, $request, ['*']);
             $page->getCollection()->transform(fn($r) => $this->withOwnership($r));
-            return response()->json($page);
+            return response()->json($page->toArray() + ['status_counts' => $statusCounts]);
         }
 
         return response()->json($q->get()->map(fn($r) => $this->withOwnership($r)));
