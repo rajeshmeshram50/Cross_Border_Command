@@ -268,6 +268,18 @@ export default function AddProductModal(props: {
   const [productCodeFromApi, setProductCodeFromApi] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  /* QA-95: on a failed required-field check, scroll to the first highlighted
+     field and focus it, so the user is taken to what needs fixing. Runs after
+     the re-render that paints `.has-error`, hence the rAF. */
+  const focusFirstError = () => {
+    requestAnimationFrame(() => {
+      const el = bodyRef.current?.querySelector('.apm-field.has-error') as HTMLElement | null;
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el.querySelector('input, textarea, select, button, [tabindex]') as HTMLElement | null)?.focus({ preventScroll: true });
+    });
+  };
   const clearFieldError = (k: string) => {
     setFieldErrors(prev => {
       if (!prev[k]) return prev;
@@ -1149,6 +1161,7 @@ export default function AddProductModal(props: {
     if (!hasSecondary) errs.secondaryImage = 'At least one secondary image is required';
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
+      focusFirstError();
       toast.error('Missing required fields', 'Please fix the highlighted fields');
       return;
     }
@@ -1319,6 +1332,7 @@ export default function AddProductModal(props: {
     if (!gstId)                          errs.gstId      = 'GST is mandatory. Please select a valid GST rate from the GST Master.';
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
+      focusFirstError();
       if (errs.gstId && !errs.basePrice) {
         toast.error('GST is mandatory', 'Product cannot be saved because the GST field is mandatory. Please select a GST rate from the GST Master.');
       } else {
@@ -1507,7 +1521,7 @@ export default function AddProductModal(props: {
           )}
         </div>
 
-        <div className="apm-body">
+        <div className="apm-body" ref={bodyRef}>
           {(mastersLoading || loadingEdit) ? (
             <FormSkeleton />
           ) : (
