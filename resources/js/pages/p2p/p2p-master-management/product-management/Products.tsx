@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
+import { fillHeight } from '../../../../utils/fillHeight';
 import SegmentBadge, { SegmentNameBadge, segmentLabel, useSegmentStatusByName } from '../../../../components/ui/SegmentBadge';
 import { RowsPerPageSelect } from '../../../../components/ui/TablePager';
 import './product-management.css';
@@ -149,6 +150,15 @@ export default function Products() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const fit = () => { el.style.minHeight = `${fillHeight(el, 320)}px`; };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  });
   const [statusTab, setStatusTab] = useState<'active' | 'inactive'>('active');
   const [q, setQ] = useState('');
   const [segment, setSegment] = useState('All Segments');
@@ -555,7 +565,7 @@ export default function Products() {
       </div>
       </div>
 
-      <div className="prd-panel">
+      <div className="prd-panel" ref={panelRef}>
       <div className="prd-toolbar">
         {/* The Customer list's tab rail (dt-tabrail / dt-tab); icons and the
             Active / Inactive badges are the Product list's own. */}

@@ -8189,3 +8189,5 @@ body.apm-map-gate-open .supch-ov {
   border-color: rgba(255, 255, 255, .1);
   color: #94a3b8;
 }
+
+.prd-panel > .prd-pagination { margin-top: auto; }
