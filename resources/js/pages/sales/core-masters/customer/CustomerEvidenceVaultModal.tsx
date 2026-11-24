@@ -1861,13 +1861,14 @@ function ShipmentTable({ rows, kind, filter, onSend, onBulkSend, activeSend, onS
  * the same document wearing two badges. One component now, used by both, and
  * typed to the shipment vocabulary so the cast cannot come back. */
 export function ShipmentStatusPill({ status }: { status: VaultShipmentDoc['status'] }) {
-  const tone = status === 'Signed'
+  const key = status === 'Signed' ? 'ok' : (status === 'Declined' || status === 'Expired') ? 'bad' : 'warn';
+  const tone = key === 'ok'
     ? { fg: '#059669', bg: '#ecfdf5', bd: '#a7f3d0' }
-    : (status === 'Declined' || status === 'Expired')
+    : key === 'bad'
       ? { fg: '#dc2626', bg: '#fef2f2', bd: '#fecaca' }
       : { fg: '#d97706', bg: '#fffbeb', bd: '#fde68a' };
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>
+    <span className={`cev-ship-pill cev-ship-pill--${key}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>
       ● {status}
     </span>
   );
@@ -2035,8 +2036,8 @@ export function ShipmentDocPanel({ buyer, consignee, buyerIsConsignee, onSend, o
                   </Tooltip>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                     {(d.required === 'OPT' || d.required === 'O')
-                      ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
-                      : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
+                      ? <span className="cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                      : <span className="cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><ShipmentStatusPill status={d.status} /></td>

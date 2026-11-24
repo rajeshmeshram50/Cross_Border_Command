@@ -260,7 +260,7 @@
 .cev-seg-pop-row { gap: 8px; }
 .cev-seg-pop-pill .seg-reg-badge,
 .cev-chip .seg-reg-badge { flex-shrink: 0; }
-.cev-chip .seg-reg-badge { background: #fff !important; }
+html:not([data-bs-theme="dark"]) .cev-chip .seg-reg-badge { background: #fff !important; }
 
 .cev-seg-pop-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1816,6 +1816,24 @@
   background: rgba(148, 163, 184, .16) !important;
   color: #cbd5e1 !important;
   border-color: rgba(148, 163, 184, .32) !important;
+}
+
+[data-bs-theme="dark"] .cev-ship-pill--ok {
+  background: rgba(16, 185, 129, .18) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-ship-pill--warn {
+  background: rgba(245, 158, 11, .16) !important;
+  color: #fcd34d !important;
+  border-color: rgba(245, 158, 11, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-ship-pill--bad {
+  background: rgba(239, 68, 68, .18) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(239, 68, 68, .4) !important;
 }
 
 [data-bs-theme="dark"] .cev-sec-pill-ok {

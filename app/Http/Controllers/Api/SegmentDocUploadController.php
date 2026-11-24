@@ -928,6 +928,11 @@ class SegmentDocUploadController extends Controller
 
         $dealCtx = $this->prefetchDealContext($cid, $piByLead, $piIds);
 
+        $needsByLead = [];
+        foreach (DB::table('clm_lead_doc_needs')->whereIn('lead_id', $leadIds)->get(['lead_id', 'doc_kind', 'doc_id', 'needed']) as $n) {
+            $needsByLead[(int) $n->lead_id][$n->doc_kind . ':' . $n->doc_id] = (bool) $n->needed;
+        }
+
         $dedupe = function (array $rows): array {
             $seen = [];
             $out = [];
@@ -948,7 +953,10 @@ class SegmentDocUploadController extends Controller
             if ($shipmentLinkedOnly && !$hasShipment) continue;
             $reqs = $sigByLead->get($lid) ?? collect();
 
-            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs, $owner->segment ?? null, $dealCtx);
+            $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
+            $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
+
+            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs, $owner->segment ?? null, $dealCtx, $needsByLead[$lid] ?? [], $buyerIsConsignee);
             $tradeBuyer = $applicable['trade_docs_buyer'];
             $tradeCons  = $applicable['trade_docs_consignee'];
             $agrBuyer   = $applicable['agreements_buyer'];
@@ -987,9 +995,6 @@ class SegmentDocUploadController extends Controller
                 ];
                 array_unshift($tradeBuyer, $piRow);
             }
-
-            $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
-            $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
 
             $primary = $type === 'consignee'
                 ? ['trade' => $tradeCons, 'agr' => $agrCons]
@@ -1079,7 +1084,7 @@ class SegmentDocUploadController extends Controller
         return $ctx;
     }
 
-    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs, ?string $partySegments = null, array $ctx = []): array
+    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs, ?string $partySegments = null, array $ctx = [], array $needs = [], bool $buyerIsConsignee = false): array
     {
         $empty = ['trade_docs_buyer' => [], 'trade_docs_consignee' => [], 'agreements_buyer' => [], 'agreements_consignee' => []];
 
@@ -1183,7 +1188,9 @@ class SegmentDocUploadController extends Controller
 
         foreach ($segments as $seg) {
             foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
+                if (($needs['agreement:' . $a->id] ?? null) !== true) continue;
                 [$forBuyer, $forCons] = $this->partyFlags($a->party);
+                if ($buyerIsConsignee && !($forBuyer && !$forCons)) continue;
                 $name = $a->title ?: $a->code;
                 $req  = 'REQ';
                 if ($forBuyer && !isset($seen['agr']['Customer'][$a->id])) {
@@ -1199,7 +1206,9 @@ class SegmentDocUploadController extends Controller
             }
 
             foreach ($this->matchSegmentLibrary(ClmTradeDocLibrary::query(), $cid, $seg, 'status') as $m) {
+                if (($needs['trade_doc:' . $m->id] ?? null) !== true) continue;
                 [$forBuyer, $forCons] = $this->partyFlags($m->party);
+                if ($buyerIsConsignee && !($forBuyer && !$forCons)) continue;
                 $name = $m->title ?: ($m->name ?: $m->code);
                 $req  = 'REQ';
                 if ($forBuyer && !isset($seen['td']['Customer'][$m->id])) {
