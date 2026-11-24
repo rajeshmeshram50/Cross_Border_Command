@@ -1323,6 +1323,11 @@
   --tcwl-btn-bg-dark: rgba(16, 185, 129, .18);
   --tcwl-glow: rgba(16, 185, 129, .30);
 }
+[data-bs-theme="dark"] .smcg-table-wrap .tc-wl-rows-btn { color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-table-wrap .tc-wl-rows-menu { background: #0b1f19; border-color: rgba(52, 211, 153, .35); }
+[data-bs-theme="dark"] .smcg-table-wrap .tc-wl-rows-menu button { color: #a7f3d0; }
+[data-bs-theme="dark"] .smcg-table-wrap .tc-wl-rows-menu button:hover { background: rgba(16, 185, 129, .18); color: #fff; }
+[data-bs-theme="dark"] .smcg-table-wrap .tc-wl-rows-menu button.is-on { background: #059669; color: #fff; }
 
 /* ── Active-filter chips bar (above the table) — applied filters shown outside
    the modal with per-chip remove (×) + Clear all. Emerald palette. ── */
@@ -1516,15 +1521,15 @@
    padding, tint) with the 40px button face drawn inside it by ::before. */
 .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn {
   position: relative; isolation: isolate; flex-shrink: 0; align-self: stretch;
-  height: auto; min-height: 48px; padding: 3px 18px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px; padding: 0 18px;
+  border: 0;
+  background: transparent;
   border-radius: 11px; box-shadow: none; text-shadow: none;
   color: var(--dt-a-700);
 }
 .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn::before {
-  content: ''; position: absolute; inset: 3px; z-index: -1; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, background .16s, box-shadow .16s;
@@ -1538,8 +1543,17 @@
   background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-500) 35%, var(--dt-a-600) 68%, var(--dt-a-800) 100%);
   box-shadow: 0 3px 10px rgba(var(--dt-a-rgb), .40);
 }
-[data-bs-theme="dark"] .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
-[data-bs-theme="dark"] .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn:not(.on)::before { background: rgba(255,255,255,.03); border-color: rgba(var(--dt-a-rgb), .25); }
+[data-bs-theme="dark"] .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn { background: transparent; border: 0; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.2); }
+[data-bs-theme="dark"] .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn::before,
+[data-bs-theme="dark"] .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn:not(.on)::before {
+  border: 0;
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  box-shadow: 0 4px 16px rgba(5,150,105,.5), 0 1px 3px rgba(4,120,87,.3), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+[data-bs-theme="dark"] .smcg-root .smcg-toolbar .dt-filter-btn.dt-filter-btn:hover::before {
+  background: linear-gradient(135deg, #059669 0%, #047857 50%, #065f46 100%);
+  box-shadow: 0 8px 24px rgba(5,150,105,.6), 0 2px 6px rgba(4,120,87,.35), 0 1px 0 rgba(255,255,255,.2) inset;
+}
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search {
   height: auto; min-height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
@@ -1869,23 +1883,23 @@
    — the icon, input and clear button all sit inside that field. */
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search {
   position: relative;
-  min-height: 48px;
-  padding: 3px 14px 3px 38px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  border: 0;
+  background: transparent;
   border-radius: 11px;
   box-shadow: none;
 }
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, box-shadow .16s;
 }
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search > * { position: relative; z-index: 1; }
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search .dt-search-icon { position: absolute; }
-.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
-[data-bs-theme="dark"] .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }

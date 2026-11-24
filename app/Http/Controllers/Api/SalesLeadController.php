@@ -362,6 +362,7 @@ class SalesLeadController extends Controller
             'product_quantity'    => 'nullable|string|max:64',
             'query_product_name'  => 'nullable|string|max:255',
         ]);
+        if (!empty($data['sender_email'])) $data['sender_email'] = mb_strtolower(trim($data['sender_email']));
 
         if (empty($data['sender_country_iso']) && !empty($data['sender_country_name'])) {
             $iso = \App\Models\Masters\Countries::query()
@@ -548,6 +549,7 @@ class SalesLeadController extends Controller
             'whatsapp_status'    => 'nullable|string|in:connected,pending,not_connected,opted_out',
             'whatsapp_reason'    => 'nullable|string|max:1000',
         ]);
+        if (!empty($data['sender_email'])) $data['sender_email'] = mb_strtolower(trim($data['sender_email']));
 
         if (!empty($data['qualified']) && !empty($data['disqualified'])) {
             return response()->json([

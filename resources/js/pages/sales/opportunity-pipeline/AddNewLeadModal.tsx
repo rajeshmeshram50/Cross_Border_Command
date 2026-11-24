@@ -248,7 +248,7 @@ export default function AddNewLeadModal(props: {
         // Legal/company names fall back to each other when one is blank.
         customerName:    String(raw.company || picked.company || raw.legalName || picked.legalName || ''),
         mobileNumber:    String(pa?.cp_contact ?? raw.phone ?? ''),
-        customerEmail:   String(pa?.cp_email   ?? raw.email ?? ''),
+        customerEmail:   String(pa?.cp_email   ?? raw.email ?? '').toLowerCase(),
         companyName:     String(raw.legalName || picked.legalName || raw.company || picked.company || ''),
         customerAddress: String(pa?.address_line ?? raw.addr ?? ''),
         customerCity:    String(pa?.city ?? raw.city ?? ''),
@@ -494,8 +494,8 @@ export default function AddNewLeadModal(props: {
                         const cy = c.country.trim().toLowerCase();
                         const badge = !cy ? undefined
                           : (cy === 'india' || cy === 'in')
-                            ? { text: 'Domestic', tone: 'green' as const, title: 'India — domestic' }
-                            : { text: 'International', tone: 'violet' as const, title: `${c.country} — international` };
+                            ? { text: 'Dom', tone: 'green' as const, title: 'India — domestic' }
+                            : { text: 'Int', tone: 'violet' as const, title: `${c.country} — international` };
                         return { value: c.id, label: `${c.id} — ${c.company || c.legalName}`, badge };
                       })}
                       disabled={customersLoading || customerFetching}
@@ -527,7 +527,7 @@ export default function AddNewLeadModal(props: {
               <Field label="Customer Email" required error={errors.customerEmail}>
                 <TextInput
                   value={values.customerEmail}
-                  onChange={(v) => set('customerEmail', v)}
+                  onChange={(v) => set('customerEmail', v.toLowerCase())}
                   placeholder="Enter email address"
                   iconLeft="ri-mail-line"
                   error={!!errors.customerEmail}
@@ -995,7 +995,7 @@ const SCOPED_CSS = `
   border-radius: 8px 0 0 8px; pointer-events: none;
 }
 .anl-input-wrap.has-prefix .anl-input { padding-left: 48px; }
-[data-bs-theme="dark"] .anl-input-prefix { background: #23262e; color: #e2e8f0; border-right-color: #3a3f47; }
+[data-bs-theme="dark"] .anl-input-prefix { background: transparent; color: #cffafe; border-right-color: rgba(34, 211, 238, 0.22); }
 
 /* Select arrow */
 .anl-select { appearance: none; -webkit-appearance: none; padding-right: 32px; cursor: pointer; }
@@ -1111,6 +1111,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .master-modal .anl-modal .master-select-toggle {
   background: #102a3a;
   border-color: rgba(34, 211, 238, 0.22);
+  color: #cffafe;
+}
+[data-bs-theme="dark"] .master-modal .anl-modal .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:is(:focus, :focus-visible, :active):not(:disabled) {
+  background: #102a3a;
   color: #cffafe;
 }
 [data-bs-theme="dark"] .master-modal .anl-modal .master-select-toggle:hover:not(:disabled) {

@@ -14,6 +14,7 @@ import LeadDetailsModal from './LeadDetailsModal';
 import LeadActivityModal from './LeadActivityModal';
 import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
 import SearchClear from '../../../components/ui/SearchClear';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 import '../../../components/ui/DataTable.css';
 
 /* Filters are deliberately NOT persisted.
@@ -1517,9 +1518,7 @@ export default function SalesLeadWorksheet() {
           <div className="lwp-pag-right">
             <div className="lwp-rows-sel">
               Rows per page:
-              <select value={rpp} onChange={e => changeRowsPerPage(parseInt(e.target.value, 10))}>
-                {[...new Set([rpp, ...ROWS_PER_PAGE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <RowsPerPageSelect pageSize={rpp} options={ROWS_PER_PAGE_OPTIONS} onChange={changeRowsPerPage} />
             </div>
             <span className="lwp-pag-range">{safePage} / {pages}</span>
             <div className="lwp-page-nav">
@@ -2140,23 +2139,23 @@ const SCOPED_CSS = `
    clear button all sit inside that field. */
 .lwp-root .lwp-search.lwp-search {
   position: relative;
-  padding: 3px 16px;
-  border: 1px solid #c9f8fd;
-  background: linear-gradient(180deg, #f4feff, #ecfeff);
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
   border-radius: 12px;
   box-shadow: none;
 }
 .lwp-root .lwp-search.lwp-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 9px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 12px;
   background: #fff;
   border: 1px solid #d6f9fd;
   transition: border-color .16s, box-shadow .16s;
 }
 .lwp-root .lwp-search.lwp-search > * { position: relative; z-index: 1; }
-.lwp-root .lwp-search.lwp-search:focus-within { border-color: #c9f8fd; box-shadow: none; }
+.lwp-root .lwp-search.lwp-search:focus-within { border: 0; box-shadow: none; }
 .lwp-root .lwp-search.lwp-search:focus-within::before { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(8,145,178,.14); }
-[data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search { background: rgba(8,145,178,.08); border-color: rgba(8,145,178,.22); box-shadow: none; }
+[data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search { background: transparent; border: 0; box-shadow: none; }
 [data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search::before { background: rgba(255,255,255,.03); border-color: rgba(8,145,178,.25); }
 [data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search:focus-within::before { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.28); }
 
@@ -2422,10 +2421,13 @@ const SCOPED_CSS = `
   padding: 4px 12px; border-radius: 20px;
   box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
-.lwp-root .lwp-rows-sel select {
-  border: none; background: transparent; font-family: inherit;
-  font-size: 11.5px; color: #0891b2; font-weight: 700; cursor: pointer; outline: none;
-}
+.lwp-root .lwp-rows-sel { --tcwl-accent: #0891b2; --tcwl-text: #0e7490; --tcwl-border: #a5f3fc; --tcwl-band: #ecfeff; }
+.lwp-root .lwp-rows-sel .tc-wl-rows-btn { color: #0891b2; }
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel .tc-wl-rows-btn { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel .tc-wl-rows-menu { background: #0c1f2e; border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel .tc-wl-rows-menu button { color: #a5f3fc; }
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel .tc-wl-rows-menu button:hover { background: rgba(34, 211, 238, .16); color: #fff; }
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel .tc-wl-rows-menu button.is-on { background: #0891b2; color: #fff; }
 .lwp-root .lwp-pag-range {
   font-size: 11.5px; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
@@ -2764,7 +2766,6 @@ const SCOPED_CSS = `
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 [data-bs-theme="dark"] .lwp-root .lwp-pag-info .lwp-hl,
-[data-bs-theme="dark"] .lwp-root .lwp-rows-sel select { color: #67e8f9; }
 [data-bs-theme="dark"] .lwp-root .lwp-pg-btn {
   background: rgba(15, 23, 42, 0.55);
   border-color: rgba(34, 211, 238, 0.22);

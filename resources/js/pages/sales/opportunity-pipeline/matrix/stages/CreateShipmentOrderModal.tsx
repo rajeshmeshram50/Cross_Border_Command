@@ -113,6 +113,12 @@ const IcoDl = () => (
  * portalled popover for the rest. Same behaviour as the Procurement modal —
  * auto-flips above the badge when there's no room below, caps its height to the
  * space available, and a scroll INSIDE the list doesn't dismiss it. */
+function fileTip(f: File) {
+  const ext = (f.name.includes('.') ? f.name.split('.').pop() : '')?.toUpperCase() || 'File';
+  const size = f.size >= 1024 * 1024 ? `${(f.size / (1024 * 1024)).toFixed(2)} MB` : `${Math.max(1, Math.round(f.size / 1024))} KB`;
+  return <>{f.name}<br /><span style={{ opacity: .75, fontWeight: 500 }}>{ext} · {size}</span></>;
+}
+
 function ShpAttachChips({ files, onRemove }: { files: File[]; onRemove: (i: number) => void }) {
   const moreRef = useRef<HTMLButtonElement | null>(null);
   const popRef  = useRef<HTMLDivElement | null>(null);
@@ -160,8 +166,10 @@ function ShpAttachChips({ files, onRemove }: { files: File[]; onRemove: (i: numb
   if (files.length === 0) return null;
 
   const chip = (f: File, realIdx: number, block?: boolean) => (
-    <span className={`cso-att-chip${block ? ' cso-att-chip-block' : ''}`} title={f.name}>
-      <span className="cso-att-name">{f.name}</span>
+    <span className={`cso-att-chip${block ? ' cso-att-chip-block' : ''}`}>
+      <Tooltip label={fileTip(f)} position="top">
+        <span className="cso-att-name">{f.name}</span>
+      </Tooltip>
       <button type="button" onClick={() => downloadFile(f)} className="cso-att-dl" title="Download"><IcoDl /></button>
       <button type="button" onClick={() => onRemove(realIdx)} className="cso-att-x" title="Remove">×</button>
     </span>

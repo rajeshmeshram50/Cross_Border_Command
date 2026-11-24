@@ -759,25 +759,25 @@ export const LEAD_ACK_CSS = `
    — the icon, input and clear button all sit inside that field. */
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search {
   position: relative;
-  min-height: 48px;
-  padding: 3px 14px 3px 38px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  border: 0;
+  background: transparent;
   border-radius: 11px;
   box-shadow: none;
 }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, box-shadow .16s;
 }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search > * { position: relative; z-index: 1; }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search .dt-search-icon { position: absolute; }
-.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
-[data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
 
 
