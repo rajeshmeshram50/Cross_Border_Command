@@ -207,6 +207,13 @@ export function TooltipPill({
         whiteSpace: 'normal',
         wordBreak: 'break-word',
         overflowWrap: 'anywhere',
+        /* Size to content, not to the space left of the viewport edge. A fixed
+           box with width:auto shrink-to-fits against `left`→edge, so a tooltip
+           on a far-right trigger (e.g. the Profile icon) got squeezed and broke
+           mid-word ("Profil"/"e"). max-content sizes it to the text; maxWidth
+           still caps long labels, and the caller's viewport clamp keeps it on
+           screen. */
+        width: 'max-content',
         maxWidth: maxWidth ?? `min(360px, calc(100vw - 16px))`,
         /* And a height cap, for the same reason as the width one. Without
            it a 2,000-character product description rendered as a column
