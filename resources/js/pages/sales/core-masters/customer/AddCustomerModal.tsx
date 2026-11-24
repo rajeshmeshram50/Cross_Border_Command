@@ -4225,6 +4225,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-gst-table-wrap { border-color: rgba(167,139,250,0.25); }
 [data-bs-theme="dark"] .acm-gst-table thead tr { background: transparent; }
 [data-bs-theme="dark"] .acm-gst-table td { color: #cbd5e1; border-top-color: rgba(167,139,250,0.15); }
+[data-bs-theme="dark"] .acm-gst-status-active { background: rgba(34,197,94,0.15); color: #6ee7b7; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.3); }
+[data-bs-theme="dark"] .acm-gst-status-inactive,
+[data-bs-theme="dark"] .acm-gst-status-cancelled { background: rgba(239,68,68,0.15); color: #fca5a5; box-shadow: inset 0 0 0 1px rgba(239,68,68,0.3); }
+[data-bs-theme="dark"] .acm-gst-status-suspended { background: rgba(245,158,11,0.15); color: #fcd34d; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.3); }
 [data-bs-theme="dark"] .acm-btn-ghost { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-btn-ghost:hover:not(:disabled) { background: rgba(167,139,250,0.22); border-color: rgba(167,139,250,0.55); color: #ddd6fe; }
 
@@ -4575,6 +4579,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle:disabled { color: #94a3b8; }
 
+[data-bs-theme="dark"] .acm-root .avm-master-select .master-select-wrap:not(.disabled):not(.show) .master-select-toggle:not(:disabled) {
+  background: #110c25 !important;
+  border-color: #3b2a6b !important;
+}
 [data-bs-theme="dark"] .acm-field .avm-input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
 [data-bs-theme="dark"] .acm-radio-pill { background: #131c33; border-color: rgba(167,139,250,0.40); color: #ddd6fe; }
 [data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.45); border-color: #a78bfa; color: #ffffff; }
