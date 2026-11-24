@@ -1971,12 +1971,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   const handleCropConfirm = (blob: Blob) => {
     const file = new File([blob], `profile-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    setProfilePhotoFile(file);
     const r = new FileReader();
     r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
     r.readAsDataURL(blob);
     setCropOpen(false);
     setCropSrc(null);
+    // Saving the crop is the upload — no separate "Save" step in the tile.
+    uploadProfilePhoto(file);
   };
 
   const resolveEmployeeUploadId = async (): Promise<number | string> => {
@@ -1992,12 +1993,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   const handleSaveProfilePhoto = async () => {
     if (!profilePhotoFile) return;
+    await uploadProfilePhoto(profilePhotoFile);
+  };
+
+  const uploadProfilePhoto = async (file: File) => {
     setSavingPhoto(true);
     try {
       const uploadEmployeeId = await resolveEmployeeUploadId();
       const fd = new FormData();
       fd.append('document_key', 'photo');
-      fd.append('file', profilePhotoFile);
+      fd.append('file', file);
       const res = await api.post(`/employees/${encodeURIComponent(String(uploadEmployeeId))}/documents`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
