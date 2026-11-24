@@ -64,8 +64,7 @@
 @media(max-width:1100px){.sup-fig .bref-box__body{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:700px){.sup-fig .bref-box__body{grid-template-columns:repeat(2,1fr)}}
 
-.sup-fig .sl-wrap{display:flex;flex-direction:column;/* No margin-top: .sup-fig already puts 8px between its blocks, and the
-   extra 4px here stacked on top of it for a 12px gap above the list. */
+.sup-fig .sl-wrap{display:flex;flex-direction:column;
 border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.16),0 2px 8px rgba(0,0,0,.05);min-width:0;}
 
 .sup-fig .sl-table-scroll.is-refetching,
@@ -94,15 +93,7 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 }
 .sup-fig .sl-refine-btn .sl-refine-badge{color:var(--sfr-6d28d9, #6d28d9);background:#fff;border-color:transparent;margin-left:2px;}
 
-/* position:FIXED, not absolute (#132 follow-up). .main-content sets
-   overflow-x:hidden, and a hidden axis makes the other one clip too, so an
-   absolutely-positioned panel was cut off at the scroller edge — it looked
-   like the footer was covering it. Fixed escapes the clip; top/right come
-   from the button rect in JS. */
 .sup-fig .sl-refine-pop{position:fixed;z-index:1200;width:366px;max-width:calc(100vw - 24px);}
-/* Column layout so the body absorbs whatever height is left after the head
-   and the foot — the Done bar is then always on screen, whatever the panel
-   is capped to. */
 .sup-fig .sl-refine-sheet{
   display:flex;flex-direction:column;max-height:100%;
   position:relative;border-radius:18px;overflow:hidden;
@@ -202,14 +193,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sl-refine-tick svg{width:8px;height:8px;}
 .sup-fig .sl-refine-tile.is-on .sl-refine-tick{opacity:1;transform:none;}
 
-/* A zero-count option is NOT disabled (QA #41).
-   It stays clickable, and filtering by it is a fair way to confirm nothing
-   matches. At opacity .38 the whole tile faded together — label, icon and
-   border — so the panel read as frozen and the options as dead.
-   Opacity dims a subtree uniformly and a child cannot climb back out of it,
-   so the de-emphasis is applied per part instead: the label keeps its
-   contrast, and the COUNT carries the "none" signal, which is what a count
-   is for. */
 .sup-fig .sl-refine-tile.is-empty{
   opacity:1;
   background:rgba(255,255,255,.035);
@@ -218,7 +201,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sl-refine-tile.is-empty .sl-refine-tile-lbl{color:rgba(var(--sfr-f5f3ff-rgb, 245, 243, 255),.72);}
 .sup-fig .sl-refine-tile.is-empty .sl-refine-tile-n{color:rgba(var(--sfr-e9d5ff-rgb, 233, 213, 255),.42);}
 .sup-fig .sl-refine-tile.is-empty .sl-refine-tile-ico{opacity:.55;}
-/* Hover answers, so it reads as something you may press. */
 .sup-fig .sl-refine-tile.is-empty:hover{
   background:rgba(255,255,255,.11);
   border-color:rgba(var(--sfr-c4b5fd-rgb, 196, 181, 253),.32);
@@ -288,8 +270,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 
 .sup-fig .sl-table-scroll{display:flex;flex-direction:column;overflow-x:auto;max-width:100%;background:radial-gradient(130% 360px at 50% -50px,rgba(167,139,250,.12),transparent 70%),linear-gradient(180deg,#ffffff 0%,#fdfbff 100%);}
 
-/* Sibling of the scroller, so the horizontal scrollbar sits between the rows
-   and this band instead of below it. */
 .sup-fig .sl-wrap > .wl-pager{margin-top:0;width:100%;box-sizing:border-box;}
 
 @media(max-width:1500px){
@@ -431,8 +411,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sc-role{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px;}
 .sc-role.is-primary{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;}
 .sc-role.is-other{background:var(--sfc-f1eafe, #f1eafe);color:var(--sfc-7c3aed, #7c3aed);border:1px solid var(--sfc-ddd0f7, #ddd0f7);}
-/* Contact Persons popup (Supplier list), dark mode: the Primary / role pills were light tiles on the
-   dark card. Translucent tints with light text, as the other dark Supplier badges. */
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body.apm-supplier-wizard-open) .sc-role.is-primary{background:rgba(34,197,94,.16);color:#86efac;border-color:rgba(74,222,128,.35);}
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body.apm-supplier-wizard-open) .sc-role.is-other{background:rgba(var(--avmv-rgb-22d3ee, 34, 211, 238),.14);color:var(--avmv-67e8f9, #67e8f9);border-color:rgba(var(--avmv-rgb-67e8f9, 103, 232, 249),.35);}
 .sc-meta{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:5px;}
@@ -605,9 +583,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 
 [data-bs-theme="dark"] .sup-fig .sl-tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#8b5cf6,#7c3aed,#5b21b6);border-color:transparent;box-shadow:0 4px 16px rgba(124,58,237,.6),0 0 0 1.5px rgba(196,181,253,.45),0 1px 0 rgba(255,255,255,.4) inset;}
 [data-bs-theme="dark"] .sup-fig .sl-tab svg{opacity:.95;}
-/* box-shadow must be reset too (#132). The light rule paints a near-opaque
-   white inset line along the top edge as a bevel; on the dark surface it read
-   as a stray white border. */
 [data-bs-theme="dark"] .sup-fig .sl-search{background:rgba(255,255,255,.07);border-color:rgba(167,139,250,.32);box-shadow:0 1px 0 rgba(255,255,255,.05) inset;}
 [data-bs-theme="dark"] .sup-fig .sl-search:focus-within{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.22);}
 [data-bs-theme="dark"] .sup-fig .sl-search input{color:#f3effe;}
@@ -670,9 +645,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-fig .sc-name{color:var(--sfcd-f3e8ff, #f3e8ff);}
 [data-bs-theme="dark"] .sup-fig .sc-meta span{color:#adb5bd;}
 
-/* Panel flipped above the Filter button (no room below): the arrow moves to
-   the bottom edge and points down, and the gradient end that was the sheet's
-   bottom now reads as its top. */
 .sup-fig .sl-refine-pop.is-up::before{
   top:auto;bottom:-6px;
   border-left:none;border-top:none;
@@ -681,18 +653,9 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   background:var(--sfr-1f0a4a, #1f0a4a);
 }
 
-/* ── Supplier list on the Customer list's classes (.smc-root / .smc-table-card /
-   .smc-table-wrap / .dt-table). Only what differs from the Customer list lives
-   here: its column budget, the Filter panel's wrapper and the pager. ───────── */
-
-/* Filter sits in .sl-refine (it anchors the Refine panel) — stretch it to the
-   rail height like the Customer list's bare Filter button. */
-/* Filter stands 48px, level with the tab rail and the single-box search,
-   as on the Product list (QA #25 / #51). */
 .smc-root .smc-toolbar .sl-refine { display: flex; align-items: center; flex-shrink: 0; }
 .smc-root .smc-toolbar .sl-refine > .sl-refine-btn { height: 48px; min-height: 48px; }
 
-/* 11 columns, the same on Domestic and International (GST sits inside Location). Sums to 100. */
 .sup-fig .smc-table-wrap.sup-table-wrap .table { min-width: 1640px; }
 .sup-fig .sup-table-wrap .table :is(th, td):nth-child(1)  { width: 3.5%; }
 .sup-fig .sup-table-wrap .table :is(th, td):nth-child(2)  { width: 7%; }
@@ -706,14 +669,9 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sup-table-wrap .table :is(th, td):nth-child(10) { width: 5.5%; }
 .sup-fig .sup-table-wrap .table :is(th, td):nth-child(11) { width: 11%; }
 
-/* Pager inside the card, as the Customer table's worklist footer sits. */
 .sup-fig .smc-table-wrap > .wl-pager { margin: 0; border-radius: 0; flex-shrink: 0; }
 .sup-fig .smc-table-wrap .table-responsive.is-refetching { opacity: .5; pointer-events: none; transition: opacity .14s ease; }
 
-/* Supplier Type / Segment fit (badge check): the type pill ellipsises instead
-   of running into its edge, and the segment NAME gives way so the Reg badge
-   always stays inside the cell — the name's fixed 130px cap pushed the badge
-   past the column on a long name ("Food grade ethanol"). */
 .sup-fig .sup-table-wrap .table tbody td .smc-type-pill {
   display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
 }
@@ -721,20 +679,12 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sup-table-wrap .table tbody td .smc-seg--withbadge .smc-seg-name { max-width: none; min-width: 0; flex: 0 1 auto; }
 .sup-fig .sup-table-wrap .table tbody td .smc-seg--withbadge .seg-reg-badge { flex-shrink: 0; }
 
-/* Category / Compliant pills: a pill wider than its cell showed the CELL's
-   ellipsis as a stray "..." after it. Pill cells clip instead, and the pill
-   itself stays within the cell. Headers wrap to two lines rather than being
-   cut ("MAPPED PRODUCT"). */
 .sup-fig .sup-table-wrap .table tbody td:has(> .sl-cat),
 .sup-fig .sup-table-wrap .table tbody td:has(> .sl-compliant) { text-overflow: clip; }
 .sup-fig .sup-table-wrap .table tbody td > .sl-cat,
 .sup-fig .sup-table-wrap .table tbody td > .sl-compliant { max-width: 100%; overflow: hidden; white-space: nowrap; vertical-align: middle; }
 .sup-fig .sup-table-wrap .table thead.table-light th { white-space: normal; }
 
-/* ── Mapped Products popup (.smp-*) = the Consignee list's Mapped Customers
-   popup: a 40px search taking the free width, the count pill and the action
-   button on the right — all ABOVE the card — and the card holding only the
-   Supplier list's table and its pager. ──────────────────────────────────── */
 .smp-wrap { display: flex; flex-direction: column; gap: 12px; min-height: 0; font-family: var(--font-sans); }
 .smp-toolbar { display: flex; align-items: center; gap: 12px; }
 .smp-search { position: relative; flex: 1 1 auto; min-width: 240px; display: flex; align-items: center; }
@@ -754,7 +704,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   font-size: 11.5px; font-weight: 600; color: #6d28d9; white-space: nowrap;
   padding: 6px 12px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 999px;
 }
-/* = the Add Supplier button, 40px. */
 .smp-add {
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
@@ -779,12 +728,9 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   box-shadow: 0 2px 12px rgba(109,40,217,.06);
 }
 .smp-empty { padding: 26px 16px; text-align: center; color: #64748b; font-size: 13px; }
-/* dt-root.hr-dt (violet) + dt-table give the header band, serial badge and id
-   chip; the wrapper only drops dt-root's own card chrome. */
 .smp-table-wrap.dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; background: transparent; overflow: auto; max-height: 320px; }
 .smp-table { width: 100%; min-width: 860px; }
 .smp-table tbody tr:last-child td { border-bottom: none; }
-/* Cell type = the list (11.5 / 500); badges keep their own. */
 .smp-table tbody td,
 .smp-table tbody td *:not(i):not(svg):not(svg *) { font-size: 11.5px !important; font-weight: 500 !important; }
 .smp-table tbody td .dt-serial.dt-serial { font-size: 11px !important; font-weight: 800 !important; }
@@ -819,16 +765,9 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   .smp-toolbar-right { width: 100%; justify-content: space-between; }
 }
 
-/* Actions keeps the Supplier list's own pair (edit square + Evidence Vault),
-   centred under its heading. */
 .sup-fig .sup-table-wrap .table tbody td .sl-actions { justify-content: center; }
-/* Mapped Products keeps its old count button — restate its own type, which the
-   Customer table's blanket 11.5 / 500 cell rule would otherwise flatten. */
 .smc-root .smc-table-wrap .table tbody td:not(:last-child) .sl-prodcount.sl-prodcount { font-size: 12px !important; font-weight: 800 !important; }
 
-/* Search = the Product list's single box (QA #51): one 1.5px border, white,
-   48px to match the tab rail — not the Customer list's track, whose outer
-   border and inner ::before field read as two boxes of different sizes. */
 .smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search {
   height: 48px; min-height: 48px;
   padding: 0 14px 0 38px;
@@ -851,10 +790,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   box-shadow: none;
 }
 
-/* ── Supplier Management theme: teal ─────────────────────────────────────────────────────────
-   This sheet is also the shared list header / filter panel of Customers, Products, Payment
-   Request, CredVault, HRMS and Sales pages, which keep the violet written as each var()'s
-   default. Only the Supplier page (.sup-list, also on its portalled segment popup) sets them. */
 .sup-list {
   --sfh-c4b5fd: #9ce1ee;
   --sfh-faf5ff: #f0fdff;
@@ -953,12 +888,9 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   --sfcd-f3e8ff: #e0f7fb;
 }
 
-/* Teal over the Customer list's shared table chrome (SalesCustomers.css stays as it is for
-   Customers). Colours only; sizes come from the shared rules. */
 .smc-root.sup-list .smc-toolbar { padding: 14px 20px 12px; background: #fff; border-bottom: 1px solid #e6f3f7; }
 .smc-root.sup-list .smc-table-card { box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(8, 145, 178, .1), 0 2px 8px rgba(0, 0, 0, .05); }
 .smc-root.sup-list .smc-table-wrap .table tbody td { border-bottom: 1px solid rgba(8, 145, 178, .08) !important; }
-/* Empty list: a calm slate line, not the bright cyan that read as an odd colour. */
 .smc-root.sup-list .smc-empty { color: #64748b; font-size: 13px; font-weight: 600; }
 [data-bs-theme="dark"] .smc-root.sup-list .smc-empty { color: #94a3b8; }
 .smc-root.sup-list .smc-seg { color: #0e7490; border-color: #bfe8f0; }
@@ -982,7 +914,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .smc-root.sup-list .smc-seg { color: #67e8f9; background: rgba(8, 145, 178, .18); border-color: rgba(34, 211, 238, .3); }
 [data-bs-theme="dark"] .smc-root.sup-list .smc-email { color: #67e8f9; }
 
-/* Supplier module sizes: every button 40px tall; the tab rail and the search box 48px. */
 .smc-root.sup-list .smc-toolbar .sl-refine > .sl-refine-btn { height: 40px; min-height: 40px; }
 .sup-list .sup-fig .cstrip__action-btn { height: 40px; padding: 0 18px; }
 .sup-list .sup-fig .sl-act-btn { width: 40px; height: 40px; border-radius: 10px; }
@@ -990,9 +921,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-list .sup-fig .sl-evault-btn { width: auto; height: 40px; padding: 0 14px; gap: 6px; font-size: 12px; border-radius: 10px; }
 .sup-list .sup-fig .sl-evault-btn svg { width: 14px; height: 14px; }
 
-/* ── Toolbar: Domestic / International tabs on the left, Filter + search on the right ─────────────
-   The design's main tabs (icon tile, label, count). Rail 48px = 3px padding + 1px border + 40px tab;
-   tab text as CLM (12.5px / 650). */
 .sup-list .smc-toolbar { flex-wrap: nowrap; justify-content: space-between; }
 .sup-list .sup-tabs {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
@@ -1027,19 +955,13 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-list .sup-tab.is-on .sup-tab__ico { background: rgba(255, 255, 255, .24); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
 .sup-list .sup-tab.is-on .sup-tab__c { color: #fff; background: rgba(255, 255, 255, .25); border-color: rgba(255, 255, 255, .4); }
 .sup-list .sup-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex: 1 1 auto; min-width: 0; }
-/* Beats the Customer list's stretch rule (flex 1 1 auto, no cap): the design's search is a fixed
-   665px on the right, with Filter just before it. */
 .smc-root.sup-list .smc-table-card .smc-toolbar .sup-tools .dt-search.dt-search { flex: 0 1 665px; width: auto; max-width: 665px; min-width: 220px; margin: 0; }
 
 [data-bs-theme="dark"] .sup-list .sup-tabs { background: rgba(255, 255, 255, .04); border-color: rgba(34, 211, 238, .18); box-shadow: none; }
-/* Dark: the tab not selected reads light teal (it was a dull grey), and hovering lifts it with a
-   teal tint. The hover is limited to that tab, so the selected tab keeps its teal gradient (the
-   hover used to out-rank it and turn the selected tab into a grey block). */
 [data-bs-theme="dark"] .sup-list .sup-tab { color: #cfe3ea; }
 [data-bs-theme="dark"] .sup-list .sup-tab:not(.is-on):hover { color: #fff; background: rgba(34, 211, 238, .12); }
 [data-bs-theme="dark"] .sup-list .sup-tab__c { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .3); }
 
-/* Narrow screens: tabs on their own row (scrolling sideways if needed), Filter + search below. */
 @media (max-width: 900px) {
   .sup-list .smc-toolbar { flex-wrap: wrap; }
   .sup-list .sup-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
@@ -1047,9 +969,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   .smc-root.sup-list .smc-table-card .smc-toolbar .sup-tools .dt-search.dt-search { flex: 1 1 auto; max-width: none; }
 }
 
-/* ── Table cells (the design's layout) ───────────────────────────────────────────────────────
-   Body text stays the list standard (11.5 / 500, from the shared cell rule); the supplier name is
-   bold and the second lines (date, type · contacts, location, phone, email) are 10.5px muted. */
 .sup-list .sup-code,
 .sup-list .sup-loc,
 .sup-list .sup-ct { display: inline-flex; flex-direction: column; gap: 3px; min-width: 0; max-width: 100%; }
@@ -1072,7 +991,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-list .sup-sub i { font-size: 12px; color: #0891b2; }
 .sup-list .sup-sub--loc { color: #0e7490; }
 
-/* Sr No: an outlined box. Mapped Products: the design's 40px teal square. */
 .smc-root.sup-list .smc-table-wrap .table tbody td .dt-serial {
   width: 26px; height: 26px; border-radius: 8px;
   color: #0e7490; background: #fff; border: 1.5px solid #bfe8f0; box-shadow: none;
@@ -1092,9 +1010,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-list .sup-sub--loc { color: #67e8f9; }
 [data-bs-theme="dark"] .smc-root.sup-list .smc-table-wrap .table tbody td .dt-serial { color: #67e8f9; background: rgba(34, 211, 238, .08); border-color: rgba(34, 211, 238, .3); }
 
-/* ── Supplier-type tabs under the toolbar (the design's underline row) ───────────────────────
-   Text as CLM (12.5px / 650). Only "All" is live until the API can filter by type; the others
-   are shown frozen. */
 .sup-list .sup-kinds {
   display: flex; align-items: stretch; gap: 22px; overflow-x: auto; scrollbar-width: none;
   padding: 14px 24px 0; background: #fff; border-bottom: 1px solid #e6f3f7;
@@ -1126,8 +1041,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   box-shadow: 0 3px 8px -2px rgba(8, 145, 178, .5);
 }
 .sup-list .sup-kind.is-on::after { background: linear-gradient(90deg, #22d3ee, #0891b2); }
-/* Figma (#slSubTabs .p2p-sub2tab): 12.5px / 700 on every tab, 8px gap, 9px under the text;
-   a 22px borderless grey icon tile (radius 7) with a 12px glyph. */
 .sup-list .sup-kind { gap: 8px; padding: 0 2px 9px; font-size: 12.5px; font-weight: 700; transition: color .18s ease; }
 .sup-list .sup-kind__ico { width: 22px; height: 22px; border-radius: 7px; border: 0; background: #f1f5f9; color: #94a3b8; font-size: 12px; transition: all .2s ease; }
 .sup-list .sup-kind.is-on .sup-kind__ico { color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490); box-shadow: 0 3px 8px -2px rgba(8, 145, 178, .5); }
@@ -1140,14 +1053,10 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-list .sup-kind.is-on { color: #e0f7fb; }
 [data-bs-theme="dark"] .sup-list .sup-kind__ico { color: #6b86a0; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .1); }
 [data-bs-theme="dark"] .sup-list .sup-kind__c { color: #94a8bb; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .12); }
-/* Hover in dark: the light theme's pale tile (#e6f9fd) and dark-teal text read as a white block
-   on the dark bar — a translucent teal tile and bright teal text instead. */
 [data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover { color: #a5f3fc; }
 [data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__ico { color: #67e8f9; background: rgba(34, 211, 238, .14); }
 [data-bs-theme="dark"] .sup-list .sup-kind:not(.is-on):hover .sup-kind__c { color: #a5f3fc; border-color: rgba(34, 211, 238, .3); }
 
-/* Supplier Type pills: the design's dot, colours and 10px corners (Material teal, FFD violet,
-   Services amber); the type size of a badge (10.5 / 800). */
 .smc-root.sup-list .smc-table-wrap .table tbody td:not(:last-child) .sup-type.sup-type {
   position: relative; padding: 4px 10px 4px 20px; border-radius: 10px;
   font-size: 10.5px !important; font-weight: 800 !important;
@@ -1163,14 +1072,12 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-list .sup-type--logistics { color: #c4b5fd; background: rgba(139, 92, 246, .14); border-color: rgba(167, 139, 250, .34); }
 [data-bs-theme="dark"] .sup-list .sup-type--services { color: #fcd34d; background: rgba(245, 158, 11, .14); border-color: rgba(251, 191, 36, .34); }
 
-/* Filter: the active-filter count as a white bubble on the button's corner (the design). */
 .sup-list .sl-refine-btn { position: relative; }
 .sup-list .sl-refine-btn .sl-refine-badge {
   position: absolute; top: -6px; right: -6px; margin: 0;
   color: #0e7490; background: #fff; border: 0; box-shadow: 0 2px 6px rgba(8, 145, 178, .35);
 }
 
-/* ── The design's table: header band, white rows, roomier cells, larger names ─────────────── */
 .smc-root.sup-list .dt-root.hr-dt .dt-table thead th {
   padding: 13px 10px !important;
   font-size: 9.5px !important; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
@@ -1191,13 +1098,11 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   color: #0e7490; background: #f0fdff; border: 1px solid #a5e9f5;
 }
 
-/* "+n" (contacts, segments): a light outline pill. */
 .smc-root.sup-list .smc-table-wrap .table tbody td .smc-seg-more.smc-seg-more {
   height: 20px; padding: 0 8px; border-radius: 999px; font-size: 10px !important; font-weight: 800 !important;
   color: #0ea6cd; background: #eafbfe; border: 1px solid #cff1f8; box-shadow: none;
 }
 
-/* Category + compliance pills: the design's sizes; compliance shows a dot. */
 .smc-root.sup-list .smc-table-wrap .table tbody td:not(:last-child) :is(.sl-cat, .sl-compliant).sl-cat,
 .smc-root.sup-list .smc-table-wrap .table tbody td:not(:last-child) :is(.sl-cat, .sl-compliant).sl-compliant {
   padding: 5px 12px; border-radius: 999px; font-size: 11px !important; font-weight: 700 !important;
@@ -1209,7 +1114,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-list .sl-compliant--yes .sl-compliant__dot { background: #10b981; }
 .sup-list .sl-compliant--no .sl-compliant__dot { background: #ef4444; }
 
-/* Edit: a filled teal square like the design. */
 .sup-list .sup-fig .sl-act-btn--edit,
 .sup-list .sup-fig .sl-act-btn--edit:hover {
   color: #fff; border-color: transparent;
@@ -1230,7 +1134,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .sup-list .sup-fig .sl-compliant--yes { color: #6ee7b7; background: rgba(16, 185, 129, .14); border-color: rgba(16, 185, 129, .32); }
 [data-bs-theme="dark"] .sup-list .sup-fig .sl-compliant--no { color: #fca5a5; background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .32); }
 
-/* Pager footer: teal, as the other P2P lists (no violet band). */
 .smc-root.sup-list .smc-table-wrap > .wl-pager { border-top: 1px solid #c9ebf2; background: linear-gradient(90deg, #f0fdff 0%, #e6fafe 40%, #f0fdff 100%); }
 .smc-root.sup-list .wl-pager :is(.tc-wl-info, .tc-wl-rows, .tc-wl-btn) { color: #0e7490; border-color: #a5e8f5; background: #fff; }
 .smc-root.sup-list .wl-pager :is(.tc-wl-info .tc-wl-hl, .tc-wl-rows select) { color: #0891b2; }
@@ -1240,7 +1143,6 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] .smc-root.sup-list .wl-pager :is(.tc-wl-info, .tc-wl-rows, .tc-wl-btn) { color: #67e8f9; border-color: rgba(34, 211, 238, .3); background: rgba(255, 255, 255, .05); }
 [data-bs-theme="dark"] .smc-root.sup-list .wl-pager :is(.tc-wl-info .tc-wl-hl, .tc-wl-rows select) { color: #a5f3fc; }
 
-/* ── Filter Suppliers modal (the design's centred dialog; portalled to body) ───────────────── */
 .supfm-backdrop {
   position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 20px;
   background: rgba(8, 47, 73, .38); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
@@ -1321,15 +1223,12 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 }
 .supfm-opt.is-on { border-color: #22d3ee; background: #f0fdff; box-shadow: 0 0 0 3px rgba(34, 211, 238, .14); }
 .supfm-opt.is-on .supfm-chk { color: #fff; border-color: transparent; background: linear-gradient(135deg, #22d3ee, #0891b2); }
-/* Figma: a ticked option's count turns solid teal; each section says how many it has ticked. */
 .supfm-opt.is-on .supfm-n { color: #fff; border-color: transparent; background: linear-gradient(135deg, #0891b2, #0e7490); }
 .supfm-sel {
   margin-left: auto; flex-shrink: 0; padding: 4px 10px; border-radius: 999px;
   font-size: 10.5px; font-weight: 800; color: #0e7490; background: #ecfeff; border: 1px solid #bfe9f1;
 }
 [data-bs-theme="dark"] .supfm-sel { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
-/* Compact, to the Figma's measurements: option rows 40px (two tight text lines), section header
-   54px, header 76px, footer 65px — the modal is ~475px, not ~520px. */
 .supfm-hd { padding: 15px 18px; }
 .supfm-body { gap: 14px; padding: 14px 20px 15px; }
 .supfm-sec__hd { padding: 9px 16px 9px 20px; }
@@ -1386,20 +1285,11 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 [data-bs-theme="dark"] :is(.supfm-clear, .supfm-cancel) { color: #cbd5e1; }
 [data-bs-theme="dark"] .supfm-res b { color: #67e8f9; }
 
-/* The Add Supplier origin chooser (SupplierScopeGate) teal styles live in
-   supplier-scope-gate-teal.css (also loaded by the Sourcing Tracker). */
-
-/* ===== Supplier module: every text button is 40px tall with 12.5px text (page header, row and
-   Filter panel buttons). Supplier page only. ===== */
 body:has(.smc-root.sup-list) .cstrip__action-btn,
 body:has(.smc-root.sup-list) .sl-evault-btn,
 body:has(.smc-root.sup-list) :is(.supfm-clear, .supfm-cancel, .supfm-apply) { height: 40px; font-size: 12.5px; }
 body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 
-
-/* Supplier type tabs, Figma (#slSubTabs .p2p-sub2tab): each tab 40px tall (text centred in the
-   31px above the 9px underline gap). Count pill: grey and quiet when the tab is off; on the open
-   tab a cyan gradient pill with a 1.5px #67e8f9 border and a soft teal shadow. */
 .sup-list .sup-kind { height: 40px; box-sizing: border-box; }
 .sup-list .sup-kind__c {
   min-width: 30px; height: 20px; padding: 0 9px; border: 1.5px solid #e2e8f0; background: #f1f5f9; color: #64748b;
@@ -1413,20 +1303,13 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
   color: #a5f3fc; background: linear-gradient(135deg, rgba(34, 211, 238, .22), rgba(8, 145, 178, .3)); border-color: rgba(103, 232, 249, .55); box-shadow: none;
 }
 
-/* Supplier list: every header centred over its column. Supplier, Segment, Location and Contact
-   Person were the only left-aligned columns; their content is centred too (each block keeps its own
-   lines left-aligned inside), so header and content share one centre line in every column. */
 .sup-fig .sup-table-wrap .table thead th { text-align: center !important; }
 .sup-fig .sup-table-wrap .table tbody td:is(:nth-child(3), :nth-child(5), :nth-child(6), :nth-child(7)) { text-align: center !important; }
-/* A block centred by its own width zigzags (every name is a different length), so the multi-line
-   cells get one FIXED-width box, centred in the column, with its contents left-aligned inside:
-   the supplier icons, names and the location / contact lines start at one x on every row. */
 .sup-fig .sup-table-wrap .table tbody td:nth-child(3) > * { width: min(230px, 100%); margin-inline: auto; justify-content: flex-start; text-align: left; }
 .sup-fig .sup-table-wrap .table tbody td:nth-child(6) > * { width: min(140px, 100%); }
 .sup-fig .sup-table-wrap .table tbody td:nth-child(7) > * { width: min(190px, 100%); }
 .sup-fig .sup-table-wrap .table tbody td:is(:nth-child(5), :nth-child(6), :nth-child(7)) > * { text-align: left; }
 
-/* Apply Filters while the filtered list loads: a white spinner in place of the tick. */
 .supfm-spin {
   width: 14px; height: 14px; flex: none; border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, .45); border-top-color: #fff;
@@ -1437,57 +1320,32 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 .supfm-apply[aria-busy="true"]:disabled { cursor: progress; filter: none; opacity: .92; }
 .supfm-cancel:disabled { opacity: .55; cursor: not-allowed; }
 
-/* QA #27: in dark mode the selected Domestic / International tab kept the unselected grey text
-   (#94a8bb, a stronger rule) on its teal fill. White, as in light mode. */
 [data-bs-theme="dark"] .sup-list .sup-tab.is-on,
 [data-bs-theme="dark"] .sup-list .sup-tab.is-on:hover { color: #fff; }
 [data-bs-theme="dark"] .sup-list .sup-tab.is-on .sup-tab__c { color: #fff; background: rgba(255, 255, 255, .22); border-color: rgba(255, 255, 255, .4); }
-/* QA #29: Refine Suppliers option with no supplier: disabled look AND behaviour. */
 .supfm-opt:disabled { cursor: not-allowed; }
-/* No hover lift on a disabled option (the base .supfm-opt:hover tint would read as clickable). */
 .supfm-opt:disabled:hover { border-color: #e5eef2; background: #fff; }
 [data-bs-theme="dark"] .supfm-opt:disabled:hover { background: #0f1c24; border-color: rgba(148, 163, 184, .18); }
 
-/* Supplier list: the mouse is ignored while scrolling (class set by Vendors.tsx for 150ms), so rows
-   gliding under the pointer fire no hovers. Child combinator: only this one element restyles. */
 .sup-table-wrap.is-scrolling > .table-responsive { pointer-events: none; }
-/* Supplier list: the rows scroll inside the table (its height is set to the screen by Vendors.tsx).
-   The header row is already sticky; its cells were see-through, so they get the header's own
-   solid tint and the rows pass under it. */
 .sup-fig .sup-table-wrap > .table-responsive { overflow-y: auto; }
-/* The list lays its table out as blocks (table display:block, thead display:table), so the cells'
-   own sticky does not hold: the whole header block is pinned instead. */
 .sup-fig .sup-table-wrap .table > thead { position: sticky; top: 0; z-index: 3; }
 .sup-fig .sup-table-wrap .table thead.table-light th { background: #e6f7fb !important; }
 [data-bs-theme="dark"] .sup-fig .sup-table-wrap .table thead.table-light th { background: #10303b !important; }
 
-/* Supplier list on screens narrower than the table (below ~1745px it scrolls sideways): the ACTION
-   column (Edit / Evidence Vault) stays pinned to the right edge, so it is never scrolled out of
-   sight. Solid row colour behind it (light #fff / dark #212529, plus the row's hover tint) and a
-   soft edge shadow where the scrolling columns pass under it. */
 @media (min-width: 821px) {
-  /* The body was its own scroll box (overflow hidden auto), so a pinned cell stuck to the body,
-     which is as wide as the table. Rows scroll in .table-responsive now; the body needs none. */
   .sup-fig .sup-table-wrap .table > :is(thead, tbody) { overflow: visible !important; }
   .sup-fig .sup-table-wrap .table :is(thead th, tbody td):last-child {
     position: sticky; right: 0; z-index: 2;
     box-shadow: -8px 0 12px -10px rgba(15, 58, 77, .28);
   }
-  /* !important: the shared table CSS makes cells transparent (the row carries the colour), which
-     let the scrolling columns (the Mapped count) show through the pinned cell. */
   .sup-fig .sup-table-wrap .table tbody td:last-child { background: #fff !important; }
   .smc-root.sup-list .sup-fig .sup-table-wrap .table tbody tr:hover > td:last-child { background: #f5feff !important; }
-  /* A shared Customers rule sets the header cells to position: static !important. */
   .sup-fig .sup-table-wrap .table thead th:last-child { position: sticky !important; right: 0; z-index: 4; }
   [data-bs-theme="dark"] .sup-fig .sup-table-wrap .table tbody td:last-child { background: #212529 !important; box-shadow: -8px 0 12px -10px rgba(0, 0, 0, .7); }
   [data-bs-theme="dark"] .smc-root.sup-list .sup-fig .sup-table-wrap .table tbody tr:hover > td:last-child { background: linear-gradient(rgba(34, 211, 238, .1), rgba(34, 211, 238, .1)), #212529 !important; }
 }
 
-/* Supplier list table scrollbars (sideways and up-down): thin and quiet, a soft teal thumb on
-   a clear track, darker on hover. */
-/* Chrome ignores the ::-webkit-scrollbar size once scrollbar-width / scrollbar-color is set (and
-   its "thin" is still wide on Windows), so those stay auto here and the 6px rules below apply.
-   Firefox (no ::-webkit-scrollbar) gets the standard thin bar instead. */
 .sup-fig .sup-table-wrap > .table-responsive { scrollbar-width: auto; scrollbar-color: auto; }
 @supports not selector(::-webkit-scrollbar) {
   .sup-fig .sup-table-wrap > .table-responsive { scrollbar-width: thin; scrollbar-color: rgba(8, 145, 178, .35) transparent; }
@@ -1501,10 +1359,6 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 [data-bs-theme="dark"] .sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-thumb { background: rgba(103, 232, 249, .3); }
 [data-bs-theme="dark"] .sup-fig .sup-table-wrap > .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(103, 232, 249, .5); }
 
-/* Header row height: "MAPPED PRODUCTS / SERVICES" wrapped to three lines in its 5.5% column and
-   set a 63px header. Two points of width move from Supplier (which had room to spare) so it
-   wraps to two lines. */
 .sup-fig .sup-table-wrap .table :is(th, td):nth-child(3)  { width: 12.5%; }
 .sup-fig .sup-table-wrap .table :is(th, td):nth-child(5)  { width: 9.5%; }
-/* 8% = 132px at the table's 1640px minimum, enough for two lines (cells ignore min-width here). */
 .sup-fig .sup-table-wrap .table :is(th, td):nth-child(10) { width: 8%; }

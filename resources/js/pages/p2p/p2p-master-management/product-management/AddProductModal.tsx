@@ -1,8 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { segmentLabel, SegmentBadgeLine } from '../../../../components/ui/SegmentBadge';
 import './product-management.css';
-/* The Domestic / International gate's themed look; every rule is scoped to the pages that use it
-   and to body.apm-supplier-wizard-open (the "+" Add Supplier from Map Supplier, in violet). */
 import '../supplier-management/supplier-scope-gate-teal.css';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -39,9 +37,6 @@ export type VendorEntry = {
   gstPct: number;
   gstAmt: number;
   totalAmt: number;
-  /* An overseas supplier prices in its own currency and charges no GST;
-     inrAmount is what that was worth when it was mapped. Absent on the
-     domestic mappings that are everything saved before this existed. */
   origin?: 'domestic' | 'international';
   currency?: string;
   exchangeRate?: number;
@@ -71,7 +66,6 @@ export type VendorOpt = {
   designation: string;
   status: string;
   type: string;
-  /** 'material' | 'logistics' | 'services' — from the Supplier Type master. */
   typeKind: string;
   state: string;
   country: string;
@@ -120,26 +114,15 @@ const mapVendorRows = (rows?: BundleVendorRow[] | null): VendorOpt[] =>
     state:       String(r.state ?? ''),
     country:     String(r.country ?? ''),
     city:        String(r.city ?? ''),
-    // Derived server-side from the supplier's country — see SupplierPricing.
     origin:      (r.origin === 'international' ? 'international' : 'domestic') as SupplierScope,
     currency:    String(r.currency ?? 'INR'),
     segmentIds:  Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Number.isFinite) : [],
   }));
 
-
-/* ── Mapped-supplier cells ───────────────────────────────────────────────
- * Three tables in this file render the same supplier row, so the cells live
- * here rather than being written out three times and drifting apart.
- *
- * An international mapping reads in its supplier's own currency with the
- * rupee equivalent underneath, as Map Service Suppliers does — the figure the
- * supplier quoted is the one the buyer has to recognise.
- */
 const isIntlEntry = (v: VendorEntry) => v.origin === 'international';
 
 const money = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/* Inline marks, not emoji: Chrome on Windows cannot draw the flag glyph. */
 const IcoFlag = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
@@ -156,7 +139,6 @@ const OriginCell = ({ v }: { v: VendorEntry }) => (
     : <span className="apm-sup-origin apm-sup-origin--dom"><IcoFlag /> Domestic</span>
 );
 
-/** State for a domestic supplier, country (and city) for an overseas one. */
 const PlaceCell = ({ v, opt }: { v: VendorEntry; opt?: VendorOpt | null }) => (
   isIntlEntry(v)
     ? (
@@ -204,8 +186,6 @@ type Tab = 'core' | 'sales';
 
 const SUP_PAGE_SIZE = 3;
 
-/* Offered on an international mapping. Mirrors the Service flow's list; the
-   supplier's own currency is preselected from its country. */
 const INTL_CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SGD', 'JPY', 'CNY', 'AUD', 'CAD', 'CHF'];
 
 const formatSupplierCode = (raw: string): string => {
@@ -272,9 +252,6 @@ export default function AddProductModal(props: {
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  /* QA-95: on a failed required-field check, scroll to the first highlighted
-     field and focus it, so the user is taken to what needs fixing. Runs after
-     the re-render that paints `.has-error`, hence the rAF. */
   const focusFirstError = () => {
     requestAnimationFrame(() => {
       const el = bodyRef.current?.querySelector('.apm-field.has-error') as HTMLElement | null;
@@ -440,7 +417,6 @@ export default function AddProductModal(props: {
   const [vendorErrors, setVendorErrors] = useState<Record<string, string>>({});
   const vendorBodyRef = useRef<HTMLDivElement | null>(null);
   const clearVendorError = (k: string) => setVendorErrors(prev => (prev[k] ? (() => { const n = { ...prev }; delete n[k]; return n; })() : prev));
-  /* QA-97: scroll to + focus the first missing field in the Map Supplier popup. */
   const focusFirstVendorError = () => {
     requestAnimationFrame(() => {
       const el = vendorBodyRef.current?.querySelector('.apm-field.has-error') as HTMLElement | null;
@@ -461,10 +437,6 @@ export default function AddProductModal(props: {
   const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [vendorSelectedCode, setVendorSelectedCode] = useState('');
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
-  /* Map Supplier asks Domestic or International first, as Service Management
-     does. The scope then decides which suppliers the dropdown offers and
-     whether the form prices in rupees with GST or in the supplier's own
-     currency with an exchange rate. */
   const [vendorMapGateOpen, setVendorMapGateOpen] = useState(false);
   const [vendorScope, setVendorScope] = useState<SupplierScope>('domestic');
   const [vendorCurrency, setVendorCurrency] = useState('USD');
@@ -496,13 +468,7 @@ export default function AddProductModal(props: {
     () => vendorOpts.filter(v =>
       !mappedVendorKeys.ids.has(String(v.id))
       && !(v.code && mappedVendorKeys.codes.has(String(v.code)))
-      /* …and of the scope being mapped. A Domestic mapping prices in rupees
-         with GST, so an overseas supplier has no place in that list, and the
-         reverse. The row being edited keeps its own supplier visible. */
       && (v.origin === vendorScope || v.code === vendorSelectedCode)
-      /* …and a supplier of GOODS. A product is a physical item, so a
-         transporter or a service provider cannot supply one — their Supplier
-         Type says what they deal in, and only 'material' does. */
       && (v.typeKind === 'material' || v.code === vendorSelectedCode)),
     [vendorOpts, mappedVendorKeys, vendorScope, vendorSelectedCode],
   );
@@ -517,8 +483,6 @@ export default function AddProductModal(props: {
     return () => document.body.classList.remove('apm-supplier-wizard-open');
   }, [supplierGateOpen, supplierAddScope]);
 
-  /* The Map Supplier chooser opens FROM the Mapped Suppliers popup, which
-     outranks the gate's own layer — see .apm-map-gate-open in the stylesheet. */
   useEffect(() => {
     document.body.classList.toggle('apm-map-gate-open', vendorMapGateOpen);
     return () => document.body.classList.remove('apm-map-gate-open');
@@ -723,8 +687,6 @@ export default function AddProductModal(props: {
     const missing: string[] = [];
     if (!vendorSelected)        { errs.vendor = 'Supplier is required'; missing.push('Vendor'); }
     if (String(vendorPurchasePrice ?? '').trim() === '') { errs.price = 'Purchase Price is required'; missing.push('Purchase Price'); }
-    // Without a rate there is no rupee equivalent, and the mapping cannot be
-    // compared with a domestic one.
     if (vendorIsIntl && !(parseFloat(vendorFxRate) > 0)) { errs.fx = 'Exchange Rate is required'; missing.push('Exchange Rate'); }
     if (missing.length || !vendorSelected) {
       setVendorErrors(errs);
@@ -775,8 +737,6 @@ export default function AddProductModal(props: {
           email:         vendorSelected.email,
           designation:   vendorSelected.designation,
           purchasePrice: vendorPp,
-          /* Overseas: no GST, and the total IS the price in its currency.
-             inrAmount is the rupee equivalent at the rate entered here. */
           gstPct:        vendorIsIntl ? 0 : vendorGp,
           gstAmt:        vendorIsIntl ? 0 : vendorGsta,
           totalAmt:      vendorIsIntl ? vendorPp : vendorTota,
@@ -826,9 +786,6 @@ export default function AddProductModal(props: {
     const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
     setVendorSelectedCode(opt?.code ?? v.vendorCode);
     setVendorPurchasePrice(v.purchasePrice ? String(v.purchasePrice) : '');
-    /* The row's own scope, falling back to the supplier's country for rows
-       saved before origin was stored. No chooser here — the mapping already
-       made that choice. */
     setVendorScope(v.origin ?? opt?.origin ?? 'domestic');
     setVendorCurrency(v.currency ?? opt?.currency ?? 'USD');
     setVendorFxRate(v.exchangeRate ? String(v.exchangeRate) : '');
@@ -1084,8 +1041,6 @@ export default function AddProductModal(props: {
           gstPct: Number(v.gst_percentage ?? 0),
           gstAmt: Number(v.gst_amount ?? 0),
           totalAmt: Number(v.total_amount ?? 0),
-          /* Rows saved before international mappings existed carry no origin;
-             they are all domestic, which is what the fallback says. */
           origin: v.origin === 'international' ? 'international' : 'domestic',
           currency: v.currency_code ? String(v.currency_code) : undefined,
           exchangeRate: v.exchange_rate != null ? Number(v.exchange_rate) : undefined,
@@ -1139,7 +1094,6 @@ export default function AddProductModal(props: {
     if (initialId && !loadingEdit) coreBaselineArmedRef.current = true;
   }, [initialId, loadingEdit]);
 
-  
   useEffect(() => {
     if (!coreBaselineArmedRef.current || loadingEdit) return;
     const t = setTimeout(() => {
@@ -1188,9 +1142,6 @@ export default function AddProductModal(props: {
       return;
     }
     setFieldErrors({});
-    /* Every department, not just the ones that see Stage 2: Purchase has no
-       Sales Config tab, so skipping this gate let them create a product with
-       no GST and meet the validation later, at Map Supplier. */
     if (!productId) {
       if (!gstId) toast.info('GST is mandatory', 'Please select a GST rate from the GST Master — the product is created once GST is mapped.');
       setGstMapValue(gstId);
@@ -1278,7 +1229,6 @@ export default function AddProductModal(props: {
 
       if (isPurchaseDept) {
         onSaved(res.data.id, true);
-        // The Map GST popup announces its own result, so don't toast twice.
         if (!gstToCommit) toast.success('Product saved', 'Product created successfully');
         return true;
       }
@@ -1316,9 +1266,6 @@ export default function AddProductModal(props: {
 
       if (usage.gst_locked) {
         const used = (usage.gst_lock_codes ?? []).filter(Boolean);
-        /* A domestic mapping was priced off this rate, so it holds the rate as
-           firmly as an issued document does. Named, because the user can act
-           on it — unmap the supplier and the rate frees up again. */
         const sups = (usage.gst_lock_suppliers ?? []).filter(Boolean);
         const supList = sups.slice(0, 2).join(', ') + (sups.length > 2 ? ` and ${sups.length - 2} more` : '');
         toast.error(
@@ -1438,7 +1385,6 @@ export default function AddProductModal(props: {
     setSaving(false);
   };
 
-  // Tell the opener the skeleton phase is over (fires once).
   const readyFiredRef = useRef(false);
   useEffect(() => {
     if (readyFiredRef.current || loadingEdit || mastersLoading) return;
@@ -1606,17 +1552,12 @@ export default function AddProductModal(props: {
 
                   <div className="apm-grid-2">
                     <Field label="Make / Brand / Specifications" required icon={<i className="ri-store-2-line" />} error={fieldErrors.brand}>
-                      {/* Capped like the other free-text names on this form. It
-                          is a line on a PO and on the PDF, not a description —
-                          without a limit the only thing stopping an essay was
-                          the column being `text` (QA #18). */}
                       <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications"
                         maxLength={BRAND_MAX} value={brand}
                         onChange={e => {
                           const v = e.target.value.slice(0, BRAND_MAX);
                           setBrand(v);
                           clearFieldError('brand');
-                          // Paste is the only way past maxLength; say why it was cut.
                           if (e.target.value.length > BRAND_MAX) {
                             setFieldErrors(prev => ({
                               ...prev,
@@ -1734,7 +1675,6 @@ export default function AddProductModal(props: {
                             error={fieldErrors.coldChainTemp}
                             labelExtra={
                               <span className="apm-temp-presets">
-                                {/* Reference bands only — read-only, not clickable. */}
                                 {COLD_CHAIN_PRESETS.map(pr => (
                                   <span key={pr.label} className="apm-temp-chip">
                                     <b>{pr.label}</b> {pr.min}…{pr.max}°C
@@ -1890,8 +1830,6 @@ export default function AddProductModal(props: {
                   </button>
                 </div>
                 <div className="apm-sup-body">
-              {/* Accent card around the grid, as .svs-card on Map Service
-                  Suppliers — the head carries the count, search and action. */}
               <div className="apm-sup-card">
               <div className="apm-sup-bar">
                 <span className="apm-sup-card-ico">
@@ -1991,9 +1929,6 @@ export default function AddProductModal(props: {
                           <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.type || '—') : ''} readOnly placeholder="—" />
                         </Field>
 
-                        {/* Where the supplier IS differs by scope: a domestic one
-                            is identified by its state (GST follows from it), an
-                            overseas one by country and city. */}
                         {vendorIsIntl ? (
                           <>
                             <Field label="Country" auto>
@@ -2021,9 +1956,6 @@ export default function AddProductModal(props: {
                       <div className="apm-mv-grid">
                         {vendorIsIntl ? (
                           <>
-                            {/* No GST: an overseas supplier does not charge it. The
-                                rate turns the price into rupees for comparison, and
-                                is stored so the figure keeps its original meaning. */}
                             <Field label="Currency" required>
                               <SelectInput
                                 value={vendorCurrency}
@@ -2081,8 +2013,6 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-foot">
-                      {/* Back re-opens the origin chooser; on an edit the origin is
-                          already fixed, so there is nothing to go back to. */}
                       {!vendorEditingId && (
                         <button className="apm-btn-back" onClick={() => { closeVendorDraft(); setVendorMapGateOpen(true); }} disabled={saving}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 6 9 12 15 18" /></svg>
@@ -2113,9 +2043,6 @@ export default function AddProductModal(props: {
                     </Suspense>
                   )}
 
-                  {/* Map Supplier asks the same question first, so the form that
-                      opens is already the right one — rupees and GST, or the
-                      supplier's own currency and an exchange rate. */}
                   {vendorMapGateOpen && (
                     <Suspense fallback={null}>
                       <SupplierScopeGate
@@ -2560,7 +2487,6 @@ function SupplierSkeleton({ onClose }: { onClose: () => void }) {
               <tbody>
                 {[0, 1, 2].map(r => (
                   <tr key={r}>
-                    {/* 12 columns: Origin was added beside State / Country. */}
                     {Array.from({ length: 12 }).map((_, c) => (
                       <td key={c}><span className="apm-shim apm-sup-shim-cell" /></td>
                     ))}
@@ -2627,9 +2553,7 @@ function Field(props: {
   icon?: ReactNode;
   error?: string;
   disabled?: boolean;
-  /** Extra content pushed to the right end of the label row (e.g. preset chips). */
   labelExtra?: ReactNode;
-  /** Marks a field the form fills in itself — chip on the label, lock in the box. */
   auto?: boolean;
   children: ReactNode;
 }) {

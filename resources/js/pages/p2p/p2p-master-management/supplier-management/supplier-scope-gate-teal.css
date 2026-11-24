@@ -1,8 +1,3 @@
-/* ═════ Add Supplier origin chooser (SupplierScopeGate) — teal ═════
-   Exact values from the Figma export (.slm-teal .supch-*). The chooser is shared
-   (Sourcing, PO, Products), so these rules apply only on the Supplier Management
-   page and the Sourcing Management Tracker (both teal); everywhere else it keeps
-   its own look. Imported by Vendors.tsx and the tracker's MapSupplierModal.tsx. */
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-ov { background: rgba(20,10,40,.68); }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-box {
   width: min(630px, calc(100vw - 28px)); border-radius: 22px; background: #fff;
@@ -28,7 +23,6 @@
   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.4); color: #fff;
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-close:hover { background: #fff; color: var(--avmv-0e7490, #0e7490); }
-/* Dark: the hover kept the light theme's teal × on a barely lighter tile — white × instead. */
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-close:hover { background: rgba(255,255,255,.26); color: #fff; }
 
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-body { padding: 22px 24px 6px; background: linear-gradient(var(--avmv-f6fdfe, #f6fdfe), #fff 40%); }
@@ -38,7 +32,6 @@
   background: #fff; border: 1.5px solid var(--avmv-e2eef2, #e2eef2); box-shadow: none; transform: none;
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-card:hover {
-  /* Hover lifts the card a little (as the original chooser), in teal. */
   border-color: var(--avmv-a5e4f0, #a5e4f0); box-shadow: 0 14px 26px -16px rgba(var(--avmv-rgb-0891b2, 8, 145, 178),.6); transform: translateY(-3px);
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-card:focus-visible { outline: 2px solid var(--avmv-0891b2, #0891b2); }
@@ -57,7 +50,6 @@
   background: var(--avmv-e0f7fb, #e0f7fb); border: 1px solid var(--avmv-c4ecf4, #c4ecf4); color: var(--avmv-0891b2, #0891b2); box-shadow: none;
 }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-iconbox svg { stroke: var(--avmv-0891b2, #0891b2); }
-/* Hover (and the picked card): the icon only moves (grows and tilts a little); its colours stay. */
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-iconbox { transition: transform .22s cubic-bezier(.34, 1.56, .64, 1); }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) :is(.supch-card:hover, .supch-card.is-selected) .supch-iconbox { transform: scale(1.08) rotate(-3deg); }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body.apm-supplier-wizard-open) .supch-card-title { font-size: 14.5px; font-weight: 800; letter-spacing: -.2px; color: #0f172a; }

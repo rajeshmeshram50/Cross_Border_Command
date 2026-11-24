@@ -14,7 +14,6 @@ import { Shimmer, ShimmerForm, ShimmerTable } from '../../../../components/ui/Sh
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
-// The app's "Add attachment" menu (Upload file / Take photo with the shared camera).
 import AttachPicker from '../../procurement-management/sourcing-tracker/AttachPicker';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
@@ -35,12 +34,9 @@ import {
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
 import { serviceBucketOf, type ServiceBucket } from './serviceMapping';
-/* The Service Management wrench, so service popups here carry that module's own icon. */
 import { SVC_ICONS } from '../service-management/serviceIcons';
 import { lazyPage } from '../../../../utils/lazyPage';
 
-/* Lazy: the product wizard is a big chunk and most mappings pick an existing
-   product, so it should not be downloaded with this modal. */
 const AddProductModal = lazyPage(() => import('../product-management/AddProductModal'));
 
 function validateContactNumber(value: string, label = 'Contact No', isIndia = false): string {
@@ -96,7 +92,6 @@ function ContactNoInput(props: {
   );
 }
 
-/* Fixed, in the order they escalate: best standing first, worst last. */
 export const SUPPLIER_CATEGORY_OPTS: { value: string; label: string }[] = [
   { value: 'star',        label: 'Star Supplier' },
   { value: 'general',     label: 'General' },
@@ -104,9 +99,6 @@ export const SUPPLIER_CATEGORY_OPTS: { value: string; label: string }[] = [
   { value: 'blacklisted', label: 'Blacklisted' },
 ];
 
-/* FALLBACK only. Supplier Behaviour now reads the Supplier Behaviour master (its active rows come in
-   the vendor master bundle); these four show only while a tenant's master is still empty. The form
-   sends the NAME and the server resolves it to a master row per tenant (firstOrCreate). */
 export const SUPPLIER_BEHAVIOUR_OPTS: { value: string; label: string }[] = [
   { value: 'Genuine',                      label: 'Genuine' },
   { value: 'Cooperative & Responsive',     label: 'Cooperative & Responsive' },
@@ -114,7 +106,6 @@ export const SUPPLIER_BEHAVIOUR_OPTS: { value: string; label: string }[] = [
   { value: 'Fraud Alert',                  label: 'Fraud Alert' },
 ];
 
-/** Convert to Supplier: GET /p2p/new-suppliers/{id}/convert → opens the form pre-filled. */
 export type SupplierPrefill = {
   origin?: 'domestic' | 'international';
   identity: { company_name?: string | null; legal_name?: string | null; segment_id?: number | null; gst_applicable?: 'Yes' | 'No' | null };
@@ -125,7 +116,6 @@ export type SupplierPrefill = {
 };
 
 export type VendorPayload = {
-  /** Id of the saved supplier (vendors.id). */
   vendorId?: number | null;
   companyName: string;
   legalName: string;
@@ -135,7 +125,6 @@ export type VendorPayload = {
   gstNumber: string;
   riskLevel: string;
   vendorBehaviour: string;
-  /** The supplier's segment ids (a supplier can be in several segments). */
   segment: string[];
   complianceBehaviour: string;
   registeredOffice: string;
@@ -256,10 +245,6 @@ export type ProductMappingRow = {
   totalAmount: number;
 };
 
-/* The Map Product form's draft, and the two things every user of it needs.
-   Module level because the form is now opened from two places — the supplier
-   wizard and the Mapped Products popup on the list — and both must total a
-   mapping the same way. */
 export type ProductMappingDraft = {
   productId: string; productCode: string; productName: string;
   hsnSacCode: string; segment: string; batchSerialLot: string;
@@ -271,7 +256,6 @@ const EMPTY_MAPPING_DRAFT: ProductMappingDraft = {
   batchSerialLot: '', purchasePrice: '', gstPercentage: '', gstAmount: '', totalAmount: '',
 };
 
-/** GST amount + total from purchase price and rate. Blank price blanks both. */
 function recomputeMappingTotals(draft: ProductMappingDraft): ProductMappingDraft {
   const price = parseFloat(draft.purchasePrice);
   const pct   = parseFloat(draft.gstPercentage);
@@ -282,14 +266,12 @@ function recomputeMappingTotals(draft: ProductMappingDraft): ProductMappingDraft
   return { ...draft, gstAmount: gstAmt.toFixed(2), totalAmount: total.toFixed(2) };
 }
 
-/** Options for the Product Name dropdown, with everything the form autofills. */
 export type ProductMappingOpt = {
   value: string; label: string; code: string; name: string;
   hsn: string; segment: string; segmentId: number | null; segmentName?: string; segmentReg?: string | null;
   basePrice: string; gstPercentage: string;
 };
 
-/** Products that can be mapped: every active product carrying a segment. */
 async function loadMappableProducts(): Promise<ProductMappingOpt[]> {
   type Row = {
     id: number; product_code?: string; name?: string;
@@ -317,7 +299,6 @@ async function loadMappableProducts(): Promise<ProductMappingOpt[]> {
     }));
 }
 
-/** The step/products payload — the endpoint replaces the whole set each time. */
 const mappingsPayload = (list: ProductMappingRow[]) => list.map(m => ({
   product_id: m.productId,
   batch_serial_lot: m.batchSerialLot || null,
@@ -339,12 +320,6 @@ const SEED_DD: DueDiligenceRow[] = [];
 
 const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
-/* Supplier Type, grouped as in the Figma. Group headings are labels only;
-   their children are what gets saved. The values are the ten fixed types the
-   server seeds globally (2026_11_19_100000_seed_fixed_vendor_types), spelled
-   exactly as seeded, so the save can send that type's vendor_type_id from the
-   master bundle (see supplierTypeId). Every service name contains "service",
-   so the list page puts them all under the Service Suppliers tab. */
 type SupplierTypeNode = { value: string; label: string } | { group: string; items: { value: string; label: string }[] };
 const SUPPLIER_TYPE_TREE: SupplierTypeNode[] = [
   { value: 'Material/ Goods',       label: 'Material/ Goods' },
@@ -365,21 +340,16 @@ const SUPPLIER_TYPE_TREE: SupplierTypeNode[] = [
 const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] =
   SUPPLIER_TYPE_TREE.flatMap(n => 'group' in n ? n.items : [n]);
 
-/** A type name with spacing and case ignored: "Material / Goods" and "Material/ Goods" are one type. */
 const squashType = (s: string) => s.replace(/\s+/g, '').toLowerCase();
 
-/** A saved supplier's type name → the dropdown's value (older rows were saved as "Material / Goods"). */
 const canonicalSupplierType = (name: string) =>
   SUPPLIER_TYPE_OPTS.find(o => o.value === name || squashType(o.value) === squashType(name))?.value ?? name;
-/** The master_vendor_types id for a picked type: the exact seeded spelling first (the shared global
-    row), then any row with the same name ignoring spacing (an older per-company row). */
 const supplierTypeId = (name: string, opts: { value: string; label: string }[]) => {
   const hit = opts.find(o => o.label === name) ?? opts.find(o => squashType(o.label) === squashType(name));
   const id = hit ? Number(hit.value) : NaN;
   return Number.isFinite(id) && id > 0 ? id : null;
 };
 
-/* Sub-tab icons (Figma); shown only where the wizard is themed. */
 const KYC_TAB_ICON: Record<KycTab, ReactNode> = {
   company: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
   owner:   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="11" r="2.5" /><line x1="14" y1="10" x2="18" y2="10" /><line x1="14" y1="14" x2="18" y2="14" /><path d="M5.5 17a3.5 3.5 0 0 1 7 0" /></svg>,
@@ -406,23 +376,11 @@ const KYC_TAB_SUB: Record<string, string> = {
 export default function AddVendorModal(props: {
   vendorId?: number | null;
   initialStep?: StepKey;
-  /** Open the KYC step on this tab, e.g. 'gst' from a PO whose supplier needs GST scrutiny. */
   initialKycTab?: KycTab;
   scope?: 'domestic' | 'international';
   vendorCodeHint?: string | null;
-  /**
-   * Show the header's "Map Product" action. Default true.
-   *
-   * Passed false when the wizard is opened from the PRODUCT side (the "+"
-   * beside Supplier Name in Map Supplier): the mapping is already being made
-   * there, on a product that may not even be saved yet, so a second mapping
-   * surface inside this popup would be mapping in the opposite direction to
-   * the flow the user is standing in.
-   */
   canMapProducts?: boolean;
-  /** Convert to Supplier: values to start a NEW supplier with. */
   prefill?: SupplierPrefill | null;
-  /** Convert to Supplier: the P2P New Supplier being converted (its email is not a duplicate). */
   convertSupplierId?: number | null;
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
@@ -435,7 +393,6 @@ export default function AddVendorModal(props: {
 
   const [step, setStep] = useState<StepKey>(isEdit && initialStep ? initialStep : 1);
   const [idTab,    setIdTab]    = useState<IdTab>('identification');
-  // The GST tab exists only once the supplier is known to be GST-applicable, so it is opened after load.
   const [kycTab,   setKycTab]   = useState<KycTab>(initialKycTab && initialKycTab !== 'gst' ? initialKycTab : 'company');
   const pendingGstTab = useRef(initialKycTab === 'gst');
   const [tradeTab, setTradeTab] = useState<TradeTab>('kyc');
@@ -444,7 +401,6 @@ export default function AddVendorModal(props: {
   type Opt = { value: string; label: string; reg?: string; code?: string };
   const [vendorTypeOpts, setVendorTypeOpts]     = useState<Opt[]>([]);
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
-  /** Supplier Behaviour, from the Supplier Behaviour master (active rows, by name). */
   const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
   const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
@@ -517,10 +473,6 @@ export default function AddVendorModal(props: {
     if (segAddLoading) return;
     setSegAddLoading(true);
     try {
-      // lite=1: this only needs code, name and regulatory_status, which is
-      // exactly what lite returns. Without it the endpoint also runs its usage
-      // scan — one probe per segment across several tables, 129 queries here —
-      // to produce in_use/used_in, which the Segment "+" never reads.
       const { data } = await api.get<{ data: { code: string; name: string; regulatory_status?: string }[] }>('/clm/segments', { params: { lite: 1 } });
       const segRows = data.data ?? [];
       setSegAdd({ nextCode: nextSegmentCode(segRows), segments: segRows });
@@ -541,22 +493,12 @@ export default function AddVendorModal(props: {
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
-  /** The Supplier Type as SAVED (loaded on edit, then each successful Stage 1 save). Map Product /
-      Service goes by this one: a type changed in the dropdown maps nothing until Stage 1 is updated. */
   const [savedVendorType, setSavedVendorType] = useState('');
   const typeUnsaved = squashType(vendorType) !== squashType(savedVendorType);
-  /** Only a Material/ Goods supplier carries products (spacing / case ignored, as saved rows vary). */
   const isGoodsSupplier = squashType(savedVendorType) === squashType('Material/ Goods');
-  /** The service bucket a service-provider type serves (null for Material/ Goods, FFD/ Transporter
-      or no type yet). Same table as the server's ServiceController::VENDOR_TYPE_BY_NAME. */
   const serviceBucket = serviceBucketOf(savedVendorType);
-  /** Map Product / Service has something to open: products for goods, services for a provider. */
   const canMapAnything = isGoodsSupplier || serviceBucket !== null;
   const [website,     setWebsite]     = useState('');
-  /* Supplier Category — COMMERCIAL STANDING, not risk. Four fixed values, so
-     no master lookup: they are product vocabulary and the list's Refine filter
-     counts them by value. Risk Level stays as its own field; the overlap is in
-     wording only ('High Risk' here is a standing, 'High' there is a score). */
   const [supplierCategory, setSupplierCategory] = useState('general');
   const [gstApplicable, setGstApplicable] = useState<'Yes' | 'No'>('No');
   const [gstNumber,     setGstNumber]     = useState('');
@@ -566,8 +508,6 @@ export default function AddVendorModal(props: {
   );
   const [riskLevel,   setRiskLevel]   = useState('');
   const [vendorBehaviour, setVendorBehaviour] = useState('');
-  /* The master's active behaviours; the fixed list only if the master has none yet (a new tenant).
-     A saved behaviour that is no longer active stays in the list, so editing never blanks it. */
   const supplierBehaviourOptions = useMemo(() => {
     const base = behaviourOpts.length ? behaviourOpts : SUPPLIER_BEHAVIOUR_OPTS;
     return vendorBehaviour && !base.some(o => o.value.toLowerCase() === vendorBehaviour.toLowerCase())
@@ -593,12 +533,7 @@ export default function AddVendorModal(props: {
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
-  /* True while the segment rules are being fetched.
-     Without it the tabs render their empty state during the round trip, which
-     reads as "this supplier has no documents" — the opposite of the truth, and
-     the moment a user is most likely to conclude something is broken. */
   const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
-
 
   type SegRefUpload = { file: File | null; url: string; name: string; expiry?: string; issue?: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
@@ -633,16 +568,6 @@ export default function AddVendorModal(props: {
       const { data } = await api.post(`/segment-uploads/supplier/${ownerId}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      /* Record the key immediately.
-         uploadedKeys was populated once, at hydration, and never again — so a
-         document uploaded in THIS session was invisible to the segment-removal
-         guard. Upload two files against a segment, remove the segment, and the
-         guard checked a list that predated both files, allowed it, and the
-         uploads were orphaned. The guard can only be as current as the list it
-         reads. */
-      /* SegmentGuard keys are "category|doc_code" (dd|DD-001). refKey is the
-         UI form, "tab::code" (company::DD-001) — a different shape entirely, so
-         pushing it verbatim would never match and the guard would stay blind. */
       const guardKey = `${category}|${doc_code}`;
       setUploadedKeys(prev => (prev.includes(guardKey) ? prev : [...prev, guardKey]));
 
@@ -688,9 +613,6 @@ export default function AddVendorModal(props: {
   const [state,     setState]     = useState('');
   const [stateCode, setStateCode] = useState('');
   const [stateLocked, setStateLocked] = useState(false);
-  /* 'po' | 'spi' | null — the document that has frozen the Supplier Type.
-     It decides which documents may be raised against this supplier and which
-     service buckets it appears in, so a committed document depends on it. */
   const [typeLock, setTypeLock] = useState<string | null>(null);
   const lockToast = () => toast.warning(
     'Can’t change this',
@@ -747,14 +669,9 @@ export default function AddVendorModal(props: {
 
   const supplierDocType: SegDocType = useMemo(() => {
     const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim();
-    // No country known yet (the masters still loading): follow the origin the form was opened for,
-    // so a Domestic form does not show the International TIN field first.
     if (!name) return scope === 'domestic' ? 'domestic' : 'international';
     return name === 'India' ? 'domestic' : 'international';
   }, [country, countryOpts, scope]);
-  /* Derived from the chosen COUNTRY, not the scope the wizard was opened
-     with: the user can change country mid-form, and the tax field has to
-     follow what they actually picked. */
   const isInternational = supplierDocType === 'international';
   const disabledSegmentIds = useMemo(() => {
     if (!segRulesLoaded) return [] as string[];
@@ -767,7 +684,6 @@ export default function AddVendorModal(props: {
     });
   }, [segRulesLoaded, segmentOpts, ruledSegIds, country, segment, segTypesById, supplierDocType]);
 
-  // Plain text (toasts, review) — the dropdown shows the status as a badge instead.
   const segText = (id: string) => { const o = segmentOpts.find(x => x.value === String(id)); return o ? segmentLabel(o.label, o.reg) : String(id); };
 
   const sortedSegmentOpts = useMemo(() => {
@@ -791,8 +707,6 @@ export default function AddVendorModal(props: {
   const [contactNo,   setContactNo]   = useState('');
   const [email,       setEmail]       = useState('');
 
-  /* Convert to Supplier — start the new supplier with the New Supplier's details,
-     so nothing has to be typed again (and the contact is not entered twice). */
   useEffect(() => {
     const pf = props.prefill;
     if (isEdit || !pf) return;
@@ -872,23 +786,8 @@ export default function AddVendorModal(props: {
   useEffect(() => {
     if (pendingGstTab.current && gstApplicable === 'Yes') { pendingGstTab.current = false; setKycTab('gst'); }
   }, [gstApplicable]);
-  /* Previous scope, so the reset below can tell a real CHANGE from the first
-     run. Without it the effect fired once on hydration and blanked whatever had
-     just been loaded. */
   const prevDocTypeRef = useRef<SegDocType | null>(null);
   useEffect(() => {
-    /* Do nothing until the country has RESOLVED to a real option.
-       supplierDocType is derived by looking `country` up in countryOpts, so it
-       reports 'international' whenever that lookup fails — including at mount,
-       when country is still '' and nothing has loaded. That is a default, not a
-       reading, and baselining on it was the whole bug: opening a DOMESTIC
-       supplier recorded 'international' at mount, hydration then set the real
-       country, the scope flipped to 'domestic', the comparison below saw a
-       change that never happened, and it blanked the GST number that had just
-       been loaded.
-       Both halves matter — `country` must be set AND present in countryOpts.
-       Checking only `countryOpts.length` still passes during the window where
-       the options have arrived but the hydrated id is not among them yet. */
     const scopeResolved = !!country && countryOpts.some(o => o.value === country);
     if (!scopeResolved) return;
 
@@ -896,15 +795,6 @@ export default function AddVendorModal(props: {
     setGstApplicable(derived);
     clearFieldError('gstApplicable');
 
-    /* Clear the tax number only when the scope actually CHANGED, never on the
-       first run.
-       This used to read `if (derived === 'No')`, which is true exactly when the
-       supplier is INTERNATIONAL — so the one case it fired on was the one case
-       it must not: the same field carries the TIN there. Opening an existing
-       international supplier loaded its TIN and then wiped it a tick later,
-       once the country resolved and this effect ran.
-       On a genuine India ⇄ overseas switch the old number IS meaningless — a
-       GSTIN must not be carried forward as a TIN — so the reset stays for that. */
     const prev = prevDocTypeRef.current;
     if (prev !== null && prev !== supplierDocType) {
       setGstNumber('');
@@ -925,7 +815,6 @@ export default function AddVendorModal(props: {
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }>>({});
 
-  
   const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
   useEffect(() => {
     const expiries = Object.values(recentReminds);
@@ -963,27 +852,14 @@ export default function AddVendorModal(props: {
     gstPercentage: string;
   };
   const [productOpts,    setProductOpts]    = useState<ProductOpt[]>([]);
-  /* Distinguishes "still fetching" from "fetched, and there are none".
-     Without it an empty catalogue showed "Loading products…" forever, which
-     reads as a hung request rather than an empty list. */
   const [productOptsLoaded, setProductOptsLoaded] = useState(false);
-  /* Still filled from the options bundle, but no longer rendered: GST % is
-     inherited from the product and shown read-only in the mapping popup. */
   const [, setGstPctOpts] = useState<Opt[]>([]);
   const [productMappings, setProductMappings] = useState<ProductMappingRow[]>([]);
   const [mapPopupOpen,   setMapPopupOpen]   = useState(false);
-  /* Creating a product from inside the mapping form. The product wizard is
-     reused whole rather than reproduced here — a product has its own required
-     fields, masters and step statuses, and a second abbreviated version of it
-     would create rows the Products module considers incomplete. */
   const [newProductOpen, setNewProductOpen] = useState(false);
-  /* The wizard saves step by step: the first save creates the row and reports
-     finalised=false, and every later step must edit that same row rather than
-     create another one. */
   const [newProductId,   setNewProductId]   = useState<number | null>(null);
   const [newProductBusy, setNewProductBusy] = useState(false);
   const [mappedListOpen, setMappedListOpen] = useState(false);
-  /** Map Product / Service for a service-provider supplier: the Mapped Services popup. */
   const [mappedServicesOpen, setMappedServicesOpen] = useState(false);
 
   type MapDraft = {
@@ -1038,9 +914,6 @@ export default function AddVendorModal(props: {
     const hydrate = (b: Bundle) => {
       setVendorTypeOpts(toOpt(b.vendor_types));
       setRiskLevelOpts(toOpt(b.risk_levels));
-      /* Supplier Behaviour follows its master (Masters → Supplier Behaviour, active rows). Valued
-         by NAME, as before: the server resolves the name to the tenant's master row. Same name
-         twice (case / spacing) shows once. */
       {
         const seen = new Set<string>();
         setBehaviourOpts((b.vendor_behaviour || [])
@@ -1098,10 +971,6 @@ export default function AddVendorModal(props: {
         hydrate(res.data);
         writeVendorMasterBundle(res.data);
       } catch {
-        // Network failed. With a cache hit the user keeps the cached options
-        // (better than blanking a form they may be mid-way through); without
-        // one the dropdowns stay empty and individual saves will surface
-        // validation errors if a required option is missing.
       } finally {
         setMastersLoading(false);
       }
@@ -1142,8 +1011,6 @@ export default function AddVendorModal(props: {
             .catch(() => ({}))
         )
       ),
-      // view=list — only `code` and `name` are read; see AddCustomerModal.
-      // The supplier's own type narrows the list; switching type re-fetches it.
       api.get('/clm/trade-doc-library/for-party/supplier', { params: { view: 'list', ...(vendorType ? { vendor_type: vendorType } : {}) } })
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string; name: string }>),
@@ -1256,7 +1123,7 @@ export default function AddVendorModal(props: {
           }
         }
         setSigStatusByDoc(map);
-      } catch { /* silent — polling failures shouldn't toast every 15s */ }
+      } catch { }
     };
     fetchAndUpdate(false);
     const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
@@ -1352,7 +1219,6 @@ export default function AddVendorModal(props: {
         setVendorType(canonicalSupplierType(v.vendor_type_name ?? ''));
         setSavedVendorType(canonicalSupplierType(v.vendor_type_name ?? ''));
         setRiskLevel(numStr(v.risk_level_id));
-        // Keep the saved category on edit; older rows hold the label ("Blacklisted Supplier"), so match on the word.
         {
           const raw = String((v as { supplier_category?: string | null }).supplier_category ?? '').trim().toLowerCase();
           const hit = SUPPLIER_CATEGORY_OPTS.find(o => raw === o.value || raw.replace(/[\s-]+/g, '_').startsWith(o.value) || raw.startsWith(o.label.toLowerCase()));
@@ -1491,9 +1357,6 @@ export default function AddVendorModal(props: {
           gstAmount: Number(m.gst_amount ?? 0),
           totalAmount: Number(m.total_amount ?? 0),
         })));
-        // productOpts already fetched in parallel above — Map Products
-        // backfill effect joins on productId once both arrays are
-        // populated, so no extra fetch needed here.
       } catch {
         toast.error('Load failed', 'Could not load the supplier — closing the form.');
         onClose();
@@ -1512,8 +1375,6 @@ export default function AddVendorModal(props: {
 
   const FIELD_LABELS: Record<string, string> = {
     companyName: 'Company Name', legalName: 'Legal Name', website: 'Company Website',
-    /* One key, two names — the error toast must call the field what the form
-       calls it, or it points at a label that is not on screen. */
     gstNumber: isInternational ? 'Tax Identification Number (TIN)' : 'GST Number',
     gstApplicable: 'GST Applicable',
     vendorType: 'Supplier Type', riskLevel: 'Risk Level', vendorBehaviour: 'Supplier Behaviour',
@@ -1565,8 +1426,6 @@ export default function AddVendorModal(props: {
       }
     }
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
-    /* The same input, two identities. A TIN has no fixed shape worldwide, so
-       the rule is a character set and a length, not a pattern. */
     if (isInternational) {
       if (!gstNumber.trim()) errs.gstNumber = 'Tax Identification Number (TIN) is required';
       else { const e = validateTin(gstNumber); if (e) errs.gstNumber = e; }
@@ -1602,21 +1461,12 @@ export default function AddVendorModal(props: {
         legal_name: legalName || null,
         website: website || null,
         gst_applicable: gstApplicable,
-        /* The same column carries a GSTIN for a domestic supplier and a TIN for
-           an international one, so it must NOT be dropped on gst_applicable=No —
-           an international supplier is always "No", because GST is Indian.
-           Sending null here discarded every TIN before the request left the
-           browser, which is why the field looked like it never saved. The
-           server carries the matching rule; both sides have to know it. */
         gst_number: (isInternational || gstApplicable === 'Yes') ? (gstNumber.trim() || null) : null,
-        /* The fixed type's id from the master bundle; the name only when no master row matches
-           (the server then find-or-creates it by name, and a name sent beside an id would win). */
         ...(() => {
           const typeId = vendorType ? supplierTypeId(vendorType, vendorTypeOpts) : null;
           return typeId ? { vendor_type_id: typeId, vendor_type: null } : { vendor_type: vendorType || null };
         })(),
         risk_level_id: riskLevel ? Number(riskLevel) : null,
-        // The NAME, not an id — the server find-or-creates the master row.
         vendor_behaviour: vendorBehaviour || null,
         segment_id: (segment ?? [])[0] ? Number((segment ?? [])[0]) : null,
         segment_ids: (segment ?? []).map(Number),
@@ -1871,9 +1721,6 @@ export default function AddVendorModal(props: {
         if (idx >= 0 && idx < kycTabOrder.length - 1) {
           setKycTab(kycTabOrder[idx + 1]);
         }
-        // Last KYC sub-tab is the final step — the Save/Update button
-        // (finishSupplier) closes the wizard; there is no Product step to
-        // advance to here.
       }
     } finally {
       setAdvancing(false);
@@ -1890,7 +1737,6 @@ export default function AddVendorModal(props: {
       return;
     }
     if (step === 1 && idTab === 'address') setIdTab('identification');
-    // step 1 / identification is the very first tab — nothing before it.
   };
 
   const finishSupplier = async () => {
@@ -2002,9 +1848,6 @@ export default function AddVendorModal(props: {
   const openLicPopup = () => {
     setLicDraft(EMPTY_LIC_DRAFT);
     setLicPopupOpen(true);
-    // license_name options are now seeded from the master bundle on mount
-    // (see hydrate() in the bundled-fetch useEffect above), so no fetch
-    // is needed here. The popup opens with the dropdown pre-populated.
   };
   const saveLicDraft = () => {
     if (!licDraft.licenseType.trim())   { toast.error('Missing field', 'License Type is required'); return; }
@@ -2284,27 +2127,18 @@ export default function AddVendorModal(props: {
       }));
       setProductOpts(opts);
       return opts;
-    } catch { /* silent — modal falls back to manual entry */ }
+    } catch { }
     finally { setProductOptsLoaded(true); }
     return [];
   };
-  const fetchGstPctOptsIfNeeded = async () => { /* seeded from bundle */ };
+  const fetchGstPctOptsIfNeeded = async () => { };
 
-  /* Pull the list again ignoring the "already loaded" guard, so a product
-     created seconds ago is in the dropdown. Deliberately does NOT fill the form:
-     the new product is offered in Product Name and the user picks it, the same
-     way as any other product. Without force the loader returns early on a
-     non-empty list and the new row would never appear. */
   const reloadProductOpts = async (newId: number) => {
     setNewProductBusy(true);
     try {
       const opts = await fetchProductOptsIfNeeded(true);
       const fresh = opts.find(o => o.value === String(newId));
 
-      /* Two filters stand between a saved product and this dropdown: it must
-         carry a segment, and that segment must be one this supplier is
-         onboarded for. Say which one it failed rather than let the user hunt
-         for a name that is not in the list. */
       if (!fresh) {
         toast.info('Not in the list yet', 'The product was saved, but it needs a segment before it can be mapped.');
         return;
@@ -2337,11 +2171,6 @@ export default function AddVendorModal(props: {
       productName:   picked?.name ?? '',
       hsnSacCode:    picked?.hsn  ?? '',
       segment:       picked?.segment ?? '',
-      /* Purchase price is NOT taken from the product's base price. What this
-         supplier charges is a negotiated figure and has no reason to match the
-         catalogue price; prefilling it made a guess look like a fact and got
-         saved unchanged. GST % still comes from the product — that one IS the
-         product's own tax rate. */
       gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
     }));
   };
@@ -2372,7 +2201,6 @@ export default function AddVendorModal(props: {
   const saveMapDraft = async () => {
     if (!mapDraft.productId)             { toast.error('Missing field', 'Pick a Product Name'); return; }
     {
-      // CS-2327: a product with no GST rate (empty, not a real 0%) can't be mapped.
       const opt = productOpts.find(o => o.value === mapDraft.productId);
       if (opt && (opt.gstPercentage === '' || opt.gstPercentage == null)) {
         toast.error('GST required', `${mapDraft.productCode || 'This product'} has no GST rate — set a GST on the product before mapping it to a supplier.`);
@@ -2659,19 +2487,10 @@ export default function AddVendorModal(props: {
   return createPortal((
     <div className="avm-backdrop">
       <div className="avm-modal" onClick={(e) => e.stopPropagation()} style={{ position: 'relative' }}>
-        {/* While a step save is in flight, a veil over the whole modal blocks
-            EVERY other action (Map Product, tab switch, Add buttons, etc.) until
-            the save resolves. Popups have their own veil (PopupShell).
-            segAddLoading is here too: the Segment "+" needs a /clm/segments
-            round-trip before its form can open, and its own button spinner only
-            disabled THAT button — every other "+" and action stayed live, so the
-            user could stack a second popup on top of the one still opening. */}
         {(saving || savingPrimary || segAddLoading) && <div className="avm-busy-veil" aria-hidden />}
-        {/* ─── Header ─── */}
         <div className="avm-head">
           <div className="avm-head-left">
             <div className="avm-head-icon">
-              {/* person-with-+ (add user) — matches the Figma header icon */}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
                 <circle cx="9" cy="7" r="4" />
@@ -2685,9 +2504,6 @@ export default function AddVendorModal(props: {
             </div>
           </div>
           <div className="avm-head-right">
-            {/* Map Product / Service, by Supplier Type (read from the dropdown as it is now):
-                Material/ Goods → the Mapped Products popup; a service-provider type → Map Service
-                for its own bucket; FFD/ Transporter (or no type yet) → disabled. */}
             {canMapProducts && (
               <button
                 className="avm-map-btn"
@@ -2708,27 +2524,15 @@ export default function AddVendorModal(props: {
           </div>
         </div>
 
-        {/* ─── Stepper strip ─── */}
         <div className="avm-stepper-wrap">
           <div className="avm-stepper">
-            {/* Two-stage stepper to mirror the Figma exactly: Legal Identity →
-                KYC / Due Diligence. Product mapping is the final wizard step
-                (step 3) but is not surfaced as a stepper card here. */}
             <StepperItem n={1} title="Supplier Legal Identity"   sub="Company, GST, PAN & contact" current={step} tone="violet" icon="ri-building-2-line" />
             <div className="avm-step-arrow">›</div>
             <StepperItem n={2} title="KYC / Due Diligence"       sub="Docs, identity & compliance" current={step} tone="purple" icon="ri-shield-check-line" />
           </div>
         </div>
 
-        {/* ─── Body ─── */}
         <div className="avm-body">
-          {/* Tab strip renders OUTSIDE the loading branch.
-              It used to live inside the loaded form, so while the edit prefill
-              was in flight the body opened straight onto the shimmer and the
-              two tabs popped in afterwards, shoving every skeleton card down
-              the page. The strip is chrome, not data — it says the same thing
-              before and after the fetch — so it is painted immediately and
-              merely disabled until the form behind it is real. */}
           {step === 1 && (
             <div className="avm-tabs">
               <button
@@ -2736,10 +2540,6 @@ export default function AddVendorModal(props: {
                 disabled={loadingEdit || mastersLoading || advancing}
                 onClick={() => setIdTab('identification')}
               >Supplier Identification &amp; Address Details</button>
-              {/* Can't jump to Contact Person Details until Supplier
-                  Identification is valid. Mirrors Save & Next: validates +
-                  persists (so the contact step has a vendorId to attach to)
-                  and only switches when clean — else inline errors show. */}
               <button
                 className={`avm-tab ${idTab === 'address' ? 'on' : ''}`}
                 disabled={saving || advancing || loadingEdit || mastersLoading}
@@ -2749,22 +2549,7 @@ export default function AddVendorModal(props: {
           )}
           {(loadingEdit || mastersLoading || advancing) ? (
             <div className="avm-load-overlay avm-load-overlay-static" role="status" aria-live="polite" aria-label="Loading supplier form">
-              {/* Step 1's identification tab is what opens 99% of the time, and
-                  it gets a skeleton built from the real section cards so nothing
-                  shifts when the data lands (see Step1IdentitySkeleton).
-
-                  Everything else — step 2/3, or the Contact Person tab mid
-                  `advancing` — falls back to the generic form shimmer. `header`
-                  is off there because that block draws a 64px avatar, two lines
-                  and a button: a profile card this wizard does not have, which
-                  vanished on load and dragged every real section up the page.
-                  No max-width either; the real cards run the full width of
-                  .avm-body, so a 1100px cap made the skeleton visibly narrower
-                  than the form replacing it. */}
               <div style={{ width: '100%' }}>
-                {/* The skeleton follows where you are going: saving Identification (the
-                    Contact Person tab or Save & Next) leads to the Contact Person tab, so
-                    it draws that tab's two cards, not the Identification ones. */}
                 {step === 1 && idTab === 'identification' && !advancing
                   ? <Step1IdentitySkeleton />
                   : step === 1 && (idTab === 'identification' || !advancing)
@@ -2773,15 +2558,12 @@ export default function AddVendorModal(props: {
               </div>
             </div>
           ) : (<>
-          {/* The form body proper renders only when masters and edit-mode
-              prefill have both finished — keeps half-hydrated inputs from
-              flashing onscreen behind a translucent skeleton. */}
           {step > 1 && (() => {
             type PrevField = {
               label: string;
               value: string;
-              node?: React.ReactNode;   // rich value (e.g. segment badges); `value` stays the tooltip text
-              tip?: React.ReactNode;    // rich tooltip; falls back to `value`
+              node?: React.ReactNode;
+              tip?: React.ReactNode;
               href?: string;        
               suffix?: string;      
             };
@@ -2799,28 +2581,17 @@ export default function AddVendorModal(props: {
 
             if (step > 1) {
               const yesNo = (b: boolean) => (b ? 'Yes' : 'No');
-              /* Supplier Code and Company Website are deliberately absent.
-                 The code is already in the modal's own title ("Edit Supplier —
-                 S-001"), so repeating it here spends a column restating what is
-                 on screen; the website is not something anyone reviews before
-                 moving to the next stage. */
               const identityFields: PrevField[] = [
                 { label: 'Company Name',         value: companyName || '—' },
                 { label: 'Legal Name',           value: legalName || '—' },
                 { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
                 { label: 'Segment',              value: segment.map(s => segText(s)).join(', ') || '—',
                   node: segment.length ? (() => { const o = segmentOpts.find(x => x.value === String(segment[0])); return <SegmentBadgeLine label={o?.label ?? String(segment[0])} status={o?.reg} more={segment.length - 1} />; })() : undefined,
-                  // One line per segment: code, name and its own High / Low badge.
                   tip: segment.length ? <SegmentNameList items={segment.map(id => { const o = segmentOpts.find(x => x.value === String(id)); return { name: o?.label ?? String(id), code: o?.code ?? null, regulatory_status: o?.reg ?? null }; })} /> : undefined },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
                 { label: 'Supplier Behaviour',   value: vendorBehaviour || '—' },
                 { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
               ];
-              /* One column, two identities — the same field carries a GSTIN for
-                 a domestic supplier and a TIN for an international one, so the
-                 recap has to label it for the scope it is describing. The
-                 international side had no entry at all, so a mandatory field
-                 was missing from the review. */
               identityFields.push(supplierDocType === 'domestic'
                 ? { label: 'GST Number', value: gstNumber || '—' }
                 : { label: 'Tax Identification Number (TIN)', value: gstNumber || '—' });
@@ -2921,9 +2692,6 @@ export default function AddVendorModal(props: {
                   <div className="avm-prev-body">
                     {prevStages.map(s => (
                       <div key={s.name} className={`avm-prev-stage tone-${s.tone}`}>
-                        {/* Green tick, not the old ⊕ glyph — the block exists to
-                            say "this stage is done", and a check is the mark
-                            that already means completed on the stepper above. */}
                         <div className="avm-prev-stage-label">
                           <span className="avm-prev-check">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -2969,16 +2737,10 @@ export default function AddVendorModal(props: {
             );
           })()}
 
-          {/* ─── STEP 1 ─── */}
           {step === 1 && (
             <>
-              {/* (Tab strip hoisted above the loading branch — see there.) */}
               {idTab === 'identification' && (
                 <SectionCard tone="violet" icon={<i className="ri-home-line" />} title="Basic Company Details" subtitle="Supplier identity, type, and risk classification">
-                  {/* 3×3 grid mirroring the Figma:
-                      row1: Company Name · Company Legal Name · Supplier Type
-                      row2: Company Website · Supplier Segment · Risk Level
-                      row3: Supplier Behaviour · Classification & Flags · Compliance Behaviour */}
                   <div className="avm-grid-3">
                     <Field label="Company Name" required error={fieldErrors.companyName}>
                       <input
@@ -3005,22 +2767,10 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    {/* `error` was missing entirely (QA #97): flagErrors set
-                        fieldErrors.website, but with nothing bound here the
-                        message never rendered and the input never got
-                        .has-error — so the scroll-to-first-bad-field couldn't
-                        find it either. The user was told to "check Company
-                        Website" and then shown a field with no mark on it. */}
                     <Field label="Company Website" error={fieldErrors.website}>
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => { setWebsite(e.target.value); clearFieldError('website'); }} />
                     </Field>
                     <Field label="Supplier Segment" required addNew addLoading={segAddLoading} onAdd={openSegmentAdd} error={fieldErrors.segment}>
-                      {/* masterFormKit's MasterMultiSelect renders visible violet
-                          chips with × buttons + a checkbox-marked dropdown so
-                          multi-select is obvious. `value` prop is plural despite
-                          the singular name. No lock icon — like the Customer master,
-                          the × stays visible and removal is guarded via onChange
-                          (toast + restore) if the segment has uploaded documents. */}
                       <div className="avm-master-select">
                         <MasterMultiSelect
                           value={segment}
@@ -3063,24 +2813,6 @@ export default function AddVendorModal(props: {
                             const removed = segment.filter(s => !vs.includes(s));
                             if (removed.length) {
                               const lockedRemoved = removed.filter(s => lockedSegments.includes(s));
-                              /* A segment with ANY uploaded document against it
-                                 cannot be removed — full stop.
-
-                                 This used to allow the removal when another
-                                 remaining segment still required the same
-                                 document (an "orphan-only" test), so two
-                                 segments sharing a requirement could be dropped
-                                 one at a time. That reads as the file being the
-                                 thing under protection; it is not. The evidence
-                                 was collected FOR this segment, and dropping the
-                                 segment silently discards the reason it was
-                                 asked for even though the file survives under
-                                 another heading.
-
-                                 Optional documents count too: docKeys() returns
-                                 every code in the DCP rule regardless of M/O, so
-                                 an optional file that was actually uploaded is
-                                 evidence on the record like any other. */
                               const uploadedSet = new Set(uploadedKeys);
                               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                                 && (segReqKeys[String(s)] ?? []).some(k => uploadedSet.has(k)));
@@ -3138,8 +2870,6 @@ export default function AddVendorModal(props: {
 
               {idTab === 'identification' && (
                 <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
-                  {/* Single full-width address field — no separate Address Type
-                      dropdown; the primary address is the registered office. */}
                   <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}>
                     <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
                       <input
@@ -3152,8 +2882,6 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-4">
-                    {/* No quick-add: the country list is a closed, standard set (ISO), not
-                        tenant vocabulary, so there is nothing legitimate to add. */}
                     <Field label="Country" required error={fieldErrors.country}>
                       <LockField
                         locked={stateLocked || countryScopeLocked}
@@ -3168,8 +2896,6 @@ export default function AddVendorModal(props: {
                         />
                       </LockField>
                     </Field>
-                    {/* Required for domestic AND international — only State Code
-                        below is GST-specific and drops out for international. */}
                     <Field label="State" required error={fieldErrors.state}>
                       <LockField locked={stateLocked} onLockClick={lockToast}>
                         <SelectInput
@@ -3187,17 +2913,8 @@ export default function AddVendorModal(props: {
                         />
                       </LockField>
                     </Field>
-                    {/* State Code is an Indian GST construct — the 2-digit GST
-                        state code — so it does not exist for an overseas supplier.
-                        It used to stay on screen there, disabled, explaining
-                        itself; that is worth doing for a field the supplier might
-                        expect to fill, but this one is India-only by definition and
-                        was only ever an empty box to skip past. City takes the slot
-                        it leaves, so the row still runs four across. */}
                     {!isInternational && (
                     <Field label="State Code" required error={fieldErrors.stateCode}>
-                      {/* Derived from the selected State — read-only so it can't drift
-                          out of sync with the State (GST state code is fixed per state). */}
                       <LockField locked={stateLocked} onLockClick={lockToast}>
                         <input
                           className="avm-input avm-input-ro"
@@ -3211,20 +2928,6 @@ export default function AddVendorModal(props: {
                       </LockField>
                     </Field>
                     )}
-                    {/* GST sits in the identity row, immediately after State
-                        Code — the state code IS the first two digits of the
-                        GSTIN, so the two read together and a mismatch is
-                        visible at a glance. Disabled rather than hidden when
-                        GST does not apply, so the four-column row keeps its
-                        shape instead of collapsing. */}
-                    {/* One field, two identities. A domestic supplier has a
-                        GSTIN — 15 characters, whose first two ARE the state code
-                        beside it. An overseas one has a TIN instead: no fixed
-                        length or checksum worldwide, so it is capped at 30 and
-                        left alphanumeric rather than validated to a shape that
-                        would be wrong somewhere. Same column either way, because
-                        it answers the same question: how is this supplier
-                        registered for tax. */}
                     <Field
                       label={isInternational ? 'Tax Identification Number (TIN)' : 'GST Number'}
                       required={isInternational || gstApplicable === 'Yes'}
@@ -3238,11 +2941,6 @@ export default function AddVendorModal(props: {
                           maxLength={isInternational ? TIN_MAX : 15}
                           disabled={stateLocked || (!isInternational && gstApplicable !== 'Yes')}
                           onChange={e => {
-                            /* A GSTIN is 15 uppercase alphanumerics, so it is
-                               forced to that as you type. A TIN is not: it may
-                               carry hyphens, slashes, periods and spaces, and its
-                               case is meaningful, so only the disallowed symbols
-                               are stripped and what is typed is left alone. */
                             setGstNumber(isInternational
                               ? sanitizeTin(e.target.value)
                               : e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
@@ -3251,7 +2949,6 @@ export default function AddVendorModal(props: {
                         />
                       </LockField>
                     </Field>
-                    {/* International only — takes the slot State Code left. */}
                     {isInternational && (
                       <CityField
                         value={city}
@@ -3260,17 +2957,7 @@ export default function AddVendorModal(props: {
                       />
                     )}
                   </div>
-                  {/* Google Location + GST Number share a row.
-                      GST Number is 15 fixed characters, so it never needed the
-                      half-width it was getting in its own 4-up grid, and the
-                      Maps link is the one field on this card that benefits from
-                      the space. On an international supplier GST does not apply,
-                      the row drops to one column and the link takes it all.
-                      Google Location is shown for BOTH scopes: an address line
-                      locates neither, and the overseas one is the harder of the
-                      two to verify from text alone. */}
                   <div className="avm-grid-2" style={{ gridTemplateColumns: isInternational ? '1fr' : '3fr 9fr' }}>
-                    {/* Domestic only — international shows City in the row above. */}
                     {!isInternational && (
                       <CityField
                         value={city}
@@ -3287,21 +2974,12 @@ export default function AddVendorModal(props: {
                         onChange={e => { setGoogleLocation(e.target.value); clearFieldError('googleLocation'); }}
                       />
                     </Field>
-                    {/* GST Number sits with the address because its first 2 digits
-                        ARE the state code. Derived purely from the country (India →
-                        applies), so it only appears for a domestic supplier — there
-                        is no separate "GST Applicable" toggle (mirrors the Customer
-                        master). */}
                   </div>
                 </SectionCard>
               )}
 
               {idTab === 'address' && (
                 <>
-                  {/* Primary Contact Person Details — moved here from the
-                      Identification tab to mirror the Figma's "Contact Person
-                      Details" tab. Same component state, so saveContacts()
-                      still validates + persists it on Save & Next. */}
                   <div ref={primaryCardRef}>
                   <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier" headerAction={
                     primaryLocked
@@ -3333,20 +3011,11 @@ export default function AddVendorModal(props: {
                         />
                       </Field>
                       <Field label="Email" required error={fieldErrors.email}>
-                        {/* Lower-cased as it is typed. The domain half of an address
-                            is case-INSENSITIVE, so Gmail@gmail.com and gmail@gmail.com
-                            are the same mailbox — but stored as typed they are two
-                            different strings, and every duplicate check here already
-                            compares lower-cased. That mismatch is what let the same
-                            contact be added twice. Normalising at the input keeps what
-                            is shown, what is compared and what is stored identical. */}
                         <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primaryLocked} onChange={e => { setEmail(e.target.value.toLowerCase()); clearFieldError('email'); }} />
                       </Field>
                     </div>
                     <div className="avm-grid-2">
                       <Field label="WhatsApp Enabled?">
-                        {/* Figma switch in place of the Yes / No radios; same
-                            boolean, so saving is unchanged. */}
                         <button
                           type="button"
                           role="switch"
@@ -3360,32 +3029,12 @@ export default function AddVendorModal(props: {
                         </button>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        {/* Locked along with the rest of the primary contact.
-                            This used to stay live while the card said
-                            "Saved - locked", so the business card could be
-                            replaced or deleted without ever pressing Edit — a
-                            saved contact's attachment was the one field anyone
-                            could change by accident, and the header claimed
-                            otherwise. Read-only still shows the file and keeps
-                            its view link; Edit on the primary row unlocks it
-                            with everything else.
-                            imagesPdfOnly matches the backend's primary_attachment
-                            rule (mimes:jpg,jpeg,png,webp,pdf) so a .docx is
-                            rejected the moment it is picked, not after a
-                            round-trip. */}
                         <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" imagesPdfOnly readOnly={primaryLocked} />
                       </Field>
                     </div>
                   </SectionCard>
                   </div>
 
-                  {/* ── Additional Contact Persons ──
-                      The primary KYC contact (captured on the Vendor
-                      Identification sub-tab) is also surfaced here as
-                      the first row so the table reads as "all contacts
-                      we know about". Marked with a "Primary" pill and
-                      not deletable — the user has to go back to the
-                      first sub-tab to change it. */}
                   <SectionCard tone="violet" className="avm-section-grow" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
@@ -3509,9 +3158,6 @@ export default function AddVendorModal(props: {
                                             </button>
                                           </Tooltip>
                                           <Tooltip label="Primary contact can’t be deleted">
-                                            {/* Kept clickable (not disabled) so a click can surface the
-                                                toast — a truly-disabled button fires nothing. Styled to
-                                                read as non-actionable. */}
                                             <button
                                               type="button"
                                               className="avm-row-btn avm-row-btn-del"
@@ -3552,27 +3198,18 @@ export default function AddVendorModal(props: {
             </>
           )}
 
-          {/* ─── STEP 2 ─── */}
-          {/* The "+ Add" header pill is hidden for the three KYC sub-tabs
-              (company / owner / license) — rows there are sourced from
-              the segment-rule reference tables now. Bank Details and GST
-              Scrutiny still need the add button for manual entries. */}
           {step === 2 && (<>
-            {/* Sub-tab strip sits ABOVE the section card (Figma layout). */}
             <div className="avm-pill-tabs">
               <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.company}</span>Company Due Diligence</button>
               <button className={`avm-pill ${kycTab === 'owner'   ? 'on' : ''}`} onClick={() => setKycTab('owner')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.owner}</span>Owner KYC</button>
               <button className={`avm-pill ${kycTab === 'license' ? 'on' : ''}`} onClick={() => setKycTab('license')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.license}</span>Trade Licence</button>
               <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.bank}</span>Bank Details</button>
-              {/* Hidden entirely when the supplier isn't GST-registered — there
-                  is no GSTIN to scrutinise. See kycTabOrder. */}
               {gstApplicable === 'Yes' && (
                 <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}><span className="avm-pill__ico" aria-hidden>{KYC_TAB_ICON.gst}</span>GST Scrutiny</button>
               )}
             </div>
             <SectionCard tone="purple" icon={<i className="ri-file-line" style={{ transform: 'scaleX(-1)' }} />} title={KYC_TAB_TITLE[kycTab] ?? 'KYC / Due Diligence'} subtitle={KYC_TAB_SUB[kycTab] ?? 'Upload statutory & identity proofs'} headerAction={
               <div className="d-inline-flex align-items-center gap-2">
-                {/* Bank Details and GST Scrutiny show only their Add button (no "N documents" badge). */}
                 {kycTab !== 'bank' && kycTab !== 'gst' && (
                   <span className="avm-doc-count">{kycDocCount} document{kycDocCount === 1 ? '' : 's'}</span>
                 )}
@@ -3658,12 +3295,6 @@ export default function AddVendorModal(props: {
             </SectionCard>
           </>)}
 
-          {/* ─── STEP 3 ─── */}
-          {/* Step 3 (Trade Document Management / Evidence Vault) removed —
-              KYC & trade-document uploads now live in the standalone
-              Evidence Vault popup. */}
-
-          {/* ─── STEP 3 — Map Products ─── */}
           {step === 3 && (
             <SectionCard tone="green" icon={<i className="ri-box-3-line" />} title="Products Details" subtitle="Link products to this vendor with purchase price & GST" headerAction={
               <button className="avm-section-add-btn" onClick={openMapPopup}>+ Add More Products</button>
@@ -3674,7 +3305,6 @@ export default function AddVendorModal(props: {
           </>)}
         </div>
 
-        {/* ─── Footer ─── */}
         <div className="avm-foot">
           <div className="avm-foot-note">
             <span className="avm-foot-dot" /> Fields marked with <span className="avm-req">*</span> are required
@@ -3683,8 +3313,6 @@ export default function AddVendorModal(props: {
             {!(step === 1 && idTab === 'identification') && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {!(step === 2 && kycTabOrder.indexOf(kycTab) === kycTabOrder.length - 1) ? (
               <button className="avm-btn-primary" onClick={goNext} disabled={saving || loadingEdit || mastersLoading}>
-                {/* Both labels share one grid cell, so the hidden one still
-                    sets the width and the button cannot resize mid-save. */}
                 <span className="avm-btn-stack" data-busy={saving || undefined}>
                   <span className="avm-btn-stack-idle">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
@@ -3786,21 +3414,11 @@ export default function AddVendorModal(props: {
           onClose={() => setMappedServicesOpen(false)}
         />
       )}
-      {/* "+" beside Product Name: create the product without losing this
-          mapping, then come back with it already selected. */}
       {newProductOpen && (
         <Suspense fallback={null}>
-          {/* Everything here portals to <body>, so painting order is purely
-              z-index. The Map Product popup is 1100 and the wizard's own
-              backdrop is 1090, so opened from here the wizard lands underneath.
-              Lift the wizard's three layers together, keeping their existing
-              order, into the gap between the popup (1100) and the quick-add
-              master modal (1200) so that still opens on top of everything.
-              The rule dies with this element when the wizard closes. */}
           <style>{'.apm-backdrop{z-index:1120;}.apm-sup-overlay{z-index:1125;}.apm-gst-overlay{z-index:1180;}'}</style>
           <AddProductModal
             productId={newProductId}
-            /* See the list popup's copy — same reason. */
             hideSupplierMapping
             onClose={() => { setNewProductOpen(false); setNewProductId(null); }}
             onSaved={(productId, finalised) => {
@@ -3843,8 +3461,6 @@ export default function AddVendorModal(props: {
 
       {segAdd && (
         <>
-          {/* CLM modal styles aren't injected by SegmentModal itself (the CLM
-              page normally provides them), so load them here while it's open. */}
           <style>{CLM_CSS}</style>
           <SegmentModal
             existing={null}
@@ -3900,8 +3516,6 @@ export default function AddVendorModal(props: {
                 break;
               }
               case 'vendor_behaviour': {
-                /* A behaviour added from the "+" quick-add: into the list and selected, by NAME
-                   (the select is name-valued, like the server's resolution). */
                 const label = String(row.name ?? '').trim();
                 if (label) {
                   setBehaviourOpts(prev => prev.some(o => o.value.toLowerCase() === label.toLowerCase()) ? prev : [...prev, { value: label, label }]);
@@ -3935,22 +3549,9 @@ export default function AddVendorModal(props: {
         />
       )}
 
-      {/* Step 3 Trade Documents → Send for Signature (Zoho Sign).
-          Mounts at the modal root so the wizard renders ABOVE the
-          vendor form. modelName='Vendor' makes the backend resolve
-          the {{supplier.*}} token namespace from this vendor. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendForSignature)}
-        /* Bigger signature box for P2P. A supplier's company signature is
-           routinely wider than the 150pt default, and Zoho does not shrink
-           it to fit — it prints past the field and over the next one. This
-           is opt-in so Quotation / PI keep their tuned placements. */
         boxSize={{ width: 240, height: 55 }}
-        /* multiBox: one contact person may be asked to sign the same
-           document in several places (Legal Team #9 / BR-03). This is the
-           single-signer path - roleMode takes precedence when a
-           multi-party send sets tradeSigners, so this only affects the
-           one-signer buckets. */
         multiBox
         modelName="Vendor"
         customer={(() => {
@@ -4025,11 +3626,7 @@ function ContactAddPopup(props: {
         </div>
 
         <div className="avm-cp-body">
-          {/* This popup hand-rolls the .avm-cp-* chrome instead of using
-              PopupShell, so it needs its own veil — otherwise every field stays
-              editable mid-save and the attachment-delete confirm can fire. */}
           {saving && <div className="avm-cp-saving-veil" />}
-          {/* Figma wraps the popup fields in one section card. */}
           <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-user-add-line" />} title="Contact Person Details" subtitle="Fields marked * are required">
           <div className="avm-grid-4">
             <Field label="Contact Person Name" required error={errors.name}>
@@ -4058,8 +3655,6 @@ function ContactAddPopup(props: {
               />
             </Field>
             <Field label="Email" required error={errors.email}>
-              {/* Lower-cased on entry — same reason as the primary contact's
-                  email field above: the uniqueness check compares lower-cased. */}
               <input className="avm-input" placeholder="Enter email" value={draft.email} onChange={e => { set('email', e.target.value.toLowerCase()); setErrors(prev => ({ ...prev, email: undefined })); }} />
             </Field>
           </div>
@@ -4078,13 +3673,6 @@ function ContactAddPopup(props: {
               </button>
             </Field>
             <Field label="Attachments">
-              {/* FileChooser provides the empty-state input + populated-
-                 state filename / View / Delete actions. Swapping in here
-                 so the contact popup matches the rest of the wizard's
-                 file fields and the user can preview / remove an
-                 attachment without retyping the form.
-                 imagesPdfOnly matches the backend's validateContact() rule
-                 (mimes:jpg,jpeg,png,webp,pdf) — same as the primary card. */}
               <FileChooser
                 imagesPdfOnly
                 file={draft.attachmentFile ?? null}
@@ -4203,16 +3791,11 @@ function SkelField({ label = 60 }: { label?: number }) {
   );
 }
 
-/* Contact Person tab skeleton: the real two cards (titles and icons as they are), the Primary card's
-   six fields four to a row with its Save Contact button, and the Additional card's Add button and
-   table, so nothing moves when the tab lands. */
 function Step1ContactSkeleton() {
   return (
     <>
       <SectionCard tone="violet" icon={<i className="ri-user-3-line" />} title="Primary Contact Person Details" subtitle="Primary point of contact for this supplier"
         headerAction={<Shimmer width={136} height={30} radius={999} />}>
-        {/* Row 1: Name / Designation / Contact No / Email. Row 2: WhatsApp, a gap, then the
-            Business Card upload across the last two columns, as the real card lays them out. */}
         <div className="avm-grid-4">
           {[58, 44, 40, 30, 50].map((w, i) => <SkelField key={i} label={w} />)}
           <div aria-hidden />
@@ -4221,8 +3804,6 @@ function Step1ContactSkeleton() {
       </SectionCard>
       <SectionCard tone="violet" className="avm-section-grow" icon={<i className="ri-user-add-line" />} title="Additional Contact Persons" subtitle="Add more points of contact for this supplier"
         headerAction={<Shimmer width={194} height={40} radius={11} />}>
-        {/* The real table: no frame, eight columns (Sr No, Name, Designation, Phone, Email,
-            WhatsApp, Attachment, Actions), a header line and the contact rows. */}
         <div className="avm-skel-tbl" aria-hidden>
           {[0, 1, 2].map(r => (
             <div key={r} className={`avm-skel-tbl-row${r === 0 ? ' is-head' : ''}`}>
@@ -4239,14 +3820,11 @@ function Step1IdentitySkeleton() {
   return (
     <>
       <SectionCard tone="violet" icon={<i className="ri-home-line" />} title="Basic Company Details" subtitle="Supplier identity, type, and risk classification">
-        {/* 3 × 3 — the same grid the real card uses. */}
         <div className="avm-grid-3">
           {[52, 62, 46, 50, 58, 40, 56, 60, 64].map((w, i) => <SkelField key={i} label={w} />)}
         </div>
       </SectionCard>
       <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
-        {/* Full-width Registered Office Address, then Country / State / State
-            Code / City across four, then the two-up row below it. */}
         <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}><SkelField label={28} /></div>
         <div className="avm-grid-4">
           {[42, 38, 52, 30].map((w, i) => <SkelField key={i} label={w} />)}
@@ -4304,10 +3882,6 @@ function LockField({ locked, onLockClick, children }: { locked: boolean; onLockC
   );
 }
 
-/* `badges` rides through to MasterSelect, which renders each one as a pill to
-   the right of the option label. Used for the segment tag on Map Product: the
-   option text is "CODE — Name", which does not say which segment the product
-   belongs to, and two segments can carry similarly named products. */
 type SelectOptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string };
 
 function SelectInput(props: {
@@ -4316,9 +3890,6 @@ function SelectInput(props: {
   placeholder?: string;
   options: Array<string | { value: string; label: string; badges?: SelectOptBadge[] }>;
   disabled?: boolean;
-  /** Shown inside the menu when the option list is genuinely empty, in place of
-   *  the bare "No options". Say WHY it is empty — an empty picker with no
-   *  explanation reads as broken rather than as "nothing qualifies yet". */
   emptyText?: string;
 }) {
   const normalized = props.options.map(o => typeof o === 'string' ? { value: o, label: o } : o);
@@ -4336,11 +3907,6 @@ function SelectInput(props: {
   );
 }
 
-/** Grouped Supplier Type picker (Figma .slmdd). Group headings are not
- *  selectable; their children sit under a small tree connector. The panel is
- *  portalled to body with fixed position, so the modal body's scroll box
- *  cannot clip it. A saved value that is not in the list (an older type such
- *  as "Services") still shows in the box, so editing never blanks it. */
 function SupplierTypeSelect(props: { value: string; onChange: (v: string) => void; invalid?: boolean; disabled?: boolean }) {
   const { value, onChange } = props;
   const [open, setOpen] = useState(false);
@@ -4349,9 +3915,6 @@ function SupplierTypeSelect(props: { value: string; onChange: (v: string) => voi
   const panelRef = useRef<HTMLDivElement>(null);
   const label = SUPPLIER_TYPE_OPTS.find(o => o.value === value)?.label ?? value;
 
-  /* Open: place the panel under (or above) the box and FIX its height for as long as it is open.
-     It used to recompute the height on every scroll of the form, so the list shrank and grew as
-     the box moved, and each scroll went through React state, one frame behind the real scroll. */
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
@@ -4369,11 +3932,6 @@ function SupplierTypeSelect(props: { value: string; onChange: (v: string) => voi
       if (!btnRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); btnRef.current?.focus(); } };
-    /* The form behind scrolls: the panel follows its box in the same frame (position written to the
-       panel directly, height unchanged). As soon as the box starts to leave the form's visible
-       area the list closes, as a native select does — the panel is fixed above everything, so
-       left open it slid over the stepper / header / footer (QA #100). Scrolling inside the list
-       is the list's own (CSS: overscroll-behavior: contain), so it never moves the form. */
     let frame = 0;
     const follow = () => {
       frame = 0;
@@ -4397,7 +3955,6 @@ function SupplierTypeSelect(props: { value: string; onChange: (v: string) => voi
     document.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', onResize);
     window.addEventListener('scroll', onMove, true);
-    // Bring the chosen option into view when the list opens.
     requestAnimationFrame(() => panelRef.current?.querySelector('.is-sel')?.scrollIntoView({ block: 'nearest' }));
     return () => {
       if (frame) cancelAnimationFrame(frame);
@@ -4502,7 +4059,6 @@ function FileChooser(props: {
   readOnly?: boolean;
   imagesPdfOnly?: boolean;
   noDelete?: boolean;
-  /** Replace opens this (e.g. the Upload file / Take photo menu) instead of the browser's file dialog. */
   onReplace?: () => void;
 }) {
   const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly, noDelete, onReplace } = props;
@@ -4553,7 +4109,6 @@ function FileChooser(props: {
     if (readOnly) {
       return (
         <div className="avm-filechooser">
-          {/* Same icon and words as the empty upload box, so a locked card and an open form read alike. */}
           <span className="avm-filechooser-icon"><i className="ri-upload-2-line" /></span>
           <span className="avm-filechooser-text">No files attached</span>
         </div>
@@ -4567,8 +4122,6 @@ function FileChooser(props: {
           accept={ACCEPT}
           onChange={onChange}
         />
-        {/* Upload-arrow icon for the EMPTY state so it reads as "upload here", not an already-attached
-            file (the paperclip stays for the filled state). One icon everywhere the box appears. */}
         <span className="avm-filechooser-icon"><i className="ri-upload-2-line" /></span>
         <span className="avm-filechooser-text">{placeholder ?? `Choose file (${FILE_TYPE_LABEL}, max 2 MB)`}</span>
       </div>
@@ -4595,9 +4148,6 @@ function FileChooser(props: {
         </Tooltip>
       )}
       <div className="avm-filechooser-actions">
-        {/* View (eye) removed — the filename above is itself a link that opens
-            the attachment. Replace swaps the file in place (re-upload without
-            deleting first); Delete clears it. Both hidden when read-only. */}
         {!readOnly && onReplace && (
           <Tooltip label="Replace file">
             <button
@@ -4644,24 +4194,6 @@ function EmptyTable(props: { label: string }) {
   return <div className="avm-empty">{props.label}</div>;
 }
 
-/* Shared chrome for every KYC-style table in this form.
- *
- * The six tables below — Due Diligence, Owner KYC, Trade Licence, Bank, GST
- * Scrutiny, Product Mapping — each repeated the same opening: an empty-state
- * guard, the .table-responsive wrapper, the .avm-kyc-table element, a
- * .table-light thead and a <tr> of <th>. Six copies of twelve lines, which is
- * also six places for the chrome to drift apart — and it had: one table's
- * wrapper was already missing .table-card.
- *
- * What is NOT shared is the body. Each table maps a different row type over a
- * different set of 6-10 columns with its own formatters, so the rows stay
- * written out per table. A generic column-config table would have to express
- * every one of those cases and would end up longer than what it replaced.
- *
- * `headers` takes a plain string, or a {label, className} pair for the few
- * columns that need alignment (the money columns are .text-end).
- * `tableClassName` carries the per-table modifiers: .avm-gst-table pins the
- * GST column alignment, .avm-mapped-table restyles Product Mapping. */
 type KycTableHeader = string | { label: string; className?: string };
 function KycTable(props: {
   empty: string;
@@ -4717,9 +4249,6 @@ function segExpiryTone(iso?: string): string {
 
 type SegRefRow = { code: string; name: string; authority?: string | null; authority_list?: string[] | null; expiry?: string | null; requirement: 'M' | 'O' };
 
-/** A one-line name that ends in "…" when it does not fit, with the full name on hover.
-    The tooltip follows what is actually cut off (measured), not a character count: a
-    36-character name can still be clipped by a narrow column. */
 function ClippedName({ text, maxWidth }: { text: string; maxWidth: number }) {
   const ref = useRef<HTMLElement | null>(null);
   const cut = useIsClipped(ref, text);
@@ -4774,7 +4303,6 @@ function SupplierSegmentRefTable(props: {
     : rows;
   return (
     <>
-      {/* Search bar (Figma) */}
       <div className="avm-kyc-search">
         <i className="ri-search-line" />
         <input autoComplete="off" value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${title.replace(/ NAME$/i, '').split(' ').map(w => (w.length <= 3 ? w.toUpperCase() : w.toLowerCase())).join(' ')} name…`} />
@@ -4782,15 +4310,8 @@ function SupplierSegmentRefTable(props: {
       </div>
       <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
         <table className="table align-middle mb-0 avm-kyc-table avm-segref-table">
-          {/* Fixed column widths (table-layout: fixed, see .avm-segref-table)
-              so every header sits exactly over its data — an auto layout
-              stretched the columns unevenly and made them look misaligned.
-              The Document Name column has no width, so it absorbs the slack. */}
           <thead className="table-light">
             <tr>
-              {/* Requirement holds the 146px Mandatory / Optional toggle and Actions its three
-                  buttons: at 140px each the toggle ran 16px into Actions and pushed the buttons
-                  out from under their header. The date and code columns had room to spare. */}
               <th style={{ width: 64 }}>SR NO</th>
               <th style={{ width: 120 }}>AUTO CODE</th>
               <th>{title}</th>
@@ -4814,19 +4335,14 @@ function SupplierSegmentRefTable(props: {
                 <tr key={r.code}>
                   <td><span className="avm-sr-badge">{String(i + 1).padStart(2, '0')}</span></td>
                   <td><span className="avm-auto-code">{r.code}</span></td>
-                  {/* Truncate a long document name to one line with an ellipsis;
-                      the full name is available on hover (QA #91). */}
                   <td>
                     <ClippedName text={r.name || ''} maxWidth={300} />
                   </td>
                   <td><AuthorityBadges value={r.authority_list && r.authority_list.length ? r.authority_list : r.authority} /></td>
-                  {/* Neutral pill: an issue date is a fact, not a deadline, so it
-                      takes none of the expiry column's red / green tone. */}
                   <td><span className="avm-exp-pill is-na">{uploadedIssue || 'N/A'}</span></td>
                   <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'} ${expTone}`}>{expiryText}</span></td>
                   <td>
                     <div className="avm-req-pair">
-                      {/* Both options shown, the document's own one lit (Figma toggle). */}
                       <span className={`avm-req-pill ${r.requirement === 'M' ? 'on-m' : 'off'}`}>{r.requirement === 'M' && '✓ '}Mandatory</span>
                       <span className={`avm-req-pill ${r.requirement === 'O' ? 'on-o' : 'off'}`}>Optional</span>
                     </div>
@@ -4898,13 +4414,8 @@ export function SegmentRefUploadPopup(props: {
   const [file, setFile] = useState<File | null>(existing?.file ?? null);
   const [hasExpiry, setHasExpiry] = useState<boolean>(!!existing?.expiry);
   const [expiryDate, setExpiryDate] = useState<string>(existing?.expiry ?? '');
-  /* Issue date — when the document was granted, as the Customer and Consignee
-     vaults already ask. Optional (the endpoint's rule is nullable) and capped
-     at today: a certificate cannot have been issued in the future. */
   const [issueDate, setIssueDate] = useState<string>(existing?.issue ?? '');
   const catLabel = title.replace(/ (DOCUMENT )?NAME$/i, '').replace(/\bDD\b/i, 'Due Diligence');
-  // Upload: the tile opens the "Add attachment" menu; a file from either option gets the same
-  // checks as the file chooser (no unsafe types, JPG / PNG / WEBP / PDF only, 2 MB at most).
   const tileRef = useRef<HTMLButtonElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -4918,7 +4429,6 @@ export function SegmentRefUploadPopup(props: {
   const hasDoc = !!file || !!existing?.url;
   const save = async () => {
     if (hasExpiry && !expiryDate) { toast.error('Expiry date required', 'Pick the expiry date, or switch Expiry to No.'); return; }
-    // The server enforces this too (after_or_equal:issue_date); this is the immediate answer.
     if (issueDate && hasExpiry && expiryDate && expiryDate < issueDate) {
       toast.error('Dates out of order', 'The expiry date cannot be earlier than the issue date.');
       return;
@@ -4941,10 +4451,7 @@ export function SegmentRefUploadPopup(props: {
   const today = todayIso();
   return (
     <PopupShell title={`Upload ${catLabel} Document`} icon="ri-upload-cloud-2-line" subtitle={row.name} panelClassName="avm-cp-popup-doc" onClose={onClose} onSave={save}>
-      {/* Figma wraps the popup fields in one section card (as the Bank / GST / Contact popups). */}
       <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-file-shield-2-line" />} title={`${catLabel} Document`} subtitle="Fields marked * are required">
-      {/* Code, name and authority come from the segment's document library: shown locked, in one
-          row (the popup stays short); the two dates sit side by side below. */}
       <div className="avm-doc-lib">
         <Field label="Auto Code">
           <input className="avm-input avm-input-ro avm-input-code" value={row.code} readOnly tabIndex={-1} />
@@ -4968,8 +4475,6 @@ export function SegmentRefUploadPopup(props: {
             </div>
             {hasExpiry && (
               <div className="avm-expiry-date">
-                {/* Floor is the later of today and the issue date — an expiry
-                    cannot predate the day the document was granted. */}
                 <MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={issueDate && issueDate > today ? issueDate : today} />
               </div>
             )}
@@ -4979,7 +4484,6 @@ export function SegmentRefUploadPopup(props: {
       <div className="avm-grid-1">
         <Field label="Upload Document" required>
           {hasDoc ? (
-            /* Replace opens the same Upload file / Take photo menu as the empty box, under the field. */
             <div ref={docRef}>
               <FileChooser
                 file={file}
@@ -5083,9 +4587,6 @@ function DdTable(props: {
               {!props.readOnly && (
                 <td>
                   <div className="hstack gap-1">
-                    {/* Mandatory seed rows let the user attach a file inline
-                        instead of going through the Add modal, since their
-                        row metadata is already populated. */}
                     {props.onAttach && (
                       <Tooltip label="Upload">
                         <label className="btn btn-sm btn-soft-primary mb-0" aria-label="Upload">
@@ -5218,9 +4719,6 @@ function TradeLicenseTable(props: {
                         <Tooltip label="Upload">
                           <label className="btn btn-sm btn-soft-primary mb-0" aria-label="Upload">
                             <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                            {/* Same allow-list as DdTable — the backend's tl_files.*
-                                rule is mimes:jpg,jpeg,png,webp,pdf, so reject
-                                DOC/DOCX inline instead of on Update & Next. */}
                             <input type="file" hidden accept={IMG_PDF_ACCEPT} onChange={e => {
                               const f = e.target.files?.[0];
                               e.currentTarget.value = '';
@@ -5259,9 +4757,6 @@ function BankTable(props: { rows: BankRow[];  international?: boolean; onRemove?
       headers={[
         'SR NO', 'BANK NAME', 'BRANCH', 'ACCOUNT NO',
         props.international ? 'SWIFT / BIC' : 'IFSC CODE',
-        /* No ACTION column: bank rows are read-only, so the column held
-           nothing but a placeholder dash and a header promising controls that
-           are not there. */
         'BRANCH ADDRESS', 'PROOF ATTACHMENT',
       ]}
     >
@@ -5319,14 +4814,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[] }) {
   );
 }
 
-/* Search + fixed 3-row paging for the two Mapped Products popups (QA #127) —
- * the same treatment as the product side's Mapped Suppliers popup, with no
- * rows-per-page picker. `rows` is null while the list popup is still loading;
- * that first arrival is not a "row added", so only a later growth jumps. */
 const MAPPED_PAGE_SIZE = 3;
-/* The read-only popup opened from the Supplier list's count badge pages by 10
-   (Figma); its table shows 5 rows and scrolls inside for the rest, so the popup
-   keeps one height. */
 const LIST_MAPPED_PAGE_SIZE = 10;
 
 function useMappedProductsPaging(rows: ProductMappingRow[] | null, pageSize: number = MAPPED_PAGE_SIZE) {
@@ -5334,8 +4822,6 @@ function useMappedProductsPaging(rows: ProductMappingRow[] | null, pageSize: num
   const [page, setPage] = useState(1);
   const setSearch = (v: string) => { setSearchRaw(v); setPage(1); };
 
-  /* Each row's search text, built once per row list. Prices and GST are searchable in every way a
-     user may type them: 1212 · 1212.00 · 1,212 · ₹1,212 · 18 / 18%. */
   const haystacks = useMemo(() => {
     const amounts = (n: number) => Number.isFinite(n) ? [String(n), n.toFixed(2), INR_FMT.format(n), inrAmt(n)] : [];
     return (rows ?? []).map(r => [
@@ -5349,9 +4835,6 @@ function useMappedProductsPaging(rows: ProductMappingRow[] | null, pageSize: num
     return (rows ?? []).filter((_, i) => !q || haystacks[i].includes(q));
   }, [rows, haystacks, search]);
 
-  /* Mappings append (the endpoint lists them by id), so after one is added
-     land on the last page with the search cleared — otherwise the product
-     just mapped sits out of view and reads as a failed save. */
   const prevLen = useRef<number | null>(rows ? rows.length : null);
   useEffect(() => {
     const len = rows ? rows.length : null;
@@ -5388,8 +4871,6 @@ function MappedProductsSearch(props: { value: string; onChange: (v: string) => v
   );
 }
 
-/* The table and its pager as one card, or the no-match message when the
-   search filters every row out. Callers handle the truly-empty list. */
 function PagedMappingTable(props: {
   paging: ReturnType<typeof useMappedProductsPaging>;
   onRemove: (id: string) => void;
@@ -5421,7 +4902,7 @@ function PagedMappingTable(props: {
   );
 }
 
-function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean; allowRemove?: boolean; /** Sr No of the first row minus one — for a paged slice. */ srOffset?: number }) {
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean; allowRemove?: boolean; srOffset?: number }) {
   return (
     <KycTable
       isEmpty={props.rows.length === 0}
@@ -5445,7 +4926,6 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td><strong>{r.productName}</strong></td>
               <td><span className="avm-auto-code">{formatProductCode(r.productCode) || r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
-              {/* One chip: segment name with its Reg badge inside, same as every list. */}
               <td>{r.segment ? (() => { const name = r.segment.split(' · ')[0]; return (
                 <span className="avm-seg-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: 210 }}>
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
@@ -5453,15 +4933,6 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
                 </span>
               ); })() : '—'}</td>
               <td className="text-end avm-num fs-13">₹{r.purchasePrice.toFixed(2)}</td>
-              {/* 0% is a VALUE, not a blank (CS-168). This read
-                  `r.gstPercentage ? … : '—'`, and 0 is falsy — so a product
-                  deliberately configured at zero GST rendered the same em dash
-                  this table uses for "not set", telling the reader GST had
-                  never been mapped. The three currency columns either side
-                  already print 0.00 unconditionally; this one now matches them.
-                  Number.isFinite, not a null check: the field is typed number,
-                  so the only way it fails is NaN from a bad parse, and NaN is
-                  the one case where a dash is honest. */}
               <td className="text-end avm-num fs-13">
                 {Number.isFinite(r.gstPercentage) ? `${r.gstPercentage.toFixed(2)}%` : '—'}
               </td>
@@ -5477,9 +4948,6 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
                       </button>
                     </Tooltip>
                   )}
-                  {/* Unmapping is not offered from the list popup: it is a
-                      destructive change to saved data sitting one click from a
-                      read action, and the mapping step is where it belongs. */}
                   {props.allowRemove !== false && (
                   <Tooltip label="Remove product">
                     <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} aria-label="Remove product" disabled={props.busy}>
@@ -5496,10 +4964,6 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
   );
 }
 
-/* City sits in a different row depending on scope: inside the address row for
-   an international supplier, where State Code has dropped out and left a slot,
-   and beside Google Location for a domestic one. Defined once so the two
-   positions cannot drift apart. */
 function CityField(props: { value: string; error?: string; onChange: (v: string) => void }) {
   return (
     <Field label="City" required error={props.error}>
@@ -5552,10 +5016,6 @@ function MappedProductsPopup(props: {
   );
 }
 
-
-/* ═════ Shared by the mapping popups (Mapped Products / Mapped Services) ═════ */
-
-/** A value fetched (or computed) for a mapping: locked, with a lock and an AUTO pill (Figma). */
 const auto = (value: string, placeholder: string, title?: string) => (
   <div className="avm-auto" title={title}>
     <i className="ri-lock-line avm-auto-lock" aria-hidden />
@@ -5567,7 +5027,6 @@ const auto = (value: string, placeholder: string, title?: string) => (
 const ICON_EDIT = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const ICON_TRASH = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>;
 
-/** The list popups' full-width search bar (no browser autofill, a clear button once typed in). */
 function SmpSearch(props: { name: string; label: string; placeholder: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
   return (
     <div className="smp-toolbar">
@@ -5591,16 +5050,6 @@ function SmpSearch(props: { name: string; label: string; placeholder: string; va
   );
 }
 
-/* ═════ Mapped Services — Map Product / Service for a service-provider supplier ═════
-   The service twin of Mapped Products. A supplier whose type serves a Service Management bucket
-   (Soft Service Provider → Soft / Digital, Trackable / Consumable → Self-Consumable, Professional …
-   Outsourcing → Other Operational) is mapped to services of THAT bucket only.
-   API (supplier side of p2p_service_suppliers — the same rows the Service screen shows):
-     GET    /vendors/{id}/service-mappings        this supplier's mappings (inactive included)
-     POST   /vendors/{id}/step/services           REPLACE-ALL: the full active list + the new one
-     PATCH  /vendors/{id}/service-mappings/{map}  price / currency / exchange_rate / remarks
-     DELETE /vendors/{id}/service-mappings/{map}  soft unmap (row kept as inactive)
-   GET /p2p/services (the bucket) only feeds the Service Name dropdown. */
 type ServiceListRow = {
   id: number; code: string; name: string; category?: string | null; hsn_code?: string | null;
   gst_percentage?: number | null; status?: string;
@@ -5613,14 +5062,12 @@ type ServiceMappingApiRow = {
   remarks?: string | null; status?: string | null;
 };
 type MappedServiceRow = {
-  /** p2p_service_suppliers.id — what PATCH / DELETE address. */
   mapId: number;
   serviceId: number; code: string; name: string; hsn: string;
   origin: 'domestic' | 'international';
   currency: string; price: number; exchangeRate: number | null;
   gstPercentage: number; gstAmount: number; total: number; inr: number; remarks: string;
 };
-/** One row as POST step/services takes it. Re-sent for every kept mapping: the save replaces the set. */
 const servicePayload = (r: Pick<MappedServiceRow, 'serviceId' | 'origin' | 'price' | 'currency' | 'exchangeRate' | 'remarks'>) => ({
   service_id: r.serviceId,
   origin: r.origin,
@@ -5645,42 +5092,28 @@ const svcApiError = (e: unknown, fallback: string) => {
 
 export function MappedServicesPopup(props: {
   vendorId: number;
-  /** Only the first-paint guess. The real service type and origin come from the server
-      (GET service-mappings meta, worked out from the supplier's id), not from names here. */
   bucket: ServiceBucket;
-  /** International supplier: price in its own currency with an exchange rate, no GST. */
   international: boolean;
   onClose: () => void;
-  /** Fired after a service is mapped, so a list's count can catch up. */
   onChanged?: () => void;
-  /** Opened from the Supplier list: "Map New Service" in the header (as the list's Mapped Products
-      popup has "Map New Product"). Opened from the Add / Edit form it stays in the body. */
   addInHeader?: boolean;
-  /** Supplier code / name for the header, as Mapped Products shows them ("— S-019", "name · …"). */
   code?: string;
   name?: string;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
   const { vendorId } = props;
-  /* What the SERVER says this supplier is (meta of GET /vendors/{id}/service-mappings): the
-     service type / classification it may serve and Domestic vs International. Until it arrives
-     the props' guess fills the labels; every API call below uses the server's values. */
   const [serverKind, setServerKind] = useState<{ bucket: ServiceBucket | null; international: boolean } | null>(null);
   const bucket: ServiceBucket = serverKind?.bucket ?? props.bucket;
   const international = serverKind ? serverKind.international : props.international;
-  /** The server says this supplier's type serves no service at all. */
   const servesNone = serverKind !== null && serverKind.bucket === null;
   const [services, setServices] = useState<ServiceListRow[] | null>(null);
-  /** Mapping being edited (its mapId), or null while the form adds one. */
   const [editingId, setEditingId] = useState<number | null>(null);
-  /** A row whose unmap is in flight — the row buttons stay disabled. */
   const [busyId, setBusyId] = useState<number | null>(null);
   const [rows, setRows] = useState<MappedServiceRow[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
 
-  // Map Service form.
   const [formOpen, setFormOpen] = useState(false);
   const [serviceId, setServiceId] = useState('');
   const [price, setPrice] = useState('');
@@ -5690,8 +5123,6 @@ export function MappedServicesPopup(props: {
   const [tried, setTried] = useState(false);
   const [currencies, setCurrencies] = useState<CurrencyOpt[]>([]);
 
-  /** A type's service catalog (Service Name dropdown, each row's HSN / SAC), fetched once per type:
-      it does not change when a mapping is saved, so a save only re-reads the mappings. */
   const catalogs = useRef(new Map<string, Promise<ServiceListRow[]>>());
   const catalogOf = (b: ServiceBucket) => {
     const key = `${b.serviceType}|${b.classification ?? ''}`;
@@ -5700,18 +5131,14 @@ export function MappedServicesPopup(props: {
       p = api.get<{ data?: ServiceListRow[] }>('/p2p/services', {
         params: { service_type: b.serviceType, ...(b.classification ? { classification: b.classification } : {}), per_page: 200, sort: 'name' },
       }).then(r => r.data?.data ?? []);
-      p.catch(() => catalogs.current.delete(key));   // a failed fetch is tried again next time
+      p.catch(() => catalogs.current.delete(key));
       catalogs.current.set(key, p);
     }
     return p;
   };
 
-  /** This supplier's mappings and, beside them, its type's services. Only ACTIVE mappings are listed. */
   const load = useCallback(async () => {
     try {
-      // The catalog for the type the props expect starts at the same time as the mappings; the
-      // server's own answer (meta, by the supplier's id) decides, and only a different type
-      // costs a second catalog request.
       const guess = catalogOf(props.bucket);
       const mapRes = await api.get<{
         data?: ServiceMappingApiRow[];
@@ -5727,7 +5154,7 @@ export function MappedServicesPopup(props: {
       setServerKind(kind);
       const sameType = !!kind.bucket && kind.bucket.serviceType === props.bucket.serviceType
         && (kind.bucket.classification ?? null) === (props.bucket.classification ?? null);
-      if (!sameType) guess.catch(() => {});   // the unused guess must not surface as an unhandled rejection
+      if (!sameType) guess.catch(() => {});
       const list = !kind.bucket ? [] : await (sameType ? guess : catalogOf(kind.bucket));
       const byId = new Map(list.map(s => [Number(s.id), s]));
       const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -5757,7 +5184,6 @@ export function MappedServicesPopup(props: {
   }, [vendorId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
 
-  // Currencies (and their default ₹ rate) for an international supplier.
   useEffect(() => {
     if (!international) return;
     api.get<{ currencies?: CurrencyOpt[] }>('/p2p/services/master-bundle')
@@ -5765,8 +5191,6 @@ export function MappedServicesPopup(props: {
       .catch(() => setCurrencies([]));
   }, [international]);
 
-  /* Each row's search text, built once per row list (as Mapped Products): name, code, HSN and every
-     amount the table shows, typed any way: 1212 · 1212.00 · 1,212 · ₹1,212 · USD 1,212 · 18 / 18%. */
   const haystacks = useMemo(() => {
     const amounts = (n: number) => Number.isFinite(n) ? [String(n), n.toFixed(2), INR_FMT.format(n), inrAmt(n)] : [];
     return (rows ?? []).map(r => [
@@ -5780,14 +5204,12 @@ export function MappedServicesPopup(props: {
     return (rows ?? []).filter((_, i) => !q || haystacks[i].includes(q));
   }, [rows, haystacks, search]);
 
-  // Services this supplier can still be mapped to: not already mapped, not inactive.
   const mapped = useMemo(() => new Set((rows ?? []).map(r => r.serviceId)), [rows]);
   const editRow = editingId != null ? (rows ?? []).find(r => r.mapId === editingId) ?? null : null;
   const options = useMemo(() => {
     const opts = (services ?? [])
       .filter(s => (!mapped.has(s.id) && s.status !== 'inactive') || (editRow != null && s.id === editRow.serviceId))
       .map(s => ({ value: String(s.id), label: `${s.code} — ${s.name}` }));
-    // Editing a service that is not in this bucket's list any more: still show its name.
     if (editRow && !opts.some(o => o.value === String(editRow.serviceId))) {
       opts.unshift({ value: String(editRow.serviceId), label: `${editRow.code} — ${editRow.name}` });
     }
@@ -5795,7 +5217,6 @@ export function MappedServicesPopup(props: {
   }, [services, mapped, editRow]);
   const picked = (services ?? []).find(s => String(s.id) === serviceId) ?? null;
 
-  // Live totals, as the server will compute them.
   const p = Number(price) || 0;
   const gstPct = Number(picked?.gst_percentage ?? editRow?.gstPercentage ?? 0);
   const gstAmt = international ? 0 : Math.round(p * gstPct) / 100;
@@ -5817,7 +5238,6 @@ export function MappedServicesPopup(props: {
     setCurrency(''); setRate('');
     setFormOpen(true);
   };
-  /** Edit a mapping: the same form, the service fixed, its saved price / rate / remarks in. */
   const openEdit = (r: MappedServiceRow) => {
     setEditingId(r.mapId);
     setServiceId(String(r.serviceId)); setPrice(String(r.price)); setRemarks(r.remarks); setTried(false);
@@ -5827,7 +5247,6 @@ export function MappedServicesPopup(props: {
   };
   const closeForm = () => { setFormOpen(false); setEditingId(null); };
 
-  /** Soft unmap: the row turns inactive on the server (kept; mapping it again revives it). */
   const unmap = async (r: MappedServiceRow) => {
     const ok = await confirm({
       title: 'Unmap this service?',
@@ -5869,8 +5288,6 @@ export function MappedServicesPopup(props: {
         });
         toast.success('Service updated', `${editRow.name} has been updated for this supplier.`);
       } else {
-        /* REPLACE-ALL: every mapping the supplier keeps goes in with the new one. Sending the new
-           one alone would turn all the others off. rows is loaded by now (the button waits for it). */
         if (rows === null) return;
         await api.post(`/vendors/${vendorId}/step/services`, {
           mappings: [
@@ -5899,13 +5316,10 @@ export function MappedServicesPopup(props: {
       <PopupChrome
         title={props.code ? `Mapped Services — ${props.code}` : 'Mapped Services'}
         subtitle={props.name ? <>
-          {/* As Mapped Products: a long supplier name ends in "…" (full name on hover). */}
           <Tooltip label={props.name}><span className="smp-sub-name">{props.name}</span></Tooltip>
           <span className="smp-sub-rest"> · {bucketLabel} linked to this supplier with price{international ? '' : ' & GST'}</span>
         </> : `${bucketLabel} linked to this supplier with price${international ? '' : ' & GST'}`}
         icon={SVC_ICONS.wrench}
-        /* Search + Map Service in the body, only Close in the footer. The table is the Mapped
-           Products one (avm-cp-popup-mapped gives it the same teal table, 5-row scroll and footer). */
         panelClassName={`avm-cp-popup-wide avm-cp-popup-mapped avm-cp-popup-svc${props.addInHeader ? ' avm-cp-popup-svc-list' : ''}`}
         onClose={props.onClose}
         headerAction={props.addInHeader ? (
@@ -5917,7 +5331,6 @@ export function MappedServicesPopup(props: {
         footer={<button className="avm-btn-ghost" onClick={props.onClose}>Close</button>}
       >
         {props.addInHeader ? (
-          /* From the list: the Mapped Products popup's own full-width search bar. */
           <SmpSearch name="mapped-services-search" label="Search mapped services"
             placeholder="Search service, code, HSN/SAC, price…"
             value={search} onChange={setSearch} disabled={!rows || rows.length === 0} />
@@ -5942,9 +5355,6 @@ export function MappedServicesPopup(props: {
         ) : filtered.length === 0 ? (
           <div className="avm-empty avm-empty-accent">No mapped services match "{search.trim()}".</div>
         ) : (
-          /* The Mapped Products table, column for column (no Segment / Category): Sr No box,
-             icon + name, code chip, HSN, price, GST % chip, GST, bold total.
-             Every service in one list: 5 rows show, the rest scroll inside (no pager). */
           <div className="smp-card">
             <div className="smp-table-wrap dt-root hr-dt" data-accent="violet">
               <table className="smp-table dt-table">
@@ -6018,7 +5428,6 @@ export function MappedServicesPopup(props: {
                   emptyText={`No unmapped service in ${bucketLabel}${bucket.classification ? ` (${bucket.classification})` : ''} — add one in Service Management.`} />
               </Field>
             </div>
-            {/* No Category here: Code and HSN / SAC are what identify the service on a mapping. */}
             <div className="avm-grid-2">
               <Field label="Service Code">{auto(picked?.code ?? editRow?.code ?? '', 'Auto-fills from service')}</Field>
               <Field label="HSN / SAC Code">{auto(picked?.hsn_code ?? (editRow && editRow.hsn !== '—' ? editRow.hsn : ''), '—')}</Field>
@@ -6075,12 +5484,6 @@ export function MappedServicesPopup(props: {
   );
 }
 
-/* The Mapped Products popup body, laid out as the Consignee list's Mapped
-   Customers popup: the search, a count pill and Map New Product in a row ABOVE
-   the card, and the card holding only the table and its pager. The table is
-   the Supplier list's (.dt-root.hr-dt + .dt-table, serial badge, id chip,
-   segment chip, 28px edit icon). */
-/** ₹ in Indian grouping, up to 2 decimals (Figma: ₹22,260 · ₹4,006.8). */
 const INR_FMT = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inrAmt = (n: number) => `₹${INR_FMT.format(Number.isFinite(n) ? n : 0)}`;
 
@@ -6111,7 +5514,6 @@ function MappedProductsListCard(props: {
                     <th style={{ textAlign: 'center' }}>SR. NO</th>
                     <th>PRODUCT</th>
                     <th style={{ textAlign: 'center' }}>PRODUCT CODE</th>
-                    {/* Every column but Product is centred — header and value on one axis. */}
                     <th style={{ textAlign: 'center' }}>HSN / SAC</th>
                     <th style={{ textAlign: 'center' }}>SEGMENT</th>
                     <th style={{ textAlign: 'center' }}>PRICE (₹)</th>
@@ -6136,8 +5538,6 @@ function MappedProductsListCard(props: {
                         <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{formatProductCode(r.productCode) || r.productCode || '—'}</span></td>
                         <td style={{ textAlign: 'center' }}><span className="smp-hsn">{r.hsnSacCode || '—'}</span></td>
                         <td style={{ textAlign: 'center' }}>
-                          {/* A fixed box centred under SEGMENT, chips starting at its left edge, so the
-                              column reads as one straight line (QA #26) as on the Supplier list. */}
                           {segName ? (
                             <span className="smp-seg-box">
                               <span className="smc-seg smc-seg--withbadge">
@@ -6148,12 +5548,10 @@ function MappedProductsListCard(props: {
                           ) : '—'}
                         </td>
                         <td style={{ textAlign: 'center' }}><span className="smp-price">{inrAmt(r.purchasePrice)}</span></td>
-                        {/* 0% is a value, not a blank (CS-168) — only a bad parse reads as a dash. */}
                         <td style={{ textAlign: 'center' }}>{Number.isFinite(r.gstPercentage) ? <span className="smp-gst">{`${Number(r.gstPercentage.toFixed(2))}%`}</span> : '—'}</td>
                         <td style={{ textAlign: 'center' }}><span className="smp-gst-amt">{inrAmt(r.gstAmount)}</span></td>
                         <td style={{ textAlign: 'center' }}><span className="smp-total">{inrAmt(r.totalAmount)}</span></td>
                         <td style={{ textAlign: 'center' }}>
-                          {/* Edit only (CS-168): unmapping stays in the supplier form. */}
                           <Tooltip label="Edit product">
                             <button
                               type="button"
@@ -6183,12 +5581,9 @@ export function MappedProductsViewPopup(props: {
   vendorId: number;
   code: string;
   name: string;
-  /** Segment names this supplier is onboarded for (display only). */
   segments?: string[];
-  /** The supplier's segment ids — what gates the product list (names can be shared). */
   segmentIds?: number[];
   onClose: () => void;
-  /** Fired after a mapping is added, so the list's count badge can catch up. */
   onChanged?: () => void;
 }) {
   const toast = useToast();
@@ -6196,27 +5591,16 @@ export function MappedProductsViewPopup(props: {
   const [failed, setFailed] = useState(false);
   const paging = useMappedProductsPaging(rows, LIST_MAPPED_PAGE_SIZE);
 
-  /* Map Product, opened from this popup's header. The wizard is not involved:
-     the form writes straight to /vendors/{id}/step/products and this popup
-     reloads, so a mapping can be added without leaving the supplier list. */
   const [mapOpen,     setMapOpen]     = useState(false);
-  /** Row id being edited, or null when the form is adding (CS-168). */
   const [mapEditingId, setMapEditingId] = useState<string | null>(null);
   const [mapDraft,    setMapDraft]    = useState<ProductMappingDraft>(EMPTY_MAPPING_DRAFT);
   const [productOpts, setProductOpts] = useState<ProductMappingOpt[]>([]);
   const [saving,      setSaving]      = useState(false);
 
-  /* "+" beside Product Name — the product wizard, so a product that does not
-     exist yet can be created without abandoning this mapping. It saves step by
-     step and reports finalised=false until the last one, so the id it hands
-     back on the first save is kept to edit that same row. */
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [newProductId,   setNewProductId]   = useState<number | null>(null);
   const [newProductBusy, setNewProductBusy] = useState(false);
 
-  /* Pulled out of the effect so a save can call it again. Returns the rows as
-     well as storing them: adding a mapping needs the current set to POST, and
-     reading it back out of state in the same tick would give the stale one. */
   const loadMappings = async (): Promise<ProductMappingRow[]> => {
     type ApiRow = {
       id: number; product_id?: number | null;
@@ -6260,31 +5644,17 @@ export function MappedProductsViewPopup(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.vendorId]);
 
-  /* Products this supplier may be mapped to: everything with a segment, minus
-     the ones already mapped, minus anything outside the supplier's segments.
-     Matched on segment NAME — the list row carries names, not ids. */
   const mappableOpts = useMemo(() => {
     const segIds = new Set(props.segmentIds ?? []);
     const already  = new Set((rows ?? []).map(r => String(r.productId ?? '')));
     return productOpts
       .filter(o => {
-        /* Keep the product being edited, even though it IS already mapped —
-           that is the whole point of editing it. Without this the option list
-           excludes it, the select matches nothing and renders blank over a
-           mapping that plainly has a product. (Mirrors the wizard's copy of
-           this filter.) */
         if (o.value === mapDraft.productId) return true;
         if (already.has(String(o.value))) return false;
         return segIds.size === 0 || (o.segmentId != null && segIds.has(o.segmentId));
       });
-    // mapDraft.productId is a dependency now — the filter keeps whichever
-    // product the draft points at, so the list has to recompute when it changes.
   }, [productOpts, rows, props.segmentIds, mapDraft.productId]);
 
-  /* Ensure the dropdown is populated. Shared by add and edit: the edit form
-     shows Product Name too (disabled), and an empty options list would render
-     it as a bare "Loading products…" box over a mapping that plainly has a
-     product. */
   const ensureProductOpts = async () => {
     if (productOpts.length) return;
     try { setProductOpts(await loadMappableProducts()); }
@@ -6298,15 +5668,6 @@ export function MappedProductsViewPopup(props: {
     await ensureProductOpts();
   };
 
-  /* Edit an existing mapping (CS-168). Reached from the row's pencil.
-     The draft is rebuilt from the ROW rather than re-fetched: the row already
-     holds every field the form edits, and a second read could disagree with
-     what the user is looking at.
-     Numbers go back to strings because the draft is what the inputs are bound
-     to, and a number in a text input loses a trailing "0" the moment it is
-     round-tripped. recompute is not called here — the stored totals are what
-     was actually saved, and recomputing on open would silently rewrite a
-     mapping the user has not touched. */
   const openEditForm = async (rowId: string) => {
     const row = (rows ?? []).find(r => r.id === rowId);
     if (!row) return;
@@ -6327,9 +5688,6 @@ export function MappedProductsViewPopup(props: {
     await ensureProductOpts();
   };
 
-  /* Refresh the dropdown so a product created a moment ago is in it. The form
-     is left untouched on purpose: the new product is offered in Product Name
-     and picked like any other. */
   const reloadProductOpts = async (newId: number) => {
     setNewProductBusy(true);
     try {
@@ -6337,10 +5695,6 @@ export function MappedProductsViewPopup(props: {
       setProductOpts(opts);
       const fresh = opts.find(o => o.value === String(newId));
 
-      /* Two filters stand between a saved product and this dropdown: it must
-         carry a segment, and that segment must be one this supplier is
-         onboarded for. Say which one it failed rather than leave the user
-         hunting for a name that is not in the list. */
       if (!fresh) {
         toast.info('Not in the list yet', 'The product was saved, but it needs a segment before it can be mapped.');
         return;
@@ -6365,13 +5719,10 @@ export function MappedProductsViewPopup(props: {
       productName:   picked?.name ?? '',
       hsnSacCode:    picked?.hsn  ?? '',
       segment:       picked?.segment ?? '',
-      // Not prefilled from the product — see the wizard's copy of this handler.
       gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
     }));
   };
 
-  /* The endpoint replaces the whole set, so the existing rows are re-sent
-     alongside the new one — never the new one on its own. */
   const saveMapping = async () => {
     if (!mapDraft.productId)      { toast.error('Missing field', 'Pick a Product Name'); return; }
     if (!mapDraft.purchasePrice)  { toast.error('Missing field', 'Enter a Purchase Price'); return; }
@@ -6379,8 +5730,6 @@ export function MappedProductsViewPopup(props: {
     try {
       const current = rows ?? [];
       const edited: ProductMappingRow = {
-        // Editing keeps the row's own id so the endpoint updates that mapping
-        // instead of deleting it and inserting a new one.
         id: mapEditingId ?? `new-${Date.now()}`,
         productId: Number(mapDraft.productId),
         productCode: mapDraft.productCode,
@@ -6393,10 +5742,6 @@ export function MappedProductsViewPopup(props: {
         gstAmount: Number(mapDraft.gstAmount || 0),
         totalAmount: Number(mapDraft.totalAmount || 0),
       };
-      /* The endpoint replaces the WHOLE set, so every untouched row is re-sent
-         beside the changed one. Replacing in place rather than filter-then-
-         append also holds the row's position: a mapping that jumped to the
-         bottom of the table after an edit reads as a delete-and-re-add. */
       const next: ProductMappingRow[] = mapEditingId
         ? current.map(r => (r.id === mapEditingId ? edited : r))
         : [...current, edited];
@@ -6423,24 +5768,19 @@ export function MappedProductsViewPopup(props: {
     <PopupChrome
       title={`Mapped Products — ${props.code}`}
       subtitle={<>
-        {/* A long supplier name ends in "…" (full name on hover); the rest of the line always shows. */}
         <Tooltip label={props.name}><span className="smp-sub-name">{props.name}</span></Tooltip>
         <span className="smp-sub-rest"> · Products linked to this supplier with price & GST</span>
       </>}
       icon="ri-box-3-line"
       panelClassName="avm-cp-popup-wide avm-cp-popup-mapped"
       onClose={props.onClose}
-      /* Backdrop dismisses while nothing is being edited. Once the Map Product
-         form is up it holds unsaved input, so a stray click must not bin it. */
       dismissOnBackdrop={!mapOpen}
       busy={saving}
-      /* Figma: Map New Product in the header (beside ×), Close in the footer. */
       headerAction={
         <button type="button" className="smp-head-add" onClick={openMapForm} disabled={saving}>
           <i className="ri-add-line" aria-hidden /> Map New Product
         </button>
       }
-      /* Showing + the pager sit in the popup's footer beside Close, not in a footer of the table. */
       footer={<>
         {rows && rows.length > 0 && paging.filtered.length > 0 && (
           <div className="smp-pag smp-foot-pager">
@@ -6458,11 +5798,6 @@ export function MappedProductsViewPopup(props: {
       {rows === null ? (
         <ShimmerTable rows={5} cols={9} />
       ) : (
-        /* Edit is offered here (CS-168); unmapping is not.
-           They are not the same risk: correcting a price or a GST rate is a
-           revision of the row you are looking at, while removing the mapping
-           destroys saved data from a popup opened to READ it. Removal stays in
-           the supplier form, one deliberate step further in. */
         <MappedProductsListCard
           paging={paging}
           total={rows.length}
@@ -6477,17 +5812,9 @@ export function MappedProductsViewPopup(props: {
 
     {newProductOpen && (
       <Suspense fallback={null}>
-        {/* Everything here portals to <body>, so painting order is purely
-            z-index. This popup and the Map Product form are both 1100 and the
-            wizard's own backdrop is 1090, so it would open underneath. Lift its
-            three layers together, keeping their order, into the gap below the
-            quick-add master modal (1200) so that still opens on top. The rule
-            dies with this element when the wizard closes. */}
         <style>{'.apm-backdrop{z-index:1120;}.apm-sup-overlay{z-index:1125;}.apm-gst-overlay{z-index:1180;}'}</style>
         <AddProductModal
           productId={newProductId}
-          /* Opened from a supplier's Map Product form — mapping a supplier back
-             from in here would be a circle. */
           hideSupplierMapping
           onClose={() => { setNewProductOpen(false); setNewProductId(null); }}
           onSaved={(productId, finalised) => {
@@ -6508,9 +5835,6 @@ export function MappedProductsViewPopup(props: {
         productOpts={mappableOpts}
         onProductChange={onMapProductChange}
         recompute={recomputeMappingTotals}
-        /* Editing fixes the product itself — changing it would be a different
-           mapping, not an edit of this one — so the form disables Product Name
-           and hides the "+ create product" affordance beside it. */
         editing={mapEditingId !== null}
         onAddProduct={mapEditingId === null ? () => setNewProductOpen(true) : undefined}
         addingProduct={newProductBusy}
@@ -6522,32 +5846,16 @@ export function MappedProductsViewPopup(props: {
   );
 }
 
-/* Popup chrome — backdrop, panel, header and body, portalled to <body>.
- *
- * The layer under PopupShell. Seven popups here are save-forms and use
- * PopupShell; the two Mapped Products popups are read-only and end in a single
- * Close, so they could not use it and each carried its own copy of this markup
- * instead. Three copies of the same head/title/close block is three places for
- * the chrome to drift.
- *
- * Everything except the FOOTER is shared, so the footer is the slot. */
 function PopupChrome(props: {
   title: string;
-  /** A Remix icon class, or an SVG (e.g. the Service Management wrench). */
   icon: string | ReactNode;
   subtitle?: ReactNode;
   tone?: 'purple' | 'amber';
-  /** Extra class on the panel — e.g. avm-cp-popup-wide for the wide tables. */
   panelClassName?: string;
   onClose: () => void;
-  /** Freezes the close button and veils the body while a write is in flight. */
   busy?: boolean;
-  /** Backdrop click dismisses. Off by default: a form popup holds unsaved
-   *  input that a stray click must not discard. */
   dismissOnBackdrop?: boolean;
-  /** Rendered in the header beside Close — a primary action the popup owns. */
   headerAction?: ReactNode;
-  /** Omitted, the popup has no footer band — the header's × closes it. */
   footer?: ReactNode;
   children: ReactNode;
 }) {
@@ -6576,8 +5884,6 @@ function PopupChrome(props: {
             </button>
           </div>
         </div>
-        {/* While busy, a veil over the body blocks ALL interaction (editing a
-            field, opening an attached image, etc.) until the write resolves. */}
         <div className="avm-cp-body" style={{ position: 'relative' }}>
           {props.children}
           {busy && <div className="avm-cp-saving-veil" aria-hidden />}
@@ -6588,16 +5894,12 @@ function PopupChrome(props: {
   ), document.body);
 }
 
-/* Save-form popup: PopupChrome plus a Cancel / Save footer that owns its own
- * in-flight state, so the popup's OWN button spins rather than the wizard's. */
 function PopupShell(props: {
   title: string;
   icon: string | ReactNode;
   subtitle?: string;
   tone?: 'purple' | 'amber';
-  /** Extra class on the panel, e.g. avm-cp-popup-doc for the narrow document upload. */
   panelClassName?: string;
-  /** A short note on the footer's left, e.g. "Fields marked Auto are fetched and locked". */
   footNote?: ReactNode;
   onClose: () => void;
   onSave: () => void | Promise<void>;
@@ -7027,12 +6329,6 @@ function BankAddPopup(props: {
     setDraft({ ...draft, branchAddress: cleaned });
     setErrors(prev => ({ ...prev, branchAddress: error }));
   };
-  /* Account Number checks as it is typed, like the three fields above (QA #34).
-     The 9–18 digit rule (8–34 alphanumeric for an international IBAN) used to
-     run only at Save, so letters and symbols went into the box with nothing
-     said — which reads as no validation at all. Characters the rule can never
-     accept are dropped as they are typed, with the reason shown; a number that
-     is still too short is called out as soon as the field is left. */
   const acctMax = props.international ? 34 : 18;
   const handleAccountNumberChange = (raw: string) => {
     const cleaned = raw.replace(props.international ? /[^A-Za-z0-9]/g : /\D/g, '').slice(0, acctMax);
@@ -7050,7 +6346,6 @@ function BankAddPopup(props: {
   };
   return (
     <PopupShell title={isEdit ? 'Edit Bank Details' : 'Add Bank Details'} icon="ri-bank-card-line" onClose={onClose} onSave={handleSave}>
-      {/* Figma wraps the popup fields in one section card (as the Add Contact Person popup). */}
       <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-bank-card-line" />} title="Bank Details" subtitle="Fields marked * are required">
       <div className="avm-grid-4">
         <Field label="Bank Name" required error={errors.bankName}>
@@ -7072,26 +6367,15 @@ function BankAddPopup(props: {
           />
         </Field>
         <Field label="Account Number" required error={errors.accountNumber}>
-          {/* maxLength caps the field at its own limit, so the 36-digit value in
-              QA #98 can no longer even be typed — the validator was the only
-              thing stopping it, and only at Save. */}
           <input
             className="avm-input"
             placeholder={props.international ? 'Enter account / IBAN number' : 'Enter 9–18 digit account number'}
             inputMode={props.international ? 'text' : 'numeric'}
-            /* No maxLength attribute: the browser would cut a pasted
-               "1234 5678 9012 3456" at 18 characters BEFORE the spaces are
-               stripped and lose real digits. The handler caps the length after
-               cleaning instead, so typing still stops at the limit. */
             value={draft.accountNumber}
             onChange={e => handleAccountNumberChange(e.target.value)}
             onBlur={handleAccountNumberBlur}
           />
         </Field>
-        {/* One column, two codes: a domestic bank routes on IFSC, a foreign
-            one on SWIFT / BIC. Both are stored in bank.ifsc — the column is the
-            supplier's routing code, and which of the two it holds follows from
-            the supplier's own document type. */}
         <Field label={props.international ? 'SWIFT / BIC' : 'IFSC Code'} required error={errors.ifsc}>
           <input
             className="avm-input"
@@ -7162,15 +6446,9 @@ function GstScrutinyAddPopup(props: {
   };
   return (
     <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" onClose={onClose} onSave={handleSave}>
-      {/* Figma wraps the popup fields in one section card (as the Add Contact Person popup). */}
       <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-file-search-line" />} title="GST Scrutiny Details" subtitle="Fields marked * are required">
       <div className="avm-grid-3">
         <Field label="GST Number" required error={errors.gstNumber}>
-          {/* Read-only — the supplier's GST number is captured once on Stage 1
-              (Supplier Identification) and flows in here. Every scrutiny entry
-              reports on that same GSTIN, so it is never retyped per row; change
-              it on Stage 1 instead. openGstPopup() seeds it and blocks opening
-              when Stage 1 has none, so this can't be an empty dead end. */}
           <Tooltip label="Comes from the supplier's GST Number on Stage 1 — change it there">
             <input
               className="avm-input avm-input-ro"
@@ -7226,64 +6504,36 @@ function AddProductMappingPopup(props: {
   recompute: (d: ProductMappingDraft) => ProductMappingDraft;
   onClose: () => void;
   onSave: () => void;
-  /** "+" beside Product Name — opens the product wizard so a product that does
-   *  not exist yet can be created without leaving this mapping. */
   onAddProduct?: () => void;
   addingProduct?: boolean;
-  /** True once the product fetch has RESOLVED — an empty list then means "none
-   *  exist", not "still loading". */
   optsLoaded?: boolean;
-  /** Editing an existing mapping. The product itself is then fixed: changing it
-   *  would be a different mapping, not an edit of this one. Only the commercial
-   *  terms are editable. */
   editing?: boolean;
 }) {
   const { draft, setDraft, productOpts, onProductChange, recompute, onClose, onSave } = props;
-  /* The `set(key, value)` helper that used to live here is gone with the
-     free-text product fallback that was its only caller. Every remaining input
-     goes through setDraft(recompute(...)) because each one feeds the totals. */
   return (
     <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier"
       panelClassName="avm-cp-popup-map" footNote={<>Fields marked <b>Auto</b> are fetched and locked</>} onClose={onClose} onSave={onSave}>
-      {/* Figma: two section cards. 1. the product (picked; code / HSN / segment fill in). */}
       <SectionCard tone="violet" className="avm-cp-sec" icon={<i className="ri-box-3-line" />} title="Product Details" subtitle="Pick a product — code, HSN / SAC and segment fill in automatically">
       <div className="avm-grid-1">
         <Field label="Product Name" required addNew={!!props.onAddProduct && !props.editing} addLoading={props.addingProduct} onAdd={props.onAddProduct}>
-          {/* ALWAYS the dropdown — never a bare text box.
-              An empty list used to swap this control for a read-only <input>
-              reading "No product found", which changed the field's whole shape:
-              the user lost the chevron, could not open it to see for themselves,
-              and got no hint of WHY it was empty. The emptiness is now where it
-              belongs — inside the menu — and the control stays a picker.
-              The old fallback also let you TYPE a product name that could never
-              save: the mapping needs a product_id, and validation rejects a
-              draft without one, so anything typed there was discarded on Save. */}
           <SelectInput
             value={draft.productId}
             onChange={onProductChange}
             placeholder={props.optsLoaded ? 'Select Product Name' : 'Loading products…'}
-            /* Plain "CODE — Name" rows: no purple segment badge and no second code chip (the
-               Product Code and Segment fields below already show both). */
             options={productOpts.map(o => ({ value: o.value, label: o.label }))}
             disabled={props.editing || !props.optsLoaded}
-            /* Says why, and what to do about it. This list is filtered to the
-               supplier's own segments, so "empty" nearly always means the
-               products exist but belong to segments this supplier is not
-               onboarded for — which is not obvious from an empty menu. */
             emptyText={props.optsLoaded
               ? 'No product in this supplier’s segments — use + to create one.'
               : 'Loading products…'}
           />
         </Field>
       </div>
-      {/* Code, HSN / SAC and segment come from the product (the Figma has no Batch / Serial / Lot). */}
       <div className="avm-grid-3">
         <Field label="Product Code">{auto(formatProductCode(draft.productCode) || draft.productCode, 'Auto-fills from product')}</Field>
         <Field label="HSN / SAC Code">{auto(draft.hsnSacCode, '—')}</Field>
         <Field label="Segment">{auto(draft.segment, '—')}</Field>
       </div>
       </SectionCard>
-      {/* 2. the price: typed; GST % comes from the product, amount and total are computed. */}
       <SectionCard tone="violet" className="avm-cp-sec" icon={<b className="avm-sec-rs" aria-hidden>₹</b>} title="Pricing & GST" subtitle="Enter the purchase price — GST and total are calculated">
       <div className="avm-grid-2">
         <Field label="Purchase Price (₹)" required>
@@ -7292,11 +6542,6 @@ function AddProductMappingPopup(props: {
             <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter purchase price" value={draft.purchasePrice} onChange={e => setDraft(recompute({ ...draft, purchasePrice: e.target.value }))} />
           </div>
         </Field>
-        {/* GST % is inherited from the selected product (set in the
-            Product wizard's Sales Config step) and locked here so a
-            vendor mapping can never carry a different tax rate than
-            the product itself. Same behavior as the product form's
-            Map Vendor popup — the two flows are now symmetric. */}
         <Field label="GST %">
           {auto(draft.gstPercentage ? `${draft.gstPercentage}%` : '', 'Auto-fills from product', "GST % comes from the product's Sales Config — not editable here")}
         </Field>

@@ -67,8 +67,6 @@
   overflow-y: auto;
 }
 
-/* Narrower than the page: the product popup reads as a dialog, not a screen
-   (CS-409). Below this the two-column body still holds at 1024px. */
 .prd-detail-modal {
   width: 100%;
   max-width: 1180px;
@@ -581,7 +579,6 @@
   background: linear-gradient(180deg, rgba(15, 23, 42, .04) 0%, transparent 32%, transparent 60%, rgba(15, 23, 42, .28) 100%);
 }
 
-/* Reg badge sits in the opposite corner of the thumbnail, clear of the segment chip. */
 .prd-pcard-thumb-reg {
   position: absolute;
   right: 10px;
@@ -635,8 +632,6 @@
   transition: opacity .16s ease, background .15s ease, color .15s ease, transform .16s ease;
 }
 
-/* Revealed on card hover, on keyboard focus, and while it is loading — a
-   spinner must not vanish just because the pointer moved off the card. */
 .prd-pcard:hover .prd-pcard-edit,
 .prd-pcard:focus-within .prd-pcard-edit,
 .prd-pcard-edit:focus-visible,
@@ -646,8 +641,6 @@
   pointer-events: auto;
 }
 
-/* Touch / no-hover devices never fire :hover, so keep it permanently on
-   there rather than leaving the action unreachable. */
 @media (hover: none) {
   .prd-pcard-edit {
     opacity: 1;
@@ -668,8 +661,6 @@
   outline-offset: 2px;
 }
 
-/* Inline spinner for card / row controls that are waiting on their modal.
-   Sized to the icon it replaces so the control doesn't resize mid-click. */
 .prd-btn-spinner {
   display: inline-block;
   flex-shrink: 0;
@@ -688,8 +679,6 @@
   }
 }
 
-/* A busy control keeps its normal colours (not the greyed-out `:disabled`
-   look) — it is working, not unavailable. */
 .prd-pcard-edit.is-busy,
 .prd-pcard-info-item--link.is-busy,
 .prd-card-vendor-cell--link.is-busy,
@@ -697,8 +686,6 @@
   cursor: progress;
 }
 
-/* Siblings of the busy control are disabled for the moment — dim them so the
-   card reads as "one thing is loading" rather than "everything broke". */
 .prd-pcard-edit:disabled:not(.is-busy),
 .prd-pcard-info-item--link:disabled:not(.is-busy),
 .prd-card-vendor-cell--link:disabled:not(.is-busy),
@@ -848,8 +835,6 @@
   opacity: .85;
 }
 
-/* Supplier count opens the Mapped Suppliers popup — it is a <button>, so the
-   UA styling has to be reset back to the surrounding info row's look. */
 .prd-pcard-info-item--link {
   font-family: inherit;
   padding: 2px 6px;
@@ -2271,7 +2256,6 @@
   font-style: italic;
 }
 
-/* Sections with no API behind them yet: shown, but locked to their defaults. */
 .prd-filter-row.is-frozen {
   color: #9b91b8;
   cursor: default;
@@ -2367,7 +2351,6 @@
   transform: translate(-50%, -50%);
 }
 
-/* "Custom" row on Product Creation Date: type the number of days. */
 .prd-filter-days {
   display: flex;
   align-items: center;
@@ -2937,10 +2920,6 @@
 }
 
 [data-bs-theme="dark"] .prd-filter-body {
-  /* The scroll container carries `background: #fff` in light mode and had no
-     dark counterpart, so it painted white OVER the drawer's #110c25 — and the
-     collapsed panels are transparent in dark, so the whole list sat on white
-     with near-white labels (#ede9fe) on top of it. Matches the drawer. */
   background: #110c25;
   scrollbar-color: #a78bfa #221852;
 }
@@ -3783,8 +3762,6 @@
   margin-bottom: 9px;
 }
 
-/* Cold chain pill, right-aligned in the Product Details header. Blue with
-   the °C range for cold-chain products, muted grey "–" otherwise. */
 .pv2pd-coldchain {
   margin-left: auto;
   display: inline-flex;
@@ -4217,8 +4194,6 @@
 
 .apm-modal {
   width: 100%;
-  /* Trimmed from 1300: the figma is fit-content and 1300 read stretched, but the
-     wizard's four-column rows still need the room. */
   max-width: 1180px;
   max-height: calc(100vh - 48px);
   margin: auto;
@@ -4773,8 +4748,6 @@
   height: 14px;
 }
 
-/* Section heading and subheading in the Customer form's type
-   (.acm-section-title 11px / 600, .acm-section-sub 10.5px / 500). */
 .apm-section-title {
   font-size: 11px;
   font-weight: 600;
@@ -4826,7 +4799,6 @@
   gap: 12px;
 }
 
-/* Cold chain temperature range: Min °C  to  Max °C, with preset chips. */
 .apm-span-2 {
   grid-column: span 2;
   min-width: 0;
@@ -4864,7 +4836,6 @@
   opacity: .6;
 }
 
-/* Cold chain panel: tinted, rounded box grouping the flag + range. */
 .apm-coldchain-box {
   border: 1px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0);
   background: color-mix(in srgb, #7c3aed 3%, #fff);
@@ -4912,8 +4883,6 @@
   color: #64748b;
 }
 
-/* Presets sit at the right end of the label row, so undo the label's
-   uppercase / letter-spacing for them. */
 .apm-field-label-extra {
   margin-left: auto;
   display: inline-flex;
@@ -4968,16 +4937,6 @@
   min-width: 0;
 }
 
-/* Live character counter for a length-capped textarea. Deliberately in normal
-   flow rather than absolutely positioned: .apm-field establishes no containing
-   block of its own, so an absolute counter resolves against .apm-section and
-   drifts to the bottom-right of the whole section card instead of sitting
-   under the field it counts.
-
-   Stays grey at the cap. Reaching the limit is not an error — the text is
-   simply clipped — and a red counter next to a red-bordered field read as a
-   failed save. text-align covers the icon-field case: those children sit in
-   .apm-master-field (a plain block), where align-self has nothing to act on. */
 .apm-char-count {
   align-self: flex-end;
   text-align: right;
@@ -5094,9 +5053,6 @@
   color: #ef4444 !important;
 }
 
-/* The upload boxes are not inputs, so none of the rules above reached them:
-   the two image fields were the only required ones on the form that failed
-   silently. Dashed border and tint turn red the same way. */
 .apm-field.has-error .apm-dropzone {
   border-color: #ef4444 !important;
   background: rgba(239, 68, 68, .05) !important;
@@ -5488,13 +5444,6 @@
   color: #ddd6fe;
 }
 
-/* QA #101: inside the attachment box the name is plain text on the box, not a
-   chip. The dark chip rule above has the same specificity as the box's reset
-   (.apm-upload-filebox .apm-upload-filechip) and comes later, so in dark mode
-   the name got the chip's fill and border back with the reset's zero padding:
-   a thin 19px bar beside 32px buttons. Re-asserted for dark, and the name sits
-   in a row as tall as the buttons, using the room it has instead of the loose
-   chip's 240px cap. */
 .apm-upload-filebox .apm-upload-filechip,
 [data-bs-theme="dark"] .apm-upload-filebox .apm-upload-filechip,
 [data-bs-theme="dark"] .apm-upload-filebox .apm-upload-filechip:hover {
@@ -5631,16 +5580,6 @@
   padding: 0;
 }
 
-/* Add Supplier wizard launched from the "+" beside Supplier Name.
-   The vendor module's own layers (gate + wizard 1090, the wizard's Quick-Add
-   and Contact Person popups 1100) were written to sit above a plain page — but
-   opened from here they land among the product form's popups (.apm-backdrop
-   1090, .apm-sup-overlay 1095, .apm-mv-backdrop 1100) and the Map Supplier
-   popup covered them.
-   The whole family is lifted by one step, PRESERVING its internal order so the
-   wizard's child popups still sit above the wizard. Applied only while the
-   product form is the opener, so the Supplier master's own use of the same
-   components keeps its original layering. */
 body.apm-supplier-wizard-open .supch-ov,
 body.apm-supplier-wizard-open .avm-backdrop {
   z-index: 1200;
@@ -5651,24 +5590,10 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   z-index: 1210;
 }
 
-/* QA #100: Add Supplier from Map Supplier scrolled with a lag. Under it sat
-   FOUR full-screen backdrop-filter layers (product form, Mapped Suppliers,
-   Map Supplier, and the wizard's own) — the Supplier master has one. Every
-   frame the form repainted, the GPU re-blurred the stack. The wizard's own
-   backdrop already blurs and dims everything below it, so the layers under it
-   drop their blur while it (or its Domestic / International gate) is open:
-   same look, one blur. */
 body.apm-supplier-wizard-open :is(.apm-backdrop, .apm-sup-overlay, .apm-mv-backdrop) {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-/* Add Supplier from the product side (the "+" beside Supplier Name in Map Supplier) is the
- Supplier master form itself — same wizard, steps, KYC and validations — in the product violet.
- The supplier-management stylesheets theme it for this body class too; their teal literals are
- var(--avmv-<teal hex>, <teal hex>), so they stay teal everywhere else and these remap them to
- the matching violet (Tailwind cyan / teal step → violet step; other tints keep lightness, violet
- hue). Unscoped wizard rules (e.g. the Supplier Type picker's panel and scrollbar) use the same
- vars, so nothing here changes the Supplier master's own form. */
 body.apm-supplier-wizard-open {
   --avmv-rgb-082f49: 32, 8, 73;
   --avmv-0891b2: #7c3aed;
@@ -5758,12 +5683,6 @@ body.apm-supplier-wizard-open {
   --avmv-f4fdff: #f8f4ff;
 }
 
-/* Map Supplier's Domestic / International chooser.
-   It is opened FROM the Mapped Suppliers popup (.apm-sup-overlay 1095), so the
-   gate's own 1090 put it behind the thing that launched it. Lifted above that
-   and the map form (.apm-mv-backdrop 1100), and kept below the GST overlays
-   (1150 / 1160) which can open on top of everything here. Scoped to the body
-   class so the Supplier master's own use of the gate keeps its layering. */
 body.apm-map-gate-open .supch-ov {
   z-index: 1120;
 }
@@ -5788,10 +5707,6 @@ body.apm-map-gate-open .supch-ov {
   max-width: 1060px;
   margin: auto;
   background: #fff;
-  /* 22px to match .avm-modal in AddVendorModal — the two popups sit in the
-     same flow and a 6px difference in corner radius reads as one of them
-     being from a different design. overflow:hidden below is what lets the
-     gradient header take the rounded top corners. */
   border-radius: 22px;
   overflow: hidden;
   display: flex;
@@ -5829,10 +5744,6 @@ body.apm-map-gate-open .supch-ov {
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
 }
 
-/* The second Figma layer — a soft highlight down the TOP HALF only. The corner
-   bloom above was already here; without this the bar still reads a little flat
-   against the supplier form's header, which carries both (.avm-head::before /
-   ::after in AddVendorModal). Same values, so the two headers match. */
 .apm-mv-popup-head::after {
   content: '';
   position: absolute;
@@ -6324,9 +6235,6 @@ body.apm-map-gate-open .supch-ov {
   }
 }
 
-/* Shell sized like the Customer form's (QA #93): the card fits the viewport,
-   the header, stepper and footer never shrink, and only the body scrolls, so
-   a short viewport (DevTools open, zoom) no longer squashes the header. */
 .apm-backdrop {
   padding: 16px;
   overflow: hidden;
@@ -6421,8 +6329,6 @@ body.apm-map-gate-open .supch-ov {
     font-size: 11.5px;
   }
 
-  /* Static, so the close button below pins to the header's corner rather
-     than the actions row; the buttons keep their own layer over the sheen. */
   .apm-head-actions {
     position: static;
   }
@@ -6598,25 +6504,12 @@ body.apm-map-gate-open .supch-ov {
   color: #a78bfa;
 }
 
-/* A dropdown at rest is a field you can type into, so it carries the SAME
-   surface as .apm-input — #110c25, not a violet-lifted one.
-
-   It was color-mix(#a78bfa 12%, #110c25), i.e. rgb(35,27,63) against the
-   inputs' rgb(17,12,37). Two problems came out of that one value: Segment sat
-   visibly lighter than Product Name beside it (#86), and it was the exact
-   shade this file uses for a DISABLED input below — so an open dropdown read
-   as greyed out while a greyed-out text box read as editable. One surface for
-   "you can edit this", one for "you cannot", and no overlap. */
 [data-bs-theme="dark"] .apm-master-select .master-select-wrap .master-select-toggle {
   background: #110c25 !important;
   border-color: #3b2a6b !important;
   color: #ede9fe !important;
 }
 
-/* The disabled dropdown had no dark rule at all, so the light-mode
-   `background: #f5f3ff !important` painted it near-WHITE on a dark form.
-   Same oversight the disabled input note below describes, and the same fix:
-   carry the disabled surface, not the light one. */
 [data-bs-theme="dark"] .apm-master-select .master-select-wrap.disabled .master-select-toggle {
   background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
   border-color: #3b2a6b !important;
@@ -6658,10 +6551,6 @@ body.apm-map-gate-open .supch-ov {
   color: #6d6391;
 }
 
-/* A disabled text input inside a disabled field (e.g. the cold chain Min / Max
-   while Cold Chain is No) matches a disabled dropdown such as Haz Class —
-   otherwise the light-mode `.apm-field.is-disabled .apm-input` !important
-   grey shows through in dark mode. */
 [data-bs-theme="dark"] .apm-field.is-disabled .apm-input {
   background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
   border-color: #3b2a6b !important;
@@ -6745,9 +6634,6 @@ body.apm-map-gate-open .supch-ov {
   border-top-color: rgba(167, 139, 250, .16);
 }
 
-/* "STAGE 1 — PRODUCT CORE" is #166534 in light mode — a deep green that all
-   but disappeared on the #241a47 panel here. Same light green the extras label
-   already uses in dark. */
 [data-bs-theme="dark"] .apm-prev-sumtitle {
   color: #86efac;
 }
@@ -6849,8 +6735,6 @@ body.apm-map-gate-open .supch-ov {
   -webkit-backdrop-filter: none;
 }
 
-/* Shimmer placeholders for the Mapped Suppliers popup while it loads.
-   Sized to the real controls so nothing shifts when the data lands. */
 .apm-sup-shim-search {
   flex: 1;
   max-width: 340px;
@@ -6908,14 +6792,10 @@ body.apm-map-gate-open .supch-ov {
 
 .apm-sup-modal {
   width: 100%;
-  /* 1320 — same as Map Service Suppliers (.svs-modal). At 1080 the row ran
-     past the edge and Price/GST/Total sat behind a horizontal scrollbar. */
   max-width: 1320px;
   margin: auto;
   background: #fff;
   border: 0;
-  /* 22px — same as .avm-modal and .apm-mv-popup, so every popup in this
-     flow has the same corner. */
   border-radius: 22px;
   overflow: hidden;
   box-shadow: 0 30px 80px rgba(20, 10, 60, .45);
@@ -6997,8 +6877,6 @@ body.apm-map-gate-open .supch-ov {
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
 }
 
-/* Ring bloom in the top-right — the same header mark as .svs-head::after on
-   Map Service Suppliers, so both popups read as one component. */
 .apm-sup-head::after {
   content: '';
   position: absolute;
@@ -7018,8 +6896,6 @@ body.apm-map-gate-open .supch-ov {
   z-index: 1;
 }
 
-/* Raised light tile, as .svs-head-ico — same 48px box and 22px glyph, purple
-   instead of teal. The svg rule overrides the icon's inline width/height. */
 .apm-sup-head-ico {
   width: 48px;
   height: 48px;
@@ -7051,8 +6927,6 @@ body.apm-map-gate-open .supch-ov {
   letter-spacing: -.3px;
 }
 
-/* Scoped to the header: .apm-sup-sub is reused for the table's second lines
-   (city, exchange rate), whose later grey rule was winning on the heading. */
 .apm-sup-head .apm-sup-sub {
   font-size: 11.5px;
   font-weight: 500;
@@ -7107,7 +6981,6 @@ body.apm-map-gate-open .supch-ov {
   border-top: 1px solid #efe9fb;
 }
 
-/* Accent card around the grid — .svs-card in purple. */
 .apm-sup-card {
   position: relative;
   overflow: hidden;
@@ -7171,7 +7044,6 @@ body.apm-map-gate-open .supch-ov {
   font-variant-numeric: tabular-nums;
 }
 
-/* The card's head row: icon, title, count, then search and the action. */
 .apm-sup-bar {
   display: flex;
   align-items: center;
@@ -7181,13 +7053,10 @@ body.apm-map-gate-open .supch-ov {
   border-bottom: 1px solid #f1ecfd;
 }
 
-/* Search over the mapped rows — sits where the "N suppliers mapped" pill was
-   (the count now lives in the pager's "Showing X–Y of Z"). */
 .apm-sup-search {
   --ui-search-clear: #7c3aed;
   flex: 1;
   max-width: 340px;
-  /* 40px, so the bar lines up with the Map Supplier button beside it. */
   height: 40px;
   display: flex;
   align-items: center;
@@ -7227,7 +7096,6 @@ body.apm-map-gate-open .supch-ov {
   font-weight: 500;
 }
 
-/* Same metrics as .svs-btn--primary on Map Service Suppliers. */
 .apm-sup-map {
   margin-left: auto;
   height: 40px;
@@ -7269,9 +7137,6 @@ body.apm-map-gate-open .supch-ov {
   transform: none;
 }
 
-/* With no GST the button is disabled, so Tooltip wraps it in a span to catch
-   the hover a disabled control never emits — the auto margin has to move to
-   that span, or the action stops being pushed to the right of the bar. */
 .apm-sup-bar > span:has(> .apm-sup-map) {
   margin-left: auto;
 }
@@ -7302,8 +7167,6 @@ body.apm-map-gate-open .supch-ov {
   border-radius: 12px;
 }
 
-/* Table + pager read as one card: the table gives up its bottom corners and
-   the shared .wl-pager band closes the card underneath it. */
 .apm-sup-tablewrap.has-pager {
   border-bottom: none;
   border-radius: 12px 12px 0 0;
@@ -7319,20 +7182,14 @@ body.apm-map-gate-open .supch-ov {
 .apm-sup-table {
   width: 100%;
   border-collapse: collapse;
-  /* Same density as .svs-table: the rows are nowrap, so the tighter type and
-     padding are what keep a long contact name inside the modal. */
   font-size: 11.5px;
   white-space: nowrap;
 }
 
-/* Tinted header strip, matching the Mapped Products table in the Add Supplier
-   modal (.avm-mapped-table) so both "mapped" grids read as the same component. */
 .apm-sup-table thead tr {
   background: linear-gradient(135deg, #faf8ff, #f3eefe);
 }
 
-/* Centred head and cells, as .svs-table — the two mapped-supplier grids are
-   the same component in two colours. */
 .apm-sup-table thead th {
   text-align: center;
   background: transparent;
@@ -7396,9 +7253,6 @@ body.apm-map-gate-open .supch-ov {
   padding: 2px 8px;
 }
 
-/* Mapped-supplier origin, and the second line an international row carries
-   (its exchange rate, its rupee equivalent, the supplier's city). The pill
-   pair mirrors Map Service Suppliers so the two screens read the same. */
 .apm-sup-origin {
   display: inline-flex;
   align-items: center;
@@ -7420,8 +7274,6 @@ body.apm-map-gate-open .supch-ov {
   white-space: nowrap;
 }
 
-/* An overseas supplier charges no GST — stated, not left blank, so the empty
-   cell reads as a fact rather than as missing data. */
 .apm-sup-nogst {
   font-size: 10px;
   font-weight: 700;
@@ -7438,7 +7290,6 @@ body.apm-map-gate-open .supch-ov {
 [data-bs-theme="dark"] .apm-sup-origin--intl { color: #67e8f9; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); }
 [data-bs-theme="dark"] .apm-sup-nogst { color: #cbd5e1; background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.13); }
 [data-bs-theme="dark"] .apm-sup-sub { color: #94a3b8; }
-/* The heading sits on the purple gradient in both themes, so it keeps white. */
 [data-bs-theme="dark"] .apm-sup-head .apm-sup-sub { color: rgba(255, 255, 255, .88); }
 
 .apm-sup-ctotal {
@@ -7575,8 +7426,6 @@ body.apm-map-gate-open .supch-ov {
   background: #1a1430;
 }
 
-/* The inner panel was the one piece of this popup with no dark rule, so a
-   white card sat between a dark body and a dark footer. */
 [data-bs-theme="dark"] .apm-sup-card {
   background: #221c3d;
   border-color: rgba(167, 139, 250, .22);
@@ -7593,14 +7442,10 @@ body.apm-map-gate-open .supch-ov {
   color: #c4b5fd;
 }
 
-/* The divider under the bar was a near-white violet, which on the dark card
-   read as a bright line across it. */
 [data-bs-theme="dark"] .apm-sup-bar {
   border-bottom-color: rgba(167, 139, 250, .18);
 }
 
-/* The light-mode disabled fill is a pale lavender — on the dark card it read
-   as a washed-out block with white text barely legible on it. */
 [data-bs-theme="dark"] .apm-sup-map:disabled {
   background: rgba(124, 58, 237, .28);
   color: rgba(255, 255, 255, .55);
@@ -8014,7 +7859,6 @@ body.apm-map-gate-open .supch-ov {
   height: 48px;
 }
 
-/* Reset frozen while no filter is applied (QA #86). */
 .prd-fbtn:disabled,
 .prd-fbtn.ghost:disabled:hover {
   opacity: .5;
@@ -8032,9 +7876,6 @@ body.apm-map-gate-open .supch-ov {
   border-color: rgba(255, 255, 255, .12);
 }
 
-/* Header tab row: 8px from the panel edge, not 12 (+1px border ≈ 14) — QA #27.
-   The cards below take the same 8px sides and top so their left edge stays
-   level with the first tab. */
 .prd-toolbar {
   padding: 8px 8px 1px;
 }
@@ -8044,9 +7885,6 @@ body.apm-map-gate-open .supch-ov {
   padding: 8px;
 }
 
-/* The badge dot keeps its own colour on the selected tab (QA #28) — green for
-   Active, red for Inactive — instead of turning white when the tab switches.
-   A light ring keeps it readable on the violet tab. */
 .dt-tab.on .prd-tab-badge--active .prd-tab-badge-dot {
   background: #22c55e;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
@@ -8057,9 +7895,6 @@ body.apm-map-gate-open .supch-ov {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
 }
 
-/* Add Product form: labels and fields in the Customer form's type
-   (.acm-field .avm-field-label / .avm-input) — labels 11px / 500 in normal case,
-   inputs and dropdowns 13px / 400. */
 .apm-field-label {
   font-size: 11px;
   font-weight: 500;
@@ -8073,11 +7908,8 @@ body.apm-map-gate-open .supch-ov {
   font-weight: 400;
 }
 
-/* Filter button text = the tab labels' 12.5px (QA #92). */
 .prd-filter-btn { font-size: 12.5px; }
 
-/* Tabs are the Customer list's dt-tabrail; on a phone the stacked toolbar
-   gives the rail the full width, as the old tab row had. */
 @media (max-width: 640px) {
   .prd-toolbar .dt-tabrail,
   .prd-toolbar .dt-tabs {
@@ -8090,8 +7922,6 @@ body.apm-map-gate-open .supch-ov {
   }
 }
 
-/* Filter button without the effects: no shine sweep, no drifting gradient,
-   no hover lift — a still button that only brightens on hover. */
 .prd-filter-btn {
   animation: none;
   background-size: 100% 100%;
@@ -8106,8 +7936,6 @@ body.apm-map-gate-open .supch-ov {
   transform: none;
 }
 
-/* Add Product form placeholders = the Customer form's (add-vendor-modal.css
-   .avm-input::placeholder): #94a3b8 at .45 opacity, 13px / 400. */
 .apm-input::placeholder,
 .apm-modal textarea::placeholder,
 .apm-master-select .master-select-placeholder {
@@ -8117,9 +7945,6 @@ body.apm-map-gate-open .supch-ov {
   font-weight: 400 !important;
 }
 
-/* ── Map Supplier popup: sectioned form, as the service side's version ────── */
-
-/* Section rule above each group of fields. */
 .apm-mv-sec {
   display: flex;
   align-items: center;
@@ -8147,7 +7972,6 @@ body.apm-map-gate-open .supch-ov {
   min-height: 22px;
 }
 
-/* "Auto" chip beside the label of a field the form fills in itself. */
 .apm-auto-chip {
   display: inline-flex;
   align-items: center;
@@ -8163,7 +7987,6 @@ body.apm-map-gate-open .supch-ov {
   text-transform: none;
 }
 
-/* Padlock inside the box, so a locked field reads as locked without a tooltip. */
 .apm-field.is-auto .apm-input.apm-readonly {
   padding-right: 30px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
@@ -8172,7 +7995,6 @@ body.apm-map-gate-open .supch-ov {
   background-size: 13px 13px;
 }
 
-/* Origin pill beside the popup title. */
 .apm-mv-origin {
   display: inline-flex;
   align-items: center;
@@ -8202,18 +8024,12 @@ body.apm-map-gate-open .supch-ov {
   background: linear-gradient(90deg, rgba(255, 255, 255, .12), transparent);
 }
 
-/* The origin mark is an inline svg now, so it needs an explicit box. */
 .apm-sup-origin svg {
   width: 11px;
   height: 11px;
   flex-shrink: 0;
 }
 
-/* QA #98: both sections on ONE 4-column track, so every column edge in
-   Supplier Details lines up with Purchase Price / GST % / GST Amount / Total
-   below (a 3-column grid over a 4-column one left the price fields looking
-   uneven). Supplier Name, the long dropdown, takes two columns. minmax(0, 1fr)
-   keeps the columns equal whatever the placeholders' widths. */
 .apm-mv-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -8248,7 +8064,6 @@ body.apm-map-gate-open .supch-ov {
   }
 }
 
-/* Section mark, and the rule-side note ("No GST — overseas supplier"). */
 .apm-mv-sec svg {
   width: 12px;
   height: 12px;
@@ -8269,7 +8084,6 @@ body.apm-map-gate-open .supch-ov {
   color: #6d28d9;
 }
 
-/* The note takes the right end, so the rule sits between title and note. */
 .apm-mv-sec::after {
   order: 2;
 }
@@ -8281,7 +8095,6 @@ body.apm-map-gate-open .supch-ov {
   flex-shrink: 0;
 }
 
-/* Back sits at the left end, Cancel and Save stay together on the right. */
 .apm-mv-popup-foot {
   justify-content: space-between;
 }
@@ -8342,8 +8155,6 @@ body.apm-map-gate-open .supch-ov {
   color: #c4b5fd;
 }
 
-/* Map Supplier: a box you can type in is white with a violet edge, a box the
-   form fills is grey and padlocked — the two must not read alike. */
 .apm-mv-popup .apm-input {
   background: #fff;
   border-color: #ddd6fe;
