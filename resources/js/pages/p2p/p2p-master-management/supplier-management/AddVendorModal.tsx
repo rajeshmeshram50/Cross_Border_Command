@@ -4370,9 +4370,10 @@ function SupplierTypeSelect(props: { value: string; onChange: (v: string) => voi
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); btnRef.current?.focus(); } };
     /* The form behind scrolls: the panel follows its box in the same frame (position written to the
-       panel directly, height unchanged). Once the box leaves the form's visible area the list
-       closes, as a native select does. Scrolling inside the list is the list's own (CSS:
-       overscroll-behavior: contain), so it never moves the form. */
+       panel directly, height unchanged). As soon as the box starts to leave the form's visible
+       area the list closes, as a native select does — the panel is fixed above everything, so
+       left open it slid over the stepper / header / footer (QA #100). Scrolling inside the list
+       is the list's own (CSS: overscroll-behavior: contain), so it never moves the form. */
     let frame = 0;
     const follow = () => {
       frame = 0;
@@ -4380,7 +4381,7 @@ function SupplierTypeSelect(props: { value: string; onChange: (v: string) => voi
       if (!btn || !panel) return;
       const r = btn.getBoundingClientRect();
       const box = (btn.closest('.avm-body') as HTMLElement | null)?.getBoundingClientRect();
-      if (box && (r.bottom < box.top || r.top > box.bottom)) { setOpen(false); return; }
+      if (box && (r.top < box.top || r.bottom > box.bottom)) { setOpen(false); return; }
       const up = panel.classList.contains('is-up');
       panel.style.left = `${r.left}px`;
       panel.style.width = `${r.width}px`;

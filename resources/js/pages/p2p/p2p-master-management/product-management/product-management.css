@@ -5488,6 +5488,26 @@
   color: #ddd6fe;
 }
 
+/* QA #101: inside the attachment box the name is plain text on the box, not a
+   chip. The dark chip rule above has the same specificity as the box's reset
+   (.apm-upload-filebox .apm-upload-filechip) and comes later, so in dark mode
+   the name got the chip's fill and border back with the reset's zero padding:
+   a thin 19px bar beside 32px buttons. Re-asserted for dark, and the name sits
+   in a row as tall as the buttons, using the room it has instead of the loose
+   chip's 240px cap. */
+.apm-upload-filebox .apm-upload-filechip,
+[data-bs-theme="dark"] .apm-upload-filebox .apm-upload-filechip,
+[data-bs-theme="dark"] .apm-upload-filebox .apm-upload-filechip:hover {
+  min-height: 32px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.apm-upload-filebox .apm-upload-filename {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
 .apm-upload-more {
   padding: 0;
   cursor: pointer;
@@ -5629,6 +5649,18 @@ body.apm-supplier-wizard-open .avm-backdrop {
 body.apm-supplier-wizard-open .avm-qa-backdrop,
 body.apm-supplier-wizard-open .avm-cp-backdrop {
   z-index: 1210;
+}
+
+/* QA #100: Add Supplier from Map Supplier scrolled with a lag. Under it sat
+   FOUR full-screen backdrop-filter layers (product form, Mapped Suppliers,
+   Map Supplier, and the wizard's own) — the Supplier master has one. Every
+   frame the form repainted, the GPU re-blurred the stack. The wizard's own
+   backdrop already blurs and dims everything below it, so the layers under it
+   drop their blur while it (or its Domestic / International gate) is open:
+   same look, one blur. */
+body.apm-supplier-wizard-open :is(.apm-backdrop, .apm-sup-overlay, .apm-mv-backdrop) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 /* Add Supplier from the product side (the "+" beside Supplier Name in Map Supplier) is the
  Supplier master form itself — same wizard, steps, KYC and validations — in the product violet.
