@@ -5630,6 +5630,102 @@ body.apm-supplier-wizard-open .avm-qa-backdrop,
 body.apm-supplier-wizard-open .avm-cp-backdrop {
   z-index: 1210;
 }
+/* Add Supplier from the product side (the "+" beside Supplier Name in Map Supplier) is the
+ Supplier master form itself — same wizard, steps, KYC and validations — in the product violet.
+ The supplier-management stylesheets theme it for this body class too; their teal literals are
+ var(--avmv-<teal hex>, <teal hex>), so they stay teal everywhere else and these remap them to
+ the matching violet (Tailwind cyan / teal step → violet step; other tints keep lightness, violet
+ hue). Unscoped wizard rules (e.g. the Supplier Type picker's panel and scrollbar) use the same
+ vars, so nothing here changes the Supplier master's own form. */
+body.apm-supplier-wizard-open {
+  --avmv-rgb-082f49: 32, 8, 73;
+  --avmv-0891b2: #7c3aed;
+  --avmv-rgb-0891b2: 124, 58, 237;
+  --avmv-0a161d: #110a1d;
+  --avmv-0b3142: #1f0b42;
+  --avmv-0b4f63: #2b0b63;
+  --avmv-0c1a22: #140c22;
+  --avmv-0c4a6e: #300c6e;
+  --avmv-0e7490: #6d28d9;
+  --avmv-rgb-0e7490: 109, 40, 217;
+  --avmv-rgb-0ea6cd: 84, 14, 205;
+  --avmv-10222b: #1a102b;
+  --avmv-22b8d6: #6422d6;
+  --avmv-22d3ee: #a78bfa;
+  --avmv-rgb-22d3ee: 167, 139, 250;
+  --avmv-rgb-25e9fb: 115, 37, 251;
+  --avmv-67e8f9: #c4b5fd;
+  --avmv-rgb-67e8f9: 196, 181, 253;
+  --avmv-8fb2c2: #a28fc2;
+  --avmv-94b4bf: #a494bf;
+  --avmv-a5e4f0: #c1a5f0;
+  --avmv-a5e9f5: #c2a5f5;
+  --avmv-a5f3fc: #ddd6fe;
+  --avmv-rgb-a5f3fc: 221, 214, 254;
+  --avmv-a9d9e6: #bfa9e6;
+  --avmv-rgb-b3fcff: 207, 179, 255;
+  --avmv-bfe3ec: #d0bfec;
+  --avmv-bfe9f1: #d1bff1;
+  --avmv-c4ecf4: #d6c4f4;
+  --avmv-cdeef5: #dccdf5;
+  --avmv-cfe3ea: #d9cfea;
+  --avmv-cfe9f0: #dbcff0;
+  --avmv-cfeff6: #ddcff6;
+  --avmv-cff7fd: #e0cffd;
+  --avmv-d3e4ea: #dbd3ea;
+  --avmv-d5eef4: #e0d5f4;
+  --avmv-d5f1f7: #e1d5f7;
+  --avmv-d7eef4: #e2d7f4;
+  --avmv-dbe6ec: #e1dbec;
+  --avmv-dceef3: #e4dcf3;
+  --avmv-e0f7fb: #eae0fb;
+  --avmv-e2eef2: #e8e2f2;
+  --avmv-e2eef3: #e8e2f3;
+  --avmv-e2f1f5: #e9e2f5;
+  --avmv-e2f3f7: #eae2f7;
+  --avmv-e3f1f5: #eae3f5;
+  --avmv-e6f5f8: #ede6f8;
+  --avmv-e8fbfe: #f0e8fe;
+  --avmv-eaf7fb: #f0eafb;
+  --avmv-ecfeff: #f5f3ff;
+  --avmv-eef5f8: #f2eef8;
+  --avmv-eef6f8: #f2eef8;
+  --avmv-eef7fa: #f2eefa;
+  --avmv-effcff: #f5efff;
+  --avmv-f0fbfd: #f5f0fd;
+  --avmv-f0fdff: #f6f0ff;
+  --avmv-f1fcfe: #f6f1fe;
+  --avmv-f2fdff: #f7f2ff;
+  --avmv-f4f8fa: #f6f4fa;
+  --avmv-f4fbfd: #f7f4fd;
+  --avmv-f4fcfe: #f8f4fe;
+  --avmv-f6fbfc: #f8f6fc;
+  --avmv-f6fdfe: #f9f6fe;
+  --avmv-f6feff: #f9f6ff;
+  --avmv-f7fdfe: #faf7fe;
+  --avmv-rgb-f7fdfe: 250, 247, 254;
+  --avmv-f7feff: #faf7ff;
+  --avmv-f9feff: #fbf9ff;
+  --avmv-fbfeff: #fcfbff;
+  --avmv-rgb-061218: 13, 6, 24;
+  --avmv-rgb-06b6d4: 139, 92, 246;
+  --avmv-0d9488: #7c3aed;
+  --avmv-5b7d90: #6e5b90;
+  --avmv-5eead4: #c4b5fd;
+  --avmv-99f6e4: #ddd6fe;
+  --avmv-9db3c1: #aa9dc1;
+  --avmv-a5d8e6: #bda5e6;
+  --avmv-bdf0f7: #d2bdf7;
+  --avmv-cffafe: #ede9fe;
+  --avmv-e0fbff: #ebe0ff;
+  --avmv-e6fafe: #efe6fe;
+  --avmv-ecfbff: #f3ecff;
+  --avmv-eef3f6: #f1eef6;
+  --avmv-eef4f7: #f1eef7;
+  --avmv-f0fdfa: #f5f3ff;
+  --avmv-f4fdff: #f8f4ff;
+}
+
 /* Map Supplier's Domestic / International chooser.
    It is opened FROM the Mapped Suppliers popup (.apm-sup-overlay 1095), so the
    gate's own 1090 put it behind the thing that launched it. Lifted above that

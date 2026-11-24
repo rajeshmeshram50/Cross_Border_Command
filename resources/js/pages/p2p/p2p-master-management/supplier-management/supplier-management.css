@@ -433,8 +433,8 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sc-role.is-other{background:var(--sfc-f1eafe, #f1eafe);color:var(--sfc-7c3aed, #7c3aed);border:1px solid var(--sfc-ddd0f7, #ddd0f7);}
 /* Contact Persons popup (Supplier list), dark mode: the Primary / role pills were light tiles on the
    dark card. Translucent tints with light text, as the other dark Supplier badges. */
-[data-bs-theme="dark"] body:has(.smc-root.sup-list) .sc-role.is-primary{background:rgba(34,197,94,.16);color:#86efac;border-color:rgba(74,222,128,.35);}
-[data-bs-theme="dark"] body:has(.smc-root.sup-list) .sc-role.is-other{background:rgba(34,211,238,.14);color:#67e8f9;border-color:rgba(103,232,249,.35);}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body.apm-supplier-wizard-open) .sc-role.is-primary{background:rgba(34,197,94,.16);color:#86efac;border-color:rgba(74,222,128,.35);}
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body.apm-supplier-wizard-open) .sc-role.is-other{background:rgba(var(--avmv-rgb-22d3ee, 34, 211, 238),.14);color:var(--avmv-67e8f9, #67e8f9);border-color:rgba(var(--avmv-rgb-67e8f9, 103, 232, 249),.35);}
 .sc-meta{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:5px;}
 .sc-meta span{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#64748b;}
 .sc-meta i{color:var(--sfc-a78bfa, #a78bfa);}

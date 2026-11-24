@@ -4541,7 +4541,7 @@
 .cev-card.sev.spev .cev-row-act.sev-row-act-txt { height: 40px; padding: 0 14px; border-radius: 10px; font-size: 12.5px; gap: 6px; }
 /* Vault Re-upload popup footer: 40px / 12.5px like every Supplier button. */
 .spev .cev-reup-ft :is(.cev-reup-cancel, .cev-reup-save),
-body:has(.smc-root.sup-list) :is(.cev-reup-cancel, .cev-reup-save) { height: 40px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+:is(body:has(.smc-root.sup-list), body.apm-supplier-wizard-open) :is(.cev-reup-cancel, .cev-reup-save) { height: 40px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
 
 /* ===== Supplier vault, Case to Case overview (shipment picker and a deal's documents) ===== */
 /* Back to shipments: a 40px button like the close beside it (it was ~30px / 11px). */

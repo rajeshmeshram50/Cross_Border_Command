@@ -1,6 +1,9 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { segmentLabel, SegmentBadgeLine } from '../../../../components/ui/SegmentBadge';
 import './product-management.css';
+/* The Domestic / International gate's themed look; every rule is scoped to the pages that use it
+   and to body.apm-supplier-wizard-open (the "+" Add Supplier from Map Supplier, in violet). */
+import '../supplier-management/supplier-scope-gate-teal.css';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
