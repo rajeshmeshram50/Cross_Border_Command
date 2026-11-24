@@ -247,12 +247,26 @@ export function ClmBulkModal(props: {
   /** The Sample panel's line about the sheet. */
   sampleNote?: string;
   importing: boolean; exporting: boolean;
-  onSample: () => void; onBrowse: () => void; onDropFile: (f: File) => void; onExport: () => void;
+  onSample: () => void | Promise<void>; onBrowse: () => void; onDropFile: (f: File) => void; onExport: () => void;
   onClose: () => void;
 }) {
   const { nameLabel, validityLabel, importing, exporting, onSample, onBrowse, onDropFile, onExport, onClose } = props;
   const sampleNote = props.sampleNote ?? 'Fill in one record per row and keep the first row (the column names) as it is. A second sheet lists the valid authorities.';
   const [over, setOver] = useState(false);
+  const [sampling, setSampling] = useState(false);
+  const runSample = async () => {
+    if (sampling) return;
+    setSampling(true);
+    const started = Date.now();
+    try {
+      await new Promise(r => setTimeout(r, 30));
+      await onSample();
+    } finally {
+      setTimeout(() => setSampling(false), Math.max(0, 600 - (Date.now() - started)));
+    }
+  };
+  const busy = { sample: sampling, import: importing, export: exporting };
+  const go = (k: keyof typeof busy) => busy[k] ? <span className="cie-btn-spin cie-btn-spin--teal" aria-hidden /> : IC.chev;
   /* Which panel shows under the three cards; none until a card is picked. */
   const [mode, setMode] = useState<'sample' | 'import' | 'export' | null>(null);
   useEffect(() => {
@@ -290,7 +304,7 @@ export function ClmBulkModal(props: {
                 <b>Download Sample Sheet</b>
                 <small>The right columns and two example rows to fill in.</small>
               </span>
-              <span className="cie-card__go">{IC.chev}</span>
+              <span className="cie-card__go">{go('sample')}</span>
             </button>
             <button type="button" className={`cie-card${mode === 'import' ? ' is-on' : ''}`} aria-pressed={mode === 'import'} onClick={() => setMode('import')}>
               <span className="cie-card__ico">{IC.up}</span>
@@ -298,7 +312,7 @@ export function ClmBulkModal(props: {
                 <b>Import Records</b>
                 <small>Upload a filled Excel or CSV file; every row is checked.</small>
               </span>
-              <span className="cie-card__go">{IC.chev}</span>
+              <span className="cie-card__go">{go('import')}</span>
             </button>
             <button type="button" className={`cie-card${mode === 'export' ? ' is-on' : ''}`} aria-pressed={mode === 'export'} onClick={() => setMode('export')}>
               <span className="cie-card__ico">{IC.down}</span>
@@ -306,7 +320,7 @@ export function ClmBulkModal(props: {
                 <b>Export Records</b>
                 <small>Download the current list as Excel, ready to re-import.</small>
               </span>
-              <span className="cie-card__go">{IC.chev}</span>
+              <span className="cie-card__go">{go('export')}</span>
             </button>
           </div>
 
@@ -318,8 +332,8 @@ export function ClmBulkModal(props: {
                 <small>{sampleNote}</small>
                 <div className="cie-cols">{cols.map(([c, req]) => <code key={c} className={req ? 'is-req' : ''}>{c}</code>)}</div>
               </div>
-              <button type="button" className="cie-export-btn" onClick={onSample}>
-                {IC.down}Download Sample Sheet
+              <button type="button" className="cie-export-btn" onClick={() => void runSample()} disabled={sampling} aria-busy={sampling || undefined}>
+                {sampling ? <span className="cie-btn-spin" aria-hidden /> : IC.down}{sampling ? 'Preparing…' : 'Download Sample Sheet'}
               </button>
             </div>
           )}
@@ -364,8 +378,8 @@ export function ClmBulkModal(props: {
                 <b>Export the list</b>
                 <small>Downloads the current list (with the search applied) as Excel. It can be re-imported as it is.</small>
               </div>
-              <button type="button" className="cie-export-btn" onClick={onExport} disabled={exporting}>
-                {IC.down}{exporting ? 'Exporting…' : 'Export Records'}
+              <button type="button" className="cie-export-btn" onClick={onExport} disabled={exporting} aria-busy={exporting || undefined}>
+                {exporting ? <span className="cie-btn-spin" aria-hidden /> : IC.down}{exporting ? 'Exporting…' : 'Export Records'}
               </button>
             </div>
           )}
@@ -514,6 +528,12 @@ export const CLM_IE_CSS = `
   border: 3px solid #cdeef5; border-top-color: #0891b2; animation: cie-rot .8s linear infinite;
 }
 @keyframes cie-rot { to { transform: rotate(360deg); } }
+.cie-btn-spin {
+  display: inline-block; flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; animation: cie-rot .7s linear infinite;
+}
+.cie-btn-spin--teal { border-color: #cdeef5; border-top-color: #0891b2; }
+.cie-export-btn[aria-busy="true"]:disabled { opacity: .9; }
 .cie-export {
   display: flex; align-items: center; gap: 12px; padding: 12px 14px;
   border: 1px solid #cdeef5; border-radius: 12px; background: #fff;
