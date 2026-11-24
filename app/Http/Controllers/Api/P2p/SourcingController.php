@@ -430,6 +430,12 @@ class SourcingController extends Controller
             return $target;
         });
 
+        // Notify the assignee that a sourcing target was assigned to them.
+        $assigneeUser = User::where('client_id', $user->client_id)->find($target->assignee_id);
+        if ($assigneeUser) {
+            $assigneeUser->notify(new \App\Notifications\SourcingTargetAssignedNotification($target));
+        }
+
         return $this->ok(['id' => $target->code]);
     }
 
