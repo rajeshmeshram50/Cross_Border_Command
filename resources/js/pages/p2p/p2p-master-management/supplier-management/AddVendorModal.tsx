@@ -4559,7 +4559,7 @@ function DdTable(props: {
   return (
     <KycTable
       isEmpty={props.rows.length === 0}
-      empty="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin."
+      empty="No due-diligence documents are required for this supplier's segment."
       headers={[
         'SR NO', 'AUTO CODE', 'DD DOCUMENT NAME', 'ISSUING AUTHORITY', 'EXPIRY', 'STATUS', 'FILE',
         ...(props.readOnly ? [] : ['ACTIONS']),
@@ -4631,7 +4631,7 @@ function OwnerKycTable(props: {
   return (
     <KycTable
       isEmpty={props.rows.length === 0}
-      empty="No owner-KYC documents added yet. Use “+ Add Owner KYC” to begin."
+      empty="No owner-KYC documents are required for this supplier's segment."
       headers={[
         'SR NO', 'AUTO CODE', 'KYC DOCUMENT NAME', 'ISSUING AUTHORITY', 'DOCUMENT NO',
         'ISSUE DATE', 'EXPIRY', 'STATUS', 'FILE',
@@ -4687,7 +4687,7 @@ function TradeLicenseTable(props: {
   return (
     <KycTable
       isEmpty={props.rows.length === 0}
-      empty="No trade licenses added yet. Use “+ Add Trade License” to begin."
+      empty="No trade licences are required for this supplier's segment."
       headers={[
         'SR NO', 'AUTO CODE', 'LICENSE TYPE', 'LICENSE NO', 'ISSUING AUTHORITY',
         'ISSUE', 'EXPIRY', 'FILE',

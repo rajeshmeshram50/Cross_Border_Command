@@ -104,18 +104,7 @@ const ATA_TABS: Array<{ key: AtaTab; label: string; icon: React.ReactNode }> = [
       <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
     </>),
   },
-  {
-    key: 'pending', label: 'Pending Approval',
-    icon: ATA_TAB_ICO(<>
-      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-    </>),
-  },
-  {
-    key: 'clarification', label: 'Clarifications',
-    icon: ATA_TAB_ICO(<>
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
-    </>),
-  },
+  /* Same order as Agreements We Sent: All, Approved, Pending, Rejected, Clarifications. */
   {
     key: 'approved', label: 'Approved',
     icon: ATA_TAB_ICO(<>
@@ -123,10 +112,22 @@ const ATA_TABS: Array<{ key: AtaTab; label: string; icon: React.ReactNode }> = [
     </>),
   },
   {
+    key: 'pending', label: 'Pending Approval',
+    icon: ATA_TAB_ICO(<>
+      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+    </>),
+  },
+  {
     key: 'rejected', label: 'Rejected',
     icon: ATA_TAB_ICO(<>
       <circle cx="12" cy="12" r="10" />
       <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+    </>),
+  },
+  {
+    key: 'clarification', label: 'Clarifications',
+    icon: ATA_TAB_ICO(<>
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
     </>),
   },
 ];
@@ -535,6 +536,14 @@ function Pager({ total, page, setPage, t }: { total: number; page: number; setPa
 /* Opens the Review & Approve modal (read the PDF, then approve / reject /
    clarify). Named for what it does — it doesn't approve directly. */
 function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: () => void; onBlocked?: () => void }) {
+  /* Disabled look per theme: the light #F8FAFC slab read as a blank grey block
+     on the dark table, its #CBD5E1 label all but invisible. */
+  const { dark } = useOpsTheme('cyan');
+  /* Light mode too: #CBD5E1 at 60% opacity vanished on white. Slate-400 at full
+     strength on a slate-100 fill still reads "off", but the label is legible. */
+  const offBd = dark ? 'rgba(148,163,184,.28)' : '#E2E8F0';
+  const offBg = dark ? 'rgba(148,163,184,.08)' : '#F1F5F9';
+  const offFg = dark ? '#64748b' : '#94A3B8';
   return (
     <Tooltip label={active ? 'Review & Approve' : 'Awaiting clarification response'}>
       {/* 30px stated, not inferred from padding. It used to be 6px of padding
@@ -542,8 +551,8 @@ function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: (
           tall, and it changed size between the two states because the disabled
           one adds a 1.5px border. border-box plus a fixed height holds both at
           30. */}
-      <button onClick={() => (active ? onClick() : onBlocked?.())} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, height: 30, padding: '0 14px', boxSizing: 'border-box', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
+      <button onClick={() => (active ? onClick() : onBlocked?.())} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, height: 30, padding: '0 14px', boxSizing: 'border-box', borderRadius: 8, border: active ? 'none' : `1.5px solid ${offBd}`, background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : offBg, color: active ? '#fff' : offFg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: 1 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : offFg} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
       </button>
     </Tooltip>
   );
@@ -556,7 +565,7 @@ function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
   const fg = t.dark ? '#67e8f9' : '#0e7490';
   return (
     <Tooltip label="View conversation & add your remark">
-      <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.45)' : '#A5F3FC'}`, background: t.dark ? 'rgba(6,182,212,.14)' : '#ECFEFF', color: fg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, boxSizing: 'border-box', padding: '0 11px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.45)' : '#A5F3FC'}`, background: t.dark ? 'rgba(6,182,212,.14)' : '#ECFEFF', color: fg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> Respond
       </button>
     </Tooltip>
@@ -660,7 +669,10 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
             <th style={{ ...THL, width: 120 }}>CREATED BY</th>
             <th style={{ ...THL, width: 120 }}>APPROVER</th>
             <th style={{ ...TH, width: 120 }}>STATUS</th>
-            {isRej && <th style={THL}>REJECTION REASON</th>}
+            {/* A set width like every other column, so the spare width is shared
+                across the row instead of all landing here and shoving Expiry /
+                Action against the right edge. */}
+            {isRej && <th style={{ ...THL, width: 220 }}>REJECTION REASON</th>}
             <th style={{ ...TH, width: 100 }}>EXPIRY DATE</th>
             <th style={{ ...TH, width: 220 }}>ACTION</th>
           </tr></thead>

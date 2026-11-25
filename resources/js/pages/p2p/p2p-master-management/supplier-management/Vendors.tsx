@@ -845,6 +845,9 @@ export default function Vendors() {
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, kindTab, catParam, compParam]);
 
+  /* Last measured list height (scroller + pager), so the shimmer shown during a
+     swap occupies exactly the same space as the rows it stands in for. */
+  const [shimH, setShimH] = useState<number | null>(null);
   useEffect(() => {
     if (bootedRef.current) setSwapping(true);
   }, [scopeTab, kindTab, catParam, compParam, debouncedSearch, page, tab, rpp]);
@@ -883,6 +886,8 @@ export default function Vendors() {
       // scroller gets what is left after that band. FIXED to that height (not only a minimum):
       // rows that do not fit scroll inside the table, so the page itself never scrolls.
       const h = `${cardH - PAGER}px`;
+      // Remembered for the shimmer pass, which has no scroller to size.
+      setShimH(prev => (prev === cardH ? prev : cardH));
       if (el.style.minHeight !== h) el.style.minHeight = h;
       if (el.style.height !== h) el.style.height = h;
       // A max as well: the scroller is a flex item that would otherwise grow to its rows' height.
@@ -1159,7 +1164,13 @@ useEffect(() => {
             </div>
             <div className="smc-table-wrap sup-table-wrap">
             {loading || swapping ? (
-              <ShimmerTable rows={Math.min(rpp, 12)} cols={11} />
+              /* Held to the list's own height while a tab / filter / page swaps.
+                 Unbounded, the shimmer grew ~400px past the window, the page
+                 scrollbar flashed in, and the Filter button and search box
+                 jumped 10px sideways on every tab switch. */
+              <div style={shimH ? { height: shimH, overflow: 'hidden' } : undefined}>
+                <ShimmerTable rows={Math.min(rpp, 12)} cols={11} />
+              </div>
             ) : (
               <>
                 <div className={`table-responsive${refetching ? ' is-refetching' : ''}`} ref={scrollRef}>

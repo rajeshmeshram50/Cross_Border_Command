@@ -978,11 +978,15 @@ function SegmentRuleModal(props: {
                       onChange={e => setDocSearch(prev => ({ ...prev, [activeCat]: e.target.value }))}
                     />
                     {!!(docSearch[activeCat] ?? '') && (
-                      <button type="button" className="dcp-doc-search-clear" aria-label="Clear search"
-                        onClick={() => setDocSearch(prev => ({ ...prev, [activeCat]: '' }))}>×</button>
+                      <Tooltip label="Clear search">
+                        <button type="button" className="dcp-doc-search-clear" aria-label="Clear search"
+                          onClick={() => setDocSearch(prev => ({ ...prev, [activeCat]: '' }))}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
-                  <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexShrink: 0, height: 34, padding: '0 14px', boxSizing: 'border-box', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
+                  <button type="button" className="dcp-doc-add" onClick={openAddDoc}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Add {CAT_SHORT[activeCat]}
                   </button>
@@ -1138,7 +1142,7 @@ const DCP_PAGE_CSS = `
 .dcp-doc-search {
   display: flex; align-items: center; gap: 8px;
   flex: 0 0 300px; max-width: 100%; min-width: 0;
-  height: 34px; padding: 0 12px;
+  height: 40px; padding: 0 8px 0 12px; box-sizing: border-box;
   border-radius: 8px;
   background: rgba(255,255,255,.16);
   border: 1.5px solid rgba(255,255,255,.30);
@@ -1156,13 +1160,47 @@ const DCP_PAGE_CSS = `
   font-family: inherit; font-size: 12.5px; font-weight: 500; color: #fff;
 }
 .dcp-doc-search input::placeholder { color: rgba(255,255,255,.62); }
+/* Clear (x): a 24px rounded square, the shape the shared search clear uses on
+   every other CLM search - it was a 16px circle here. 40px band: search and
+   Add are both 40px tall (QA #66). */
 .dcp-doc-search-clear {
-  flex-shrink: 0; width: 16px; height: 16px; padding: 0;
+  flex-shrink: 0; width: 24px; height: 24px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: 50%; cursor: pointer; line-height: 1; font-size: 13px;
-  background: rgba(255,255,255,.26); color: #fff;
+  border: none; border-radius: 6px; cursor: pointer; line-height: 1;
+  background: rgba(255,255,255,.22); color: #fff;
+  transition: background .15s ease;
 }
-.dcp-doc-search-clear:hover { background: rgba(255,255,255,.42); }
+.dcp-doc-search-clear:hover { background: rgba(255,255,255,.38); }
+.dcp-doc-add {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  flex-shrink: 0; height: 40px; padding: 0 16px; box-sizing: border-box;
+  border-radius: 8px; border: 1.5px solid transparent;
+  background: #fff; color: #0e7490;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,.12);
+  transition: background .15s ease, border-color .15s ease;
+}
+.dcp-doc-add:hover { background: #ecfeff; }
+/* Dark: a white slab on the dark dialog read as a hole in it. Translucent teal
+   with a teal edge, the CLM dark-mode accent. */
+/* On the teal band a translucent teal control disappeared into it - band,
+   search and button read as one slab. Dark: both controls sit on a deep navy
+   fill with a teal edge, so they read as inputs ON the band. */
+[data-bs-theme="dark"] .dcp-doc-add {
+  background: rgba(2,6,23,.55); border-color: rgba(103,232,249,.5);
+  color: #67e8f9; box-shadow: none;
+}
+[data-bs-theme="dark"] .dcp-doc-add:hover { background: rgba(2,6,23,.75); border-color: rgba(103,232,249,.75); }
+[data-bs-theme="dark"] .dcp-doc-search {
+  background: rgba(2,6,23,.55); border-color: rgba(103,232,249,.4);
+}
+[data-bs-theme="dark"] .dcp-doc-search:focus-within {
+  background: rgba(2,6,23,.7); border-color: rgba(103,232,249,.75);
+  box-shadow: 0 0 0 3px rgba(103,232,249,.14);
+}
+[data-bs-theme="dark"] .dcp-doc-search input::placeholder { color: rgba(203,213,225,.6); }
+[data-bs-theme="dark"] .dcp-doc-search-clear { background: rgba(148,163,184,.28); }
+[data-bs-theme="dark"] .dcp-doc-search-clear:hover { background: color-mix(in srgb, #67e8f9 34%, transparent); }
 .dcp-doc-search input:-webkit-autofill,
 .dcp-doc-search input:-webkit-autofill:hover,
 .dcp-doc-search input:-webkit-autofill:focus {
