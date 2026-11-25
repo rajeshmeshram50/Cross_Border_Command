@@ -655,7 +655,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       api.get('/master/bulk', {
         params: {
           keys: 'departments,designations,roles,overtime_rates,countries',
-          fields: 'id,name',
+          fields: 'id,name,status',
         },
       }).then(r => {
         const d = r.data?.data ?? {};

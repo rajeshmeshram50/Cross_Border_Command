@@ -149,6 +149,7 @@ function MasterPageInner({
   const switchStatusTab = (k: MpStatusTab) => {
     if (k === statusTab) return;
     setStatusTab(k);
+    if (serverPaged) setPage(0);
     flashTabShimmer();
   };
   useEffect(() => () => window.clearTimeout(tabShimTimer.current), []);
@@ -261,7 +262,7 @@ function MasterPageInner({
 
     const loadRecords = serverPaged
       ? api.get(masterEndpoint(cfg), {
-          params: { per_page: perPage, page: page + 1, q: debouncedSearch || undefined, tz: debouncedSearch ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined },
+          params: { per_page: perPage, page: page + 1, status_tab: hasStatus && statusTab !== 'all' ? statusTab : undefined, q: debouncedSearch || undefined, tz: debouncedSearch ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined },
         }).then(r => {
           if (aborted) return;
           const body: any = r.data ?? {};
@@ -278,7 +279,7 @@ function MasterPageInner({
     Promise.all([loadRecords, loadRefs]).finally(() => { if (!aborted) setLoading(false); });
 
     return () => { aborted = true; };
-  }, [cfg.slug, refSlugs.join('|'), serverPaged, page, perPage, debouncedSearch]);
+  }, [cfg.slug, refSlugs.join('|'), serverPaged, page, perPage, debouncedSearch, serverPaged ? statusTab : '']);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
   const statusOnlyEdit = !!cfg.inUseStatusOnly && !!editing?.in_use;
@@ -797,12 +798,15 @@ function MasterPageInner({
           ? await api.post(url, body, { headers })
           : await api.put(url, body);
         if (editing && mpStatusOf(editing) !== mpStatusOf(data)) { bumpCounts(editing, -1); bumpCounts(data, 1); }
-        setRecords(prev => prev.map(r => r.id === editingId ? data : r));
+        setRecords(prev => (matchesStatusTab(data) ? prev.map(r => r.id === editingId ? data : r) : prev.filter(r => r.id !== editingId)));
+        if (serverPaged && !matchesStatusTab(data)) setTotalRows(t => Math.max(0, t - 1));
         toast.success('Updated', `${cfg.titleSingular || cfg.title} updated successfully`);
       } else {
         const { data } = await api.post(base, body, headers ? { headers } : undefined);
-        setRecords(prev => [data, ...prev]);
-        setTotalRows(t => t + 1);
+        if (matchesStatusTab(data)) {
+          setRecords(prev => [data, ...prev]);
+          setTotalRows(t => t + 1);
+        }
         bumpCounts(data, 1);
         toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }

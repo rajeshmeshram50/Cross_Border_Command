@@ -471,6 +471,12 @@ class MasterController extends Controller
                 $inactive = (int) ($byStatus['inactive'] ?? 0);
                 $total = (int) $byStatus->sum();
                 $statusCounts = ['all' => $total, 'active' => $total - $inactive, 'inactive' => $inactive];
+                $tab = strtolower((string) $request->query('status_tab', ''));
+                if ($tab === 'inactive') {
+                    $q->whereRaw('LOWER(TRIM(CAST(status AS CHAR(32)))) = ?', ['inactive']);
+                } elseif ($tab === 'active') {
+                    $q->where(fn($w) => $w->whereNull('status')->orWhereRaw('LOWER(TRIM(CAST(status AS CHAR(32)))) <> ?', ['inactive']));
+                }
             }
             $page = $this->paginateMaster($q, $request, ['*']);
             $page->getCollection()->transform(fn($r) => $this->withOwnership($r));
