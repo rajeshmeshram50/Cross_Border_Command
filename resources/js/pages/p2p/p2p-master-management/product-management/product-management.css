@@ -5594,7 +5594,7 @@ body.apm-supplier-wizard-open :is(.apm-backdrop, .apm-sup-overlay, .apm-mv-backd
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-body.apm-supplier-wizard-open {
+body.apm-supplier-wizard-open:has(.apm-backdrop) {
   --avmv-rgb-082f49: 32, 8, 73;
   --avmv-0891b2: #7c3aed;
   --avmv-rgb-0891b2: 124, 58, 237;

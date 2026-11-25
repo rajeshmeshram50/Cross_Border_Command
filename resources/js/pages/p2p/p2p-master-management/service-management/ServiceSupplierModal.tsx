@@ -14,6 +14,7 @@ import {
 import { loadServiceBundle, loadSupplierPool, type ApiServiceType, type BundleVendor, type ServiceBundle, type SupplierBucket } from './serviceApi';
 import { SVC_ICONS } from './serviceIcons';
 import { SavingLock, ShimSupplierRows } from './serviceLoading';
+import { supplierTypeForBucket } from '../supplier-management/serviceMapping';
 import '../product-management/product-management.css';
 import './service-management.css';
 import './service-suppliers.css';
@@ -607,6 +608,7 @@ export function SupplierMapPanel({
           <AddVendorModal
             scope={addScope}
             canMapProducts={false}
+            initialSupplierType={bucket ? supplierTypeForBucket(bucket.service_type, bucket.classification) : null}
             onClose={() => { setAddScope(null); refreshVendors(); }}
             onSubmit={(payload) => {
               setAddScope(null);

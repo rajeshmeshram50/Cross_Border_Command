@@ -27,3 +27,15 @@ const BUCKET_BY_TYPE: Record<string, ServiceBucket> = {
 /** The service bucket a Supplier Type name serves, or null (Material/ Goods, FFD/ Transporter, none). */
 export const serviceBucketOf = (typeName: string | null | undefined): ServiceBucket | null =>
   BUCKET_BY_TYPE[squash(typeName ?? '')] ?? null;
+
+const TYPE_NAMES = [
+  'Soft Service Provider', 'Trackable Services', 'Consumable Services', 'Professional Services',
+  'Utility Services', 'Facility Services', 'Maintenance Services', 'Outsourcing Services',
+];
+
+/** The Supplier Type name that serves a service bucket, or null when none does. */
+export const supplierTypeForBucket = (serviceType: string | null | undefined, classification: string | null | undefined): string | null =>
+  TYPE_NAMES.find(n => {
+    const b = BUCKET_BY_TYPE[squash(n)];
+    return b.serviceType === serviceType && (b.classification ?? null) === (classification ?? null);
+  }) ?? null;

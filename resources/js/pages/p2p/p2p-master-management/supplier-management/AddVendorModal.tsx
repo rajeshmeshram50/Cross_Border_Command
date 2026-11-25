@@ -382,6 +382,8 @@ export default function AddVendorModal(props: {
   canMapProducts?: boolean;
   prefill?: SupplierPrefill | null;
   convertSupplierId?: number | null;
+  /** Pre-selects the Supplier Type on a new supplier (e.g. the service being mapped). */
+  initialSupplierType?: string | null;
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
 }) {
@@ -492,7 +494,7 @@ export default function AddVendorModal(props: {
 
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
-  const [vendorType,  setVendorType]  = useState('');
+  const [vendorType,  setVendorType]  = useState(() => (!props.vendorId && props.initialSupplierType) || '');
   const [savedVendorType, setSavedVendorType] = useState('');
   const typeUnsaved = squashType(vendorType) !== squashType(savedVendorType);
   const isGoodsSupplier = squashType(savedVendorType) === squashType('Material/ Goods');
