@@ -26,7 +26,6 @@ const SUP_VISIBLE_ROWS = 4;
 type VendorOpt = {
   id: string; code: string; name: string; type: string; state: string; contact: string;
   origin: SupplierOrigin; country: string; city: string; gstStateCode: string; currency: string;
-  /** The service bucket this supplier's type serves — null when unclassified. */
   serviceType: ApiServiceType | null; classification: string | null;
 };
 
@@ -57,14 +56,11 @@ export const formatSupplierCode = (raw: string): string => {
   return m ? `S-${m[1].padStart(3, '0')}` : String(raw ?? '');
 };
 
-/* Same caps as the API (SupplierPricing::MAX_PRICE / MAX_RATE). */
 const MAX_PRICE = 9999999999.99;
 const MAX_RATE = 99999.9999;
 
 const money = (n: number) => `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/* Keyed by the service bucket: mapping a Trackable service must not reuse the
-   pool fetched for a Utility one. '' is the unfiltered pool. */
 const vendorCaches = new Map<string, VendorOpt[]>();
 let currencyCache: CurrencyOpt[] = [];
 const bucketKey = (b?: SupplierBucket | null) => (b ? `${b.service_type}:${b.classification ?? ''}` : '');
@@ -139,7 +135,6 @@ export function SupplierMapPanel({
   onChange: (next: MappedSupplier[]) => void;
   loading?: boolean;
   defaultGst?: number;
-  /** The service's own type — the dropdown lists only suppliers that serve it. */
   bucket?: SupplierBucket | null;
 }) {
   const toast = useToast();
@@ -221,9 +216,6 @@ export function SupplierMapPanel({
   const selVendor = domSel ?? intlSel;
   const editableId = selVendor && /^\d+$/.test(selVendor.id) ? Number(selVendor.id) : null;
 
-  /* The supplier wizard saves each stage as it goes, so a supplier can change
-     even when the wizard is closed with Cancel. Every bucket's cached list is
-     dropped, since an edit (name, type) can move a supplier between buckets. */
   const refreshVendors = (selectName?: string) => {
     vendorCaches.clear();
     setVendorsLoading(true);
@@ -648,7 +640,6 @@ export default function ServiceSupplierModal({
   suppliers: MappedSupplier[];
   onClose: () => void;
   onChange: (next: MappedSupplier[]) => void;
-  /** The row's own service type — passed straight to the supplier dropdown. */
   bucket?: SupplierBucket | null;
 }) {
 

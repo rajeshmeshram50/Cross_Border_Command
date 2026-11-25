@@ -4257,13 +4257,17 @@ const SCOPED_CSS = `
 .qpi-doctype-filter {
   display: flex; align-items: center;
   position: relative;
-  height: 42px;
+  height: 48px; align-self: center;
   flex: 0 0 186px;
   width: 186px; min-width: 186px; max-width: 186px;
 }
 .qpi-doctype-filter > div { flex: 1 1 auto; width: 100%; min-width: 0; }
 .qpi-doctype-filter .master-select-wrap { width: 100% !important; }
-.qpi-doctype-filter .master-select-toggle { height: 42px; width: 100% !important; padding-left: 34px !important; }
+.qpi-doctype-filter .master-select-toggle { height: 48px; width: 100% !important; padding-left: 34px !important; }
+.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle {
+  box-sizing: border-box; height: 48px; min-height: 48px; border-radius: 11px;
+  display: flex; align-items: center;
+}
 .qpi-doctype-ico { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #7c3aed; pointer-events: none; z-index: 2; }
 [data-bs-theme="dark"] .qpi-doctype-ico { color: #c4b5fd; }
 .qpi-doctype-filter .master-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
