@@ -164,7 +164,7 @@ export default function SalesLeadsDetails() {
             <input
               type="text"
               autoComplete="off"
-              placeholder="Search lead..."
+              placeholder="Search Opp ID, customer, PI, shipment, country, date…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />

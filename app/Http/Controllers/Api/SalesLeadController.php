@@ -325,7 +325,28 @@ class SalesLeadController extends Controller
                       ->orWhereRaw('LOWER(legal_name) LIKE ?', [$like])
                       ->orWhereRaw('LOWER(customer_code) LIKE ?', [$like])
                       ->orWhereRaw('LOWER(primary_email) LIKE ?', [$like]);
-                });
+                })
+                ->orWhereHas('customer.primaryAddress', fn ($a) => $a->whereRaw('LOWER(country) LIKE ?', [$like]))
+                ->orWhereExists(fn ($e) => $e->selectRaw('1')->from('proforma_invoices')
+                    ->whereColumn('proforma_invoices.opp_id', 'leads.id')
+                    ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+                    ->whereRaw('LOWER(proforma_invoices.code) LIKE ?', [$like]))
+                ->orWhereExists(fn ($e) => $e->selectRaw('1')->from('shipment_orders')
+                    ->whereColumn('shipment_orders.lead_id', 'leads.id')
+                    ->whereRaw('LOWER(shipment_orders.shipment_code) LIKE ?', [$like]));
+
+                $dateExpr = 'COALESCE(leads.query_time, leads.created_at)';
+                $driver = $w->getConnection()->getDriverName();
+                [$display, $iso] = match ($driver) {
+                    'pgsql'  => ["LOWER(TO_CHAR($dateExpr, 'DD-Mon-YYYY'))", "TO_CHAR($dateExpr, 'YYYY-MM-DD')"],
+                    'mysql', 'mariadb' => ["LOWER(DATE_FORMAT($dateExpr, '%d-%b-%Y'))", "DATE_FORMAT($dateExpr, '%Y-%m-%d')"],
+                    default  => [null, "strftime('%Y-%m-%d', $dateExpr)"],
+                };
+                if ($display) $w->orWhereRaw("$display LIKE ?", [$like]);
+                $isoNeedle = preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$#', $search, $m)
+                    ? sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1])
+                    : (preg_match('#^\d{4}-\d{2}(-\d{2})?$#', $search) ? $search : null);
+                if ($isoNeedle) $w->orWhereRaw("$iso LIKE ?", [$isoNeedle . '%']);
 
                 if (ctype_digit($search)) {
                     $w->orWhere('product_quantity', (int) $search);
