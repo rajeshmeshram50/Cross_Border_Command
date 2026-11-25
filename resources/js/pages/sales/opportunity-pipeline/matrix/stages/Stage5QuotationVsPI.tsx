@@ -9,6 +9,7 @@ import '../../../../../components/ui/DataTable.css';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import Tooltip from '../../../../../components/ui/Tooltip';
+import { ShimmerTableRows } from '../../../../../components/ui/Shimmer';
 import SalesDocSendForSignatureModal from './SalesDocSendForSignatureModal';
 import { SigningTrackerModal } from '../../SigningTrackerModal';
 import ConvertToPiModal, { ConversionBlockedModal } from '../../ConvertToPiModal';
@@ -20,20 +21,6 @@ import {
   type Quotation as QpiQuotation,
 } from '../../SalesQPI';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Stage 5: Quotation vs PI
- *
- *  Ported to the IDIMS reference design: teal/cyan header with a
- *  "View Latest Quoted Price Summary" button, a segmented Quotation /
- *  Proforma Invoice toggle, and a navy document table. Per-row actions:
- *  Convert to PI · Email · Edit · More (Download / View · With / Without
- *  Signature). There is deliberately NO Delete — issued quotations and PIs
- *  stay on the opportunity as a record.
- *
- *  The full 2-step Create Quotation / Create PI wizard from the SalesQPI
- *  workspace is lifted in via the exported modal components so the lead
- *  context is pre-fed. Save & Next persists lead_stage_id=6.
- * ───────────────────────────────────────────────────────────────────── */
 
 type DocType = 'quotation' | 'pi';
 
@@ -89,13 +76,10 @@ const isTerminalQuote = (s: string | null): boolean => {
   return lc === 'converted_to_pi' || lc === 'converted' || lc === 'cancelled';
 };
 
-/* Latest e-signature request per document row, surfaced in the action cell. */
 type SigStatusRow = { id: number; status: string; docId: number };
 const docTypeParam = (dt: DocType): 'quotation' | 'proforma_invoice' =>
   dt === 'pi' ? 'proforma_invoice' : 'quotation';
 
-/* Currency may be stored as the full master label ("CAD – Canadian
- * Dollar") — the list column only wants the 3-letter code ("CAD"). */
 const ccyCode = (c: string | null): string => {
   const code = (c ?? '').split(/[\s–-]/)[0]?.trim().toUpperCase();
   return code || '—';
@@ -106,56 +90,28 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const leadId = header.leadId ?? null;
 
   const [docType, setDocType]   = useState<DocType>('quotation');
-  /* Starts TRUE: the quotation/PI lists aren't known until the first fetch
-   * lands, and `livePisCount`/`locked` are derived from them. If this began
-   * false, the very first paint (and the whole loading window) treated the
-   * opportunity as having ZERO PIs — so Create PI / Create Quotation looked
-   * enabled on a deal that already has a PI (or is already won), and only a
-   * refresh corrected it. True here means "checking…" until the data arrives,
-   * which also shows the table shimmer on first paint. */
   const [loading, setLoading]   = useState(true);
   const [quotations, setQuotations] = useState<QuotationRow[]>([]);
   const [pis, setPis]           = useState<PIRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
-  // Per-row email in-flight set (decoupled from actingId so two different
-  // docs can be emailed at once). `${kind}:${id}` keys; ref mirrors it for a
-  // synchronous same-tick double-click guard. See onEmail.
   const [emailingKeys, setEmailingKeys] = useState<Set<string>>(new Set());
   const emailingRef = useRef<Set<string>>(new Set());
   const isEmailing = (kind: DocType, id: number) => emailingKeys.has(`${kind}:${id}`);
-  // Convert-to-PI confirmation popup state (target row + previewed PI code).
   const [convertTarget, setConvertTarget] = useState<QuotationRow | null>(null);
   const [convertPreviewCode, setConvertPreviewCode] = useState<string | null>(null);
-  // Dedicated "converting to PI" flag. Kept SEPARATE from `actingId` (the
-  // document view/download busy state) so the convert flow drives ONLY the
-  // modal's own converting spinner — not the "Opening document…" page overlay.
   const [converting, setConverting] = useState(false);
-  // Conversion-blocked popup (lead already has a PI): the quotation tried
-  // + the existing PI row that blocks it.
   const [convertBlocked, setConvertBlocked] = useState<{ fromQt: string; pi: PIRow } | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
-  /* The open More-Actions menu — tracks the row + a screen anchor rect so
-   * the menu can be portalled to <body> (escaping the table's overflow). */
   const [moreMenu, setMoreMenu] = useState<{ kind: DocType; id: number; anchor: HTMLElement } | null>(null);
-  // Which More-Actions item is mid-flight — drives the in-menu spinner so the
-  // user sees the View/Download is working (and can't fire it twice).
   const [menuBusy, setMenuBusy] = useState<{ action: 'download' | 'view' | 'certificate'; signature: boolean } | null>(null);
 
-  /* Send-for-Signature modal target + live signature status per row, keyed
-   * by `${docType}:${docId}`. The status drives the action-cell control
-   * (Send → Awaiting Sign + Remind → Signed + View). */
   const [sigSendFor, setSigSendFor] = useState<
     { kind: DocType; id: number; code: string | null; customerName: string | null } | null
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, SigStatusRow>>({});
-  /* False until the first signature-status fetch resolves. While loading we DON'T
-   * yet know if a doc was already sent/signed, so the Send-for-Signature button
-   * shows a loader and is disabled — preventing a premature duplicate send. */
   const [sigLoaded, setSigLoaded] = useState(false);
-  // Signing Tracker (shared modal) target — opened from the history icon on any
-  // row that has a signature request (sent or signed).
   const [trackerFor, setTrackerFor] = useState<{ sigId: number; code: string } | null>(null);
 
   const [createQtOpen, setCreateQtOpen]     = useState(false);
@@ -164,10 +120,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const [editPiId, setEditPiId]             = useState<number | null>(null);
   const [piSource, setPiSource]             = useState<QpiQuotation | null>(null);
 
-  /* Lead context handed to the Create modals so the lead's ALREADY-MAPPED
-   * customer & consignee carry through as real selections (code + name +
-   * FK id) — the user never re-picks them, and they can't drift to a
-   * different customer/consignee than the lead was set up with. */
   const initialOpp: QpiInitialOpp | undefined = useMemo(() => {
     if (!leadId) return undefined;
     const custRow = (header.customerRow ?? null) as Record<string, unknown> | null;
@@ -202,9 +154,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   useEffect(() => { void fetchAll(false); }, [fetchAll]);
   useEffect(() => { prewarmQpiMasters(); }, []);
 
-  /* ── E-signature status for the current doc-type tab. `sync` round-trips
-   * Zoho server-side for any in-progress request so the chip flips to
-   * Signed without a manual refresh. Keyed by `${docType}:${trade_doc_id}`. */
   const fetchSignatures = useCallback(async (sync = false) => {
     if (!leadId) return;
     try {
@@ -222,32 +171,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         }
       });
       setSigByRow(map);
-    } catch { /* signature status is best-effort — never blocks the table */ }
+    } catch {  }
     finally { setSigLoaded(true); }
   }, [leadId, docType]);
 
   useEffect(() => {
     if (!leadId) return;
-    /* New lead / doc-type tab → the previous fetch's status no longer applies.
-     * Reset the loader and drop the stale per-row map so the Send-for-Signature
-     * button shows the "Checking…" loader (not a stale "Send for Sign") until the
-     * fresh status arrives — otherwise an already-signed PI flashes "Send for Sign"
-     * for the ~10s the Zoho-sync fetch takes, then snaps to "Signed".
-     * The 20s background poll keeps sigLoaded=true, so it never re-flashes. */
     setSigLoaded(false);
     setSigByRow({});
-    /* Two-step load, so the row is locked for a moment instead of ~10 seconds.
-     *
-     * A single sync=1 fetch round-trips Zoho for every in-progress request, and
-     * the whole row sat on "Checking..." for as long as that took. The first
-     * call now reads our own database (fast) and unlocks the row; the sync call
-     * follows and reconciles with Zoho.
-     *
-     * Safe in the one direction that matters: our database can only be BEHIND
-     * Zoho, never ahead - a request row is written before Zoho is called. So
-     * the brief pre-sync state can under-report progress ("Sent" for a document
-     * Zoho has since completed), which keeps Edit locked and Send hidden. It
-     * can never show a document as free to send or edit when it is not. */
     void fetchSignatures(false).then(() => fetchSignatures(true));
     const t = setInterval(() => void fetchSignatures(true), 20000);
     return () => clearInterval(t);
@@ -262,25 +193,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  /* Auto-unlock the left CLM "Segment Details" card whenever this lead
-   * ALREADY has at least one quotation or PI in the list — the user
-   * shouldn't have to open (or submit) the Create/Edit form to trigger
-   * it. Bumping the parent's /agreement-applicable refetch is idempotent.
-   * onPiChange is intentionally left out of the deps (it's a fresh
-   * closure each parent render) so this fires only when the row COUNT
-   * changes (0 → 1), never on every re-render. */
   useEffect(() => {
     if (quotations.length > 0 || pis.length > 0) onPiChange?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quotations.length, pis.length]);
 
-  /* ── Per-row actions ─────────────────────────────────────────────── */
   const onViewPdf = async (kind: DocType, id: number, signature: boolean) => {
-    // PIs: "With Signature" opens ONLY the actual Zoho-signed PDF — never the
-    // locally rendered preview. If the PI hasn't been signed through Zoho yet
-    // there's nothing to show, so warn and stop.
-    // Quotations are NOT e-signed through Zoho here, so "With Signature" simply
-    // renders the stamped preview variant (the old stamp output).
     if (signature && kind === 'pi') {
       const sig = sigByRow[`${kind}:${id}`];
       if (!sig?.id || sig.status !== 'completed') {
@@ -310,9 +228,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onDownloadPdf = async (kind: DocType, id: number, code: string | null, signature: boolean) => {
-    // PIs: "With Signature" downloads ONLY the actual Zoho-signed PDF — never
-    // the re-rendered preview. Warn and stop if the PI isn't Zoho-signed yet.
-    // Quotations: "With Signature" downloads the stamped preview variant.
     if (signature && kind === 'pi') {
       const sig = sigByRow[`${kind}:${id}`];
       if (!sig?.id || sig.status !== 'completed') {
@@ -345,17 +260,9 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  /* Convert-to-PI confirmation popup — opens ConvertToPiModal first and
-   * only fires the conversion on confirm (mirrors the standalone SalesQPI
-   * page so the action behaves identically inside and outside the matrix). */
   const openConvert = (q: QuotationRow) => {
     if (!q.id) return;
-    // Block until the PI list has loaded — during the post-refresh load window
-    // `pis` is empty, so the "already has a PI" blocker below would falsely pass
-    // and let a second PI be created. Guard here too (button is also disabled).
     if (loading) { toast.info('Please wait', 'Still loading this opportunity’s latest status…'); return; }
-    // One PI per lead — if a live PI already exists, block conversion and
-    // point the user at editing the existing PI (not deleting it).
     const blocker = pis.find(p => (p.status ?? '').toLowerCase() !== 'cancelled');
     if (blocker) {
       setConvertBlocked({ fromQt: q.code ?? '', pi: blocker });
@@ -381,21 +288,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       setDocType('pi');
       toast.success('Converted to PI', `New proforma invoice ${code} created from ${q.code ?? 'this quotation'}.`);
       onPiChange?.();
-      // The conversion verified this QUOTATION's consignee documents and then
-      // froze that consignee onto the lead. Reload the header so the left
-      // Consignee Details card + every later form show the frozen party.
       void reloadLead?.();
       setConvertTarget(null);
     } catch (e: any) {
-      // Covers the DCP block too: the server returns 422 with the exact list
-      // of documents still pending for this quotation's customer / consignee.
       toast.error('Conversion blocked', e?.response?.data?.message ?? 'Could not convert this quotation to a PI.');
-      // The server rejected because the state changed under us — e.g. another
-      // tab already converted this lead. Refresh so the row reflects reality
-      // immediately: the Convert-to-PI button disables and the PI count updates
-      // without needing a manual page refresh.
       await fetchAll(true);
-      setConvertTarget(null);   // close the confirm modal
+      setConvertTarget(null);
     } finally {
       setConverting(false);
     }
@@ -403,11 +301,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   const onEmail = async (kind: DocType, id: number, code: string | null) => {
     const key = cdKey(kind, id);
-    // Per-row send: only block a repeat of THIS row (its button is disabled
-    // while in flight; the ref catches a same-tick double-click). A DIFFERENT
-    // quotation/PI can be emailed at the same time.
     if (emailingRef.current.has(key)) return;
-    // Still cooling down from a previous rate-limit hit — surface the wait.
     const left = cooldownLeft(kind, id);
     if (left > 0) {
       toast.warning('Please wait', `You can email this ${kind === 'pi' ? 'PI' : 'quotation'} again in ${left}s (max 3 per minute).`);
@@ -420,8 +314,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       await api.post(url, {});
       toast.success('Email sent', `${code ?? 'Document'} was emailed to the customer.`);
     } catch (e: any) {
-      // 429 = throttle (max 3 sends per doc per minute). Not a real failure —
-      // tell the user to wait, and start the cooldown so the button locks.
       if (e?.response?.status === 429) {
         const wait = Number(e?.response?.data?.retry_after_seconds) || 60;
         setEmailCooldowns(m => ({ ...m, [cdKey(kind, id)]: Date.now() + wait * 1000 }));
@@ -445,20 +337,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onEdit = (kind: DocType, id: number) => {
-    /* Nothing is editable until we know whether it has been sent or signed.
-       The lock further down reads sigByRow, which is empty for the few seconds
-       the signature fetch takes — so on every page load an already-sent PI was
-       editable for that window, and the guard that should have stopped it had
-       nothing to read yet.
-       The Send button already waited on this flag (it shows "Checking…").
-       Edit did not, which is why one was safe and the other was not. */
     if (!sigLoaded) {
       toast.info('Checking signature status', 'One moment — confirming whether this document has already been sent for signature.');
       return;
     }
 
-    // A quotation that's been converted to a PI (or cancelled) is locked — the
-    // PI is now the live document; editing the quotation would desync them.
     if (kind === 'quotation') {
       const q = quotations.find(x => x.id === id);
       if (q && isTerminalQuote(q.status)) {
@@ -473,9 +356,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       }
     }
     const st = sigByRow[`${kind}:${id}`]?.status;
-    // A signed document is locked — the signed copy must keep matching what the
-    // customer e-signed. A PI that's been SENT for signature (awaiting) is also
-    // locked so it can't drift from what was sent. Block and explain why.
     if (st === 'completed' || (kind === 'pi' && st === 'inprogress')) {
       toast.warning(
         kind === 'pi' ? (st === 'inprogress' ? 'PI sent for signature' : 'PI already signed') : 'Quotation already signed',
@@ -494,9 +374,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
-    // Stage 6 (Victory) needs a Proforma Invoice that has been SIGNED.
-    // Quick client-side check for the PI; the signed check is enforced
-    // server-side and its message surfaces via the catch below.
     if (livePisCount === 0) {
       toast.warning('Create a PI first', 'Moving to Victory (Stage 6) needs a Proforma Invoice on this opportunity — a quotation alone isn’t enough.');
       return;
@@ -514,23 +391,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  /* ── Derived ───────────────────────────────────────────────────── */
   const rows = docType === 'quotation' ? quotations : pis;
   const anyActing = actingId !== null;
 
-  /* Nothing in a row is actionable until its signature status is known.
-   *
-   * Send and Edit already waited on this, but Convert to PI, Email and the
-   * More menu did not - so for the seconds the Zoho-sync fetch takes, the row
-   * read as half locked and half live, and a user could still act on a
-   * document whose real state had not arrived yet. The row now holds still as
-   * one unit until the status lands, which is what it looks like it is doing
-   * while the Status cell says "Checking...". */
   const rowBusy = anyActing || !sigLoaded;
 
-  /* Email rate-limit cooldown — server caps sends at 3 per doc per minute
-   * (429). Keep that row's Email button disabled-looking until it frees.
-   * Keyed by `${kind}:${id}` → epoch-ms; a 1s ticker re-renders the countdown. */
   const [emailCooldowns, setEmailCooldowns] = useState<Record<string, number>>({});
   const cdKey = (kind: DocType, id: number) => `${kind}:${id}`;
   const cooldownLeft = (kind: DocType, id: number): number => {
@@ -550,8 +415,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     return () => clearInterval(t);
   }, [emailCooldowns]);
 
-  /* PI "Converted From" → resolve the source quotation's code from the
-   * quotation list we already loaded. */
   const quotationCodeById = useMemo(() => {
     const m = new Map<number, string>();
     for (const q of quotations) if (q.code) m.set(q.id, q.code);
@@ -567,24 +430,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     [pis],
   );
 
-  /* ── Mandatory-doc gate for Create PI ──────────────────────────────
-   * A PI can't be created until every MANDATORY KYC / Due-Diligence /
-   * Trade-Licence doc for the customer AND the chosen consignee is uploaded.
-   * The check is split across three points because the consignee isn't known
-   * until the PI form itself (quotations may each name a different one):
-   *   1. HERE — `piDocGate`, the CUSTOMER's tally, derived by the parent
-   *      (SalesMatrixDetail) from the vault fetch it already makes for the
-   *      left "Customer Details" card. Greys the Create PI button.
-   *   2. Create-PI wizard, Step 1 → Step 2 — probes
-   *      /sales/proforma-invoices/party-docs-check for the customer + the
-   *      just-picked consignee.
-   *   3. The server, on save / convert — the authoritative gate.
-   * Trade documents are intentionally EXCLUDED at every point.
-   *
-   * Anything other than 'ok' blocks. 'checking' HARD-disables (same treatment
-   * as this stage's own load window — there is no user action to take yet, and
-   * it resolves on its own in a moment); 'incomplete' and 'error' stay soft so
-   * the click can explain why and point at the Customer Details card. */
   const docsBlocked  = piDocGate !== 'ok';
   const docsChecking = piDocGate === 'checking';
   const docsMsg =
@@ -598,28 +443,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   const colSpan = docType === 'quotation' ? 7 : 9;
 
-  /* The table has TWO things to wait for: the document list (`loading`) and the
-   * per-row signature status (`sigLoaded`). It used to show each differently —
-   * a shimmer for the first, and for the second a translucent veil laid over
-   * fully-painted rows. So switching the Quotation / PI tab (which re-reads the
-   * status for the new document type) washed the whole table out behind a
-   * half-transparent sheet, a loading state that looks nothing like the one the
-   * same table shows a second earlier (QA #265).
-   *
-   * One flag, one shimmer, both waits. The rows simply don't render until every
-   * cell in them can be trusted, which also keeps the QA #232 guarantee that
-   * nothing is clickable while the status is unknown — more firmly than the
-   * veil did, since there is no row underneath to reach. */
   const tableBusy = loading || !sigLoaded;
 
   return (
     <>
       <style>{SHARED_STAGE_CSS}{STAGE5_CSS}</style>
 
-      {/* Full-page lock while a document is opening (view / download / email /
-          certificate). Portalled to <body> and fixed over the WHOLE viewport so
-          it also covers the step pills and action buttons OUTSIDE this stage —
-          no stage-switch or any other action can fire until the doc is ready. */}
       {(anyActing || menuBusy) && createPortal(
         <div className="s5-pagelock" role="status" aria-live="polite" aria-label="Opening document">
           <div className="s5-pagelock-card">
@@ -630,7 +459,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         document.body,
       )}
 
-      {/* ── Header (teal) with View-Summary button ── */}
       <div className="smd-stg-head">
         <div className="smd-stg-head-left">
           <div className="smd-stg-head-icon">
@@ -660,7 +488,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       </div>
 
       <div className="smd-stg-body">
-        {/* Segmented tab toggle + Create buttons (figma action row) */}
         <div className="s5-actionrow">
           <div className="s5-seg dt-tabrail hr-dt" data-accent="violet">
             <div className="dt-tabs" role="tablist">
@@ -698,25 +525,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             </div>
           </div>
           <div className="s5-create-group">
-            {/* Once a (non-cancelled) PI exists on this opportunity, a new
-                Quotation can no longer be created against it — the button stays
-                visible but greyed; clicking explains why. Also locked once signed. */}
             <button
               type="button"
               className="s5-create-btn s5-create-q"
-              // HARD-disable while the opportunity's latest quotation/PI status is
-              // still loading (or an action is mid-flight). The onClick guard alone
-              // left the button clickable during the ~2-3s post-refresh load window,
-              // so a user could fire Create before livePisCount hydrated → duplicate.
               disabled={loading || anyActing}
               style={(loading || anyActing || locked || livePisCount > 0) ? { opacity: 0.5, cursor: (loading || anyActing) ? 'wait' : 'not-allowed' } : undefined}
               title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
               onClick={() => {
-                // Block while a row action (PDF view/download/email) is in flight
-                // so a second action can't fire mid-load.
                 if (anyActing) { toast.info('Please wait', 'An action is already in progress.'); return; }
-                // Block until the first fetch resolves — acting on the empty
-                // initial state let a duplicate slip through on a slow API.
                 if (loading) { toast.info('Please wait', 'Still loading this opportunity’s latest status…'); return; }
                 if (locked) { toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.'); return; }
                 if (livePisCount > 0) { toast.warning('PI already created', 'A Proforma Invoice already exists for this opportunity — you cannot create a new quotation against it.'); return; }
@@ -728,24 +544,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
               {loading ? 'Loading…' : 'Create Quotation'}
             </button>
             <span className="s5-create-div" />
-            {/* One PI per opportunity: once a (non-cancelled) PI exists the
-                Create PI button stays VISIBLE but greyed; clicking it explains
-                why instead of opening the form. Also locked once the PI is signed. */}
             <button
               type="button"
               className="s5-create-btn s5-create-p"
-              // HARD-disable during the load window (and while acting) so a fast
-              // click right after refresh can't create a second PI before the
-              // existing-PI status has hydrated. Business-rule cases (already has
-              // PI / locked / docs pending) stay soft so their "why" toast shows.
               disabled={loading || anyActing || docsChecking}
               style={(loading || anyActing || docsChecking || locked || livePisCount > 0 || docsBlocked) ? { opacity: 0.5, cursor: (loading || anyActing || docsChecking) ? 'wait' : 'not-allowed' } : undefined}
               title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : docsMsg}
               onClick={() => {
-                // Block while a row action (PDF view/download/email) is in flight.
                 if (anyActing) { toast.info('Please wait', 'An action is already in progress.'); return; }
-                // Block until the first fetch resolves — otherwise a second PI
-                // could be created on a won deal while the list was still loading.
                 if (loading) {
                   toast.info('Please wait', 'Still loading this opportunity’s latest status…');
                   return;
@@ -781,13 +587,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           </div>
         </div>
 
-        {/* Document table.
-            Until BOTH the list and its signature status have landed the rows
-            are replaced by the shimmer, not merely dimmed — nothing is
-            clickable while a document's real state is unknown (QA #232), and
-            the wait looks the same however it was triggered (QA #265). The
-            two-step status load keeps this to a moment rather than the old
-            Zoho round-trip. */}
         <div className="s5-tbl-card smd-fade-in" key={docType}>
           <div className="s5-tbl-wrap">
             <table className="s5-tbl">
@@ -825,24 +624,13 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
                 {!tableBusy && rows.map((r, idx) => {
                   const terminal = docType === 'quotation' && isTerminalQuote(r.status);
-                  // One PI per lead: once ANY quotation on this opportunity has been
-                  // converted (a PI exists), every OTHER quotation's Convert-to-PI
-                  // and Edit actions are locked too — not just blocked on click.
                   const piLocked = docType === 'quotation' && livePisCount > 0;
                   return (
                     <tr key={r.id} className={anyActing && actingId === r.id ? 's5-row-acting' : undefined}>
                       <td className="ta-c"><span className="s5-sr2">{idx + 1}</span></td>
-                      {/* Document number is a plain LABEL, not a link — clicking
-                          it used to open the edit form, which was too easy to
-                          trigger while just reading the row. Editing is the
-                          pencil action only. */}
                       <td>
                         <span className="s5-qno">{r.code ?? `#${r.id}`}</span>
                       </td>
-                      {/* nowrap: the header row already has it, the body
-                          did not — and browsers break a line AFTER a
-                          hyphen, so "10-Aug-2026" split into three lines
-                          inside a 120px column that it actually fits in. */}
                       <td className="s5-muted s5-nowrap">{fmtDate(r.created_at)}</td>
                       {docType === 'pi' && (
                         <td>
@@ -860,27 +648,17 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                       <td className="ta-r"><span className="s5-val2">{fmtNum(r.grand_total)}</span></td>
                       {docType === 'pi' && (
                         <td className="ta-c">
-                          {/* STATUS = e-signature lifecycle:
-                              Not Sent (draft) → Sent (awaiting) → Signed. */}
                           {(() => {
-                            /* Same window as the Edit guard: until the fetch
-                               lands there is no status to read, and falling
-                               through to "Not Sent" told the user the opposite
-                               of the truth about a document already sent. */
                             if (!sigLoaded) {
                               return <span className="s5-st-badge s5-st-notsent" style={{ opacity: .7 }}>Checking…</span>;
                             }
                             const st = sigByRow[`${docType}:${r.id}`]?.status;
-                            // Clean solid pill — same shape as the Document Type
-                            // badge (s5-dt2), just colour-coded by signature state.
                             if (st === 'completed') {
                               return <span className="s5-st-badge s5-st-signed">Signed</span>;
                             }
                             if (st === 'inprogress') {
                               return <span className="s5-st-badge s5-st-sent">Sent</span>;
                             }
-                            // Declined / recalled read as such until re-sent (then
-                            // sigByRow flips to inprogress → "Sent").
                             if (st === 'declined') {
                               return <span className="s5-st-badge s5-st-declined">Declined</span>;
                             }
@@ -890,21 +668,9 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             if (st === 'expired') {
                               return <span className="s5-st-badge s5-st-recalled">Expired</span>;
                             }
-                            /* No request at all — nothing has been sent. */
                             if (!st) {
                               return <span className="s5-st-badge s5-st-notsent">Not Sent</span>;
                             }
-                            /* A request EXISTS but Zoho returned a state this
-                               screen does not know — an undelivered / bounced
-                               mail is one of them, and Zoho's raw value is
-                               stored as-is (see show() in
-                               ClmSignatureController).
-                               Showing Zoho's own word is the only honest option:
-                               falling through to "Not Sent" denied a request
-                               that had been sent, and there is no basis for
-                               calling it "Declined" — nobody refused anything.
-                               Title-cased so "undelivered" reads as
-                               "Undelivered". */
                             return (
                               <span
                                 className="s5-st-badge s5-st-recalled"
@@ -917,9 +683,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                         </td>
                       )}
                       <td>
-                        {/* Dimmed + click-through disabled as one block while the
-                            signature status is still loading, so the row visibly
-                            holds still instead of offering half-live actions. */}
                         <div className="s5-acts" style={!sigLoaded ? { opacity: .55, cursor: 'wait' } : undefined}>
                           {docType === 'quotation' && (
                             terminal ? (
@@ -939,15 +702,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </button>
                             )
                           )}
-                          {/* Send for Signature (Zoho Sign) — PI ONLY.
-                              Quotations are not e-signed through Zoho here, so the
-                              Send/Sent/Signed pill is hidden on the Quotation tab
-                              (matches the standalone Quotations V/S PI page).
-                              Status-aware: Send → Awaiting Sign (+Remind) → Signed. */}
                           {docType === 'pi' && (() => {
-                            // Still loading signature status → show a disabled
-                            // loader so the user can't fire a premature send
-                            // before we know whether it's already sent/signed.
                             if (!sigLoaded) {
                               return (
                                 <button type="button" className="s5-convert2" disabled
@@ -961,20 +716,8 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             if (st === 'inprogress') {
                               return (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                  {/* Already sent → the STATUS column already shows the
-                                      "Sent" badge, so we DON'T repeat a locked "Sent"
-                                      button here (it read as "click to send again").
-                                      Only the useful actions remain: View the sent
-                                      document + Remind the signer. */}
                                   <Tooltip label="View sent document">
-                                    {/* The doc sent to Zoho for an in-progress PI is the
-                                        locally rendered PI PDF, not a signed artifact — so
-                                        view it with signature=false (the signed-only guard
-                                        would otherwise bounce every in-progress row with a
-                                        "Not signed yet" toast and open nothing). */}
                                     <button type="button" className="s5-icn" onClick={() => void onViewPdf(docType, r.id, false)} disabled={anyActing}>
-                                      {/* Spinner while the sent document is being fetched/opened
-                                          so the click isn't silent on slow networks (QA #66). */}
                                       {actingId === r.id
                                         ? <span className="s5-icn-spin" role="status" aria-label="Opening document…" />
                                         : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
@@ -989,8 +732,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               );
                             }
                             if (st === 'completed') {
-                              // Signed → green "Signed" pill (locked). View/Download
-                              // the signed copy lives in the 3-dot menu.
                               return (
                                 <button type="button" className="s5-convert2" title="Document already signed — open More Actions to view it" disabled
                                   style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)', boxShadow: '0 2px 8px rgba(22,163,74,.3)', opacity: 1, cursor: 'not-allowed' }}>
@@ -999,9 +740,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                                 </button>
                               );
                             }
-                            // Declined / recalled → the PI was already sent, so
-                            // the button re-sends (warm red-orange to distinguish
-                            // it from a first-time blue "Send for Sign").
                             const declined = st === 'declined' || st === 'recalled';
                             return (
                               <button
@@ -1016,9 +754,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </button>
                             );
                           })()}
-                          {/* Signing Tracker — PI ONLY (quotations have no signing
-                              flow here). Appears once a PI has been sent for
-                              signature; opens the shared activity-timeline modal. */}
                           {docType === 'pi' && (() => {
                             const sig = sigByRow[`${docType}:${r.id}`];
                             if (!sig?.id) return null;
@@ -1031,36 +766,16 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             );
                           })()}
                           <span className="s5-act-sep" />
-                          {/* Email button shown for BOTH Quotations and PIs. It
-                              stays available after every send (no one-time hide)
-                              so the document can be re-emailed to the customer
-                              as many times as needed; each send fires a toast. */}
                           <Tooltip label={!sigLoaded ? 'Checking signature status…' : cooldownLeft(docType, r.id) > 0 ? `Please wait ${cooldownLeft(docType, r.id)}s (max 3 per minute)` : 'Send via Email'}>
                             <button type="button"
                               className={`s5-icn s5-icn-mail${cooldownLeft(docType, r.id) > 0 ? ' s5-icn-cooling' : ''}`}
-                              // Also blocked while any row action (e.g. opening a
-                              // PDF) is in flight, so no second action fires mid-view.
                               onClick={() => void onEmail(docType, r.id, r.code)} disabled={rowBusy || isEmailing(docType, r.id)}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                             </button>
                           </Tooltip>
                           {(() => {
-                            // Editing is locked once the doc is signed, and for a
-                            // PI also once it's been SENT for signature (awaiting).
-                            // Pencil greys out; clicking still explains why (onEdit).
                             const st = sigByRow[`${docType}:${r.id}`]?.status;
-                            // Quotation converted to a PI (terminal) is locked too —
-                            // the PI is the live doc now.
                             const convertedLock = docType === 'quotation' && terminal;
-                            /* Locked until the signature status is known.
-                               `st` is undefined for the few seconds the signature
-                               fetch takes, so every lock below evaluated false and
-                               the pencil rendered fully enabled on an already-sent
-                               PI — for the whole load window. onEdit refused the
-                               click, but the button still LOOKED editable, which is
-                               the half of the bug the user actually sees.
-                               The Send button already greys out over the same
-                               window ("Checking…"); Edit now matches it. */
                             const locked = !sigLoaded || st === 'completed' || (docType === 'pi' && st === 'inprogress') || convertedLock || piLocked;
                             const lockLabel = !sigLoaded
                               ? 'Checking signature status…'
@@ -1075,11 +790,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               <Tooltip label={locked ? lockLabel : 'Edit'}>
                                 <button
                                   type="button" className="s5-icn s5-icn-edit"
-                                  // piLocked quotations (a PI already exists), and rows
-                                  // whose signature status hasn't loaded, can't be
-                                  // opened at all;
-                                  // signed/converted still call onEdit so it can
-                                  // explain why via a toast.
                                   onClick={() => { if (piLocked || !sigLoaded) return; onEdit(docType, r.id); }} disabled={anyActing || piLocked || !sigLoaded}
                                   style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                                 >
@@ -1092,9 +802,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             <button
                               type="button" className="s5-icn s5-icn-more"
                               onClick={(e) => {
-                                // Keep the button ELEMENT (not a frozen rect) so the
-                                // menu can re-measure and stay glued to it while the
-                                // stage scrolls.
                                 const el = e.currentTarget as HTMLButtonElement;
                                 setMoreMenu(prev => prev && prev.id === r.id && prev.kind === docType ? null : { kind: docType, id: r.id, anchor: el });
                               }}
@@ -1103,12 +810,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
                             </button>
                           </Tooltip>
-                          {/* No Delete action — a quotation and a PI are issued
-                              business documents with downstream links (PI →
-                              procurement / shipment, signature requests, the
-                              lead's frozen consignee), so they are never removed
-                              from an opportunity. Supersede a quotation by
-                              raising a new one instead. */}
                         </div>
                       </td>
                     </tr>
@@ -1132,7 +833,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         </div>
       </div>
 
-      {/* ── More Actions menu (portalled) ── */}
       {moreMenu && (
         <MoreActionsMenu
           anchorEl={moreMenu.anchor}
@@ -1143,22 +843,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             if (menuBusy) return;
             const id = moreMenu.id, kind = moreMenu.kind;
             const code = (kind === 'quotation' ? quotations : pis).find(x => x.id === id)?.code ?? null;
-            /* Close the menu the moment an action is picked.
-             *
-             * It used to stay open for the whole load so its own spinner
-             * remained visible, and an outside click could not dismiss it
-             * either. That left the Download / View options sitting on screen,
-             * apparently clickable, underneath the "Opening document…" overlay
-             * (QA #20).
-             *
-             * The spinner is not lost: menuBusy stays set until the action
-             * settles, and the full-page s5-pagelock overlay it drives already
-             * covers the whole viewport with its own spinner. The menu's copy
-             * of it was redundant, and keeping the menu open to show it was
-             * what made the popup look stuck.
-             *
-             * id / kind / code are read before this point, so closing here
-             * cannot pull the values out from under the awaits below. */
             setMenuBusy({ action, signature });
             setMoreMenu(null);
             try {
@@ -1171,31 +855,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         />
       )}
 
-      {/* ── View Latest Quoted Price Summary popup ── */}
       {summaryOpen && (
         <PriceSummaryModal leadId={leadId} onClose={() => setSummaryOpen(false)} />
       )}
 
-      {/* ── Inline Create / Edit modals (lifted from SalesQPI) ── */}
       {createQtOpen && (
         <CreateQuotationModal
           editId={editQtId}
           initialOpp={editQtId == null ? initialOpp : undefined}
-          /* Passed in BOTH create and edit mode (unlike initialOpp) so the
-             wizard knows whether this lead's consignee is already frozen. */
           leadConsigneeId={header.consigneeId ?? null}
           onClose={() => { setCreateQtOpen(false); setEditQtId(null); }}
           onSubmit={() => {
             setCreateQtOpen(false); setEditQtId(null);
             void fetchAll(true);
-            // A quotation also unlocks the Segment Details card (segments
-            // derive from its mapped products), so refresh the parent's
-            // agreement-applicable fetch.
             onPiChange?.();
-            // A quotation does NOT map its consignee onto the lead — each
-            // quotation on this opportunity may name a different one, and
-            // only a PI freezes the deal's final consignee. The reload is
-            // just to keep the header in sync with any other lead edits.
             void reloadLead?.();
           }}
         />
@@ -1213,15 +886,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             setPiSource(null);
             void fetchAll(true);
             onPiChange?.();
-            // Creating a PI FREEZES its consignee onto the lead (server-side,
-            // in the same transaction). Reload the header so the now-frozen
-            // consignee renders read-only in every later form on this deal.
             void reloadLead?.();
           }}
         />
       )}
 
-      {/* Signing activity tracker (shared modal). */}
       {trackerFor && (
         <SigningTrackerModal
           sigId={trackerFor.sigId}
@@ -1230,7 +899,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         />
       )}
 
-      {/* Send for Signature (Zoho Sign) — Quotation / PI */}
       {sigSendFor && leadId && (
         <SalesDocSendForSignatureModal
           open={!!sigSendFor}
@@ -1240,17 +908,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           leadId={leadId}
           customerName={sigSendFor.customerName}
           onClose={() => setSigSendFor(null)}
-          /* Lock the row the instant the send succeeds.
-             Previously this only kicked off fetchSignatures(true), and that
-             fetch round-trips Zoho -- for the ~10s it takes, sigByRow still
-             held the PRE-send value, so the button stayed a live blue "Send
-             for Sign" and the pencil stayed enabled on a PI that was already
-             out with the customer. The server refuses the second send with a
-             409, so nothing broke, but the user saw an actionable button and
-             an error toast on a document that had just been sent.
-             Writing the request the server actually created (real id, so
-             Remind and the tracker work at once) closes that window; the
-             fetch below still runs and corrects this if Zoho disagrees. */
           onSent={(created) => {
             if (created && sigSendFor) {
               const key = `${sigSendFor.kind}:${sigSendFor.id}`;
@@ -1261,7 +918,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         />
       )}
 
-      {/* Convert-to-PI confirmation popup. */}
       <ConvertToPiModal
         open={!!convertTarget}
         fromQuotation={convertTarget?.code ?? ''}
@@ -1273,7 +929,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         onConfirm={() => void confirmConvert()}
       />
 
-      {/* Conversion blocked — lead already has a PI. */}
       <ConversionBlockedModal
         open={!!convertBlocked}
         fromQuotation={convertBlocked?.fromQt ?? ''}
@@ -1291,8 +946,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   );
 }
 
-/* ─── More Actions menu — fixed-position portal anchored to the 3-dot
- *      button. Download / View, each With / Without Signature. */
 function MoreActionsMenu({ anchorEl, onClose, onPick, busy, kind }: {
   anchorEl: HTMLElement;
   onClose: () => void;
@@ -1306,28 +959,18 @@ function MoreActionsMenu({ anchorEl, onClose, onPick, busy, kind }: {
     return { top: a.bottom + 6, left: a.right - 210 };
   });
 
-  // Keep the menu GLUED to the 3-dot button under ANY layout change — page or
-  // nested-container scroll, resize, table reflow, the background signature
-  // refresh, even the open animation settling — by re-measuring the LIVE anchor
-  // rect every animation frame while open. Scroll/resize listeners alone missed
-  // reflows that move the row without a scroll event, so the menu drifted off
-  // the button (QA #44). setPos only fires when the position actually changes,
-  // so idle frames cost a single measurement.
   useLayoutEffect(() => {
     let raf = 0;
     let last = { top: NaN, left: NaN };
     const tick = () => {
       const a = anchorEl.getBoundingClientRect();
-      // A background re-render can detach the captured button node; its rect
-      // then collapses to 0×0. Hold the last good spot on those frames instead
-      // of snapping the menu to the corner.
       if (a.width || a.height) {
         const w = ref.current?.offsetWidth ?? 210;
         const h = ref.current?.offsetHeight ?? 230;
         let left = a.right - w;
         let top = a.bottom + 6;
         if (left < 8) left = 8;
-        if (top + h > window.innerHeight - 8) top = a.top - h - 6;   // flip above
+        if (top + h > window.innerHeight - 8) top = a.top - h - 6;
         if (top !== last.top || left !== last.left) {
           last = { top, left };
           setPos({ top, left });
@@ -1342,12 +985,6 @@ function MoreActionsMenu({ anchorEl, onClose, onPick, busy, kind }: {
   useEffect(() => {
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    /* Close on background scroll instead of chasing it. The rAF loop above kept
-       the menu glued to the button while the page/table scrolled, but that
-       re-positions through React state every frame, so it visibly trailed the
-       scroll (the "not smooth" jank). Dismissing on scroll — the standard
-       action-menu behaviour — removes the jank entirely. A scroll INSIDE the
-       menu is ignored, and onClose no-ops while an action is in flight. */
     const onScroll = (e: Event) => {
       if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return;
       onClose();
@@ -1380,9 +1017,6 @@ function MoreActionsMenu({ anchorEl, onClose, onPick, busy, kind }: {
         <button type="button" className="s5-menu-x" onClick={onClose} aria-label="Close" disabled={anyBusy}>✕</button>
       </div>
       <div className="s5-menu-body">
-        {/* Quotations are never e-signed through Zoho here, so the With/Without
-            Signature split is meaningless for them — show a single plain
-            Download + View. The signature variants stay for PIs only. */}
         {kind === 'quotation' ? (
           <>
             <div className="s5-menu-sec s5-menu-sec-dl">⬇ Download</div>
@@ -1408,12 +1042,6 @@ function MoreActionsMenu({ anchorEl, onClose, onPick, busy, kind }: {
   );
 }
 
-/* ─── Latest Quoted Price Summary popup ──────────────────────────────
- *  Shows the LATEST quoted price per product across all quotations on
- *  the lead — sourced from /sales/leads/{id}/shared-prices (the same
- *  append-only Price-Shared history Stage 4 writes). Rows are de-duped to
- *  the most recent entry per product; per-row View / Download open the
- *  shared-price PDF (/sales/shared-prices/{entryId}/pdf). */
 type SharedRow = {
   id:            number;
   product_id:    number | null;
@@ -1435,14 +1063,8 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SharedRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
-  // Which row+action (view vs download) is mid-flight — drives the per-button
-  // spinner so the user can see the PDF is opening / downloading.
   const [pdfBusy, setPdfBusy] = useState<{ id: number; download: boolean } | null>(null);
 
-  // Block closing (X / Close button / Escape) while a PDF is opening or
-  // downloading — on the server the fetch can take a moment, and letting the
-  // popup close mid-flight leaves the in-flight request acting on an unmounted
-  // modal. The close controls disable until the PDF settles.
   const guardedClose = () => { if (!pdfBusy) onClose(); };
 
   useEffect(() => {
@@ -1451,7 +1073,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, pdfBusy]);
 
-  /* Lock background page scroll while the popup is open. */
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1469,8 +1090,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
     return () => { cancelled = true; };
   }, [leadId, toast]);
 
-  /* Latest entry per product. The list endpoint returns history newest-
-   * first; keep the first occurrence of each product. */
   const latest = useMemo(() => {
     const seen = new Set<number | string>();
     const out: SharedRow[] = [];
@@ -1491,9 +1110,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const variance    = totalQuoted - totalTarget;
   const variancePct = totalTarget > 0 ? ((variance / totalTarget) * 100).toFixed(1) : '0.0';
   const over        = variance > 0;
-  // Price colour convention across this popup: quoted ABOVE target is unfavorable
-  // → red; quoted BELOW target is favorable → green; EQUAL → neutral. Applies to
-  // the per-row Quoted amount, Total Quoted, the Variance figure, and the ▲/▼ badge.
   const cmpClass        = (q: number, t: number) => (q > t ? 'c-red' : q < t ? 'c-green' : 'c-neutral');
   const totalQuotedClass = cmpClass(totalQuoted, totalTarget);
   const varTextClass    = variance > 0 ? 'c-red' : variance < 0 ? 'c-green' : 'c-neutral';
@@ -1503,8 +1119,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const asOf = formatDmy(today);
 
   const pdf = async (entryId: number, download: boolean) => {
-    // Ignore new clicks while a PDF is already opening/downloading — one at a
-    // time keeps the busy state (and the close guard) unambiguous.
     if (pdfBusy) return;
     setActingId(entryId);
     setPdfBusy({ id: entryId, download });
@@ -1537,9 +1151,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
     };
   };
 
-  /* Export Report → an Excel workbook of the latest-per-product summary
-   * (one row per product + a Totals row). Uses the same `xlsx` lib the
-   * rest of the app exports with. */
   const onExportReport = () => {
     if (!latest.length) { toast.warning('Nothing to export', 'No quoted prices to include in the report.'); return; }
     try {
@@ -1585,7 +1196,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   return createPortal(
     <div className="s5-ps-backdrop">
       <div className="s5-ps-modal" role="dialog" aria-modal="true">
-        {/* Header */}
         <div className="s5-ps-head">
           <div className="s5-ps-head-left">
             <span className="s5-ps-head-ico">
@@ -1603,7 +1213,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
           </div>
         </div>
 
-        {/* Stats bar */}
         <div className="s5-ps-stats">
           <div className="s5-ps-stat s5-ps-stat-tint"><div className="s5-ps-stat-lbl">Total Products</div><div className="s5-ps-stat-val c-cyan">{latest.length} items</div></div>
           <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quantity</div><div className="s5-ps-stat-val c-cyan">{totalQty.toLocaleString()} units</div></div>
@@ -1611,12 +1220,10 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
           <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quoted</div><div className={`s5-ps-stat-val ${totalQuotedClass}`}>{money(totalQuoted, ccy)}</div></div>
           <div className={`s5-ps-stat ${varBgClass}`}>
             <div className="s5-ps-stat-lbl">Variance</div>
-            {/* Quoted ABOVE target = green, BELOW = red, EQUAL = neutral. */}
             <div className={`s5-ps-stat-val ${varTextClass}`}>{over ? '+' : ''}{variance.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({variancePct}%)</div>
           </div>
         </div>
 
-        {/* Table */}
         <div className="s5-ps-tablewrap">
           <table className="s5-ps-table">
             <thead>
@@ -1632,9 +1239,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr><td colSpan={8} className="s5-ps-empty">Loading latest quoted prices…</td></tr>
-              )}
+              {loading && <ShimmerTableRows rows={4} cols={8} height={12} cellClassName="" keyPrefix="s5-ps-shim" />}
               {!loading && latest.length === 0 && (
                 <tr><td colSpan={8} className="s5-ps-empty">No quoted prices shared yet — add them in Stage 4 (Price Shared).</td></tr>
               )}
@@ -1683,7 +1288,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
           </table>
         </div>
 
-        {/* Footer */}
         <div className="s5-ps-foot">
           <div className="s5-ps-foot-note"><span className="s5-ps-foot-dot" />Showing latest price per product · Updated today</div>
           <div className="s5-ps-foot-btns">
@@ -1701,7 +1305,6 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
 }
 
 const STAGE5_CSS = `
-/* ─── Stage 5 head uses the default purple .smd-stg-head (matches Stage 4). ── */
 .s5-head-right { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .s5-head-divider { width: 1px; height: 22px; background: rgba(124,58,237,.25); }
 .s5-summary-btn {
@@ -1715,15 +1318,11 @@ const STAGE5_CSS = `
 }
 .s5-summary-btn:hover { background: linear-gradient(135deg, #3b0764, #7c3aed); box-shadow: 0 5px 15px rgba(124,58,237,.55); transform: translateY(-1px); }
 
-/* ─── Action row — figma segmented tabs + create buttons ─── */
 .s5-actionrow {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  /* No band behind the row — the tab rail and buttons sit on the card, as the
-     My Workplace / Customers toolbars do. */
   margin-bottom: 12px;
 }
-/* Tabs = the Customers list tab rail (.dt-tabrail): 40px tabs, 12.5px, count chips. */
 .s5-seg { position: relative; z-index: 1; }
 .s5-seg .dt-tab { height: 40px; font-size: 12.5px; }
 .s5-seg .dt-tab svg { flex-shrink: 0; }
@@ -1731,7 +1330,6 @@ const STAGE5_CSS = `
 
 .s5-create-group { position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; }
 .s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(124,58,237,.25), transparent); }
-/* Create Quotation / Create PI = the Supplier / Customers header Add button. */
 .s5-create-btn {
   display: inline-flex; align-items: center; gap: 7px;
   box-sizing: border-box; height: 40px;
@@ -1745,12 +1343,8 @@ const STAGE5_CSS = `
 }
 .s5-create-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.55), inset 0 1px 0 rgba(255,255,255,.20); }
 
-/* ─── Table card ─── */
 .s5-tbl-card { border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); background: #fff; }
 .s5-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-/* Sits over the whole table while the signature status loads. It is the
-   element that receives the clicks, so nothing underneath can be reached. */
-/* Plain neutral-grey scrollbar (not the themed violet one) — matches Stage 3/4. */
 .s5-tbl-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
 .s5-tbl-wrap::-webkit-scrollbar-track { background: transparent; }
 .s5-tbl-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
@@ -1784,30 +1378,25 @@ const STAGE5_CSS = `
   background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #6d28d9;
   font-size: 10px; font-weight: 800; border: 1.5px solid #c4b5fd;
 }
-/* Read-only document code. No pointer cursor / hover underline — it is a
-   label, not a link; editing lives on the row's pencil action. */
+[data-bs-theme="dark"] .s5-sr2,
+[data-layout-mode="dark"] .s5-sr2 {
+  background: linear-gradient(135deg, rgba(139,92,246,.22), rgba(109,40,217,.28));
+  color: #c4b5fd; border-color: rgba(167,139,250,.40);
+}
 .s5-qno {
   color: #7c3aed; font-weight: 800; font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .02em;
-  /* Keep the PI / Quotation code on ONE line (e.g. "PI/2026-27/2") instead of
-     wrapping into the narrow column. */
   white-space: nowrap;
 }
 .s5-cf { background: linear-gradient(135deg, #f5f3ff, #ede9fe); border: 1px solid #c4b5fd; border-radius: 6px; padding: 2px 9px; font-size: 10.5px; font-weight: 800; color: #6d28d9; font-family: ui-monospace, monospace; }
 .s5-dt2 { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .s5-cur2 { display: inline-flex; padding: 3px 10px; border-radius: 6px; font-size: 10.5px; font-weight: 800; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
-.s5-val2 { font-weight: 800; color: #059669; font-size: 12px; font-family: ui-monospace, monospace; }
-.s5-st-live { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; white-space: nowrap; }
-.s5-st-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.8); }
-/* Status badge — clean solid pill matching the Document Type badge (s5-dt2),
-   colour-coded by signature state (no live dot). */
-.s5-st-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+.s5-val2 { font-weight: 800; color: #059669; font-size: 12px; font-family: ui-monospace, monospace; }.s5-st-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; white-space: nowrap; }
 .s5-st-signed  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .s5-st-sent    { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
 .s5-st-notsent { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 .s5-st-declined { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
 .s5-st-recalled { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 
-/* ─── Action cell ─── */
 .s5-acts { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: nowrap; }
 .s5-act-sep { width: 1px; height: 20px; background: #e2e8f0; flex-shrink: 0; }
 .s5-convert2 {
@@ -1820,16 +1409,11 @@ const STAGE5_CSS = `
 }
 .s5-convert2:hover:not(:disabled) { background: linear-gradient(135deg, #6d28d9, #4c1d95); box-shadow: 0 4px 12px rgba(124,58,237,.45); transform: translateY(-1px); }
 .s5-convert2:disabled { opacity: .55; cursor: not-allowed; }
-/* Tiny white spinner for the "Checking…" signing-status loader pill (that pill
-   has a purple background, so white reads fine there). */
 .s5-sig-spin {
   display: inline-block; width: 11px; height: 11px;
   border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
   border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite;
 }
-/* Spinner for the ICON buttons (view / etc.). Inherits the button's own colour
-   via currentColor — the white .s5-sig-spin was invisible here in light mode,
-   where the icon button has a white background (QA: "view loader missing"). */
 .s5-icn-spin {
   display: inline-block; width: 13px; height: 13px; box-sizing: border-box;
   border: 2px solid currentColor; border-top-color: transparent;
@@ -1837,9 +1421,6 @@ const STAGE5_CSS = `
 }
 @keyframes s5-sig-spin-rot { to { transform: rotate(360deg); } }
 .s5-converted-chip { display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 20px; font-size: 9.5px; font-weight: 800; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; white-space: nowrap; }
-/* All action icon buttons (view, reminder, email, edit, more, delete) share
-   ONE neutral resting style so the row reads as a tidy, uniform toolbar. Each
-   variant only contributes its accent colour on hover. */
 .s5-icn {
   box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; cursor: pointer; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1847,8 +1428,6 @@ const STAGE5_CSS = `
   transition: all .15s;
 }
 .s5-icn:disabled { opacity: .5; cursor: not-allowed; }
-/* Full-viewport lock shown while a document is opening — blocks every click on
-   the page (step pills, action buttons, side panels) until the fetch resolves. */
 .s5-pagelock { position: fixed; inset: 0; z-index: 13000; background: rgba(30, 18, 60, .18); backdrop-filter: none; cursor: wait; display: flex; align-items: center; justify-content: center; animation: s5PagelockIn .12s ease; }
 @keyframes s5PagelockIn { from { opacity: 0; } to { opacity: 1; } }
 .s5-pagelock-card { display: inline-flex; align-items: center; gap: 12px; padding: 14px 22px; border-radius: 14px; background: #fff; box-shadow: 0 18px 44px rgba(30, 18, 60, .28); font-size: 13px; font-weight: 700; color: #4c1d95; }
@@ -1856,21 +1435,14 @@ const STAGE5_CSS = `
 @keyframes s5PagelockSpin { to { transform: rotate(360deg); } }
 [data-bs-theme="dark"] .s5-pagelock-card { background: #1c1738; color: #ede9fe; box-shadow: 0 18px 44px rgba(0,0,0,.5); }
 [data-bs-theme="dark"] .s5-pagelock-spin { border-color: #2b2450; border-top-color: #a78bfa; }
-/* Lock the tab switcher + summary button while a row action (PDF view /
-   download / email) is in flight, so context can't change mid-load. */
 .s5-summary-btn:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
-/* Default neutral hover — applies to the plain buttons (view / reminder) and
-   any variant that doesn't define its own accent. */
 .s5-icn:hover:not(:disabled):not(.s5-icn-cooling) { background: #475569; color: #fff; border-color: transparent; transform: translateY(-1px); }
-/* Rate-limit cooldown — dimmed disabled LOOK but still clickable so the
-   click surfaces the "please wait" toast. No hover lift while cooling. */
 .s5-icn-cooling { opacity: .45; cursor: not-allowed; }
 .s5-icn-cooling:hover { transform: none !important; }
 .s5-icn-mail:hover:not(:disabled):not(.s5-icn-cooling) { background: #3b82f6; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-icn-edit:hover:not(:disabled) { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-icn-more:hover:not(:disabled) { background: #475569; color: #fff; border-color: transparent; }
 
-/* ─── More Actions menu (portal) ─── */
 .s5-menu {
   position: fixed; z-index: 3000; min-width: 210px;
   background: #fff; border: 1.5px solid rgba(124,58,237,.2); border-radius: 13px; overflow: hidden;
@@ -1885,9 +1457,7 @@ const STAGE5_CSS = `
 .s5-menu-body { padding: 5px 0; }
 .s5-menu-sec { padding: 5px 13px 3px; font-size: 7.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .14em; }
 .s5-menu-sec-dl { color: #6d28d9; }
-.s5-menu-sec-vw { color: #7c3aed; }
-.s5-menu-sec-ct { color: #15803d; }
-.s5-menu-item {
+.s5-menu-sec-vw { color: #7c3aed; }.s5-menu-item {
   display: flex; align-items: center; gap: 9px; width: calc(100% - 10px); margin: 1px 5px;
   padding: 7px 13px; border: none; background: none; cursor: pointer; border-radius: 7px;
   font-family: inherit; font-size: 10.5px; font-weight: 600; color: #0f172a; text-align: left; transition: all .13s;
@@ -1895,29 +1465,21 @@ const STAGE5_CSS = `
 .s5-mi-ico { width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .s5-mi-dl .s5-mi-ico { background: rgba(109,40,217,.1); color: #6d28d9; }
 .s5-mi-vw .s5-mi-ico { background: rgba(124,58,237,.1); color: #7c3aed; }
-.s5-mi-ct .s5-mi-ico { background: rgba(21,128,61,.1); color: #15803d; }
 .s5-mi-dl:hover { background: rgba(109,40,217,.1); color: #6d28d9; padding-left: 16px; }
-.s5-mi-vw:hover { background: rgba(124,58,237,.1); color: #7c3aed; padding-left: 16px; }
-.s5-mi-ct:hover { background: rgba(21,128,61,.1); color: #15803d; padding-left: 16px; }
-.s5-menu-div { height: 1px; background: linear-gradient(90deg, rgba(124,58,237,.15), rgba(124,58,237,.05), transparent); margin: 5px 8px; }
-/* In-menu action spinner — inherits the item's icon colour (currentColor). */
+.s5-mi-vw:hover { background: rgba(124,58,237,.1); color: #7c3aed; padding-left: 16px; }.s5-menu-div { height: 1px; background: linear-gradient(90deg, rgba(124,58,237,.15), rgba(124,58,237,.05), transparent); margin: 5px 8px; }
 .s5-menu-spin {
   width: 13px; height: 13px; display: inline-block; box-sizing: border-box;
   border: 2px solid currentColor; border-top-color: transparent;
   border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite;
 }
-/* While one action is loading: dim the idle items, keep the busy row bright,
-   and freeze the hover padding-shift so nothing jumps. */
 .s5-menu.is-busy .s5-menu-item { opacity: .45; }
 .s5-menu.is-busy .s5-menu-item:has(.s5-menu-spin) { opacity: 1; }
 .s5-menu-item:disabled { cursor: progress; }
 .s5-menu-item:disabled:hover { padding-left: 13px; background: none; }
 
-/* ─── Latest Quoted Price Summary popup (figma) ─── */
 .s5-ps-backdrop { position: fixed; inset: 0; z-index: 2900; background: rgba(8,30,60,.58); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 14px; }
 .s5-ps-modal { width: min(1000px, 100%); max-height: 86vh; background: #fff; border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 28px 70px rgba(8,30,60,.38), 0 6px 20px rgba(0,0,0,.1); animation: smd-fade-in .2s ease-out both; }
 
-/* Header */
 .s5-ps-head { position: relative; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px; background: linear-gradient(115deg, #0f172a 0%, #0c4a6e 50%, #0e7490 100%); }
 .s5-ps-head::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.07), transparent); pointer-events: none; }
 .s5-ps-head-left { position: relative; display: flex; align-items: center; gap: 12px; }
@@ -1933,7 +1495,6 @@ const STAGE5_CSS = `
 .s5-ps-x { box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; border: 1.5px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: rgba(255,255,255,.7); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; transition: all .15s; }
 .s5-ps-x:hover { background: rgba(239,68,68,.35); border-color: rgba(239,68,68,.5); color: #fff; }
 
-/* Stats bar */
 .s5-ps-stats { display: flex; align-items: stretch; flex-shrink: 0; background: linear-gradient(90deg, #f0f9ff, #ecfeff, #f0f9ff); border-bottom: 1.5px solid #bae6fd; }
 .s5-ps-stat { flex: 1; padding: 10px 14px; border-right: 1px solid #bae6fd; }
 .s5-ps-stat:last-child { border-right: none; }
@@ -1949,7 +1510,6 @@ const STAGE5_CSS = `
 .s5-ps-stat-val.c-red { color: #dc2626; }
 .s5-ps-stat-val.c-neutral { color: #475569; }
 
-/* Table */
 .s5-ps-tablewrap { flex: 1; overflow-y: auto; max-height: 300px; }
 .s5-ps-table { width: 100%; border-collapse: collapse; }
 .s5-ps-table thead tr { background: linear-gradient(90deg, #0f172a 0%, #1e3a5f 55%, #0f172a 100%); box-shadow: 0 2px 8px rgba(0,0,0,.22); }
@@ -1963,7 +1523,7 @@ const STAGE5_CSS = `
 .s5-ps-table tbody tr:hover { background: #f0f9ff; }
 .s5-ps-empty { text-align: center; padding: 34px 14px; color: #94a3b8; font-style: italic; }
 .s5-ps-sr { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0369a1; font-size: 10px; font-weight: 800; border: 1.5px solid #7dd3fc; }
-.s5-ps-code { background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 6px; padding: 3px 9px; font-size: 10.5px; font-weight: 800; color: #0369a1; font-family: ui-monospace, monospace; letter-spacing: .04em; }
+.s5-ps-code { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 26px; min-width: 64px; padding: 0 12px; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; font-size: 11.5px; line-height: 1; font-weight: 800; color: #0369a1; font-family: ui-monospace, monospace; letter-spacing: .04em; white-space: nowrap; }
 .s5-ps-name { font-weight: 700; color: #0f172a; font-size: 11.5px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s5-ps-date { font-size: 11px; font-weight: 700; color: #334155; }
 .s5-ps-time { font-size: 9.5px; font-weight: 600; color: #0891b2; margin-top: 1px; }
@@ -1974,8 +1534,6 @@ const STAGE5_CSS = `
 .s5-ps-quoted.c-red { color: #dc2626; }
 .s5-ps-quoted.c-neutral { color: #475569; }
 .s5-ps-diff { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 4px; font-size: 8.5px; font-weight: 800; margin-top: 2px; }
-/* Quoted ABOVE target (▲ over) is unfavorable → red;
-   quoted BELOW target (▼ under) is favorable → green. */
 .s5-ps-diff.over { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
 .s5-ps-diff.under { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
 .s5-ps-acts { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
@@ -1983,11 +1541,9 @@ const STAGE5_CSS = `
 .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-ps-act-dl:hover:not(:disabled) { background: #0c4a6e; }
 .s5-ps-act:disabled { opacity: .5; cursor: not-allowed; }
-/* The row action that's actually loading keeps full opacity + shows a spinner. */
 .s5-ps-act:disabled:has(.s5-ps-spin) { opacity: 1; cursor: progress; }
 .s5-ps-spin { width: 13px; height: 13px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite; }
 
-/* Footer */
 .s5-ps-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px; border-top: 1.5px solid #e2e8f0; background: linear-gradient(90deg, #f8fafc, #f0f9ff); }
 .s5-ps-foot-note { display: inline-flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; color: #64748b; }
 .s5-ps-foot-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.7); }
@@ -1997,14 +1553,7 @@ const STAGE5_CSS = `
 .s5-ps-export:disabled { opacity: .5; cursor: not-allowed; }
 .s5-ps-close-btn { display: inline-flex; align-items: center; box-sizing: border-box; height: 40px; padding: 0 18px; border-radius: 10px; border: none; cursor: pointer; font-family: inherit; font-size: 11.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(8,145,178,.32); transition: all .15s; }
 .s5-ps-close-btn:hover { background: linear-gradient(135deg, #0369a1, #0c4a6e); transform: translateY(-1px); }
-
-/* ─── Dark mode ─── */
-[data-bs-theme="dark"] .smd-s5-head { background: linear-gradient(110deg, #164e63 0%, #155e75 40%, #0e7490 100%); color: #ecfeff; border-bottom-color: rgba(103,232,249,.30); }
-[data-bs-theme="dark"] .smd-s5-head .smd-stg-head-title { color: #cffafe; }
-[data-bs-theme="dark"] .smd-s5-head .smd-stg-head-sub { color: #a5f3fc; }
 [data-bs-theme="dark"] .s5-head-divider { background: rgba(165,243,252,.25); }
-/* Action row (tabs + create buttons) — dark surface instead of the light
-   cyan gradient so it reads as part of the dark panel. */
 [data-bs-theme="dark"] .s5-create-div { background: linear-gradient(180deg, transparent, rgba(167,139,250,.30), transparent); }
 [data-bs-theme="dark"] .s5-tbl-card { background: #14102a; border-color: rgba(167,139,250,.25); }
 [data-bs-theme="dark"] .s5-tbl tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
@@ -2012,24 +1561,17 @@ const STAGE5_CSS = `
 [data-layout-mode="dark"] .s5-tbl tbody tr:nth-child(even) { background: rgba(124,58,237,.10); }
 [data-bs-theme="dark"] .s5-tbl tbody tr:hover,
 [data-layout-mode="dark"] .s5-tbl tbody tr:hover { background: rgba(124,58,237,.20); }
-/* Row being converted/acted on — the light #ede9fe !important base showed
-   as a near-white strip in dark mode behind the Convert modal. Override it
-   (also !important to beat the light rule) for both dark attributes. */
 [data-bs-theme="dark"] .s5-row-acting,
 [data-layout-mode="dark"] .s5-row-acting { background: rgba(124,58,237,.28) !important; }
 [data-bs-theme="dark"] .s5-muted { color: #94a3b8; }
 [data-bs-theme="dark"] .s5-cur2 { background: rgba(148,163,184,.18); color: #cbd5e1; border-color: rgba(148,163,184,.30); }
 [data-bs-theme="dark"] .s5-dt2 { background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.35); }
 [data-bs-theme="dark"] .s5-cf { background: rgba(56,189,248,.15); color: #7dd3fc; border-color: rgba(56,189,248,.35); }
-[data-bs-theme="dark"] .s5-st-live { background: rgba(34,197,94,.18); color: #86efac; border-color: rgba(34,197,94,.35); }
-/* Status badge (clean pill) — dark, colour-coded by state. */
 [data-bs-theme="dark"] .s5-st-signed,  [data-layout-mode="dark"] .s5-st-signed  { background: rgba(34,197,94,.18);  color: #86efac; border-color: rgba(34,197,94,.35); }
 [data-bs-theme="dark"] .s5-st-sent,    [data-layout-mode="dark"] .s5-st-sent    { background: rgba(234,179,8,.18);   color: #fde047; border-color: rgba(234,179,8,.35); }
 [data-bs-theme="dark"] .s5-st-notsent, [data-layout-mode="dark"] .s5-st-notsent { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.30); }
 [data-bs-theme="dark"] .s5-st-declined, [data-layout-mode="dark"] .s5-st-declined { background: rgba(239,68,68,.18); color: #fca5a5; border-color: rgba(239,68,68,.35); }
 [data-bs-theme="dark"] .s5-st-recalled, [data-layout-mode="dark"] .s5-st-recalled { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(245,158,11,.35); }
-/* Uniform action icons — dark neutral resting surface (hover accents already
-   work on dark). */
 [data-bs-theme="dark"] .s5-icn, [data-layout-mode="dark"] .s5-icn { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.28); color: #cbd5e1; }
 [data-bs-theme="dark"] .s5-converted-chip { background: rgba(139,92,246,.20); color: #c4b5fd; border-color: rgba(139,92,246,.35); }
 [data-bs-theme="dark"] .s5-menu { background: #14102a; border-color: rgba(124,58,237,.35); }
@@ -2037,20 +1579,8 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-menu-head-left { color: #a5f3fc; }
 [data-bs-theme="dark"] .s5-menu-item { color: #ede9fe; }
 [data-bs-theme="dark"] .s5-menu-x { background: rgba(148,163,184,.18); color: #cbd5e1; }
-[data-bs-theme="dark"] .s5-sum-modal { background: #14102a; }
-[data-bs-theme="dark"] .s5-sum-body { background: #1a1538; }
-[data-bs-theme="dark"] .s5-sum-stat { background: #14102a; border-color: rgba(165,243,252,.30); }
-[data-bs-theme="dark"] .s5-sum-stat-val { color: #cffafe; }
-[data-bs-theme="dark"] .s5-sum-money-row { color: #cffafe; }
-[data-bs-theme="dark"] .s5-sum-foot { background: #14102a; border-top-color: rgba(165,243,252,.18); }
-
-/* ─── Latest Quoted Price Summary popup — dark mode ───
-   Header + table head are already dark gradients; darken the body, stats
-   bar, table cells, chips and footer so the whole popup reads dark. Both
-   theme attributes covered. */
 [data-bs-theme="dark"] .s5-ps-modal,
 [data-layout-mode="dark"] .s5-ps-modal { background: #0f172a; }
-/* Stats bar */
 [data-bs-theme="dark"] .s5-ps-stats,
 [data-layout-mode="dark"] .s5-ps-stats { background: linear-gradient(90deg, #111c2e, #0e1a26, #111c2e); border-bottom-color: rgba(56,189,248,.22); }
 [data-bs-theme="dark"] .s5-ps-stat,
@@ -2077,7 +1607,6 @@ const STAGE5_CSS = `
 [data-layout-mode="dark"] .s5-ps-quoted.c-neutral { color: #cbd5e1; }
 [data-bs-theme="dark"] .s5-ps-stat-neu,
 [data-layout-mode="dark"] .s5-ps-stat-neu { background: rgba(100,116,139,.14); }
-/* Table body */
 [data-bs-theme="dark"] .s5-ps-table tbody td,
 [data-layout-mode="dark"] .s5-ps-table tbody td { color: #e2e8f0; border-bottom-color: rgba(255,255,255,.06); }
 [data-bs-theme="dark"] .s5-ps-table tbody tr:nth-child(even),
@@ -2102,7 +1631,6 @@ const STAGE5_CSS = `
 [data-layout-mode="dark"] .s5-ps-act { background: rgba(56,189,248,.12); color: #7dd3fc; border-color: rgba(56,189,248,.28); }
 [data-bs-theme="dark"] .s5-ps-act:hover:not(:disabled),
 [data-layout-mode="dark"] .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; }
-/* Footer */
 [data-bs-theme="dark"] .s5-ps-foot,
 [data-layout-mode="dark"] .s5-ps-foot { background: linear-gradient(90deg, #111c2e, #0e1a26); border-top-color: rgba(56,189,248,.18); }
 [data-bs-theme="dark"] .s5-ps-foot-note,
@@ -2112,8 +1640,6 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-ps-export:hover:not(:disabled),
 [data-layout-mode="dark"] .s5-ps-export:hover:not(:disabled) { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border-color: transparent; }
 
-@media (max-width: 820px) {
-  .s5-tab-row { flex-direction: column; align-items: stretch; }
-  .s5-head-right { flex-wrap: wrap; }
+@media (max-width: 820px) {  .s5-head-right { flex-wrap: wrap; }
 }
 `;
