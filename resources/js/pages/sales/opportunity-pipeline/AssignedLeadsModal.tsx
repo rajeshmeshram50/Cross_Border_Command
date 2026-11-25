@@ -531,7 +531,8 @@ const LDP_CSS = `
 .ldp-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 /* Header reference pills = the Create PO header (.spi-dt-pill): icon tile,
    small-caps label over a mono value, dotted separators. */
-.ldp-hp { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 12px; min-width: 0;
+.ldp-hp { display: flex; align-items: center; gap: 9px; padding: 0 14px; border-radius: 12px; min-width: 0;
+  box-sizing: border-box; height: 40px; min-height: 40px; max-height: 40px; align-self: center; flex-shrink: 0;
   background: rgba(255,255,255,.65); border: 1.5px solid rgba(8,145,178,.3);
   box-shadow: 0 2px 8px rgba(6,182,212,.12), inset 0 1px 0 rgba(255,255,255,.95);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }

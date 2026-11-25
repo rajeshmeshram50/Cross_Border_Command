@@ -1215,6 +1215,17 @@
    the old solid teal bar is dropped. */
 .td-root .td-table-card .td-table.dt-table thead tr { background: transparent; box-shadow: none; }
 .td-root .td-table-card .tc-wl-pag { margin: 0; }
+.td-root .td-table-card {
+  --tcwl-accent: #0d9488;
+  --tcwl-text: #0f766e;
+  --tcwl-border: #99f6e4;
+  --tcwl-band: #f0fdfa;
+}
+[data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-btn { color: #5eead4; }
+[data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-menu { background: #0b1f1d; border-color: rgba(45, 212, 191, .35); }
+[data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-menu button { color: #99f6e4; }
+[data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-menu button:hover { background: rgba(20, 184, 166, .18); color: #fff; }
+[data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-menu button.is-on { background: #0d9488; color: #fff; }
 /* Status pills at the Customers list pill size (.smc-wa). */
 .td-root .td-badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 

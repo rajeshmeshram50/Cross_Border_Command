@@ -32,8 +32,8 @@ const TRACKER_CSS = `
   animation: qpiTrkUp .22s cubic-bezier(.22,1,.36,1) both;
 }
 @keyframes qpiTrkUp { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.qpi-trk-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(2px); opacity: .5; }
-.qpi-trk-orb-1 { width: 220px; height: 220px; right: -40px; top: 30%; background: radial-gradient(circle at 35% 35%, #2a3a8a, #11163a 70%); box-shadow: 0 0 80px rgba(60,90,220,.35); }
+.qpi-trk-orb { position: absolute; border-radius: 50%; pointer-events: none; opacity: .5; }
+.qpi-trk-orb-1 { width: 220px; height: 220px; right: -40px; top: 30%; background: radial-gradient(circle at 35% 35%, #2a3a8a, #11163a 70%); }
 .qpi-trk-orb-2 { width: 120px; height: 120px; right: 30%; top: 22%; background: radial-gradient(circle at 35% 35%, #3550b0, #141a44 70%); opacity: .35; }
 .qpi-trk-head {
   position: relative; z-index: 2; overflow: hidden;
@@ -57,7 +57,12 @@ const TRACKER_CSS = `
 .qpi-trk-status-info { background: rgba(99,102,241,.20); color: #c7d2fe; border: 1px solid rgba(129,140,248,.40); }
 .qpi-trk-close { width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(150,165,255,.30); background: rgba(120,140,255,.12); color: #cdd6ff; cursor: pointer; font-size: 14px; flex-shrink: 0; transition: background .15s; }
 .qpi-trk-close:hover { background: rgba(120,140,255,.25); }
-.qpi-trk-body { position: relative; z-index: 2; padding: 4px 24px 18px; overflow-y: auto; }
+.qpi-trk-body {
+  position: relative; z-index: 2; padding: 18px 24px 18px; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0; overscroll-behavior: contain;
+  transform: translateZ(0); -webkit-overflow-scrolling: touch;
+}
+.qpi-trk-head { flex: 0 0 auto; }
 .qpi-trk-loading, .qpi-trk-error { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 40px; color: #aeb8e8; font-size: 13px; }
 .qpi-trk-error { color: #fca5a5; }
 /* Shimmer skeleton (shown while loading instead of a spinner). */
@@ -186,7 +191,11 @@ const TRACKER_CSS = `
 .qpi-trk-spill-bad  { background: rgba(239,68,68,.18);  color: #fca5a5; }
 .qpi-trk-spill-info { background: rgba(96,165,250,.18); color: #93c5fd; }
 /* Footer */
-.qpi-trk-foot { position: relative; z-index: 2; padding: 14px 24px 20px; display: flex; gap: 12px; }
+.qpi-trk-foot {
+  position: relative; z-index: 3; flex: 0 0 auto; padding: 14px 24px 20px; display: flex; gap: 12px;
+  background: #0b1030; border-top: 1px solid rgba(120,140,255,0.14);
+}
+[data-bs-theme="light"] .qpi-trk-foot { background: #fbf9ff; border-top-color: #e7defb; }
 .qpi-trk-btn { flex: 1 1 auto; padding: 11px 12px; border-radius: 12px; font-weight: 700; font-size: 12.5px; white-space: nowrap; cursor: pointer; border: 1px solid transparent; transition: all .15s; display: inline-flex; align-items: center; justify-content: center; }
 .qpi-trk-btn:disabled { opacity: .45; cursor: not-allowed; }
 .qpi-trk-btn-light { background: rgba(120,140,255,0.08); border-color: rgba(120,140,255,0.20); color: #dbe2ff; }
@@ -323,8 +332,8 @@ const TRACKER_CSS = `
   border: 1px solid #e3d9fb;
   box-shadow: 0 32px 90px rgba(76,29,149,.20), 0 0 0 1px rgba(167,139,250,0.10) inset;
 }
-[data-bs-theme="light"] .qpi-trk-orb { opacity: .55; filter: blur(1px); }
-[data-bs-theme="light"] .qpi-trk-orb-1 { background: radial-gradient(circle at 35% 35%, #ddd6fe, #f3effe 72%); box-shadow: 0 0 90px rgba(167,139,250,.45); }
+[data-bs-theme="light"] .qpi-trk-orb { opacity: .55; }
+[data-bs-theme="light"] .qpi-trk-orb-1 { background: radial-gradient(circle at 35% 35%, #ddd6fe, #f3effe 72%); }
 [data-bs-theme="light"] .qpi-trk-orb-2 { background: radial-gradient(circle at 35% 35%, #e9d5ff, #faf5ff 72%); opacity: .4; }
 /* Header is a coloured band in both themes — keep its text white. */
 [data-bs-theme="light"] .qpi-trk-title { color: #fff; }
@@ -339,11 +348,11 @@ const TRACKER_CSS = `
 [data-bs-theme="light"] .qpi-trk-close, [data-bs-theme="light"] .qpi-trk-cclose { background: #f3effd; border-color: #e0d9f7; color: #6d28d9; }
 [data-bs-theme="light"] .qpi-trk-close:hover { background: #ece5fb; }
 [data-bs-theme="light"] .qpi-trk-loading { color: #6b7280; }
-[data-bs-theme="light"] .qpi-trk-stat { background: rgba(255,255,255,0.62); border-color: #e7defb; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+[data-bs-theme="light"] .qpi-trk-stat { background: rgba(255,255,255,0.72); border-color: #e7defb; }
 [data-bs-theme="light"] .qpi-trk-stat-icon { background: #ede9fe; border-color: #ddd6fe; color: #6d28d9; }
 [data-bs-theme="light"] .qpi-trk-stat-label { color: #6b7280; }
 [data-bs-theme="light"] .qpi-trk-stat-value { color: #1f2937; }
-[data-bs-theme="light"] .qpi-trk-panel, [data-bs-theme="light"] .qpi-trk-csigner { background: rgba(255,255,255,0.55); border-color: #e7defb; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+[data-bs-theme="light"] .qpi-trk-panel, [data-bs-theme="light"] .qpi-trk-csigner { background: rgba(255,255,255,0.68); border-color: #e7defb; }
 /* The light border-color above resets the top accent — re-apply it so the
    colourful top border shows in light mode too (it already does in dark). */
 [data-bs-theme="light"] .qpi-trk-panel-violet { border-top-color: #8b5cf6; }

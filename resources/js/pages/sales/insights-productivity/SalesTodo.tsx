@@ -7,6 +7,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import Tooltip from '../../../components/ui/Tooltip';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { MasterTimePicker } from '../../../components/ui/MasterTimePicker';
@@ -1395,14 +1396,11 @@ export default function SalesTodo() {
           <div className="tc-wl-right">
             <span className="tc-wl-rows">
               Rows per page:
-              <select
-                value={rpp}
-                onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}
-                aria-label="Rows per page"
-              >
-                {/* The fixed options plus the auto-fit value, so the current page size is always listed. */}
-                {[...new Set([rpp, ...ROWS_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <RowsPerPageSelect
+                pageSize={rpp}
+                options={ROWS_OPTIONS}
+                onChange={n => { autoFitRef.current = false; setRpp(n); setPage(1); }}
+              />
             </span>
             <span className="tc-wl-range">{safePage} / {pages}</span>
             <div className="tc-wl-nav">

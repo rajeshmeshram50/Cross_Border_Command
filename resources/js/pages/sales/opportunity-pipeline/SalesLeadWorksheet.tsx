@@ -1990,10 +1990,10 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(6,182,212,.5), 0 8px 28px rgba(6,182,212,.6), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 .lwp-root .lwp-bact-filter-active {
-  box-shadow: 0 0 0 2px #facc15, 0 6px 20px rgba(8,145,178,.4);
+  box-shadow: 0 0 0 2px #67e8f9, 0 6px 20px rgba(8,145,178,.4);
 }
 .lwp-root .lwp-bact-badge {
-  background: #facc15; color: #422006;
+  background: rgba(255,255,255,.95); color: #0e7490;
   min-width: 18px; height: 18px; padding: 0 5px;
   border-radius: 999px; font-size: 10px; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center;
@@ -2840,10 +2840,9 @@ const SCOPED_CSS = `
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(6,182,212,.55), 0 3px 8px rgba(8,145,178,.3), 0 1px 0 rgba(255,255,255,.22) inset;
 }
-/* Active filters still need a signal — a yellow ring, not a different fill. */
 .lwp-root .lwp-bact-filter-active,
 [data-bs-theme="dark"] .lwp-root .lwp-bact-filter-active {
-  box-shadow: 0 0 0 2px #facc15, 0 6px 20px rgba(6,182,212,.45);
+  box-shadow: 0 0 0 2px #67e8f9, 0 6px 20px rgba(6,182,212,.45);
 }
 
 /* Tab pills */

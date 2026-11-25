@@ -193,15 +193,15 @@ export default function LeadActivityModal({ open, leadId, oppCode, onClose }: Pr
                 return (
                   <div className="lat-item" key={r.id}>
                     <div className="lat-rail">
-                      <span className="lat-dot" style={{ background: meta.bg, color: meta.color, boxShadow: `0 0 0 4px ${meta.bg}` }}>
+                      <span className="lat-dot" style={{ '--lat-c': meta.color, '--lat-bg': meta.bg } as React.CSSProperties}>
                         {meta.icon}
                       </span>
                     </div>
 
                     <div className="lat-card">
                       <div className="lat-card-top">
-                        <span className="lat-tag" style={{ background: meta.bg, color: meta.color }}>
-                          <span className="lat-tag-dot" style={{ background: meta.color }} />
+                        <span className="lat-tag" style={{ '--lat-c': meta.color, '--lat-bg': meta.bg } as React.CSSProperties}>
+                          <span className="lat-tag-dot" />
                           {meta.label}
                         </span>
                         <span className="lat-time" title={fmt(r.at)}>{rel(r.at)}</span>
@@ -346,7 +346,21 @@ const LAT_CSS = `
   width: 30px; height: 30px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; z-index: 1; margin-top: 2px;
+  background: var(--lat-bg); color: var(--lat-c); box-shadow: 0 0 0 4px var(--lat-bg);
 }
+.lat-tag { background: var(--lat-bg); color: var(--lat-c); }
+.lat-tag-dot { background: var(--lat-c); }
+[data-bs-theme="dark"] .lat-dot {
+  background: color-mix(in srgb, var(--lat-c) 22%, #0b1226);
+  color: color-mix(in srgb, var(--lat-c) 55%, #fff);
+  box-shadow: 0 0 0 4px #0b1226, 0 0 0 5px color-mix(in srgb, var(--lat-c) 40%, transparent);
+}
+[data-bs-theme="dark"] .lat-tag {
+  background: color-mix(in srgb, var(--lat-c) 18%, transparent);
+  color: color-mix(in srgb, var(--lat-c) 55%, #fff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lat-c) 40%, transparent);
+}
+[data-bs-theme="dark"] .lat-tag-dot { background: color-mix(in srgb, var(--lat-c) 55%, #fff); }
 
 /* Each event is a card so the timeline reads as discrete, scannable rows. */
 .lat-card {
