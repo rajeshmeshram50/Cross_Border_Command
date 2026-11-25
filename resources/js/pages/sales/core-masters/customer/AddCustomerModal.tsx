@@ -4583,6 +4583,13 @@ const SCOPED_CSS = `
   background: #110c25 !important;
   border-color: #3b2a6b !important;
 }
+/* Locked dropdowns (Address Type, State before a Country is picked) take the
+   same surface as the rest, not the lighter disabled purple. */
+[data-bs-theme="dark"] .acm-root .avm-master-select .master-select-wrap.disabled .master-select-toggle,
+[data-bs-theme="dark"] .acm-root .avm-master-select .master-select-toggle:disabled {
+  background: #110c25 !important;
+  border-color: #3b2a6b !important;
+}
 [data-bs-theme="dark"] .acm-field .avm-input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
 [data-bs-theme="dark"] .acm-radio-pill { background: #131c33; border-color: rgba(167,139,250,0.40); color: #ddd6fe; }
 [data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.45); border-color: #a78bfa; color: #ffffff; }

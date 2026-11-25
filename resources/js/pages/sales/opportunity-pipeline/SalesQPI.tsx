@@ -5423,6 +5423,14 @@ const SCOPED_CSS = `
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
 [data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search { background: transparent; border: 0; }
-[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
+[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before { background: #110c25; border-color: #3b2a6b; }
+/* Doc Type dropdown: the same near-black surface as the search bar beside it
+   (and the Add Customer inputs). The active-filter tint still wins. */
+[data-bs-theme="dark"] .qpi-root .qpi-tablebar .qpi-doctype-filter:not(.active) .master-select-wrap:not(.show) .master-select-toggle {
+  background: #110c25 !important; border-color: #3b2a6b !important;
+}
+[data-bs-theme="dark"] .qpi-root .qpi-tablebar .qpi-doctype-filter:not(.active) .master-select-wrap:not(.show) .master-select-toggle:hover {
+  border-color: #a78bfa !important;
+}
 
 `;
