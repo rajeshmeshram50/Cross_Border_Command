@@ -246,50 +246,12 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         /* Raising rows-per-page scrolls the body internally — the column header
            stays stuck and the pager stays on screen below it. */
         .pdm-dt-wrap .dt-scroll { max-height: 54vh; overflow-y: auto; }
-        /* Header matches the house list header (Recruitment / Document
-           Templates): soft light gradient, micro-caps, 1px divider — not the
-           bright accent fill. Scoped to this popup only. */
-        .pdm-dt-wrap .dt-table thead th {
-          background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%) !important;
-          color: var(--vz-secondary-color) !important;
-          font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
-          border-bottom: 1px solid #ececf2 !important;
-          box-shadow: none !important;
-        }
-        .pdm-dt-wrap .dt-table thead th .dt-sort { color: var(--vz-secondary-color) !important; }
-        .pdm-dt-wrap .dt-table thead th.dt-sortable:hover { background: linear-gradient(180deg, #f4f5f8 0%, #eceef3 100%) !important; }
-        [data-bs-theme="dark"] .pdm-dt-wrap .dt-table thead th {
-          background: linear-gradient(180deg, color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%, var(--vz-card-bg, #1a1d29) 100%) !important;
-          color: rgba(255,255,255,0.70) !important;
-          border-bottom-color: var(--vz-border-color, #2c3242) !important;
-        }
-        /* Inactive tabs carry a soft violet tint at rest (so they read as part
-           of the rail, like the active tab's family) and go clean WHITE on
-           hover. Scoped to the popup; also overrides the dark-theme tab styles
-           that leak in via the portal. */
-        .pdm-dt-wrap .dt-tab.off {
-          background: transparent !important;
-          box-shadow: none !important;
-          color: #6b6485 !important;
-          border-color: transparent !important;
-        }
-        [data-bs-theme="dark"] .pdm-dt-wrap .dt-tab.off {
-          background: transparent !important;
-          box-shadow: none !important;
-          color: #cbd5e1 !important;
-          border-color: transparent !important;
-        }
-        .pdm-dt-wrap .dt-tab.off:hover,
-        [data-bs-theme="dark"] .pdm-dt-wrap .dt-tab.off:hover {
-          background: #fff !important;
-          color: #1e293b !important;
-          border-color: rgba(124,58,237,.30) !important;
-        }
-        /* Footer carries the same light-lavender as the DataTable toolbar/pager
-           band, so the popup's bottom chrome matches the body instead of a stark
-           white strip under the lavender pager. */
-        .pdm-modal .pdm-foot { background: #f5f3ff; border-top: 1px solid #e9e4fb; }
-        [data-bs-theme="dark"] .pdm-modal .pdm-foot { background: rgba(124,92,252,0.10); border-top-color: rgba(255,255,255,0.10); }
+        /* Header + tabs use the shared HRMS skin (className="hr-dt" on the
+           DataTable) — same as the Batch Payment popup and Expense Management —
+           so no per-popup header/tab overrides here. */
+        /* Footer sits on the popup's own surface so it matches the body in both
+           light and dark — no lavender strip under the table. */
+        .pdm-modal .pdm-foot { background: transparent; border-top: 1px solid var(--vz-border-color); }
       `}</style>
       <div onClick={e => e.stopPropagation()} className="pdm-modal" style={{ background: 'var(--shim-card-bg,#fff)', color: 'var(--vz-body-color)', borderRadius: 18, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', width: '100%', maxWidth: maxW, maxHeight: 'calc(100vh - 32px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {children}
@@ -358,6 +320,7 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         <DataTable
           data={tabRows}
           columns={adviceColumns}
+          className="hr-dt"
           serial
           accent="violet"
           searchable
@@ -373,7 +336,7 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
 
       <div className="pdm-foot" style={{ padding: '12px 22px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative' }}>
-          <button type="button" className="btn btn-light fw-semibold d-inline-flex align-items-center" style={{ height: 40, fontSize: 13, padding: '0 12px', borderRadius: 12 }} onClick={() => setExportOpen(o => !o)}>
+          <button type="button" className="btn btn-light fw-semibold d-inline-flex align-items-center" style={{ height: 40, fontSize: 12.5, padding: '0 12px', borderRadius: 12 }} onClick={() => setExportOpen(o => !o)}>
             <i className="ri-download-2-line me-1" /> Export <i className="ri-arrow-down-s-line ms-1" />
           </button>
           {exportOpen && (
@@ -392,7 +355,7 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
           )}
         </div>
         <button type="button" className="btn fw-semibold ms-auto text-white d-inline-flex align-items-center justify-content-center gap-1" disabled={busy || readyRows.length === 0}
-          style={{ height: 40, fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)', border: 'none', borderRadius: 12, opacity: busy || readyRows.length === 0 ? 0.6 : 1, padding: '0 14px' }}
+          style={{ height: 40, fontSize: 12.5, fontWeight: 700, background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)', border: 'none', borderRadius: 12, opacity: busy || readyRows.length === 0 ? 0.6 : 1, padding: '0 14px' }}
           onClick={() => setStep('approval')}>
           <i className="ri-shield-check-line" /> Approve &amp; Submit to Bank
         </button>
@@ -433,11 +396,11 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
 
         <div className="d-flex gap-2 align-items-center justify-content-center">
           <button type="button" className="btn btn-light flex-shrink-0 d-inline-flex align-items-center justify-content-center"
-            style={{ height: 40, fontSize: 13, fontWeight: 600, padding: '0 14px', borderRadius: 12 }}
+            style={{ height: 40, fontSize: 12.5, fontWeight: 600, padding: '0 14px', borderRadius: 12 }}
             onClick={() => setStep('advice')} disabled={busy}>Back</button>
           <button type="button" className="btn text-white d-inline-flex align-items-center justify-content-center gap-1"
             disabled={busy || !canSubmit}
-            style={{ height: 40, fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg,#047857,#10b981)', border: 'none', borderRadius: 12, padding: '0 16px', opacity: (busy || !canSubmit) ? 0.6 : 1 }}
+            style={{ height: 40, fontSize: 12.5, fontWeight: 700, background: 'linear-gradient(135deg,#047857,#10b981)', border: 'none', borderRadius: 12, padding: '0 16px', opacity: (busy || !canSubmit) ? 0.6 : 1 }}
             onClick={submitApproval}>
             {busy ? <i className="ri-loader-4-line" /> : <i className="ri-check-double-line" />} Confirm &amp; Approve Payment
           </button>
