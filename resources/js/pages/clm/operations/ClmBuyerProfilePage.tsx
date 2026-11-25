@@ -559,8 +559,10 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(127, 29, 29)"] { color: #fca5a5 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(241, 245, 249)"] { background: rgba(148,163,184,.18) !important; border-color: rgba(148,163,184,.3) !important; }
 [data-bs-theme="dark"] .seg-page-card table { background: transparent !important; }
-[data-bs-theme="dark"] .seg-page-card thead tr { background: #16263a !important; }
-[data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .seg-page-card thead { background: #0f222c !important; box-shadow: 0 1px 0 rgba(34,211,238,.2) !important; }
+[data-bs-theme="dark"] .seg-page-card thead tr { background: linear-gradient(180deg, #102a34, #0f222c) !important; }
+[data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; background: transparent !important; border-color: rgba(34,211,238,.2) !important; }
+[data-bs-theme="dark"] .seg-page-card thead th span { color: #67e8f9 !important; opacity: 1 !important; }
 [data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(165, 243, 252)"] ,

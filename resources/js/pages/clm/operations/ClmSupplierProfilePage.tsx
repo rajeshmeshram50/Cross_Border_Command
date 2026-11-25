@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, type CSSProperties } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { clmBottomReserve } from '../shared/clmShared';
 import api from '../../../api';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
@@ -104,7 +105,13 @@ const CSS = `
    globally, so the two rules disagreed on the page's own padding — 8 here,
    0 there — and whichever style block loaded last decided it. The cards
    sat flush to the viewport edge on the losing page. */
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 8px 0; display:flex; flex-direction:column; gap:8px; }
+.seg-page { background: #F4F6FB; min-height: 100%; padding: 8px 0 0; display:flex; flex-direction:column; gap:8px; }
+/* The list card is sized by useSpFill to end 8px above the app footer; the
+   table scrolls inside it and the pager stays pinned to the card's bottom. */
+.sp-fill { display: flex; flex-direction: column; }
+.sp-fill > .sp-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.sp-fill > .sp-panel > div:last-child { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.sp-fill .sp-pg { margin-top: auto; position: sticky; bottom: 0; left: 0; z-index: 2; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -810,6 +817,24 @@ export default function ClmSupplierProfilePage() {
   const [partySearch, setPartySearch] = useState('');
   const [txnSearch, setTxnSearch] = useState('');
 
+  /* List card height: from its top down to 8px above the app footer, the same
+     gap every CLM list keeps. Re-measured when anything above it can move
+     (tab switch, the collapsible brief, a window resize). */
+  const fillRef = useRef<HTMLDivElement | null>(null);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = fillRef.current;
+      if (!el) return;
+      const h = Math.max(260, Math.floor(window.innerHeight - el.getBoundingClientRect().top - (clmBottomReserve() - 1)));
+      setFillH(prev => (prev === h ? prev : h));
+    };
+    measure();
+    const timers = [0, 250, 600].map(ms => window.setTimeout(measure, ms));
+    window.addEventListener('resize', measure);
+    return () => { timers.forEach(window.clearTimeout); window.removeEventListener('resize', measure); };
+  }, [clmTab, brefCollapsed]);
+
   // Evidence Vault popup (same modal the Suppliers table uses).
   const [supVault, setSupVault] = useState<SupplierVaultTarget | null>(null);
   const openVault = (row: PartyRow) => {
@@ -1008,7 +1033,7 @@ export default function ClmSupplierProfilePage() {
       {/* ── PARTY WISE PANEL ── */}
       {clmTab === 'party' && (
         <div>
-          <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', marginTop: '8px' }}>
+          <div ref={fillRef} className="seg-page-card sp-fill" style={{ padding: 0, overflow: 'hidden', marginTop: '8px', height: fillH }}>
             <div className="sp-bar" style={TOP_BAR}>
               <div className="bpa-seg">
                 <button className={`bpa-tab ${partyShip === 'with' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setPartyShip('with')}>
@@ -1025,7 +1050,7 @@ export default function ClmSupplierProfilePage() {
 
             {/* With Shipment ID */}
             {partyShip === 'with' && (
-              <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
+              <div className="sp-panel" style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
                 <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={wsSub === 'mat'} onClick={() => setWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wsSub === 'mat'} icon="mat" />
                   <SubTab active={wsSub === 'logi'} onClick={() => setWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={wsSub === 'logi'} icon="logi" />
@@ -1037,7 +1062,7 @@ export default function ClmSupplierProfilePage() {
 
             {/* Without Shipment ID */}
             {partyShip === 'without' && (
-              <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
+              <div className="sp-panel" style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
                 <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={wosSub === 'svc'} onClick={() => setWosSub('svc')} label="Services Suppliers" badge="SVC" badgeActive={wosSub === 'svc'} icon="svc" />
                   <SubTab active={wosSub === 'mat'} onClick={() => setWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wosSub === 'mat'} icon="mat" />
@@ -1055,7 +1080,7 @@ export default function ClmSupplierProfilePage() {
       {/* ── TRANSACTION WISE PANEL ── */}
       {clmTab === 'txn' && (
         <div>
-          <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', marginTop: '8px' }}>
+          <div ref={fillRef} className="seg-page-card sp-fill" style={{ padding: 0, overflow: 'hidden', marginTop: '8px', height: fillH }}>
             <div className="sp-bar" style={TOP_BAR}>
               <div className="bpa-seg">
                 <button className={`bpa-tab ${txnShip === 'with' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setTxnShip('with')}>
@@ -1072,7 +1097,7 @@ export default function ClmSupplierProfilePage() {
 
             {/* With Shipment ID */}
             {txnShip === 'with' && (
-              <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
+              <div className="sp-panel" style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
                 <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={txnWsSub === 'mat'} onClick={() => setTxnWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWsSub === 'mat'} icon="mat" />
                   <SubTab active={txnWsSub === 'logi'} onClick={() => setTxnWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={txnWsSub === 'logi'} icon="logi" />
@@ -1084,7 +1109,7 @@ export default function ClmSupplierProfilePage() {
 
             {/* Without Shipment ID */}
             {txnShip === 'without' && (
-              <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
+              <div className="sp-panel" style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
                 <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={txnWosSub === 'svc'} onClick={() => setTxnWosSub('svc')} label="Services Suppliers" badge="SVC" badgeActive={txnWosSub === 'svc'} icon="svc" />
                   <SubTab active={txnWosSub === 'mat'} onClick={() => setTxnWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWosSub === 'mat'} icon="mat" />

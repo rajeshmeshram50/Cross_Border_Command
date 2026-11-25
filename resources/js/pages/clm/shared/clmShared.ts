@@ -734,7 +734,7 @@ export const CLM_CSS = `
    also the last scrollbar-gutter: stable left in CLM. All three lists now use
    the plain minHeight floor the rest of the module uses. */
 .clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
-.clm-table-fill > .clm-table { background: #fff; }
+.clm-table-fill > .clm-table, .clm-table-fill > .clm-tscroll > .clm-table { background: #fff; }
 .clm-table-fill.clm-fill-empty { background: #fff; }
 [data-bs-theme="dark"] .clm-table-fill.clm-fill-empty { background: #0f172a; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
@@ -757,6 +757,22 @@ body:not(:has(.clm-mc)) .clm-table-fill { max-height: none !important; }
 .clm-mc .clm-tscroll::-webkit-scrollbar-thumb:hover { background: #67e8f9; }
 [data-bs-theme="dark"] .clm-mc .clm-tscroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
 [data-bs-theme="dark"] .clm-mc .clm-tscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
+/* From the CLM menu: the sideways scroll belongs to the rows, not the card.
+   The wrap used to scroll horizontally with the pager inside it, so on zoom /
+   narrow screens the scrollbar sat UNDER the pager, at the card's foot. Now the
+   wrap clips and .clm-tscroll (table only) scrolls, so the bar sits right under
+   the last row and the pager stays below it - as on Case to Case. */
+body:not(:has(.clm-mc)) .clm-table-fill { overflow-x: hidden; }
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll {
+  flex: 0 0 auto; min-width: 0; max-width: 100%;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; scrollbar-color: #a5e8f5 transparent;
+}
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar { height: 8px; }
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar-track { background: transparent; }
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar-thumb { background: #a5e8f5; border-radius: 8px; }
+[data-bs-theme="dark"] body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+[data-bs-theme="dark"] body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
 /* Master Control Center header insets, as on the Master lists: 12px sides
  * plus 6px before the icon, the What We Are Doing Here strip lined up under it. */
 .clm-mc .clm-head-strip { padding: 0 12px; }
@@ -1848,7 +1864,7 @@ body > .dropdown-menu.master-select-menu,
 /* Same idea in dark: the filler under a short page lifts slightly off the card
    instead of matching it exactly, so the empty space still reads as surface. */
 [data-bs-theme="dark"] .clm-table-fill { background: linear-gradient(180deg, #101d2e, #0f172a); }
-[data-bs-theme="dark"] .clm-table-fill > .clm-table { background: #0f172a; }
+[data-bs-theme="dark"] .clm-table-fill > .clm-table, [data-bs-theme="dark"] .clm-table-fill > .clm-tscroll > .clm-table { background: #0f172a; }
 /* The header has to read as a header (QA #9). On the dark surface a 18% teal
    wash sat only a shade above the rows, the labels were weight 500 like the
    data, and the rule under them was a 1.5px line at 30% — so the first row of
