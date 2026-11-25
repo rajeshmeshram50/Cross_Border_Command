@@ -3004,15 +3004,21 @@ export function CreatePIModal(props: {
 
 function StepBadge(props: { n: number; title: string; subtitle: string; state: 'idle' | 'active' | 'done'; theme: 'teal' | 'purple' }) {
   const { n, title, subtitle, state, theme } = props;
+  const icon = n === 1
+    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
   return (
     <div className={`qpi-step-badge qpi-step-${state} qpi-step-${theme}`}>
-      <div className="qpi-step-badge-num">
-        {state === 'done' ? <IconCheck /> : n}
+      <div className="qpi-step-ico-wrap">
+        <div className="qpi-step-ico">{state === 'done' ? <IconCheck /> : icon}</div>
+        <div className="qpi-step-badge-num">{state === 'done' ? <IconCheck /> : n}</div>
       </div>
-      <div>
+      <div className="qpi-step-text">
         <div className="qpi-step-badge-title">{title}</div>
         <div className="qpi-step-badge-sub">{subtitle}</div>
       </div>
+      {state === 'active' && <span className="qpi-step-pill qpi-step-pill-active">In Progress</span>}
+      {state === 'done' && <span className="qpi-step-pill qpi-step-pill-done">Completed</span>}
     </div>
   );
 }
@@ -3878,6 +3884,7 @@ function ProductsStep(props: {
         <SummaryItem label="Opportunity Date"  value={form.opportunityDate} />
         <SummaryItem label="Customer ID"       value={form.customer.split(' – ')[0] || ''} />
         <SummaryItem label="Customer Name"     value={form.customer.split(' – ')[1] || form.customer} />
+        {form.docType !== 'International' && <SummaryItem label="Customer GST No" value={form.customerGstNo} />}
         <SummaryItem label="Consignee ID"      value={form.consignee.split(' – ')[0] || ''} />
         <SummaryItem label="Consignee Name"    value={form.consignee.split(' – ')[1] || form.consignee} />
         <SummaryItem label="Document Type"     value={form.docType} />
@@ -3895,7 +3902,6 @@ function ProductsStep(props: {
         ) : (
           <>
             <SummaryItem label="State Code"      value={form.stateCode} />
-            <SummaryItem label="Customer GST No" value={form.customerGstNo} />
             <SummaryItem label="Dispatch From"   value={form.dispatchFrom} />
             <SummaryItem label="Deliver To"      value={form.deliverTo} />
             <SummaryItem
@@ -4775,46 +4781,75 @@ const SCOPED_CSS = `
 .qpi-modal-close svg { width: 13px; height: 13px; }
 
 .qpi-modal-stepper {
-  display: flex; align-items: center; gap: 0;
-  padding: 10px 16px 8px;
+  display: flex; align-items: stretch; gap: 0;
+  padding: 12px 18px 10px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
 }
 .qpi-modal-step-divider {
-  flex: 0 0 56px;
-  height: 2px;
-  background: #e2e8f0;
-  margin: 0 0;
+  flex: 0 0 34px; display: flex; align-items: center; justify-content: center;
+  background: none; height: auto;
 }
+.qpi-modal-step-divider::before { content: '›'; font-size: 22px; line-height: 1; font-weight: 700; color: #94a3b8; }
 .qpi-step-badge {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 16px; border-radius: 10px;
-  border: 1.5px solid transparent;
+  --st-1: #0891b2; --st-2: #0e7490; --st-3: #155e75; --st-soft: #ecfeff; --st-soft2: #cffafe; --st-bd: #67e8f9; --st-rgb: 8,145,178; --st-ink: #164e63; --st-sub: #0e7490;
+  position: relative; flex: 1 1 0; min-width: 0;
+  display: flex; align-items: center; gap: 13px;
+  padding: 11px 16px; border-radius: 15px;
+  border: 1.5px solid #e2e8f0;
   background: #fff;
-  flex: 0 1 auto; min-width: 210px;
-  transition: all .15s;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.qpi-step-purple { --st-1: #8b5cf6; --st-2: #7c3aed; --st-3: #5b21b6; --st-soft: #f6f2ff; --st-soft2: #ece4fb; --st-bd: #a78bfa; --st-rgb: 124,58,237; --st-ink: #1e1b4b; --st-sub: #7c3aed; }
+.qpi-step-ico-wrap { position: relative; flex-shrink: 0; }
+.qpi-step-ico {
+  width: 38px; height: 38px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+  transition: all .25s;
 }
 .qpi-step-badge-num {
-  width: 26px; height: 26px; border-radius: 50%;
+  position: absolute; right: -4px; bottom: -4px;
+  width: 17px; height: 17px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 800;
-  flex-shrink: 0;
+  background: #fff; color: #64748b; border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px #cbd5e1;
+  font-size: 9.5px; font-weight: 800; line-height: 1;
 }
-.qpi-step-badge-title { font-size: 12px; font-weight: 800; line-height: 1.2; }
-.qpi-step-badge-sub   { font-size: 10px; color: #94a3b8; margin-top: 1px; line-height: 1.2; }
-.qpi-step-idle { background: #fff; border-color: #e2e8f0; }
-.qpi-step-idle .qpi-step-badge-num { background: #f1f5f9; color: #94a3b8; }
-.qpi-step-idle .qpi-step-badge-title { color: #94a3b8; }
-.qpi-step-active.qpi-step-teal   { background: #ecfeff; border-color: #67e8f9; box-shadow: 0 4px 12px rgba(8, 145, 178, .15); }
-.qpi-step-active.qpi-step-teal   .qpi-step-badge-num { background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff; }
-.qpi-step-active.qpi-step-teal   .qpi-step-badge-title { color: #0e7490; }
-.qpi-step-active.qpi-step-purple { background: #f5f3ff; border-color: #c4b5fd; box-shadow: 0 4px 12px rgba(124,58,237,.15); }
-.qpi-step-active.qpi-step-purple .qpi-step-badge-num { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
-.qpi-step-active.qpi-step-purple .qpi-step-badge-title { color: #6d28d9; }
-.qpi-step-done .qpi-step-badge-num { background: linear-gradient(135deg, #4ade80, #22c55e); color: #fff; }
+.qpi-step-badge-num svg { width: 9px; height: 9px; }
+.qpi-step-text { min-width: 0; flex: 1; }
+.qpi-step-badge-title { font-size: 13.5px; font-weight: 600; color: #475569; letter-spacing: -0.01em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qpi-step-badge-sub { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qpi-step-pill { flex-shrink: 0; padding: 4px 11px; border-radius: 99px; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; }
+.qpi-step-pill-active { background: linear-gradient(135deg, var(--st-1), var(--st-2)); box-shadow: 0 3px 8px rgba(var(--st-rgb), .4); }
+.qpi-step-pill-done { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 3px 8px rgba(22,163,74,.35); }
+.qpi-step-active {
+  border-color: var(--st-bd);
+  background: linear-gradient(135deg, var(--st-soft), var(--st-soft2));
+  box-shadow: 0 10px 26px rgba(var(--st-rgb), .2), 0 0 0 1px rgba(var(--st-rgb), .15), 0 1px 0 rgba(255,255,255,.8) inset;
+}
+.qpi-step-active .qpi-step-ico { background: linear-gradient(135deg, var(--st-1), var(--st-2), var(--st-3)); box-shadow: 0 6px 16px rgba(var(--st-rgb), .5), 0 1px 0 rgba(255,255,255,.4) inset; }
+.qpi-step-active .qpi-step-badge-num { color: var(--st-2); box-shadow: 0 0 0 1px rgba(var(--st-rgb), .55), 0 1px 3px rgba(var(--st-rgb), .28); }
+.qpi-step-active .qpi-step-badge-title { color: var(--st-ink); }
+.qpi-step-active .qpi-step-badge-sub { color: var(--st-sub); }
+.qpi-step-done { border-color: #86efac; background: linear-gradient(135deg, #f0fdf4, #d6fadf); box-shadow: 0 8px 22px rgba(34,197,94,.18), 0 1px 0 rgba(255,255,255,.7) inset; }
+.qpi-step-done .qpi-step-ico { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
+.qpi-step-done .qpi-step-badge-num { background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; box-shadow: 0 1px 3px rgba(22,163,74,.3); }
 .qpi-step-done .qpi-step-badge-title { color: #15803d; }
-.qpi-step-done.qpi-step-teal   { background: #f0fdfa; border-color: #99f6e4; }
-.qpi-step-done.qpi-step-purple { background: #f0fdf4; border-color: #bbf7d0; }
+.qpi-step-done .qpi-step-badge-sub { color: #4d9e6a; }
+[data-bs-theme="dark"] .qpi-modal-step-divider::before { color: #64748b; }
+[data-bs-theme="dark"] .qpi-step-idle { background: rgba(40,52,70,0.75); border-color: rgba(148,163,184,0.22); }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-ico { background: #232c44; color: #94a3b8; }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-num { background: #232c44; color: #cbd5e1; border-color: #11182a; box-shadow: none; }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-title { color: #cbd5e1; }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-sub { color: #94a3b8; }
+[data-bs-theme="dark"] .qpi-step-active { background: linear-gradient(135deg, rgba(var(--st-rgb), .32), rgba(var(--st-rgb), .16)); border-color: var(--st-bd); box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(var(--st-rgb), .15) inset; }
+[data-bs-theme="dark"] .qpi-step-active .qpi-step-badge-num { background: #0f172a; border-color: #0f172a; }
+[data-bs-theme="dark"] .qpi-step-active .qpi-step-badge-title { color: #f1f5f9; }
+[data-bs-theme="dark"] .qpi-step-active .qpi-step-badge-sub { color: var(--st-bd); }
+[data-bs-theme="dark"] .qpi-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.45) 0%, rgba(16,185,129,0.20) 100%); border-color: #34d399; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .qpi-step-done .qpi-step-badge-title { color: #d1fae5; }
+[data-bs-theme="dark"] .qpi-step-done .qpi-step-badge-sub { color: #6ee7b7; }
 
 .qpi-modal-body {
   padding: 12px 18px;
@@ -4959,7 +4994,7 @@ const SCOPED_CSS = `
 .qpi-note-purple .qpi-note-line strong { color: #4c1d95; }
 
 .qpi-order-summary {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 14px;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 14px;
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid;
@@ -4992,7 +5027,19 @@ const SCOPED_CSS = `
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
+  border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;
+  box-shadow: 0 1px 3px rgba(15,23,42,.05);
 }
+.qpi-products-table tbody tr:nth-child(even):not(.qpi-products-input-row) td { background: #fafbff; }
+.qpi-products-table tbody tr:not(.qpi-products-input-row):hover td { background: #f3f6fd; }
+[data-bs-theme="dark"] .qpi-products-wrap {
+  border-color: rgba(34,211,238,.28); background: rgba(255,255,255,.03);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .qpi-products-table tbody tr:nth-child(even):not(.qpi-products-input-row) td { background: rgba(255,255,255,.025); }
+[data-bs-theme="dark"] .qpi-products-table tbody tr:not(.qpi-products-input-row):hover td { background: rgba(34,211,238,.06); }
+[data-bs-theme="dark"] .qpi-products-wrap:has(.qpi-pt-purple) { border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .qpi-products-wrap:has(.qpi-pt-purple) .qpi-products-table tbody tr:not(.qpi-products-input-row):hover td { background: rgba(167,139,250,.08); }
 .qpi-products-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
 .qpi-products-wrap::-webkit-scrollbar-track { background: transparent; }
 .qpi-products-wrap::-webkit-scrollbar-thumb {
@@ -5283,26 +5330,6 @@ const SCOPED_CSS = `
   background: #14101d;
   border-bottom-color: rgba(167,139,250,.20);
 }
-[data-bs-theme="dark"] .qpi-step-idle {
-  background: rgba(255,255,255,.04);
-  border-color: rgba(167,139,250,.20);
-}
-[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-num { background: #2a2342; color: #7a6b9a; }
-[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-title { color: #9aa0b4; }
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-teal,
-[data-bs-theme="dark"] .qpi-step-done.qpi-step-teal {
-  background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.45);
-}
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-purple,
-[data-bs-theme="dark"] .qpi-step-done.qpi-step-purple {
-  background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.45);
-}
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-teal .qpi-step-badge-title   { color: #67e8f9; }
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-purple .qpi-step-badge-title { color: #c4b5fd; }
-[data-bs-theme="dark"] .qpi-step-done .qpi-step-badge-title                   { color: #86efac; }
-[data-bs-theme="dark"] .qpi-step-badge-sub { color: #7a6b9a; }
-[data-bs-theme="dark"] .qpi-modal-step-divider { background: rgba(167,139,250,.20); }
-
 [data-bs-theme="dark"] .qpi-modal-body { background: #221a3a; color: #e9d5ff; }
 [data-bs-theme="dark"] .qpi-field-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .qpi-input,
@@ -5469,25 +5496,25 @@ const SCOPED_CSS = `
    — the icon, input and clear button all sit inside that field. */
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
   position: relative;
-  min-height: 48px;
-  padding: 3px 14px 3px 38px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  border: 0;
+  background: transparent;
   border-radius: 11px;
   box-shadow: none;
 }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, box-shadow .16s;
 }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search > * { position: relative; z-index: 1; }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search .dt-search-icon { position: absolute; }
-.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
-[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
 
 `;

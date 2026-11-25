@@ -5,6 +5,7 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useNavigateContext } from '../../../components/App';
 import SearchClear from '../../../components/ui/SearchClear';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 
 type ServerLead = {
@@ -256,9 +257,6 @@ export default function SalesLeadsDetails() {
             <tbody>
               {/* Shimmer rows while the salesperson's leads load (not a bare "Loading…" line). */}
               {loading && <ShimmerTableRows rows={pageSize} cols={11} height={12} cellClassName="" keyPrefix="ldd-shim" />}
-              {!loading && leads.length === 0 && (
-                <tr><td colSpan={11} className="ldd-status">No leads found</td></tr>
-              )}
               {!loading && leads.map((r, i) => (
                 <tr key={r.id}>
                   <td>
@@ -286,6 +284,15 @@ export default function SalesLeadsDetails() {
               ))}
             </tbody>
           </table>
+          {!loading && leads.length === 0 && (
+            <div className="ldd-empty" role="status">
+              <i className="ri-inbox-2-line ldd-empty-ico" />
+              <div className="ldd-empty-title">No data found</div>
+              <div className="ldd-empty-sub">
+                {debouncedQ.trim() ? <>No leads match “{debouncedQ.trim()}”</> : 'This salesperson has no leads yet'}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Pagination ──────────────────────────────────────────── */}
@@ -296,15 +303,10 @@ export default function SalesLeadsDetails() {
               : <>Showing <strong>{startIdx + 1}–{endIdx}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="ldd-pag-ctrl">
-            <label className="ldd-rows-per-page">
+            <span className="ldd-rows-per-page">
               <span>Rows per page:</span>
-              <select
-                value={pageSize}
-                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-              >
-                {[10, 15, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
+              <RowsPerPageSelect pageSize={pageSize} options={[10, 15, 25, 50]} onChange={n => { setPageSize(n); setPage(1); }} />
+            </span>
             <span className="ldd-pag-range">{safePage}/{pages}</span>
             <button
               className="ldd-pag-btn"
@@ -436,6 +438,16 @@ const LDD_CSS = `
   flex: 1; min-height: 0;
 }
 .ldd-table-wrap { position: relative; flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
+.ldd-empty {
+  position: absolute; inset: 36px 0 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px; pointer-events: none; text-align: center; padding: 0 16px;
+}
+.ldd-empty-ico { font-size: 34px; color: #67e8f9; opacity: .8; }
+.ldd-empty-title { font-size: 13.5px; font-weight: 700; color: #0e7490; }
+.ldd-empty-sub { font-size: 11.5px; font-weight: 500; color: #64748b; max-width: 420px; overflow-wrap: anywhere; }
+[data-bs-theme="dark"] .ldd-empty-ico { color: #22d3ee; opacity: .6; }
+[data-bs-theme="dark"] .ldd-empty-title { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldd-empty-sub { color: #94a3b8; }
 .ldd-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
 .ldd-table thead { position: sticky; top: 0; z-index: 2; }
 .ldd-table thead tr {
@@ -549,6 +561,13 @@ const LDD_CSS = `
   border: none; background: transparent; font-family: inherit;
   font-size: 11.5px; color: #0891b2; font-weight: 700; cursor: pointer; outline: none;
 }
+.ldd-rows-per-page { --tcwl-accent: #0891b2; --tcwl-text: #0e7490; --tcwl-border: #a5f3fc; --tcwl-band: #ecfeff; }
+.ldd-rows-per-page .tc-wl-rows-btn { color: #0891b2; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-btn { color: #67e8f9; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu { background: #0c1f2e; border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu button { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu button:hover { background: rgba(34, 211, 238, .16); color: #fff; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu button.is-on { background: #0891b2; color: #fff; }
 .ldd-pag-range {
   font-size: 11.5px; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
