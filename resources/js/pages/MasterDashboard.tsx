@@ -686,14 +686,19 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
 
       <div style={{ position: 'absolute', top: -36, right: -36, width: 110, height: 110, borderRadius: '50%', background: `radial-gradient(circle,${s.color}10 0%,transparent 70%)`, pointerEvents: 'none' }} />
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 0, position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 12, position: 'relative', flexGrow: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: s.gradient, boxShadow: `0 3px 10px ${s.color}33`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <i className={leafIcon(leaf.icon)} style={{ color: '#fff', fontSize: 16 }} />
           </div>
-          <h6 style={{ margin: 0, fontWeight: 700, fontSize: 13, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {leaf.label}
-          </h6>
+          <div style={{ minWidth: 0 }}>
+            <h6 style={{ margin: 0, fontWeight: 700, fontSize: 13, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {leaf.label}
+            </h6>
+            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {leafDescription(leaf)}
+            </p>
+          </div>
         </div>
         {(() => {
           const cfg = headerStatus === 'active'
@@ -711,10 +716,6 @@ function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: 
           );
         })()}
       </div>
-
-      <p style={{ margin: '-3px 0 12px 0', paddingLeft: 46, position: 'relative', fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.55, flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {leafDescription(leaf)}
-      </p>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 9, borderTop: '1px solid var(--vz-border-color)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
