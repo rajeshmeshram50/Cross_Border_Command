@@ -111,6 +111,11 @@ const DCP_TABS_CSS = `
 }
 .clm-table-fill.dcp-fill-empty { background: #fff; }
 [data-bs-theme="dark"] .clm-table-fill.dcp-fill-empty { background: #0f172a; }
+/* "No less-regulated segments configured yet" in the Segment Rule wizard. Its
+   light #f8fafc wash read as a pale grey slab in dark (QA #65): a dark field
+   with a teal dashed edge, and legible muted text. */
+[data-bs-theme="dark"] .dcp-empty-note { background: rgba(15,23,42,.6) !important; border-color: rgba(103,232,249,.28) !important; color: #94a3b8 !important; }
+[data-bs-theme="dark"] .dcp-empty-note em { color: #67e8f9; font-style: normal; font-weight: 600; }
 .dcp-filter-btn {
   display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
   /* 48px and radius 11 — the height of the tab rail and the search it shares
@@ -465,7 +470,7 @@ export default function ClmDcpPage() {
                   <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
                   <th style={{ width: 200 }}>SEGMENT NAME</th>
                   <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
-                  <th style={{ width: 120, textAlign: 'center' }}>DOCUMENT TYPE</th>
+                  <th style={{ width: 120, textAlign: 'left' }}>DOCUMENT TYPE</th>
                   <th style={{ width: 140, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
                   <th style={{ width: 180, textAlign: 'left' }}>AUTHORITIES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
@@ -487,7 +492,7 @@ export default function ClmDcpPage() {
                         <td style={{ textAlign: 'center' }}>
                           <SegmentBadge status={isHigh ? 'highly' : 'less'} />
                         </td>
-                        <td style={{ textAlign: 'center' }}>
+                        <td style={{ textAlign: 'left' }}>
                           {r.document_type ? (
                             <span className={`dcp-doctype-badge dcp-doctype-badge--${r.document_type}`}>
                               {DOC_TYPE_LABEL[r.document_type]}
@@ -842,7 +847,7 @@ function SegmentRuleModal(props: {
 
                     {isMulti ? (
                       segments.length === 0 ? (
-                        <div style={{ padding: '12px', fontSize: 11, color: '#64748b', background: 'rgba(248,250,252,.6)', borderRadius: 7, border: '1px dashed rgba(148,163,184,.4)' }}>
+                        <div className="dcp-empty-note" style={{ padding: '12px', fontSize: 11, color: '#64748b', background: 'rgba(248,250,252,.6)', borderRadius: 7, border: '1px dashed rgba(148,163,184,.4)' }}>
                           No less-regulated segments configured yet. Add them in <em>CLM → Segment Master</em> first.
                         </div>
                       ) : (

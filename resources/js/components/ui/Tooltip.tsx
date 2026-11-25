@@ -336,8 +336,15 @@ export default function Tooltip({
   const place = () => {
     const el = triggerRef.current;
     const trig = el?.getBoundingClientRect();
-    const tip = tipRef.current?.getBoundingClientRect();
-    if (!el || !trig || !tip) return;
+    const tipEl = tipRef.current;
+    if (!el || !trig || !tipEl) return;
+    /* The tip's LAYOUT size, not getBoundingClientRect(): the entrance
+       animation starts at scale(.86), and a bounding rect includes the
+       transform, so the width read here was 14% short. The viewport clamp then
+       stopped that much too late and a long label beside the right edge (the
+       Action column's "In use by ... can't delete") ran off the screen with its
+       text cut (QA #59). offsetWidth/Height ignore transforms. */
+    const tip = new DOMRect(0, 0, tipEl.offsetWidth, tipEl.offsetHeight);
     setCoords(placeTip(visibleTextRect(el) ?? trig, tip, position, offset));
   };
 

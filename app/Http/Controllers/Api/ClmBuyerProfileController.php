@@ -330,7 +330,7 @@ class ClmBuyerProfileController extends Controller
             ->with([
                 'primaryAddress:id,consignee_id,country,city,cp_name',
                 'customer:id,customer_code',
-                'customers:id,customer_code,segment',
+                'customers:id,customer_code,segment,segment_ids,client_id,branch_id',
             ])
             ->orderBy('id')
             ->get();

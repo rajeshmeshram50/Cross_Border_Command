@@ -79,11 +79,10 @@ export default function ClmSegmentPage() {
     ...(tab !== 'all' ? { regulatory_status: tab } : {}),
     ...(bcFilter !== 'all' ? { buyer_consignee: bcFilter } : {}),
   };
-  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta } =
+  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp, meta } =
     usePagedList<Segment, { counts: Counts }>('/clm/segments', reloadKey, params);
   const counts: Counts = meta.counts ?? { all: 0, highly: 0, less: 0 };
   const narrowed = !!search.trim() || bcFilter !== 'all';
-  const isEmpty = !loading && rows.length === 0;
 
   const [booted, setBooted] = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
@@ -99,7 +98,12 @@ export default function ClmSegmentPage() {
   const answeredTab = useRef(tab);
   useEffect(() => { if (!loading) answeredTab.current = tab; }, [loading, tab]);
 
-  const firstLoad  = loading && (rows.length === 0 || replacing || answeredTab.current !== tab);
+  /* Skeleton before the first answer and on a tab switch (the rows on screen
+     belong to the other tab). NOT on a search keystroke or a page move: the
+     last answer stays as it is until the new one lands, so the table does not
+     blank and jump on every letter typed. Undimmed, per the note below. */
+  const firstLoad  = loading && (!booted || answeredTab.current !== tab);
+  const isEmpty    = !firstLoad && rows.length === 0;
   /* There is deliberately no "refreshing" dim any more. A half-faded table
      reads as a rendering fault rather than a load, and it was what showed when
      the skeleton condition missed. Every in-flight state here shows the
@@ -408,7 +412,7 @@ export default function ClmSegmentPage() {
                     <div className="clm-empty-sub">{!narrowed && counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
                   </div>
                 )}
-                {!loading && (
+                {!firstLoad && (
                   <WorklistPager total={total} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
                 )}
               </div>

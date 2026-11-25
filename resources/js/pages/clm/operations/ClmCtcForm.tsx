@@ -1434,7 +1434,7 @@ function Stage1(p: {
                       error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= AG_TITLE_MAX ? `Agreement title cannot exceed ${AG_TITLE_MAX} characters.` : undefined)}
                     ><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, AG_TITLE_MAX))} maxLength={AG_TITLE_MAX} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
-                      <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
+                      <MasterSelect optionTipPosition="top" value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
                     </Field>
                   </div>
                 </div>
