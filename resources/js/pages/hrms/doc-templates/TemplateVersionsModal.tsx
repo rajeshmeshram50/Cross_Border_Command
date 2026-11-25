@@ -58,16 +58,14 @@ export default function TemplateVersionsModal({ open, onClose, template }: Props
   useEffect(() => {
     if (!open || !template) return;
     let live = true;
-    let hold: number | undefined;
     setLoading(true);
     setError(null);
     setRows([]);
     api.get(`/hr-document-templates/${template.id}/versions`)
       .then(({ data }) => { if (live) setRows(data?.versions ?? []); })
       .catch((e: any) => { if (live) setError(e?.response?.data?.message || 'Could not load the version history.'); })
-      // Hold the loader ~5s so it is clearly visible.
-      .finally(() => { hold = window.setTimeout(() => { if (live) setLoading(false); }, 5000); });
-    return () => { live = false; if (hold) clearTimeout(hold); };
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
   }, [open, template?.id]);
 
   const MIME = {
