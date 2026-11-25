@@ -676,6 +676,21 @@
           font-weight: 600;
         }
         .ep-claim-err i { font-size: 12px; }
+
+        /* Advance recovery notes — theme-aware so dark mode isn't bright pink. */
+        .ep-adv-note {
+          display: flex; align-items: flex-start; gap: 8px;
+          border-radius: 10px; padding: 10px 14px;
+          font-size: 12.5px; line-height: 1.5;
+          border: 1px solid transparent;
+        }
+        .ep-adv-note--danger { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
+        .ep-adv-note--info   { background: #f0fbff; border-color: #cdeef6; color: #0e7490; }
+        .ep-adv-note--warn   { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+        [data-bs-theme="dark"] .ep-adv-note--danger { background: rgba(240,101,72,0.14); border-color: rgba(240,101,72,0.38); color: #ffa897; }
+        [data-bs-theme="dark"] .ep-adv-note--info   { background: rgba(41,156,219,0.14); border-color: rgba(41,156,219,0.38); color: #6dd3fb; }
+        [data-bs-theme="dark"] .ep-adv-note--warn   { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.40); color: #fcd34d; }
+        [data-bs-theme="dark"] .ep-adv-note strong { color: inherit; }
         [data-bs-theme="dark"] .ep-claim-input.is-invalid,
         [data-layout-mode="dark"] .ep-claim-input.is-invalid {
           background-color: rgba(240,101,72,0.10) !important;
