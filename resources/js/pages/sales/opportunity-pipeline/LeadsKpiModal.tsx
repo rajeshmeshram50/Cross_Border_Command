@@ -6,25 +6,6 @@ import { useToast } from '../../../contexts/ToastContext';
 import { FitTip } from '../../p2p/purchase-management/order/create-po/form-fields';
 import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Lead Distribution → KPI popup.
- *
- * Opens when a KPI card on the Lead Distribution page is clicked. Renders
- * the SalesMatrix_v4_9 prototype's "Assigned Leads" modal (#assignedLeads
- * style) as a centred overlay — cyan header, the 11-column lead table,
- * and a paginated footer ("Showing 1–10 of N", "page/totalPages").
- *
- * The same modal serves all three lead-count KPIs; the caller passes a
- * `filter` describing which leads to pull:
- *   - {}                 → Total Leads      (every lead, status=all)
- *   - { assigned: true } → Assigned Leads   (has a salesperson)
- *   - { assigned: false }→ Unassigned Leads (no salesperson yet)
- *
- * Columns mirror the prototype: Sr No · Lead Type · Lead Date · Lead
- * Source · Assigned To · Opp. ID · Customer Name · Shipment ID · PI
- * Number · Country · Status. Shipment ID / PI Number live on downstream
- * objects, so they render "N/A" until those relations are joined in.
- * ───────────────────────────────────────────────────────────────────────── */
 
 type ServerLead = {
   id:                 number;
@@ -58,15 +39,12 @@ type Lead = {
 
 const ROWS_PER_PAGE = 10;
 
-/* "N/A" sentinel — narrow check so a legitimate "0" isn't masked. */
 const nullable = (v: string | null | undefined): string => {
   const s = (v ?? '').toString().trim();
   if (!s || s === '—') return 'N/A';
   return s;
 };
 
-/* IndiaMart query_type codes → friendly labels — MUST match the worksheet so
- * the Lead Type column reads "Buy-Leads" not "B". Unknown codes fall through. */
 const LEAD_TYPE_LABEL: Record<string, string> = {
   BUY:               'Buy Leads',
   P:                 'PNS Calls',
@@ -114,23 +92,12 @@ export default function LeadsKpiModal(props: {
   const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
   const [loading, setLoading] = useState(false);
 
-  // Serialise the filter so the effect re-runs when the caller switches
-  // which KPI opened the modal without adding the object to deps directly.
   const filterKey = JSON.stringify(filter);
 
-  // Reset to page 1 every time the modal (re)opens or the filter changes.
   useEffect(() => { if (open) setPage(1); }, [open, filterKey]);
 
   useEffect(() => {
     if (!open) return;
-    /* Drop the previous answer before asking a new question.
-     *
-     * `total` survived between opens, so the header printed the LAST KPI's
-     * figure while this one loaded — click Assigned after Total Leads and it
-     * opened claiming 274 records before settling on its own number. On a
-     * first open it printed the seeded 0 instead ("0 records found" over a
-     * loading table), which reads as an empty bucket rather than a busy one.
-     * Both are the same fault: a number shown before it is known. */
     setLeads([]);
     setTotal(0);
     setLoading(true);
@@ -163,7 +130,6 @@ export default function LeadsKpiModal(props: {
   const startIdx = (safePage - 1) * pageSize;
   const endIdx   = Math.min(startIdx + leads.length, total);
 
-  // Lock background scroll while the overlay is open.
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -189,7 +155,6 @@ export default function LeadsKpiModal(props: {
     <div className="lkm-backdrop" onClick={onClose}>
       <style>{LKM_CSS}</style>
       <div className="lkm-modal" onClick={(e) => e.stopPropagation()}>
-        {/* ── Header ─────────────────────────────────────────────── */}
         <div className="lkm-head">
           <div className="lkm-head-left">
             <div className="lkm-head-icon">
@@ -199,8 +164,6 @@ export default function LeadsKpiModal(props: {
             </div>
             <div>
               <div className="lkm-head-title">{title}</div>
-              {/* No count until there IS one. "0 records found" over a table
-                  that is still loading states the opposite of what is true. */}
               <div className="lkm-head-sub">
                 {loading ? 'Loading records…' : <>{total} record{total === 1 ? '' : 's'} found</>}
               </div>
@@ -213,7 +176,6 @@ export default function LeadsKpiModal(props: {
           </button>
         </div>
 
-        {/* ── Table ──────────────────────────────────────────────── */}
         <div className="lkm-table-wrap">
           <table className="lkm-table">
             <colgroup>
@@ -276,11 +238,8 @@ export default function LeadsKpiModal(props: {
           </table>
         </div>
 
-        {/* ── Pagination ─────────────────────────────────────────── */}
         <div className="lkm-pag">
           <span className="lkm-pag-info">
-            {/* "No records" is an ANSWER, and while the rows are still loading
-                there isn't one — same reason the header holds its count back. */}
             {loading
               ? 'Loading…'
               : total === 0
@@ -316,7 +275,6 @@ export default function LeadsKpiModal(props: {
   ), document.body);
 }
 
-/* ─── Styles — the cyan palette of Lead Distribution / Leads Details (My Workplace). ── */
 const LKM_CSS = `
 .lkm-backdrop {
   position: fixed; inset: 0; z-index: 1085;
@@ -336,7 +294,6 @@ const LKM_CSS = `
 }
 @keyframes lkm-pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-/* Header */
 .lkm-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; padding: 12px 18px;
@@ -361,7 +318,6 @@ const LKM_CSS = `
 }
 .lkm-close:hover { background: rgba(14,116,144,.22); }
 
-/* Table */
 .lkm-table-wrap { flex: 1; overflow: auto; min-height: 0; }
 .lkm-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
 .lkm-table thead { position: sticky; top: 0; z-index: 2; }
@@ -374,10 +330,6 @@ const LKM_CSS = `
   text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lkm-table thead th:first-child { padding-left: 16px; }
-/* Status is the last column. Fix it wide enough for the longer "Disqualified"
-   badge AND a right gap. It holds a fixed badge (not truncatable text), so turn
-   off overflow clipping — otherwise text-overflow renders a stray "…" next to
-   the badge when it's a hair wider than the cell's content box. */
 .lkm-table thead th:last-child,
 .lkm-table tbody td:last-child  { width: 140px; overflow: visible; text-overflow: clip; }
 .lkm-table thead th:last-child  { padding-right: 16px; }
@@ -418,10 +370,7 @@ const LKM_CSS = `
 .lkm-table tbody td .lkm-type-badge.lkm-type-badge { font-size: 10px !important; font-weight: 500 !important; }
 .lkm-table tbody td .lkm-status-badge.lkm-status-badge,
 .lkm-table tbody td .lkm-status-badge.lkm-status-badge * { font-size: 10px !important; font-weight: 500 !important; }
-/* Every data cell reads like the Customers list (.smc-table-wrap): one colour,
-   11.5 / 500 — no muted / strong split between columns. */
 .lkm-muted, .lkm-strong { color: inherit; }
-/* Long names end in "…" and show whole in the app tooltip (FitTip, only when cut). */
 .lkm-fit { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lkm-na     { color: #cbd5e1; font-style: italic; }
 
@@ -437,7 +386,6 @@ const LKM_CSS = `
 
 .lkm-status { text-align: center; padding: 40px 14px; color: #94a3b8; font-style: italic; font-size: 12px; }
 
-/* Loading shimmer — skeleton list rows shown while leads load. */
 .lkm-skel-row td { height: 42px; vertical-align: middle; }
 .lkm-skel {
   display: inline-block; vertical-align: middle; border-radius: 6px;
@@ -458,9 +406,6 @@ const LKM_CSS = `
   background-size: 200% 100%;
 }
 
-/* Pagination */
-/* Pager = the Leads Details / Lead Distribution footer: info pill, rows per
-   page, filled page indicator, round prev / next. */
 .lkm-pag {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px;
@@ -505,7 +450,6 @@ const LKM_CSS = `
 .lkm-pag-btn:hover:not(:disabled) { background: #fff; border-color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.25); }
 .lkm-pag-btn:disabled { cursor: not-allowed; opacity: .4; }
 
-/* Dark mode */
 [data-bs-theme="dark"] .lkm-modal     { background: #0c1f2e; border-color: #164e63; }
 [data-bs-theme="dark"] .lkm-head      { background: linear-gradient(135deg, #164e63 0%, #0c4a6e 100%); border-color: #0e7490; }
 [data-bs-theme="dark"] .lkm-head-title{ color: #cffafe; }
@@ -516,9 +460,6 @@ const LKM_CSS = `
 [data-bs-theme="dark"] .lkm-table tbody tr:hover           { background: #164e63; }
 [data-bs-theme="dark"] .lkm-pag       { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
 [data-bs-theme="dark"] .lkm-pag-info  { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
-/* Remaining light-surfaced cell bits — badges, links, status pills and the
-   pagination controls — retuned so the whole popup reads cohesively against
-   the dark #0c1f2e surface instead of flashing light-mode tints. */
 [data-bs-theme="dark"] .lkm-sr { color: #e2e8f0; }
 [data-bs-theme="dark"] .lkm-type-badge {
   background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.40);

@@ -17,23 +17,7 @@ import SearchClear from '../../../components/ui/SearchClear';
 import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 import '../../../components/ui/DataTable.css';
 
-/* Filters are deliberately NOT persisted.
- *
- * They used to be parked in sessionStorage so a trip into a lead and back
- * would not lose them. That outlived far too much: leave for another module,
- * come back later, and the old filter was still applied with no clue why the
- * list looked short (QA #18). Scoping it to a single lead round-trip was the
- * first attempt, but QA confirmed the filter should not survive that either —
- * a lead edited inside can stop matching the filter it was found under, and
- * then it vanishes from the list the moment you come back to check it.
- *
- * So the filter now lives in component state alone: it lasts exactly as long
- * as the worksheet is on screen, and changing tab clears it too. Anything
- * that unmounts this page — a lead, another module, a reload — starts clean.
- */
 
-/* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
- * the table's Lead type below via mapServerToLead(). */
 type ServerLead = {
   id:                number;
   opp_code:          string;
@@ -47,76 +31,41 @@ type ServerLead = {
   sender_email:      string | null;
   sender_company:    string | null;
   sender_country_iso:string | null;
-  /* Server-resolved COUNTRY for the list: the mapped customer's own address
-     country (as ISO-2) once a customer exists, else sender_country_iso. */
   effective_country_iso?: string | null;
   query_product_name:string | null;
   qualified:         boolean;
   disqualified:      boolean;
   whatsapp_status:   string | null;
-  /* Saved progress — drives the resume-at-stage behaviour. Null/0 means the
-   * lead is fresh and lands on Stage 1; otherwise the worksheet opens the
-   * matrix detail at this stage so users pick up where they left off. */
   lead_stage_id?:    number | null;
   key_opportunity?:  boolean;
-  /* True when the lead was transferred AWAY from the current user — visible
-   * for history tracking but read-only (no edit/assign/delete). QA #63. */
   read_only?:        boolean;
   salesperson?:      { id: number; name: string } | null;
-  /* Linked buyer entity. When a lead is mapped to a customer the worksheet
-   * shows the customer's company_name (Customer Name col) and legal_name
-   * (Company col) in preference to the raw sender_* lead text. */
   customer?:         { id: number; company_name: string | null; legal_name: string | null; primary_email?: string | null } | null;
 };
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Lead Worksheet (My Workplace)
- *
- * Faithful port of the prototype's `#lwPage` (SalesMatrix_v4_9, line 9239) —
- * the cyan/teal "My Workplace" landing page that lists all leads with bulk
- * selection, per-row actions, and a CTQ ("Convert to Qualified") flow for
- * disqualified leads.
- *
- * Data: mock for now — 27 sample leads matching prototype `window.LW_LEADS`
- * (line 21402). Wire to `api.get('/sales/leads')` once the table migration
- * lands.
- *
- * Perm-gated on `sales.lead_worksheet` — super_admin bypasses. The permission
- * key needs to exist in the seeder for non-admin users to view this page.
- * ──────────────────────────────────────────────────────────────────────── */
 
 type LeadStatus = 'qualified' | 'disqualified';
 type TabKey     = 'qualified' | 'disqualified' | 'all' | 'key_opportunity';
-/* Sub-tabs shown only under the Key Opportunity tab — splits the flagged
- * leads into still-in-pipeline (won_at null) vs closed-won (won_at set). */
 type DealState  = 'in_progress' | 'won';
 
 type Lead = {
-  id:   number;           // DB primary key — needed for /sales/leads/assign payloads
+  id:   number;
   type: string;
   date: string;
   source: string;
-  assigned: string;       // 'Unassigned' or a person's name
-  salespersonId: number | null;  // current owner — drives the assign-modal pre-select
-  oppId: string;          // OPP-001
+  assigned: string;
+  salespersonId: number | null;
+  oppId: string;
   customer: string;
   phone: string;
   email: string;
-  product: string;        // '—' for empty
-  company: string;        // '—' for empty
-  country: string;        // ISO-2 code
+  product: string;
+  company: string;
+  country: string;
   status: LeadStatus;
-  /* WhatsApp communication status — drives the WhatsApp Status column
-   * badge (connected → Yes, not_connected → No, else Pending). */
   whatsappStatus: string | null;
-  /* Saved pipeline stage — clamped to 1..6 when the user clicks into the
-   * matrix detail page so they resume where they left off. */
   leadStageId: number;
-  /* High-priority flag set from the matrix detail's "Key Opportunity"
-   * action; surfaced in the list as a star badge on the Opp Id. */
   keyOpportunity: boolean;
-  /* Transferred away from this user → view-only row (QA #63): edit/assign/
-   * delete/select are disabled and a "View only" badge is shown. */
   readOnly: boolean;
 };
 
@@ -128,7 +77,6 @@ const TAB_LABELS: Record<TabKey, string> = {
 };
 
 
-/* Sub-tab labels for the Key Opportunity view. */
 const DEAL_STATE_LABELS: Record<DealState, string> = {
   in_progress: 'In Progress',
   won:         'Deal Won',
@@ -141,10 +89,6 @@ const initials = (name: string): string => {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 };
 
-/* IndiaMart query_type codes → friendly labels shown in the table's
- * Lead Type column and in the Filter modal's Lead Type facet. Mirrors
- * IDIMS_6.0's getQueryTypeLabel() helper. Unknown codes fall through to
- * whatever the server sent (or "Manual" for null). */
 const LEAD_TYPE_LABEL: Record<string, string> = {
   BUY:               'Buy Leads',
   P:                 'PNS Calls',
@@ -157,12 +101,6 @@ const LEAD_TYPE_LABEL: Record<string, string> = {
 const prettyLeadType = (t: string | null | undefined): string =>
   LEAD_TYPE_LABEL[t ?? ''] ?? (t || 'Manual');
 
-/* Build human-readable chips for whatever filter fields are active. Looks
- * each value up against the parent's cached options list so the chip shows
- * the label ('Inquiry Required') rather than the wire value ('1'). */
-/* One chip per *individually selected value* (facets are multi-select
- * now). `field` + `rawValue` let the × remove just that one value from
- * its facet array rather than wiping the whole facet. */
 type FilterChip = { id: string; field: keyof LeadFilters; rawValue?: string; label: string; value: string };
 const renderFilterChips = (
   f: LeadFilters,
@@ -197,18 +135,12 @@ const renderFilterChips = (
     id:    'salesperson_id',
     field: 'salesperson_id',
     label: 'Salesperson',
-    // Resolve from the modal-supplied name cache; fall back to the raw
-    // id so the chip is still removable if the cache was cleared (e.g.
-    // page refresh restoring filters from a future URL-state plumb).
     value: salespersonNames[Number(f.salesperson_id)] ?? `#${f.salesperson_id}`,
   });
   if (f.start_date && f.end_date) out.push({ id: 'date', field: 'start_date', label: 'Date', value: `${f.start_date} → ${f.end_date}` });
   return out;
 };
 
-/* Convert a server lead row to the table's display shape. The columns
- * use placeholder dashes for absent values to match the existing styling
- * (the in-page '—' tests check string equality). */
 const mapServerToLead = (r: ServerLead): Lead => {
   const dateSrc = r.query_time ?? r.created_at;
   const date = dateSrc
@@ -222,21 +154,11 @@ const mapServerToLead = (r: ServerLead): Lead => {
     assigned: r.salesperson?.name ?? 'Unassigned',
     salespersonId: r.salesperson?.id ?? null,
     oppId:    r.opp_code,
-    // Customer Name → linked customer.company_name (falls back to the raw
-    // lead sender name for leads not yet mapped to a customer).
     customer: r.customer?.company_name || r.sender_name || '—',
     phone:    r.sender_mobile || '—',
-    // Email → mapped customer.primary_email (falls back to the raw inquiry
-    // sender_email for un-mapped leads), matching the Customer Name/Company
-    // columns which already prefer the mapped customer. Without this the row
-    // showed the mapped customer's NAME beside the raw buyer's EMAIL.
     email:    r.customer?.primary_email || r.sender_email || '—',
     product:  r.query_product_name || '—',
-    // Company → linked customer.legal_name (falls back to raw sender_company).
     company:  r.customer?.legal_name || r.sender_company || '—',
-    // Country → mapped customer's own country (server-resolved to ISO-2), so it
-    // agrees with the name/email/company beside it and with the Sales-Matrix
-    // header. Falls back to the raw enquiry country when nothing is mapped.
     country:  r.effective_country_iso || r.sender_country_iso || '—',
     status:   r.disqualified ? 'disqualified' : 'qualified',
     whatsappStatus: r.whatsapp_status ?? null,
@@ -246,9 +168,6 @@ const mapServerToLead = (r: ServerLead): Lead => {
   };
 };
 
-/* WhatsApp status column → { label, css-modifier }. 'connected' reads as
- * Connected, 'not_connected' as Not Connected, everything else (incl. null)
- * as Pending. */
 const waBadge = (s: string | null): { label: string; mod: string } => {
   if (s === 'connected')      return { label: 'Connected',     mod: 'lwp-wa-yes' };
   if (s === 'not_connected')  return { label: 'Not Connected', mod: 'lwp-wa-no' };
@@ -260,57 +179,23 @@ export default function SalesLeadWorksheet() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
-  // Permission slug matches what ModuleSeeder.php seeds ('sales.workplace').
-  // Older preview code looked for 'sales.lead_worksheet' which was never
-  // seeded — that fallback is no longer needed now that the backend is live.
   const perm = user?.permissions?.['sales.workplace'];
   const canView   = isSuperAdmin || !!perm?.can_view;
-  // Add-action permission no longer gates the header buttons — the
-  // modal opens for any user, and the server enforces who can save.
   const canAssign = isSuperAdmin || !!perm?.can_edit;
 
   const [leads, setLeads]       = useState<Lead[]>([]);
   const [loading, setLoading]   = useState(false);
-  /* When the current skeleton went up, or null while no skeleton is showing.
-   *
-   * A tab switch answers in ~10 ms on this dataset, so the skeleton was drawn
-   * and torn down inside a single frame — correct, and completely invisible,
-   * which reads as "the shimmer does not work". Holding it for a moment makes
-   * the state legible instead of flickering the table.
-   *
-   * Set by every path that poses a NEW question — a tab / filter change
-   * (startNewQuery), a committed search, a rows-per-page change — and by none
-   * that merely re-asks the current one. Paging and the post-action reload
-   * keep the dim and stay as fast as the server is. */
   const skeletonSinceRef = useRef<number | null>(null);
   const SKELETON_MIN_MS = 450;
   const [total, setTotal]       = useState(0);
   const [lastPage, setLastPage] = useState(1);
-  /* Bucket counts shown in the tab pills. Keyed by string (not TabKey) so it
-   * can also carry the Key-Opportunity sub-tab counts (key_in_progress /
-   * key_won) that aren't themselves top-level tabs. */
   const [counts, setCounts]     = useState<Record<string, number>>({
     qualified: 0, disqualified: 0, all: 0, key_opportunity: 0, key_in_progress: 0, key_won: 0,
   });
 
-  /* Have the counts ever come back from the server?
-   *
-   * They start at zero, and the tab labels printed that zero — so while the
-   * skeleton was saying "loading", the tabs beside it were asserting
-   * "Qualified Leads (0)" and the pager was saying "No leads found". The
-   * loading state read as an empty page rather than a busy one, which is what
-   * made the shimmer look broken instead of deliberate.
-   *
-   * Until the first response lands the labels drop the number entirely. It
-   * stays true afterwards: a later refresh keeps showing the last real
-   * counts rather than blinking back to nothing. */
   const [countsLoaded, setCountsLoaded] = useState(false);
-  // Only Sales Managers / admins may assign leads; the leads API returns this
-  // flag (and enforces it server-side). Default true so the buttons aren't
-  // flashed-then-hidden for managers on first paint.
   const [canDistribute, setCanDistribute] = useState(true);
   const [tab, setTab]   = useState<TabKey>('qualified');
-  /* Active Key-Opportunity sub-tab; only meaningful while tab === 'key_opportunity'. */
   const [dealState, setDealState] = useState<DealState>('in_progress');
   const [q, setQ]       = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -318,28 +203,6 @@ export default function SalesLeadWorksheet() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  /* ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
-   * big screens don't leave a gap; picking a Rows-per-page value overrides it.
-   *
-   * Measures VIEWPORT geometry (the wrap's distance from the top of the window)
-   * rather than the wrap's own clientHeight, and deliberately uses NO
-   * ResizeObserver. Both points matter — the previous version did the opposite
-   * and the last row flickered on and off forever on wide screens:
-   *
-   *   rows = N → content overflows → vertical scrollbar appears → the wrap's
-   *   content width drops below the table's 1500px min-width → horizontal
-   *   scrollbar appears → clientHeight loses those 9px → fit = N−1 → the row
-   *   unmounts → v-scrollbar goes → h-scrollbar goes → clientHeight +9px →
-   *   fit = N → the row remounts → ...
-   *
-   * and the ResizeObserver watched the very element whose size the row count
-   * changes, so it re-fired on every flip. A `prev === fit` guard can't stop it:
-   * the two measurements are genuinely different numbers. It also refetched the
-   * list each time, since `rpp` is in the fetch effect's deps.
-   *
-   * `top` vs window.innerHeight is independent of how many rows render, so the
-   * feedback edge simply doesn't exist. Same approach as CLM Segment Master and
-   * the Suppliers page, which both carry the same note. */
   const wrapRef    = useRef<HTMLDivElement>(null);
   const autoFitRef = useRef(true);
   useEffect(() => {
@@ -348,19 +211,14 @@ export default function SalesLeadWorksheet() {
       const el = wrapRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 44, FOOTER = 56;  // header + row + pager (px)
+      const THEAD = 40, ROW = 44, FOOTER = 56;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       if (avail <= 0) return;
       const fit = Math.max(5, Math.floor(avail / ROW));
       setRpp(prev => (prev === fit ? prev : fit));
     };
     recompute();
-    /* One extra pass after paint: on the production build the CSS lands in the
-     * same frame as the first render, so the very first measurement can read a
-     * pre-layout `top`. In dev the stylesheet is already applied, which is why
-     * this page only ever misbehaved on the built app. */
     const raf = requestAnimationFrame(recompute);
-    // Debounced so a drag-resize doesn't recompute on every intermediate pixel.
     let t: ReturnType<typeof setTimeout>;
     const onResize = () => { clearTimeout(t); t = setTimeout(recompute, 140); };
     window.addEventListener('resize', onResize);
@@ -371,65 +229,32 @@ export default function SalesLeadWorksheet() {
     };
   }, []);
 
-  // CTQ confirmation modal
   const [ctqLead, setCtqLead] = useState<Lead | null>(null);
-  // Conversion in flight. Shared by the bulk toolbar button and the
-  // single-row confirm dialog because both hit the same endpoint and a
-  // second POST would re-qualify rows the first call already moved.
   const [ctqBusy, setCtqBusy] = useState(false);
 
-  // Add New Lead modal — toggled by the My Workplace banner button.
-  // Frontend-only for now; the modal owns the form state. On save
-  // we just toast and could append the new lead to a local list.
   const [addLeadOpen, setAddLeadOpen] = useState(false);
 
-  // Assign / Distribute / Filter modals — the lead worksheet's three
-  // banner-action modals. Assign supports three modes (single/selection/
-  // filters); the others are mode-free.
   const [assignModal, setAssignModal] = useState<{
     open: boolean;
     mode: 'single' | 'selection' | 'filters';
     leadId?: number | null;
     leadIds?: number[];
-    /* Single-mode context — the customer name and Opp code of the lead
-     * being reassigned. Shown as pills under the modal header so the user
-     * can confirm what they're acting on. */
     customerName?: string | null;
     oppCode?: string | null;
-    /* When the picked row(s) already have an owner, we pre-select that
-     * person in the modal's salesperson dropdown so the user sees "this
-     * lead is currently with X" instead of an empty box. For 'selection'
-     * mode this only kicks in when every selected row shares the same
-     * owner — mixed selections leave the field blank. */
     initialSalespersonId?: number | null;
-    /* Current owner's display NAME — shown as the dropdown's current value
-     * (the owner is excluded from the pickable list) instead of the raw id. */
     initialSalespersonName?: string | null;
   }>({ open: false, mode: 'filters' });
-  // Lead Distribution lives at /sales/lead-distribution now. The salesperson
-  // pick comes back as ?sp=<id> on the URL and is applied below in useEffect.
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // Export Leads dropdown — the banner "Export Leads" button opens a menu
-  // offering the four buckets (All / Qualified / Disqualified / Key
-  // Opportunity). Each option pages through the whole bucket server-side
-  // (per_page caps at 200) and writes an .xlsx mirroring the table columns.
-  // `exporting` holds the bucket currently being built so the menu can show
-  // an in-progress state and block a second concurrent export.
   const [exportOpen, setExportOpen]   = useState(false);
   const [exporting,  setExporting]    = useState<TabKey | null>(null);
-  // The menu is portalled to <body> (the banner clips overflow) so it's
-  // positioned from the button's viewport rect rather than CSS-anchored.
   const exportBtnRef = useRef<HTMLButtonElement>(null);
   const [exportPos, setExportPos] = useState<{ top: number; right: number } | null>(null);
 
-  // The menu is pinned to a fixed viewport position captured on open, so any
-  // scroll (page or the table body) or resize leaves it floating detached from
-  // its button. Close it on either so it never lingers over the content.
   useEffect(() => {
     if (!exportOpen) return;
     const close = () => setExportOpen(false);
-    window.addEventListener('scroll', close, true);   // capture → catches inner scrollers too
+    window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {
       window.removeEventListener('scroll', close, true);
@@ -437,22 +262,11 @@ export default function SalesLeadWorksheet() {
     };
   }, [exportOpen]);
 
-  // Salesperson chip-label resolver — when "View Leads" applies a
-  // salesperson_id filter we want the chip strip to read "Salesperson:
-  // John Doe", not "Salesperson: 42". Stash the picked person's name
-  // here keyed by id; renderFilterChips reads from this. Persisted only
-  // for the session (in-memory) since the lead list itself will surface
-  // the name on every row anyway.
   const [salespersonNames, setSalespersonNames] = useState<Record<number, string>>({});
 
-  // Quick-view (eye icon) — fetches GET /sales/leads/{id} for the picked
-  // row and renders all the row's details in a read-only card layout.
   const [viewLeadId, setViewLeadId] = useState<number | null>(null);
-  // Activity-tracker modal — the per-lead generation/ownership timeline.
   const [activityLead, setActivityLead] = useState<{ id: number; opp: string } | null>(null);
 
-  // Filter modal options + active filters. Options are fetched once when
-  // the page mounts so opening the modal is instant.
   const [filterOptions, setFilterOptions] = useState<{
     stages: Array<{ value: string; label: string }>;
     platforms: Array<{ value: string; label: string }>;
@@ -460,13 +274,8 @@ export default function SalesLeadWorksheet() {
     countries: Array<{ value: string; label: string }>;
     customers: Array<{ value: string; label: string; code?: string | null }>;
   }>({ stages: [], platforms: [], queryTypes: [], countries: [], customers: [] });
-  // Component state only — see the note on persistence at the top of the file.
   const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
 
-  /* When the user picks "View Leads" on the Lead Distribution page they
-   * land back here with `?sp=<id>&sp_name=<name>` in the URL. Apply the
-   * salesperson filter once on mount and strip the params so a reload
-   * doesn't lock the filter in. */
   const location = useLocation();
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -482,10 +291,6 @@ export default function SalesLeadWorksheet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync-config state. The Sync button only renders when:
-  //   - LEAD_SYNC_BRANCH_ID matches the user's branch (or =all), AND
-  //   - at least one INDIAMART_*_KEY is configured.
-  // super_admin always sees it; the server lets them fire sync anyway.
   const [syncCfg, setSyncCfg] = useState<{ enabled: boolean; labels: string[] }>({
     enabled: false,
     labels: [],
@@ -494,11 +299,9 @@ export default function SalesLeadWorksheet() {
   useEffect(() => {
     api.get<{ enabled: boolean; labels: string[] }>('/sales/leads/sync/config')
       .then(r => setSyncCfg(r.data))
-      .catch(() => { /* silent — button just stays hidden */ });
+      .catch(() => {  });
   }, []);
 
-  // Filter modal options — fetch once. The modal can open instantly,
-  // and the Assign/Distribute modals reuse `platforms` from this too.
   useEffect(() => {
     api.get<{
       stages:      Array<{ value: string; label: string }>;
@@ -514,11 +317,9 @@ export default function SalesLeadWorksheet() {
         countries:  r.data.countries ?? [],
         customers:  r.data.customers ?? [],
       }))
-      .catch(() => { /* silent — filter modal degrades gracefully */ });
+      .catch(() => {  });
   }, []);
 
-  // Inject Google Fonts (DM Sans + Inter) once on mount — matches the
-  // pattern used by the other ported Sales pages.
   useEffect(() => {
     const id = 'sm-lwp-fonts';
     if (document.getElementById(id)) return;
@@ -529,27 +330,8 @@ export default function SalesLeadWorksheet() {
     document.head.appendChild(link);
   }, []);
 
-  /* Last search text actually handed to the fetch. Lets the timer tell a real
-   * change from one that lands back on the same text (typing and undoing it
-   * inside the debounce window), so only a real one disturbs the table. */
   const lastQRef = useRef('');
 
-  /* Debounce the search box so we only refetch ~250ms after the user stops
-   * typing — and treat the committed search as a NEW question, the way a tab
-   * switch is.
-   *
-   * It used to only move `debouncedQ`, leaving the previous search's answer
-   * sitting in `rows`. That made the skeleton condition (loading && no rows)
-   * false, so searching just dimmed the old rows to 55% — the white-looking
-   * wash over results that no longer answer what was typed. Clearing them
-   * first puts the shimmer up and is also honest: those rows belong to the
-   * previous search.
-   *
-   * Everything lands in ONE commit — rows cleared, loading raised, page reset
-   * and the new term — so the fetch effect runs once, with page 1 and the new
-   * term together. `setPage(1)` used to sit on the input's onChange, which
-   * fired a whole extra request on the first keystroke (old term, page 1) and
-   * flashed the dim before the shimmer. */
   useEffect(() => {
     const t = setTimeout(() => {
       if (lastQRef.current === q) return;
@@ -563,17 +345,9 @@ export default function SalesLeadWorksheet() {
     return () => clearTimeout(t);
   }, [q]);
 
-  // Skip the counts query on pure pagination changes — on a million-row
-  // table the conditional-aggregation count is the slowest part of the
-  // response, so we only re-run it when the bucket boundary could have
-  // moved (tab / search / per-page).
   const countSigRef = useRef<string>('');
-  // Bumped after a create/delete to force a refetch with the CURRENT tab/page
-  // (calling fetchLeads() directly would run with a stale closure and race the
-  // effect-triggered fetch, so a just-added lead vanished until a page refresh).
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Fetch leads from the API whenever tab / search / pagination / filters change.
   const fetchLeads = useCallback(async () => {
     const filtersSig = JSON.stringify(activeFilters);
     const countSig = `${tab}|${dealState}|${debouncedQ}|${rpp}|${filtersSig}`;
@@ -581,15 +355,6 @@ export default function SalesLeadWorksheet() {
     countSigRef.current = countSig;
 
     setLoading(true);
-    /* What this response should paint, held back until the skeleton has served
-     * its minimum time (see the `finally` block).
-     *
-     * Committing the rows here and lowering `loading` later left a window where
-     * rows.length > 0 AND loading === true — the exact condition that dims the
-     * tbody to 55%. So a tab switch faded the NEW data in for up to
-     * SKELETON_MIN_MS after it had already arrived, which reads as "the page
-     * loaded and then went pale" (QA #260). Rows and the loading flag now land
-     * in the same commit: skeleton, then the real table at full strength. */
     let commit: (() => void) | null = null;
     try {
       const { data } = await api.get<{
@@ -600,14 +365,11 @@ export default function SalesLeadWorksheet() {
       }>('/sales/leads', {
         params: {
           status: tab,
-          // Sub-tab only applies to the Key Opportunity view; omitted otherwise.
           deal_state: tab === 'key_opportunity' ? dealState : undefined,
           search: debouncedQ || undefined,
           page,
           per_page: rpp,
           with_counts: withCounts,
-          // Spread active filters — undefined values are dropped by axios's
-          // paramsSerializer so empty fields don't bloat the query string.
           ...activeFilters,
         },
       });
@@ -635,38 +397,15 @@ export default function SalesLeadWorksheet() {
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
-  // The server already paginated for us — rows we got back are the visible page.
   const rows = leads;
   const pages = Math.max(1, lastPage);
   const safePage = Math.min(page, pages);
   const startIdx = (safePage - 1) * rpp;
 
-  // Page-level select-all checkbox state. Read-only (transferred-away) rows are
-  // excluded so bulk Assign / Delete never target a lead the user no longer owns
-  // (QA #63) — their per-row checkbox is disabled too.
   const pageIds = rows.filter(r => !r.readOnly).map(r => r.oppId);
   const allChecked = pageIds.length > 0 && pageIds.every(id => selected.has(id));
   const someChecked = pageIds.some(id => selected.has(id));
 
-  /* Clear the rows when the QUESTION changes.
-   *
-   * The skeleton renders on `loading && rows.length === 0`. Switching a tab
-   * or applying a filter left the previous answer sitting in `rows`, so the
-   * condition was false and all the user got was the tbody dimmed to 55%
-   * opacity — read as "the shimmer is not working". Dropping the rows first
-   * is also honest: they belong to the tab you just left.
-   *
-   * Deliberately NOT called for the background reload after a create / assign
-   * / delete: there the table is answering the same question and a full
-   * skeleton flash would be worse than the dim. Paging and rows-per-page DO
-   * clear, via goToPage / changeRowsPerPage — they keep the selection this
-   * one drops, which is why they do not call through here.
-   *
-   * setLoading(true) goes with the clear, in the SAME batch. fetchLeads only
-   * raises it once the effect runs, which left one painted frame holding
-   * rows=[] and loading=false — and that combination renders the "No leads
-   * found" empty state, so the tab switch flashed the empty message where the
-   * skeleton should have been. */
   const startNewQuery = () => {
     setLeads([]);
     setLoading(true);
@@ -675,20 +414,6 @@ export default function SalesLeadWorksheet() {
     skeletonSinceRef.current = Date.now();
   };
 
-  /* Rows-per-page is a NEW question, not a background refresh.
-   *
-   * It used to fall through to the plain refetch path, so the table kept the
-   * old rows and just dimmed them to 55% — a white-looking wash over a row
-   * count that was about to change wholesale anyway. Clearing the rows first
-   * puts the shimmer up instead, and because setRpp lands in the same batch
-   * the skeleton is drawn at the NEW page size (up to the 25-row cap), so the
-   * card does not sit at the old height and then jump when the data lands.
-   *
-   * Selection is deliberately kept (unlike startNewQuery): resizing the page
-   * doesn't change WHICH leads exist, so ticked rows should survive it.
-   *
-   * Only wired to the select. The viewport auto-fit at mount sets rpp through
-   * its own setRpp and must stay silent. */
   const changeRowsPerPage = (n: number) => {
     autoFitRef.current = false;
     setRpp(n);
@@ -698,21 +423,6 @@ export default function SalesLeadWorksheet() {
     skeletonSinceRef.current = Date.now();
   };
 
-  /* Paging replaces the rows wholesale, so it gets the skeleton too.
-   *
-   * It used to just move `page` and let the refetch dim the old slice to 55%
-   * — which reads as the table going white rather than loading, and the rows
-   * it was dimming were the ones you had just navigated away from. Clearing
-   * them puts the shimmer up at the current page size, so the card holds its
-   * height across the hop.
-   *
-   * Selection survives, like a rows-per-page change: moving between pages
-   * doesn't change which leads exist, and the bulk bar deliberately counts
-   * across pages.
-   *
-   * Clamped here rather than in the buttons so a stale `page` (one past the
-   * end after a filter shrank the list) can't ask the server for a page that
-   * isn't there. */
   const goToPage = (next: number) => {
     const target = Math.min(Math.max(1, next), pages);
     if (target === safePage) return;
@@ -722,12 +432,8 @@ export default function SalesLeadWorksheet() {
     skeletonSinceRef.current = Date.now();
   };
 
-  /* A filter belongs to the tab it was set on.
-     Carrying it across meant landing on a tab whose count said one thing and
-     whose table showed another, with the chips easy to miss above the fold. */
   const switchTab = (next: TabKey) => {
     setTab(next);
-    // Always land on the In Progress sub-tab when (re)entering Key Opportunity.
     if (next === 'key_opportunity') setDealState('in_progress');
     setActiveFilters({});
     startNewQuery();
@@ -759,8 +465,6 @@ export default function SalesLeadWorksheet() {
 
   const clearSelection = () => setSelected(new Set());
 
-  // Open/close the Export menu, measuring the button so the portalled menu
-  // lands just under it and right-aligned to its edge.
   const toggleExportMenu = () => {
     setExportOpen(o => {
       if (o) return false;
@@ -770,12 +474,6 @@ export default function SalesLeadWorksheet() {
     });
   };
 
-  /* ── Export Leads ───────────────────────────────────────────────────────
-     Pull every lead in the chosen bucket (the server caps per_page at 200, so
-     page through until last_page) and write an .xlsx whose columns mirror the
-     My Workplace table. Exports the FULL bucket — the current search box and
-     filter chips are intentionally NOT applied, so "Export Qualified" always
-     means every qualified lead, matching the menu labels. */
   const fetchAllLeads = async (bucket: TabKey): Promise<Lead[]> => {
     const all: Lead[] = [];
     let pg = 1;
@@ -804,7 +502,6 @@ export default function SalesLeadWorksheet() {
         toast.warning('Nothing to export', `No ${TAB_LABELS[bucket]} to export.`);
         return;
       }
-      // One object per row — keys become the header cells, in table order.
       const sheet = data.map(l => ({
         'Lead Type':       l.type,
         'Lead Date':       l.date,
@@ -821,7 +518,6 @@ export default function SalesLeadWorksheet() {
       }));
       const ws = XLSX.utils.json_to_sheet(sheet);
       const wb = XLSX.utils.book_new();
-      // Sheet names are capped at 31 chars by the xlsx format.
       XLSX.utils.book_append_sheet(wb, ws, TAB_LABELS[bucket].slice(0, 31));
       const stamp = new Date().toISOString().slice(0, 10);
       XLSX.writeFile(wb, `Leads_${bucket}_${stamp}.xlsx`);
@@ -850,36 +546,17 @@ export default function SalesLeadWorksheet() {
       });
       toast.success('Saved', 'Lead created');
       setAddLeadOpen(false);
-      // Jump to the Qualified tab so the newly created lead is visible.
       setTab('qualified');
-      /* A create is a NEW question, not a background refresh.
-         It used to take the background-reload path (keep the rows, dim the
-         tbody to 55%) — the treatment that path is right for, when the table
-         is re-answering the SAME question. But this create also switches tab
-         and jumps to page one, so the rows being dimmed belong to a tab the
-         user is leaving, and what they got back was a pale table that then
-         swapped underneath them, with no loading state anywhere (QA #60).
-         startNewQuery clears the rows, raises `loading` in the same batch and
-         starts the skeleton's minimum-display timer, which is what puts the
-         shimmer up — the same as a tab switch or a filter, because that is
-         what this is. It sets page 1 for us. */
       countSigRef.current = '';
       startNewQuery();
-      // Force the refetch even when tab + page already matched, so the new
-      // lead can't stay hidden until a manual refresh.
       setReloadKey(k => k + 1);
     } catch (e: any) {
-      // Laravel validation errors arrive as { errors: { field: ["msg"] } }.
-      // Pull the first message we can find, otherwise fall back to the
-      // generic top-level message.
       const errs = (e?.response?.data?.errors as Record<string, string[]> | undefined) ?? {};
       const firstFieldMsg = Object.values(errs)[0]?.[0];
       const msg = e?.response?.data?.message ?? firstFieldMsg ?? 'Could not save lead';
       toast.error('Save failed', msg);
     }
   };
-  // Manual sync — pull leads from each IndiaMart CRM key configured for
-  // this tenant. Triggered by the "Sync from IndiaMart" banner button.
   const [syncing, setSyncing] = useState(false);
   const onSyncLeads = async () => {
     if (syncing) return;
@@ -898,12 +575,6 @@ export default function SalesLeadWorksheet() {
       } else {
         toast.success('Synced', summary);
       }
-      /* Invalidate the count signature BEFORE refetching so the next
-       * /sales/leads request runs with with_counts=1. Without this,
-       * fetchLeads only re-requests counts when tab / search / filters
-       * change; a sync that pulls 30 new rows on the same tab landed
-       * the new rows in the table but left the tab badges stale until
-       * the user navigated or refreshed the page. */
       countSigRef.current = '';
       fetchLeads();
     } catch (e: any) {
@@ -915,17 +586,10 @@ export default function SalesLeadWorksheet() {
   const onAssignLeads   = () => setAssignModal({ open: true, mode: 'filters' });
   const onAssignedLeads = () => navigate('/sales/lead-distribution');
   const onFilter        = () => setFilterOpen(true);
-  // Opens the Sales Matrix detail page for this opportunity at the lead's
-  // SAVED stage (resume-where-you-left-off). A brand-new lead at stage 1
-  // lands on Stage 1; a lead that advanced to 3 reopens at Stage 3, etc.
-  // The clicked row travels in router state so the detail page can render
-  // the customer header without a second fetch.
   const openMatrixDetail = (l: Lead) => {
     navigate(`/sales/matrix/${encodeOppId(l.oppId)}/stage/${encodeStage(l.leadStageId)}`, {
       state: {
         row: {
-          // Pass the DB id so Stage 1 / Task Manager can hit the API
-          // directly without re-resolving the opp code first.
           id:           l.id,
           oppId:        l.oppId,
           customer:     l.customer,
@@ -937,8 +601,6 @@ export default function SalesLeadWorksheet() {
     });
   };
 
-  // Eye-icon → quick-view modal. The row-click anywhere else still opens
-  // the full matrix detail page; the eye icon is the lightweight peek.
   const onViewLead      = (l: Lead) => setViewLeadId(l.id);
   const onViewActivity  = (l: Lead) => setActivityLead({ id: l.id, opp: l.oppId });
 
@@ -953,27 +615,17 @@ export default function SalesLeadWorksheet() {
   });
   const onOpenLead      = (l: Lead) => openMatrixDetail(l);
   const onOpenOpp       = (oppId: string) => {
-    // Find the lead in the current page; the table is server-paginated so
-    // anything outside the current page won't be in `leads`. The matrix
-    // detail page falls back to a server fetch when state is missing.
     const lead = leads.find(l => l.oppId === oppId);
     if (lead) openMatrixDetail(lead);
-    // Outside the current page — fall back to stage 1; the matrix detail
-    // page's own fetch will redirect to the saved stage on load.
     else navigate(`/sales/matrix/${encodeOppId(oppId)}/stage/${encodeStage(1)}`);
   };
   const onBulkAssign    = () => {
-    // Translate the selection (Set of OPP-#### display codes) into the
-    // numeric DB ids the assign endpoint expects.
     const picked = leads.filter(l => selected.has(l.oppId));
     const ids = picked.map(l => l.id);
     if (ids.length === 0) {
       toast.warning('Nothing selected', 'Tick at least one row to bulk-assign');
       return;
     }
-    // Pre-select the common owner only when every selected lead shares
-    // it — a mixed selection leaves the dropdown blank so the user makes
-    // a deliberate choice rather than silently inheriting one owner.
     const owners = new Set(picked.map(l => l.salespersonId));
     const shared = owners.size === 1 ? picked[0].salespersonId : null;
     setAssignModal({
@@ -999,13 +651,6 @@ export default function SalesLeadWorksheet() {
       );
       toast.success('Converted', `${data.converted} lead(s) moved to Qualified`);
       clearSelection();
-      /* Converting moves leads BETWEEN buckets, so the tab badges are now
-       * wrong — but tab / search / filters / per-page are all unchanged, so
-       * fetchLeads would run with with_counts=0 and the server would send no
-       * counts at all. Clearing the signature forces one, the same way the
-       * IndiaMart sync does. Without it the rows refreshed (the converted
-       * ones gone) while "Disqualified Leads (3)" sat above an emptier table
-       * until the user switched tabs. */
       countSigRef.current = '';
       fetchLeads();
     } catch (e: any) {
@@ -1015,7 +660,6 @@ export default function SalesLeadWorksheet() {
     }
   };
 
-  // CTQ for a single disqualified row — confirmation dialog → backend.
   const onAskCTQ      = (l: Lead) => setCtqLead(l);
   const onConfirmCTQ  = async () => {
     if (!ctqLead || ctqBusy) return;
@@ -1024,7 +668,6 @@ export default function SalesLeadWorksheet() {
       await api.post('/sales/leads/convert-to-qualified', { lead_ids: [ctqLead.id] });
       toast.success('Converted', `${ctqLead.oppId} moved to Qualified`);
       setCtqLead(null);
-      // Same bucket move as the bulk path — force the counts to come back.
       countSigRef.current = '';
       fetchLeads();
     } catch (e: any) {
@@ -1034,7 +677,6 @@ export default function SalesLeadWorksheet() {
     }
   };
 
-  /* ── No-access early return ── */
   if (!canView) {
     return (
       <div className="lwp-root">
@@ -1056,7 +698,6 @@ export default function SalesLeadWorksheet() {
     <div className="lwp-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* ── Page header banner ── */}
       <div className="lwp-banner">
         <span className="lwp-banner-accent" />
         <span className="lwp-banner-glow" />
@@ -1078,18 +719,10 @@ export default function SalesLeadWorksheet() {
         </div>
 
         <div className="lwp-actions">
-          {/* Add New Lead + Assign Leads are always rendered now. The
-              previous `canAdd` / `canAssign` gates hid the buttons on
-              Branch User accounts that didn't have those flags seeded,
-              which made the toolbar look incomplete. The server still
-              authorises the actual POST when the modal saves. */}
           <button className="lwp-bact lwp-bact-primary" onClick={onAddLead}>
             <IconPlus />
             Add New Lead
           </button>
-          {/* Assign / Lead Distribution — only for Sales Managers & admins
-              (can_distribute from the leads API). Hidden for Sales
-              Employees / Interns, who can only work their own leads. */}
           {canDistribute && (
             <>
               <button className="lwp-bact lwp-bact-assign" onClick={onAssignLeads}>
@@ -1102,9 +735,6 @@ export default function SalesLeadWorksheet() {
               </button>
             </>
           )}
-          {/* Pulls leads from every IndiaMart CRM key configured in .env.
-              LEAD_SYNC_BRANCH_ID in .env decides which branch sees this
-              button. Same flow as IDIMS_6.0's POST /lead_store. */}
           {syncCfg.enabled && canDistribute && (
             <button
               className={`lwp-bact lwp-bact-sync lwp-bact-icon-only ${syncing ? 'is-syncing' : ''}`}
@@ -1131,9 +761,6 @@ export default function SalesLeadWorksheet() {
             )}
           </button>
 
-          {/* Export Leads — dropdown offering the four buckets. Each option
-              pages the whole bucket from the server and downloads an .xlsx
-              mirroring the table columns. */}
           <div className="lwp-export-wrap">
             <button
               ref={exportBtnRef}
@@ -1171,7 +798,6 @@ export default function SalesLeadWorksheet() {
         </div>
       </div>
 
-      {/* ── Tabs + Search ── */}
       <div className="lwp-pre-table">
         <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="teal">
           <div className="dt-tabs" role="tablist">
@@ -1195,22 +821,11 @@ export default function SalesLeadWorksheet() {
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
           </svg>
-          {/* Autofill guard — Chrome ignores autocomplete="off" on a field it
-              classifies as contact info and drops an email / address into it
-              (QA #8 on Customers, QA #25 on Consignee). An explicit name,
-              autocomplete="new-password" and the LastPass / Dashlane opt-outs
-              keep it out of this one. */}
           <input
             type="search"
             name="worklist-search"
             data-lpignore="true"
             data-form-type="other"
-            /* Placeholder lists the most common targets, but the
-             * backend now searches every column on the My Workplace
-             * table (opp id, type, source, customer name / number /
-             * email / company, product, country, remark, assigned
-             * salesperson, etc.) so "anything you can see, you can
-             * search". */
             autoComplete="new-password"
             placeholder="Search anything — ID, name, phone, email, product, country…"
             value={q}
@@ -1220,7 +835,6 @@ export default function SalesLeadWorksheet() {
         </div>
       </div>
 
-      {/* ── Key Opportunity sub-tabs — only under the Key Opportunity tab ── */}
       {tab === 'key_opportunity' && (
         <div className="dt-tabrail hr-dt lwp-subrail" data-accent="teal">
           <div className="dt-tabs" role="tablist">
@@ -1241,9 +855,6 @@ export default function SalesLeadWorksheet() {
         </div>
       )}
 
-      {/* Active-filter chips — one per applied field, with an inline × to
-          drop just that filter. Rendered above the table so the user can
-          see at a glance why the row count shrank. */}
       {countFilterValues(activeFilters) > 0 && (
         <div className="lwp-chip-strip">
           <span className="lwp-chip-strip-label">Filters:</span>
@@ -1260,8 +871,6 @@ export default function SalesLeadWorksheet() {
                     if (c.field === 'start_date') {
                       delete next.start_date; delete next.end_date;
                     } else if (c.rawValue !== undefined) {
-                      // Multi-select facet — drop just this value; remove
-                      // the whole field once its last value is gone.
                       const arr = ((next[c.field] as string[] | undefined) ?? [])
                         .filter(v => v !== c.rawValue);
                       if (arr.length) (next[c.field] as string[]) = arr;
@@ -1271,7 +880,6 @@ export default function SalesLeadWorksheet() {
                     }
                     return next;
                   });
-                  // Removing a chip narrows the question too — same skeleton.
                   startNewQuery();
                 }}
               >
@@ -1288,7 +896,6 @@ export default function SalesLeadWorksheet() {
         </div>
       )}
 
-      {/* ── Table ── */}
       <div className="lwp-table-card">
         <div className="lwp-table-wrap" ref={wrapRef}>
           <table className="lwp-table">
@@ -1320,12 +927,6 @@ export default function SalesLeadWorksheet() {
             </thead>
             <tbody className={loading && rows.length > 0 ? 'lwp-tbody-refetching' : undefined}>
               {loading && rows.length === 0 && (
-                /* One skeleton row per row the page will actually hold — not a
-                   flat 10. With rows-per-page at 11 the table lost a row's
-                   height the moment the skeleton went up and got it back when
-                   the data landed, so the card visibly shrank and grew around
-                   a white gap. Capped at 25 so a large page size cannot
-                   render a pointless wall of placeholders. */
                 Array.from({ length: Math.max(1, Math.min(rpp, 25)) }).map((_, i) => (
                   <tr key={`sk-${i}`} className="lwp-skel-row">
                     <td><span className="lwp-skel lwp-skel-chk" /></td>
@@ -1359,8 +960,6 @@ export default function SalesLeadWorksheet() {
                   <tr
                     key={l.oppId}
                     onClick={() => onOpenLead(l)}
-                    /* Cyan, like the checkbox that sets it and the bulk bar it
-                       raises — this was a violet tint. */
                     style={isChecked ? { background: 'rgba(8,145,178,.06)' } : undefined}
                   >
                     <td style={{ textAlign: 'center', paddingLeft: 14 }} onClick={e => e.stopPropagation()}>
@@ -1405,7 +1004,6 @@ export default function SalesLeadWorksheet() {
                             </svg>
                           </Tooltip>
                         )}
-                        {/* Transferred away from this user → view-only marker (QA #63). */}
                         {l.readOnly && (
                           <Tooltip label="Transferred to another user — view only. You can still track its history & progress.">
                             <span className="lwp-viewonly" style={{ fontSize: 9, fontWeight: 700, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '1px 6px', marginLeft: 4, whiteSpace: 'nowrap' }}>View only</span>
@@ -1458,7 +1056,6 @@ export default function SalesLeadWorksheet() {
                             <IconEye />
                           </button>
                         </Tooltip>
-                        {/* Activity tracker — generation + ownership timeline. */}
                         <Tooltip label="Activity Tracker">
                           <button
                             className="lwp-ab lwp-ab-activity"
@@ -1468,10 +1065,6 @@ export default function SalesLeadWorksheet() {
                             <IconActivity />
                           </button>
                         </Tooltip>
-                        {/* Per-row assign is a distributor action — only the HOD
-                            (Sales Manager) / Branch Admin / admins can hand a
-                            lead to someone. Other employees just hold what's
-                            assigned to them, so the button is hidden for them. */}
                         {canAssign && canDistribute && !l.readOnly && (
                           <Tooltip label="Assign Lead">
                             <button
@@ -1503,12 +1096,8 @@ export default function SalesLeadWorksheet() {
           </table>
         </div>
 
-        {/* Pagination */}
         <div className="lwp-pagination">
           <span className="lwp-pag-info">
-            {/* "No leads found" is an ANSWER, and while the skeleton is up there
-                isn't one yet. Saying it under a loading table is what made the
-                whole state read as an empty page. */}
             {loading
               ? <span className="lwp-skel lwp-skel-lg" aria-label="Loading" />
               : total === 0
@@ -1537,7 +1126,6 @@ export default function SalesLeadWorksheet() {
         </div>
       </div>
 
-      {/* ── Floating bulk action bar ── */}
       {selected.size > 0 && (
         <div className="lwp-bulk-bar">
           <div className="lwp-bulk-count-wrap">
@@ -1567,11 +1155,9 @@ export default function SalesLeadWorksheet() {
         </div>
       )}
 
-      {/* ── CTQ Confirmation Modal ── */}
       {ctqLead && (
         <div className="lwp-ctq-overlay">
           <div className="lwp-ctq-modal">
-            {/* Teal header strip with title + close button */}
             <div className="lwp-ctq-head">
               <div className="lwp-ctq-head-ico">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -1590,7 +1176,6 @@ export default function SalesLeadWorksheet() {
             </div>
 
             <div className="lwp-ctq-body">
-              {/* Question row — clock icon + heading + descriptive copy */}
               <div className="lwp-ctq-question">
                 <div className="lwp-ctq-q-ico">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1608,7 +1193,6 @@ export default function SalesLeadWorksheet() {
                 </div>
               </div>
 
-              {/* Info grid — CUSTOMER / LEAD SOURCE / PRODUCT / LEAD DATE */}
               <div className="lwp-ctq-info">
                 <div className="lwp-ctq-info-cell">
                   <div className="lwp-ctq-info-label">CUSTOMER</div>
@@ -1646,8 +1230,6 @@ export default function SalesLeadWorksheet() {
         </div>
       )}
 
-      {/* Add New Lead — quick-capture modal triggered by the banner button.
-          Renders via portal so the page's CSS containment doesn't crop it. */}
       <AddNewLeadModal
         open={addLeadOpen}
         onClose={() => setAddLeadOpen(false)}
@@ -1663,15 +1245,11 @@ export default function SalesLeadWorksheet() {
         oppCode={assignModal.oppCode ?? null}
         initialSalespersonId={assignModal.initialSalespersonId ?? null}
         initialSalespersonName={assignModal.initialSalespersonName ?? null}
-        /* Account list comes from the .env-configured IndiaMart key labels
-         * for this branch (via /sales/leads/sync/config). If nothing is
-         * configured for the branch, the Account field hides itself. */
         accountLabels={syncCfg.labels}
         onClose={() => setAssignModal(s => ({ ...s, open: false }))}
         onAssigned={() => { clearSelection(); fetchLeads(); }}
       />
 
-      {/* Lead Distribution moved to a standalone page at /sales/lead-distribution. */}
 
       <LeadFilterModal
         open={filterOpen}
@@ -1697,7 +1275,6 @@ export default function SalesLeadWorksheet() {
   );
 }
 
-/* ─── Icons ─── */
 const IconPlus = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -1735,8 +1312,6 @@ const IconDownload = () => (
     <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
   </svg>
 );
-/* Loading spinner arc — shown in place of the download icon while an export
-   is in flight, so the button reads as a proper loader (not a spinning arrow). */
 const IconSpinner = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
@@ -1775,25 +1350,12 @@ const IconX = () => (
   </svg>
 );
 
-/* ─── Scoped CSS — faithful port of prototype #lwPage block, rescoped to .lwp-root ─── */
 const SCOPED_CSS = `
 .lwp-root {
   font-family: var(--font-sans);
   background: linear-gradient(160deg, #f0fdfe 0%, #e8fafb 30%, #f5feff 60%, #ffffff 100%);
-  /* 8px on all four sides — same as .page-content (app.css) and every other
-     page. The margin only exists to let the gradient bleed edge-to-edge, so it
-     cancels exactly .page-content's 8px and nothing more. It used to be
-     -1rem/-1.5rem, written against Velzon's stock padding that app.css has
-     since flattened to 8px, which is why the real gaps were 4px top/bottom
-     against 8px at the sides — and why setting this padding to a flat 8px
-     without fixing the margin pulled the cards 8px PAST the left and right
-     edges. */
   padding: 8px;
   margin: -8px;
-  /* Fixed available height (viewport minus the header + horizontal menu) so
-     the table card fills the screen, the table scrolls INSIDE it, and the
-     pagination stays pinned at the bottom — works on small screens without
-     the whole page scrolling. */
   height: calc(100vh - 130px);
   overflow: hidden;
   display: flex; flex-direction: column; gap: 0;
@@ -1811,7 +1373,6 @@ const SCOPED_CSS = `
 .lwp-no-access-title { font-size: 16px; font-weight: 800; color: #0e7490; }
 .lwp-no-access-sub   { font-size: 12px; color: #64748b; margin-top: 8px; line-height: 1.55; max-width: 540px; margin-left: auto; margin-right: auto; }
 
-/* ─── Banner ─── */
 .lwp-root .lwp-banner {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
@@ -1840,8 +1401,6 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-banner-left {
   display: flex; align-items: center; gap: 13px;
-  /* Icon starts on the same line as the first tab pill below — both sit
-     14px in (banner: 1px border + 13px; pills: 1.5px border + 12.5px). */
   z-index: 1; padding-left: 0;
 }
 .lwp-root .lwp-banner-icon-wrap { position: relative; flex-shrink: 0; }
@@ -1886,8 +1445,6 @@ const SCOPED_CSS = `
   flex-shrink: 0; z-index: 1;
 }
 .lwp-root .lwp-bact {
-  /* The Supplier / Customers header Add button (.sup-fig .cstrip__action-btn):
-     40px tall, 18px sides, 11.5 / 700. */
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
   box-sizing: border-box; height: 40px;
@@ -1941,10 +1498,6 @@ const SCOPED_CSS = `
   box-shadow: 0 8px 24px rgba(6,182,212,.50), 0 3px 8px rgba(14,116,144,.28), 0 1px 0 rgba(255,255,255,.18) inset;
 }
 
-/* Icon-only variant — compact square button for the Sync action. The
-   default .lwp-bact has horizontal padding sized for text + icon; this
-   collapses it to a clean square that matches the height of its
-   text-bearing siblings. */
 .lwp-root .lwp-bact-icon-only {
   padding: 0;
   width: 40px;
@@ -1953,8 +1506,6 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-bact-sync.is-syncing { cursor: progress; }
 .lwp-root .lwp-bact-sync.is-syncing svg { animation: lwp-spin 1s linear infinite; }
-/* Export in progress — spin the leading download icon so there's a visible
-   loader, not just the "Exporting…" text. */
 .lwp-root .lwp-bact-export.is-exporting { cursor: progress; }
 .lwp-root .lwp-bact-export.is-exporting svg:first-of-type { animation: lwp-spin 1s linear infinite; }
 @keyframes lwp-spin {
@@ -2000,7 +1551,6 @@ const SCOPED_CSS = `
   margin-left: 4px;
 }
 
-/* ─── Export Leads dropdown ─── */
 .lwp-root .lwp-export-wrap { position: relative; display: inline-flex; }
 .lwp-root .lwp-bact-export {
   background: linear-gradient(135deg, #155e75 0%, #0e7490 55%, #0891b2 100%);
@@ -2015,9 +1565,6 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-bact-export:disabled { cursor: progress; opacity: .8; transform: none; }
 .lwp-root .lwp-bact-export.is-open { transform: translateY(-1px); }
-/* Invisible full-screen catch layer — a click anywhere closes the menu.
-   Menu + backdrop are portalled to <body> (outside .lwp-root) so these
-   selectors are intentionally un-prefixed and positioned fixed. */
 .lwp-export-backdrop { position: fixed; inset: 0; z-index: 4000; }
 .lwp-export-menu {
   position: fixed; z-index: 4001;
@@ -2031,7 +1578,6 @@ const SCOPED_CSS = `
 .lwp-export-item {
   width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 8px 12px; border: none; background: transparent; border-radius: 8px;
-  /* List body type (12 / 500) — the menu read heavier than the toolbar it drops from. */
   font-family: inherit; font-size: 12px; font-weight: 500; color: #334155;
   cursor: pointer; text-align: left; transition: background .15s, color .15s;
 }
@@ -2049,7 +1595,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-export-item:hover:not(:disabled) { background: rgba(8,145,178,.18); color: #67e8f9; }
 [data-bs-theme="dark"] .lwp-export-count { background: rgba(148,163,184,.2); color: #cbd5e1; }
 
-/* ─── Active filter chips ─── */
 .lwp-root .lwp-chip-strip {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   margin: -2px 0 8px;
@@ -2082,9 +1627,6 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .lwp-root .lwp-chip-x { background: rgba(34,211,238,.18); color: #67e8f9; }
 
-/* ─── Toolbar: tab rails + search ───
- * The shared list tab rail (.dt-tabrail — 40px tabs with count chips, 48px rail)
- * and the search track filling the rest of the row, straight on the page. */
 .lwp-root,
 .lwp-root .dt-tabrail.dt-tabrail {
   --dt-a-50:#f0fdfa; --dt-a-100:#ccfbf1; --dt-a-150:#cffafe; --dt-a-200:#a5e8f5;
@@ -2097,12 +1639,10 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-pre-table .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
 .lwp-root .lwp-pre-table .dt-tabrail .dt-tab svg { flex-shrink: 0; }
-/* Key Opportunity sub-tabs: their own rail on the row below the toolbar. */
 .lwp-root .lwp-subrail { align-self: flex-start; margin-bottom: 8px; flex-shrink: 0; max-width: 100%; overflow-x: auto; }
 .lwp-root .lwp-subrail .dt-tab { height: 40px; font-size: 12.5px; }
 .lwp-root .lwp-subrail .dt-tab svg { flex-shrink: 0; }
 .lwp-root .lwp-search {
-  /* Clear button picks up this page's cyan instead of the neutral default. */
   --ui-search-clear: #0891b2;
   --ui-search-clear-dark: #67e8f9;
   display: flex; align-items: center;
@@ -2110,16 +1650,6 @@ const SCOPED_CSS = `
   border: 1.5px solid #a5f3fc;
   box-sizing: border-box;
   border-radius: 12px; padding: 0 18px; gap: 10px;
-  /* Figma height/radius (50px / 14px). Kept as a capped flex item so it
-   * still shrinks on narrow viewports instead of the design's fixed 380px.
-   *
-   * It now GROWS into the band as well. At 420px fixed it left an 809px dead
-   * gap between the tab pills and the bar on a full-width screen, which read
-   * as a hole in the toolbar rather than as deliberate spacing.
-   * The 686px cap is where the bar's left edge reaches the Customer Email
-   * column — the target asked for. That alignment is approximate by nature:
-   * the table's columns are content-sized, so they shift with the data. The
-   * cap is what keeps it from stretching the full 1217px of free space. */
   flex: 1 1 auto; min-width: 240px; max-width: none; height: auto; min-height: 48px;
   box-shadow: 0 2px 10px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
   transition: all .2s;
@@ -2133,10 +1663,6 @@ const SCOPED_CSS = `
   font-size: 12.5px; color: #0c4a6e; outline: none; width: 100%; font-weight: 500;
 }
 .lwp-root .lwp-search input::placeholder { color: #94a3b8; font-weight: 400; }
-/* Search = the Customers list search (.smc-toolbar .dt-search): the tab rail's
-   track — same border, 3px padding and tint as the tab rail, so both stand 48px —
-   with the 40px white field drawn inside it by ::before; the icon, input and
-   clear button all sit inside that field. */
 .lwp-root .lwp-search.lwp-search {
   position: relative;
   padding: 0 16px;
@@ -2159,7 +1685,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search::before { background: rgba(255,255,255,.03); border-color: rgba(8,145,178,.25); }
 [data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search:focus-within::before { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.28); }
 
-/* ─── Table card ─── */
 .lwp-root .lwp-table-card {
   background: #fff;
   border: 1.5px solid #a5f3fc;
@@ -2173,7 +1698,6 @@ const SCOPED_CSS = `
   scrollbar-width: thin;
   scrollbar-color: #a5f3fc transparent;
 }
-/* Clean, thin themed scrollbars (replaces the chunky default with arrows). */
 .lwp-root .lwp-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
 .lwp-root .lwp-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb {
@@ -2183,10 +1707,6 @@ const SCOPED_CSS = `
 .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb:hover { background: #67e8f9; background-clip: content-box; }
 [data-bs-theme="dark"] .lwp-root .lwp-table-wrap { scrollbar-color: rgba(34,211,238,.4) transparent; }
 [data-bs-theme="dark"] .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb { background: rgba(34,211,238,.4); background-clip: content-box; }
-/* min-width = sum of the <col> widths below (1564px). Without it the
- * fixed layout obeys width:100% and crushes every column proportionally
- * on narrow screens; with it the table holds its legible column widths
- * and .lwp-table-wrap { overflow-x:auto } scrolls horizontally instead. */
 .lwp-root .lwp-table { width: 100%; min-width: 1564px; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
 .lwp-root .lwp-table col.c-chk    { width: 42px; }
 .lwp-root .lwp-table col.c-type   { width: 110px; }
@@ -2194,10 +1714,6 @@ const SCOPED_CSS = `
 .lwp-root .lwp-table col.c-source { width: 86px; }
 .lwp-root .lwp-table col.c-assign { width: 130px; }
 .lwp-root .lwp-table col.c-wa     { width: 124px; }
-/* Holds the opp code AND, when present, the key-opportunity star and the
-   "View only" badge. At the old 96px the code alone took ~58px, so the badge
-   ran past the cell and the td's overflow:hidden cut it to "View on".
-   The table min-width above is the sum of these widths — keep them in step. */
 .lwp-root .lwp-table col.c-opp    { width: 160px; }
 .lwp-root .lwp-table col.c-cust   { width: 140px; }
 .lwp-root .lwp-table col.c-phone  { width: 118px; }
@@ -2207,7 +1723,6 @@ const SCOPED_CSS = `
 .lwp-root .lwp-table col.c-country{ width: 56px; }
 .lwp-root .lwp-table col.c-action { width: 130px; }
 
-/* Sticky header — stays fixed while the rows scroll inside the card. */
 .lwp-root .lwp-table thead {
   position: sticky; top: 0; z-index: 5;
 }
@@ -2244,13 +1759,9 @@ const SCOPED_CSS = `
   color: #94a3b8 !important; font-style: italic;
   vertical-align: middle;
 }
-/* Empty state: the table stretches to the scroll area and the "No leads found"
-   row takes the spare height, so the message sits in the middle of the table
-   (same as the Productivity Tracker). */
 .lwp-root .lwp-table:has(.lwp-empty) { height: 100%; }
 .lwp-root .lwp-table:has(.lwp-empty) tbody tr:has(.lwp-empty) { height: 100%; background: transparent; border-bottom: 0; }
 
-/* ─── Skeleton / shimmer loader ─── */
 .lwp-root .lwp-skel-row { cursor: default !important; background: transparent !important; }
 .lwp-root .lwp-skel-row:hover td { background: transparent !important; }
 .lwp-root .lwp-skel {
@@ -2268,14 +1779,6 @@ const SCOPED_CSS = `
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-/* Dim existing rows during a background refresh — the reload that follows a
-   create / assign / delete, which re-asks the SAME question, so the rows under
-   the dim are still the right answer.
-
-   Every path that poses a NEW question (tab, sub-tab, filter, search,
-   rows-per-page, paging) clears the rows instead and shows the skeleton: there
-   the old rows are the PREVIOUS answer, and dimming them read as the table
-   going pale rather than loading. */
 .lwp-root .lwp-tbody-refetching {
   opacity: 0.55;
   pointer-events: none;
@@ -2288,26 +1791,14 @@ const SCOPED_CSS = `
 
 .lwp-root .lwp-chk {
   width: 15px; height: 15px;
-  /* The page's cyan, matching the active tab pill and the bulk bar. */
   accent-color: #0891b2; cursor: pointer; border-radius: 4px;
 }
 
-/* ─── Row sub-elements ─── */
-/* Left-align so every OPP-#### starts at the same edge under the left-aligned
-   "Opportunity ID" header. The key star sits right after the id (gap:5px),
-   not pushed to the far right, so plain and Key-Opportunity rows line up. */
 .lwp-root .lwp-opp-cell { display: flex; align-items: center; justify-content: flex-start; gap: 5px; width: 100%; }
-/* The code yields first. The star and the badge are fixed-size signals — an
-   ellipsised code still reads (OPP-00…), half a badge does not, and "View on"
-   is worse than useless because it looks like a different state.
-   min-width:0 is what actually lets a flex item shrink far enough to
-   ellipsise; without it the code stays full width and pushes the badge out. */
 .lwp-root .lwp-opp-link {
   color: #0891b2; font-weight: 600; cursor: pointer; white-space: nowrap;
   min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
-/* Never shrink, never wrap — the star already had this protection, which is
-   why the badge was always the piece that lost. */
 .lwp-root .lwp-viewonly { flex: 0 0 auto; }
 .lwp-root .lwp-opp-link:hover { text-decoration: underline; color: #0e7490; }
 .lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; }
@@ -2317,7 +1808,6 @@ const SCOPED_CSS = `
   padding: 1px 6px; border-radius: 20px; font-size: 10px; font-weight: 600;
   background: #fef3c7; color: #92400e;
 }
-/* Yes = connected (green), No = not_connected (red), Pending = amber base. */
 .lwp-root .lwp-wa-yes     { background: #dcfce7; color: #15803d; }
 .lwp-root .lwp-wa-no      { background: #fee2e2; color: #b91c1c; }
 .lwp-root .lwp-wa-pending { background: #fef3c7; color: #92400e; }
@@ -2397,7 +1887,6 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 12px rgba(245,158,11,.5);
 }
 
-/* ─── Pagination ─── */
 .lwp-root .lwp-pagination {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px; border-top: 2px solid #a5f3fc;
@@ -2451,12 +1940,9 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-pg-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ─── Floating bulk action bar ─── */
 .lwp-root .lwp-bulk-bar {
   position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
   z-index: 8900;
-  /* The page's cyan — the same gradient as the active tab pill. The bar was
-     violet, the one purple element on an otherwise cyan screen. */
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   border-radius: 16px;
   box-shadow: 0 12px 40px rgba(8,145,178,.45), 0 4px 14px rgba(0,0,0,.18);
@@ -2481,8 +1967,6 @@ const SCOPED_CSS = `
 .lwp-root .lwp-bulk-divider { width: 1px; height: 20px; background: rgba(255,255,255,.25); }
 .lwp-root .lwp-bulk-btn-primary {
   display: flex; align-items: center; gap: 7px;
-  /* Label and hover tint follow the bar — they were violet #7c3aed on a
-     lavender #f5f3ff hover, which stayed purple even once the bar was cyan. */
   padding: 8px 18px; background: #fff; color: #0e7490;
   border: none; border-radius: 10px;
   font-family: inherit; font-size: 12.5px; font-weight: 700;
@@ -2508,7 +1992,6 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-bulk-btn-clear:hover { background: rgba(255,255,255,.22); }
 
-/* ─── CTQ confirmation modal ─── */
 .lwp-ctq-overlay {
   position: fixed; inset: 0; z-index: 9500;
   background: rgba(15,23,42,.55);
@@ -2530,7 +2013,6 @@ const SCOPED_CSS = `
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* ── Teal/cyan header strip ── */
 .lwp-ctq-head {
   position: relative;
   display: flex; align-items: center; gap: 14px;
@@ -2564,7 +2046,6 @@ const SCOPED_CSS = `
 
 .lwp-ctq-body { padding: 22px 24px 20px; }
 
-/* ── Question row: clock icon + text ── */
 .lwp-ctq-question {
   display: flex; align-items: flex-start; gap: 14px;
   margin-bottom: 18px;
@@ -2589,7 +2070,6 @@ const SCOPED_CSS = `
 .lwp-ctq-from { color: #dc2626; font-weight: 600; }
 .lwp-ctq-to   { color: #15803d; font-weight: 600; }
 
-/* ── Info grid card: 2-col layout for Customer / Lead Source / Product / Lead Date ── */
 .lwp-ctq-info {
   display: grid; grid-template-columns: 1fr 1fr;
   gap: 14px 22px;
@@ -2610,7 +2090,6 @@ const SCOPED_CSS = `
 }
 .lwp-ctq-info-val-accent { color: #0891b2; }
 
-/* ── Action row: right-aligned Cancel + Confirm ── */
 .lwp-ctq-actions {
   display: flex; gap: 10px; justify-content: flex-end;
 }
@@ -2634,10 +2113,6 @@ const SCOPED_CSS = `
 .lwp-ctq-btn-confirm:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
 .lwp-ctq-btn-confirm:active:not(:disabled) { transform: translateY(0); }
 
-/* Conversion in flight. The tick icon is swapped for this arc so the button
-   itself is the loader - there is no separate overlay, and the row count can
-   make the POST take a couple of seconds. Reuses the lwp-spin keyframes
-   already defined for the sync and export buttons. */
 .lwp-root .lwp-ctq-spin,
 .lwp-ctq-spin {
   width: 13px; height: 13px; flex-shrink: 0;
@@ -2646,7 +2121,6 @@ const SCOPED_CSS = `
   border-radius: 50%;
   animation: lwp-spin .7s linear infinite;
 }
-/* Amber toolbar button sits on a light fill, so its arc needs the ink colour. */
 .lwp-root .lwp-bulk-btn-ctq .lwp-ctq-spin {
   border-color: rgba(180,83,9,.30); border-top-color: #b45309;
 }
@@ -2657,8 +2131,6 @@ const SCOPED_CSS = `
 }
 .lwp-ctq-close:disabled { opacity: .45; cursor: not-allowed; }
 
-/* Dark mode — body flips to slate but the teal header stays (intentional
-   to mirror the cyan brand strip used across CLM modals). */
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-modal { background: #0f172a; }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-title { color: #e2e8f0; }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-sub { color: #94a3b8; }
@@ -2680,15 +2152,8 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.08); border-color: rgba(103,232,249,.4); color: #ecfeff;
 }
 
-/* ════════════════════════════════════════════════════════════════════
-   Dark-mode adaptation — every panel re-tints against the deep slate
-   surface so the page reads as part of the dark theme instead of
-   floating on a bright cyan haze.
-   ════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .lwp-root,
 [data-layout-mode="dark"] .lwp-root {
-  /* Teal-glow over deep navy — gives the same rich depth as the
-   * Segment Master / CLM master pages instead of a flat dark slab. */
   background:
     radial-gradient(ellipse at top, rgba(8,145,178,.12), transparent 55%),
     linear-gradient(160deg, #0b1220 0%, #0f172a 40%, #0b1220 100%);
@@ -2704,12 +2169,6 @@ const SCOPED_CSS = `
   box-shadow: 0 6px 24px rgba(0,0,0,0.35);
 }
 [data-bs-theme="dark"] .lwp-root .lwp-banner-title { color: #f0f9ff; }
-/* The "SALES MATRIX" entity badge was illegible in dark mode — its
- * wrapper bg stayed at rgba(255,255,255,.6) (milky white) while the
- * dark-mode rule only flipped the text colour to light cyan. Light
- * cyan on milky white = near-zero contrast. Flip the whole pill to
- * a translucent cyan tint with a stronger border so the badge reads
- * cleanly on the dark banner. */
 [data-bs-theme="dark"] .lwp-root .lwp-banner-entity {
   background: rgba(34, 211, 238, 0.14);
   border-color: rgba(103, 232, 249, 0.45);
@@ -2717,11 +2176,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-banner-entity::before { background: #67e8f9; }
 [data-bs-theme="dark"] .lwp-root .lwp-banner-entity > span { color: #cffafe; }
 [data-bs-theme="dark"] .lwp-root .lwp-banner-divider { background: rgba(148,163,184,0.25); }
-/* The banner kept its light-mode overlays on dark: a white sheen
- * (rgba(255,255,255,.5)) across the top and a pale-cyan radial glow.
- * Both washed the dark banner into a muddy grey gradient. Dim the sheen
- * to a whisper and recolour the glow to a subtle cyan so the banner reads
- * as a clean dark strip. */
 [data-bs-theme="dark"] .lwp-root .lwp-banner-sheen {
   background: linear-gradient(180deg, rgba(255,255,255,.05), transparent);
 }
@@ -2731,10 +2185,6 @@ const SCOPED_CSS = `
     radial-gradient(ellipse at 90% 50%, rgba(14,165,233,.08) 0%, transparent 55%);
 }
 
-/* CTQ action button — was a saturated amber gradient on every theme
- * which screamed at the user against the dark table row. In dark
- * mode we drop it to a muted amber chip with a thin border so the
- * affordance is still tagged-amber but doesn't dominate the row. */
 [data-bs-theme="dark"] .lwp-root .lwp-ab-ctq {
   background: rgba(245, 158, 11, 0.16);
   border: 1px solid rgba(245, 158, 11, 0.45);
@@ -2748,10 +2198,6 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 8px rgba(245, 158, 11, 0.28);
 }
 
-/* Pagination footer — light cyan gradient + cyan-on-white pills
- * stayed visible on the light theme but produced a glaring teal
- * stripe in dark mode that didn't match the rest of the dark table.
- * Flip to a slate canvas with translucent cyan accents. */
 [data-bs-theme="dark"] .lwp-root .lwp-pagination {
   background: linear-gradient(90deg, #0f172a 0%, #111c33 50%, #0f172a 100%);
   border: 1px solid rgba(34, 211, 238, 0.18);
@@ -2776,7 +2222,6 @@ const SCOPED_CSS = `
   border-color: rgba(103, 232, 249, 0.55);
 }
 
-/* Banner action buttons — translucent glass against the dark banner. */
 [data-bs-theme="dark"] .lwp-root .lwp-bact {
   background: rgba(15, 23, 42, 0.55);
   border-color: rgba(148, 163, 184, 0.25);
@@ -2801,12 +2246,6 @@ const SCOPED_CSS = `
   color: #f0fdfa; border-color: rgba(34,211,238,0.28);
 }
 
-/* ── One toolbar colour ──────────────────────────────────────────────────
-   Every action wears Add New Lead's gradient. The five variants above were
-   five steps of the same teal, which read as a hierarchy that doesn't exist
-   — Assign, Distribute, Sync, Filter and Export are peers, not a ranked set.
-   Placed after them so it wins without editing each rule, and repeated under
-   the dark selector because the dark block re-colours them individually. */
 .lwp-root .lwp-bact-assign,
 .lwp-root .lwp-bact-assigned,
 .lwp-root .lwp-bact-sync,
@@ -2822,8 +2261,6 @@ const SCOPED_CSS = `
   border-color: transparent;
   box-shadow: 0 4px 16px rgba(6,182,212,.45), 0 2px 6px rgba(8,145,178,.25), 0 1px 0 rgba(255,255,255,.22) inset;
   text-shadow: 0 1px 2px rgba(0,0,0,.15);
-  /* The Filter button pulsed on a 2.5s loop; with every button the same
-     colour the pulse was the only thing still singling it out. */
   animation: none;
 }
 .lwp-root .lwp-bact-assign:hover,
@@ -2844,20 +2281,12 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-bact-filter-active {
   box-shadow: 0 0 0 2px #67e8f9, 0 6px 20px rgba(6,182,212,.45);
 }
-
-/* Tab pills */
-[data-bs-theme="dark"] .lwp-root .lwp-tabs { background: rgba(8, 145, 178, 0.10); border-color: rgba(34,211,238,0.18); }
 [data-bs-theme="dark"] .lwp-root .lwp-tab { color: #94a3b8; }
 [data-bs-theme="dark"] .lwp-root .lwp-tab.on {
   background: linear-gradient(135deg, #0891b2, #0e7490);
   color: #fff;
 }
 
-/* Search bar */
-/* box-shadow has to be reset with the rest: the light rule paints a
-   near-opaque white inset line along the top edge as a bevel, and on the dark
-   surface it read as a stray white border (same defect as QA #132 on the
-   supplier search). */
 [data-bs-theme="dark"] .lwp-root .lwp-search {
   background: #1e293b; border-color: #334155;
   box-shadow: 0 2px 10px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.05) inset;
@@ -2866,8 +2295,6 @@ const SCOPED_CSS = `
   border-color: #0891b2;
   box-shadow: 0 0 0 3px rgba(8,145,178,.28), 0 4px 16px rgba(0,0,0,.35);
 }
-/* Same white-bevel leak on the other three that re-colour in dark but never
-   restated box-shadow. */
 [data-bs-theme="dark"] .lwp-root .lwp-banner {
   box-shadow: 0 2px 0 rgba(255,255,255,.04) inset, 0 4px 16px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.25);
 }
@@ -2878,10 +2305,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-search input { color: #e2e8f0; }
 [data-bs-theme="dark"] .lwp-root .lwp-search input::placeholder { color: #64748b; }
 
-/* Lead table */
-/* Outer card — kept its light-mode #fff bg + bright #a5f3fc border on dark,
- * which read as a glaring near-white frame around the table. Tone both to the
- * dark surface + soft teal border (the CLM-master recipe). */
 [data-bs-theme="dark"] .lwp-root .lwp-table-card {
   background: #0f172a;
   border-color: rgba(6,182,212,0.18);
@@ -2892,15 +2315,12 @@ const SCOPED_CSS = `
   border-color: rgba(6,182,212,0.18);
   box-shadow: 0 4px 18px rgba(0,0,0,0.35);
 }
-/* Translucent teal header (matches the Segment Master / CLM master look)
- * instead of a heavy solid teal bar — reads lighter and more cohesive. */
 [data-bs-theme="dark"] .lwp-root .lwp-table thead th {
   background: rgba(8,145,178,.18) !important;
   color: #cffafe !important;
   border-bottom-color: rgba(6,182,212,0.30) !important;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody td {
-  /* Transparent so the card surface + the row's teal tint show through. */
   background: transparent !important;
   color: #cbd5e1 !important;
   border-top-color: rgba(6,182,212, 0.10) !important;
@@ -2913,13 +2333,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:last-child {
   border-bottom: none !important;
 }
-/* Subtle teal zebra + brighter teal hover — the CLM-master recipe. */
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:nth-child(even) td { background: rgba(8,145,178,.06) !important; }
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:hover td { background: rgba(8,145,178,.16) !important; }
 [data-bs-theme="dark"] .lwp-root .lwp-table a { color: #67e8f9; }
 
-/* Cell-level text — customer name was hard-coded to slate-900 (near
-   black) which becomes invisible on the dark slate row surface. */
 [data-bs-theme="dark"] .lwp-root .lwp-cust-name { color: #f1f5f9; font-weight: 600; }
 [data-bs-theme="dark"] .lwp-root .lwp-asgn span { color: #e2e8f0; }
 [data-bs-theme="dark"] .lwp-root .lwp-asgn span.u { color: #94a3b8; }
@@ -2927,10 +2344,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-opp-link  { color: #67e8f9; }
 [data-bs-theme="dark"] .lwp-root .lwp-opp-link:hover { color: #a5f3fc; }
 
-/* Country tag — the light version uses a bright cyan gradient with
-   white text. On the dark theme that screams against the surface;
-   recolor as a subtler translucent chip so it reads as data, not a
-   call-to-action. */
 [data-bs-theme="dark"] .lwp-root .lwp-ctag {
   background: rgba(14, 165, 233, 0.16) !important;
   color: #7dd3fc !important;
@@ -2940,7 +2353,6 @@ const SCOPED_CSS = `
   letter-spacing: 0.04em !important;
 }
 
-/* WhatsApp + status pills — keep the meaning, dim the brightness. */
 [data-bs-theme="dark"] .lwp-root .lwp-wa-badge {
   background: rgba(245, 158, 11, 0.16);
   color: #fbbf24;
@@ -2948,23 +2360,12 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-wa-yes { background: rgba(34, 197, 94, 0.18); color: #86efac; }
 [data-bs-theme="dark"] .lwp-root .lwp-wa-no  { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
 [data-bs-theme="dark"] .lwp-root .lwp-wa-pending { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
-[data-bs-theme="dark"] .lwp-root .lwp-pill-pending {
-  background: rgba(245, 158, 11, 0.18); color: #fbbf24; border-color: rgba(245, 158, 11, 0.40);
-}
-[data-bs-theme="dark"] .lwp-root .lwp-country-pill {
-  background: rgba(14, 165, 233, 0.18); color: #7dd3fc; border-color: rgba(14, 165, 233, 0.40);
-}
 [data-bs-theme="dark"] .lwp-root .lwp-ab {
   background: rgba(15, 23, 42, 0.65);
   border-color: rgba(148, 163, 184, 0.30);
   color: #cbd5e1;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-ab:hover { background: rgba(8, 145, 178, 0.25); color: #f0f9ff; }
-/* Per-type colour-coding in dark mode. The flat .lwp-ab fill above made
- * View / Activity / Assign read as three identical dull grey blobs; restore
- * the light-mode meaning with toned translucent fills + bright icons (each
- * lights up to the solid gradient on hover). Placed after the base rule so
- * the equal-specificity overrides win on source order. */
 [data-bs-theme="dark"] .lwp-root .lwp-ab-view {
   background: linear-gradient(135deg, rgba(6,182,212,.22), rgba(8,145,178,.22));
   color: #67e8f9; border: 1px solid rgba(34,211,238,.40); box-shadow: none;
@@ -2990,24 +2391,11 @@ const SCOPED_CSS = `
   box-shadow: 0 3px 10px rgba(14,116,144,.4);
 }
 
-/* No-access card */
 [data-bs-theme="dark"] .lwp-root .lwp-no-access {
   background: #0f172a; border-color: rgba(34,211,238,0.25); color: #e2e8f0;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-no-access-title { color: #67e8f9; }
 [data-bs-theme="dark"] .lwp-root .lwp-no-access-sub   { color: #94a3b8; }
-
-/* CTQ confirmation overlay */
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-card {
-  background: #14102a; color: #ede9fe;
-  border: 1px solid rgba(34,211,238,0.22);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-}
-/* CTQ ("Convert to Qualified") confirmation modal — dark-mode coverage.
- * Previously only the title / sub / cancel button had dark overrides,
- * so the modal card itself stayed white, the close button stayed light
- * grey, the lead-summary card stayed pale cyan, and the OPP pill stayed
- * a near-white tint. The whole dialog now follows the dark canvas. */
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-modal {
   background:
     radial-gradient(ellipse at top, rgba(34,197,94,0.08), transparent 60%),
@@ -3023,56 +2411,21 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-title { color: #f0f9ff; }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-sub   { color: #94a3b8; }
-/* OPP code chip — light cyan in light theme; tinted cyan-on-dark here
- * so it stays readable but doesn't punch through the dark canvas. */
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-opp {
   background: rgba(34, 211, 238, 0.16);
   color: #67e8f9;
 }
-/* From / To status pills — the light-mode pastel fills (#fef2f2 /
- * #f0fdf4) look like white blocks on a dark canvas. Drop them onto
- * tinted backgrounds with brighter text so the colour coding still
- * reads (red→green). */
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-pill-from {
-  background: rgba(239, 68, 68, 0.16);
-  color: #fca5a5; border-color: rgba(239, 68, 68, 0.42);
-}
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-pill-to {
-  background: rgba(34, 197, 94, 0.16);
-  color: #86efac; border-color: rgba(34, 197, 94, 0.45);
-}
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-arrow { color: #67e8f9; }
-/* Lead summary card — was the milky cyan gradient that read as
- * white on dark canvas. Switch to a translucent cyan-on-dark with a
- * lifted border + readable text. */
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-card {
-  background: linear-gradient(135deg, rgba(34,211,238,0.10), rgba(34,211,238,0.05));
-  border-color: rgba(34, 211, 238, 0.28);
-}
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-name { color: #f0f9ff; }
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-row  { color: #cbd5e1; }
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-dot  { background: #64748b; }
-[data-bs-theme="dark"] .lwp-root .lwp-ctq-hint      { color: #94a3b8; }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel {
   background: transparent; color: #cbd5e1; border-color: rgba(34, 211, 238, 0.22);
 }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel:hover {
   background: rgba(15, 23, 42, 0.55); border-color: rgba(34, 211, 238, 0.45);
 }
-/* Confirm button stays green — only soften the shadow against dark bg. */
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-confirm {
   box-shadow: 0 4px 16px rgba(34, 197, 94, 0.45);
 }
 
-/* ════════════════════════════════════════════════════════════════════
- * Responsive layout — single consolidated block covering every surface
- * on this page. Breakpoints follow the rough phone (≤480) / large-
- * phone (≤640) / tablet (≤900) bands; the table itself always lives
- * inside .lwp-table-wrap { overflow:auto } so it horizontally scrolls
- * unchanged on phones while everything around it reflows.
- * ════════════════════════════════════════════════════════════════════ */
 
-/* Tablet — banner + actions wrap; pre-table stacks; tighter table cells */
 @media (max-width: 900px) {
   .lwp-root .lwp-banner {
     flex-direction: column; align-items: stretch;
@@ -3083,14 +2436,10 @@ const SCOPED_CSS = `
   .lwp-root .lwp-actions .lwp-bact { flex: 1 0 auto; justify-content: center; }
   .lwp-root .lwp-actions .lwp-banner-divider { display: none; }
   .lwp-root .lwp-pre-table { flex-direction: column; align-items: stretch; gap: 8px; }
-  /* Reset the flex basis: in the stacked (column) layout the 420px basis
-   * applies to the VERTICAL axis and balloons the search into a tall empty
-   * box. Pin it back to a normal 40px-tall, full-width bar. */
   .lwp-root .lwp-search { flex: 0 0 auto; width: 100%; max-width: none; height: 48px; }
   .lwp-root .lwp-pre-table .dt-tabrail { max-width: 100%; overflow-x: auto; }
 }
 
-/* Large phone — actions become 2-column grid, pills shrink */
 @media (max-width: 640px) {
   .lwp-root .lwp-banner-title  { font-size: 15px; }
   .lwp-root .lwp-banner-entity { font-size: 11px; }
@@ -3105,8 +2454,6 @@ const SCOPED_CSS = `
   .lwp-root .lwp-chip { font-size: 10.5px; padding: 2px 4px 2px 8px; }
   .lwp-root .lwp-pagination { padding: 8px 12px; gap: 6px; }
   .lwp-root .lwp-pag-info, .lwp-root .lwp-rows-sel { font-size: 11px; padding: 4px 10px; }
-  /* Bulk bar — full-width sheet at the bottom on phones rather than
-     centred floating pill, so all buttons remain reachable. */
   .lwp-root .lwp-bulk-bar {
     left: 8px; right: 8px; bottom: 10px;
     transform: none; width: auto;
@@ -3117,7 +2464,6 @@ const SCOPED_CSS = `
   .lwp-root .lwp-bulk-divider  { display: none; }
 }
 
-/* Phone — single-column actions, even more compact */
 @media (max-width: 480px) {
   .lwp-root .lwp-banner { border-radius: 12px; padding: 12px 14px; }
   .lwp-root .lwp-actions { grid-template-columns: 1fr; }
@@ -3125,12 +2471,9 @@ const SCOPED_CSS = `
   .lwp-root .lwp-table { font-size: 11px; }
   .lwp-root .lwp-table thead th, .lwp-root .lwp-table tbody td { padding: 0 6px; }
   .lwp-root .lwp-pag-range { font-size: 11px; }
-  /* CTQ — tighter padding so the hero icon doesn't crowd the title */
   .lwp-root .lwp-ctq-modal { border-radius: 16px; }
   .lwp-root .lwp-ctq-body { padding: 0 18px 20px; }
   .lwp-root .lwp-ctq-title { font-size: 15.5px; }
-  .lwp-root .lwp-ctq-hero { padding: 22px 0 4px; }
-  .lwp-root .lwp-ctq-hero-icon { width: 56px; height: 56px; }
   .lwp-root .lwp-ctq-actions { flex-direction: column-reverse; }
   .lwp-root .lwp-ctq-btn-cancel,
   .lwp-root .lwp-ctq-btn-confirm { max-width: none; width: 100%; flex: none; }

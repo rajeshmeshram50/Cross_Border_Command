@@ -4,20 +4,6 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { MasterSelect, MasterFormStyles } from '../../master/masterFormKit';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Add New Lead — frontend-only quick-capture modal.
- *
- * Opens off the "+ Add New Lead" button on the My Workplace page. Two modes:
- *
- *   1. Blank capture — the user types every field by hand.
- *   2. "Take customer from existing sales database" — checkbox flips the
- *      Customer Name input into a searchable dropdown of existing customers.
- *      Picking one auto-fills Mobile, Email, Company, Address, City, Pincode,
- *      Country, State. Other fields stay editable as required.
- *
- * No backend wired yet — onSubmit just toasts the payload. Drop a real
- * POST /sales/leads call into onSave once the table migration lands.
- * ──────────────────────────────────────────────────────────────────────── */
 
 export type LeadFormValues = {
   customerName: string;
@@ -43,16 +29,12 @@ const EMPTY_LEAD: LeadFormValues = {
   state: '',
 };
 
-/* Live customer row — minimal shape used by the dropdown. Pulled from
- * `GET /customers` (Customer + CustomerAddress eloquent join). The
- * extended detail used for auto-fill is fetched lazily when a row is
- * picked via `GET /customers/{id}` so the dropdown stays light. */
 type CustomerOption = {
-  id: string;        // public id e.g. "CUST-001"
-  dbId: number;      // primary key — used for the show() call
-  company: string;   // trade / company name
-  legalName: string; // registered legal name — shown as the "Customer Name"
-  country: string;   // primary-address country → drives the Domestic/Intl badge
+  id: string;
+  dbId: number;
+  company: string;
+  legalName: string;
+  country: string;
 };
 
 const COUNTRY_OPTIONS = ['India', 'United States', 'United Kingdom', 'Australia', 'Italy', 'Pakistan', 'China', 'Saudi Arabia', 'Nigeria'];
@@ -68,19 +50,8 @@ const STATE_BY_COUNTRY: Record<string, string[]> = {
   Nigeria:         ['Lagos', 'Abuja', 'Kano', 'Rivers'],
 };
 
-/* Strip any non-digit character from a phone-style input. */
 const digitsOnly = (raw: string): string => (raw ?? '').replace(/\D/g, '').slice(0, 15);
 
-/* PIN / ZIP rules, identical to AddCustomerModal / AddConsigneeModal / the
- * shipment module: India → exactly 6 digits; every other country →
- * letters/digits plus spaces and hyphens ("SL7 1TB", "K1A 0B1"), max 12.
- *
- * This field used to be digits-only with maxLength 6 for EVERY country, so a
- * foreign lead simply could not enter its own postal code — and nothing
- * validated it, front or back.
- *
- * Label, maxLength, placeholder and sanitiser all branch on country too —
- * keep them together so a rule change can't update one and miss another. */
 const isDomesticCountry = (country?: string) => (country ?? '').trim() === 'India';
 const PIN_DOMESTIC_RE = /^[0-9]{6}$/;
 const ZIP_INTL_RE = /^[A-Za-z0-9\s\-]+$/;
@@ -90,15 +61,11 @@ const pinMaxLen = (country?: string) => (isDomesticCountry(country) ? 6 : 12);
 const pinPlaceholder = (country?: string) =>
   isDomesticCountry(country) ? '6-digit PIN' : 'Enter zip code';
 
-/* Strips at the keystroke so an impossible character never appears — the user
- * doesn't type "745223@@@" and then read an error about it. */
 const pinSanitize = (v: string, country?: string) =>
   isDomesticCountry(country)
     ? (v ?? '').replace(/\D/g, '').slice(0, 6)
     : (v ?? '').replace(/[^A-Za-z0-9\s\-]/g, '').slice(0, 12);
 
-/* Blank passes — the field is optional on a lead (unlike on a customer),
- * where only a partly-typed value is worth rejecting. */
 function pinError(v: string, country?: string): string | undefined {
   const s = (v ?? '').trim();
   if (!s) return undefined;
@@ -115,17 +82,11 @@ function pinError(v: string, country?: string): string | undefined {
 export default function AddNewLeadModal(props: {
   open: boolean;
   onClose: () => void;
-  /* `pickedCustomerDbId` is forwarded so the page can attach the lead to
-   * an existing customer record (`leads.customer_id`) when the user came
-   * in via the "use existing customer" path. Null when the user typed a
-   * fresh lead by hand. The page is responsible for the actual POST. */
   onSave: (lead: LeadFormValues, pickedCustomerDbId?: number | null) => void | Promise<void>;
 }) {
   const { open, onClose, onSave } = props;
   const toast = useToast();
 
-  // Scroll lock — lock BOTH <html> and <body> so the page behind can't
-  // scroll regardless of which element owns the viewport scroll.
   useEffect(() => {
     if (!open) return;
     const b = document.body.style.overflow;
@@ -139,25 +100,12 @@ export default function AddNewLeadModal(props: {
   const [values, setValues] = useState<LeadFormValues>(EMPTY_LEAD);
   const [pickedCustomerId, setPickedCustomerId] = useState<string>('');
   const [errors, setErrors] = useState<Partial<Record<keyof LeadFormValues, string>>>({});
-  // Guards against double-submission — without this, rapid clicks on
-  // "Save Lead" fire one POST per click before the modal closes,
-  // creating duplicate leads.
   const [saving, setSaving] = useState(false);
 
-  /* Live customer list — refetched EVERY time the modal opens (and cleared
-     on close). It must NOT be cached across the session: the /customers GET
-     is scoped to the active branch (the Axios interceptor injects the
-     BranchSwitcher's branch_id), so a stale list captured under one branch
-     would leak that branch's customers into the picker after the user
-     switches branches. */
   const [customerOpts, setCustomerOpts] = useState<CustomerOption[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customerFetching, setCustomerFetching] = useState(false);
 
-  /* Country / State lists come from the same master bundle the Customer form
-     uses (/customers/master-bundle → countries + states with country_id), so
-     this dropdown shows every seeded country/state instead of the old
-     hardcoded handful. Falls back to the static lists if the fetch fails. */
   const [masterCountries, setMasterCountries] = useState<Array<{ id: number; name: string }>>([]);
   const [masterStates, setMasterStates] = useState<Array<{ id: number; name: string; country_id: number }>>([]);
 
@@ -177,19 +125,14 @@ export default function AddNewLeadModal(props: {
         setMasterCountries(cs);
         setMasterStates(st);
       })
-      .catch(() => { /* keep static fallback lists */ });
+      .catch(() => {  });
     return () => { alive = false; };
   }, [open]);
 
   useEffect(() => {
-    // Clear any previous-branch list when the modal closes so it can't flash
-    // stale rows on the next open before the fresh fetch resolves.
     if (!open) { setCustomerOpts([]); return; }
     setCustomersLoading(true);
     api
-      // tab=all → every customer. Without it the endpoint defaults to
-      // tab=fresh, which returns ONLY customers not yet linked to any lead —
-      // so customers already mapped to a lead were missing from this picker.
       .get<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>('/customers', { params: { tab: 'all' } })
       .then(r => {
         const rows = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
@@ -212,8 +155,6 @@ export default function AddNewLeadModal(props: {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Reset to a clean slate each time the modal opens — picking a
-  // customer in a previous session shouldn't leak into the next.
   useEffect(() => {
     if (open) {
       setUseExisting(false);
@@ -234,18 +175,12 @@ export default function AddNewLeadModal(props: {
     if (!publicId) return;
     const picked = customerOpts.find(c => c.id === publicId);
     if (!picked) return;
-    // Hit /customers/{dbId} so we get the full primary-address +
-    // contact-person payload. The list endpoint deliberately doesn't
-    // ship every column, so we need the show() call for auto-fill.
     setCustomerFetching(true);
     try {
       const res = await api.get<{ data?: Record<string, unknown> } | Record<string, unknown>>(`/customers/${picked.dbId}`);
       const raw = (res.data as { data?: Record<string, unknown> }).data ?? (res.data as Record<string, unknown>);
       const pa = (raw.primary_address as Record<string, unknown> | undefined) ?? null;
       setValues({
-        // Customer Name  ← Company Name (trade name) from the Customer master.
-        // Company Name   ← Company Legal Name (registered legal name).
-        // Legal/company names fall back to each other when one is blank.
         customerName:    String(raw.company || picked.company || raw.legalName || picked.legalName || ''),
         mobileNumber:    String(pa?.cp_contact ?? raw.phone ?? ''),
         customerEmail:   String(pa?.cp_email   ?? raw.email ?? '').toLowerCase(),
@@ -266,23 +201,12 @@ export default function AddNewLeadModal(props: {
 
   const toggleUseExisting = (next: boolean) => {
     setUseExisting(next);
-    // Either direction wipes the form. Flipping OFF gives a clean form to
-    // type into; flipping ON locks every field but the picker, so anything
-    // typed by hand beforehand would sit there greyed-out and un-editable
-    // — and could be saved without a customer ever being picked.
     setValues(EMPTY_LEAD);
     setPickedCustomerId('');
     setErrors({});
   };
 
-  /* Country and State picker options. Start from the static lists,
-     then splice in whatever the picked customer's primary address
-     carries — without this, a customer whose country isn't in the
-     hardcoded COUNTRY_OPTIONS array (or whose state isn't under that
-     country's STATE_BY_COUNTRY entry) ends up with an empty-looking
-     dropdown even though `values.country` / `values.state` are set. */
   const countryOpts = useMemo(() => {
-    // Prefer the master bundle; fall back to the static list until it loads.
     const list = masterCountries.length ? masterCountries.map(c => c.name) : [...COUNTRY_OPTIONS];
     if (values.country && !list.includes(values.country)) list.unshift(values.country);
     return list;
@@ -291,8 +215,6 @@ export default function AddNewLeadModal(props: {
   const stateOpts = useMemo(() => {
     let base: string[];
     if (masterStates.length && masterCountries.length) {
-      // States are scoped to the selected country via country_id — same rule
-      // the Customer form applies. A country with no seeded states yields [].
       const c = masterCountries.find(x => x.name === values.country);
       base = c ? masterStates.filter(s => s.country_id === c.id).map(s => s.name) : [];
     } else {
@@ -303,10 +225,7 @@ export default function AddNewLeadModal(props: {
     return list;
   }, [values.country, values.state, masterCountries, masterStates]);
 
-  // India → mobile is a fixed +91 prefix + exactly 10 digits; other countries
-  // keep the flexible 6–15 digit rule.
   const isIndiaMobile = (values.country ?? '').trim().toLowerCase() === 'india';
-  // Picking India scrubs any non-digits / extra length the field already holds.
   useEffect(() => {
     if (!isIndiaMobile) return;
     setValues(v => (/\D/.test(v.mobileNumber) || v.mobileNumber.length > 10)
@@ -324,8 +243,6 @@ export default function AddNewLeadModal(props: {
     if (!values.customerCity.trim())  next.customerCity  = 'City is required';
     if (!values.country.trim())       next.country       = 'Country is required';
     if (!values.state.trim())         next.state         = 'State is required';
-    // Optional field, so only a non-empty value that breaks its country's
-    // rule is rejected — see pinError().
     const pinMsg = pinError(values.pincode, values.country);
     if (pinMsg)                       next.pincode       = pinMsg;
     setErrors(next);
@@ -333,79 +250,39 @@ export default function AddNewLeadModal(props: {
   };
 
   const handleSave = async () => {
-    // Ignore clicks while a save is already in flight — stops duplicate
-    // leads from rapid double-clicks on the button.
     if (saving) return;
     if (!validate()) {
       toast.error('Missing details', 'Please complete the highlighted fields');
       return;
     }
-    // Pass the picked customer's primary key so the parent can set
-    // leads.customer_id on the POST. Resolves the public id via the
-    // cached options list — undefined if the user typed by hand.
     const pickedDbId = useExisting && pickedCustomerId
       ? customerOpts.find(c => c.id === pickedCustomerId)?.dbId ?? null
       : null;
     setSaving(true);
     try {
-      // The parent shows its own toast on save success; the modal stays
-      // quiet here so we don't double-toast.
       await onSave(values, pickedDbId);
     } finally {
-      // The parent closes the modal on success (which resets `saving`
-      // via the open effect); on failure we clear the guard so the user
-      // can retry.
       setSaving(false);
     }
   };
 
   if (!open) return null;
 
-  /* When the toggle is on, every customer/location field is LOCKED — they are
-   * filled from the saved customer record and must be edited on the customer,
-   * not here. The lock applies as soon as the checkbox is ticked (before a
-   * customer is picked) so the only thing the user can touch is the Customer
-   * Name dropdown, which stays interactive to pick/switch the customer. */
   const lockCustomer = useExisting;
 
-  /* Existing-customer data still in flight — Save must wait for it.
-   *
-   * Picking an existing customer fires /customers/{id} and auto-fills the
-   * form from the response. Save stayed enabled throughout, so a click
-   * landing in that window saved the half-filled form: the fields the fetch
-   * had not written yet went in blank or stale (QA #21).
-   *
-   * Scoped to the existing-customer flow on purpose. customersLoading is set
-   * whenever the modal opens, not only when the picker is in use, so gating
-   * on it unconditionally would disable Save for a moment on every open —
-   * including manual entry, where nothing is being waited for. */
   const customerBusy = useExisting && (customersLoading || customerFetching);
 
   return createPortal((
-    /* Backdrop click intentionally does NOT call onClose — losing a
-     * half-filled lead because the user clicked off-canvas was a
-     * recurring papercut. The header ✕ and footer Cancel buttons are
-     * the only dismissal paths now. */
     <div className="anl-backdrop master-modal">
       <style>{SCOPED_CSS}</style>
       <MasterFormStyles />
       <div className="anl-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Saving state, made visible.
-            `inert` + the footer spinner already froze the form, but the only
-            thing that SAID so was a 14px spinner in the button and a 0.6
-            opacity dip — on a modal this tall the eye never gets there, so a
-            slow POST read as a click that did nothing (QA #60). This is the
-            app's standard busy veil (see BusyOverlay / app.css): the form the
-            user typed stays legible underneath rather than being swapped for
-            skeleton bars, which is the right treatment for content that is
-            being acted on rather than fetched. */}
         {saving && (
           <div className="busy-veil anl-saving-veil" role="status" aria-live="polite">
             <span className="busy-veil-spinner" />
             <span className="busy-veil-label">Saving lead…</span>
           </div>
         )}
-        {/* Header */}
         <div className="anl-head">
           <div className="anl-head-left">
             <div className="anl-head-icon">
@@ -428,17 +305,7 @@ export default function AddNewLeadModal(props: {
           </button>
         </div>
 
-        {/* Body */}
-        {/* Frozen while the POST is in flight. Disabling only the footer
-            buttons left every input, dropdown and checkbox live: the user could
-            keep typing into a form that had already been submitted, so the lead
-            that landed on the server no longer matched what the screen showed —
-            and those edits were silently thrown away when the modal closed.
-            `inert` blocks clicks, typing AND tab-focus for the whole subtree in
-            one attribute, so a control added here later is covered without
-            anyone remembering to disable it. */}
         <div className="anl-body" inert={saving}>
-          {/* Existing customer toggle */}
           <label className="anl-existing-toggle">
             <input
               type="checkbox"
@@ -467,7 +334,6 @@ export default function AddNewLeadModal(props: {
                 <span>Loading customer details…</span>
               </div>
             )}
-            {/* Customer Information */}
             <div className="anl-section-label">
               <span className="anl-section-icon">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -487,10 +353,6 @@ export default function AddNewLeadModal(props: {
                       fitWidth
                       onChange={(v) => { void onPickExisting(v); }}
                       placeholder={customersLoading ? 'Loading customers…' : 'Select a customer'}
-                      /* Domestic (India) vs International pill on each option, so
-                         the customer's scope is obvious in the picker. Country may
-                         arrive as a name ("India") or ISO ("IN") — treat both as
-                         domestic; blank country shows no badge. */
                       options={customerOpts.map(c => {
                         const cy = c.country.trim().toLowerCase();
                         const badge = !cy ? undefined
@@ -557,7 +419,6 @@ export default function AddNewLeadModal(props: {
               </div>
             </div>
 
-            {/* Location Details */}
             <div className="anl-section-label">
               <span className="anl-section-icon">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -578,25 +439,15 @@ export default function AddNewLeadModal(props: {
                   disabled={lockCustomer}
                 />
               </Field>
-              {/* invalid prop tints the MasterSelect trigger's border red
-                  — same affordance the City TextInput already had so all
-                  four required Location-Details fields look consistent
-                  when the form is submitted with gaps. */}
               <Field label="Country" required error={errors.country}>
                 <div className="master-field">
                   <i className="ri-earth-line master-field-icon" />
                   <MasterSelect
                     value={values.country}
                     onChange={(v) => {
-                      // Picking a new country resets State because the
-                      // previous state probably belongs to the old country.
                       setValues(prev => ({ ...prev, country: v, state: '' }));
                       setErrors(prev => {
                         const n = { ...prev }; delete n.country; delete n.state;
-                        /* PIN and ZIP are different rules, so the code already
-                           typed has to be re-judged against the NEW country —
-                           otherwise a valid "SL7 1TB" survives a switch to India
-                           (and a 6-digit PIN keeps a stale error after leaving). */
                         const pinMsg = pinError(values.pincode, v);
                         if (pinMsg) n.pincode = pinMsg; else delete n.pincode;
                         return n;
@@ -622,9 +473,6 @@ export default function AddNewLeadModal(props: {
                   />
                 </div>
               </Field>
-              {/* Last in the row, after Country/State: its label and rule are
-                  derived from the country, so it reads as a consequence of the
-                  fields before it rather than something to fill in blind. */}
               <Field label={pinLabel(values.country)} error={errors.pincode}>
                 <TextInput
                   value={values.pincode}
@@ -639,7 +487,6 @@ export default function AddNewLeadModal(props: {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="anl-foot">
           <div className="anl-foot-hint">
             <span className="anl-req-dot" />
@@ -676,7 +523,6 @@ export default function AddNewLeadModal(props: {
   ), document.body);
 }
 
-/* ── Local sub-components ───────────────────────────────────────────────── */
 
 function Field(props: { label: string; required?: boolean; error?: string; children: React.ReactNode }) {
   return (
@@ -720,35 +566,6 @@ function TextInput(props: {
   );
 }
 
-function SelectInput(props: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  options: { value: string; label: string }[];
-  iconLeft?: string;
-  disabled?: boolean;
-  error?: boolean;
-}) {
-  return (
-    <div className={`anl-input-wrap ${props.iconLeft ? 'has-icon' : ''} ${props.error ? 'has-error' : ''}`}>
-      {props.iconLeft && <i className={`${props.iconLeft} anl-input-icon`} />}
-      <select
-        className="anl-input anl-select"
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        disabled={props.disabled}
-      >
-        <option value="">{props.placeholder ?? 'Select'}</option>
-        {props.options.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-      <i className="ri-arrow-down-s-line anl-select-arrow" />
-    </div>
-  );
-}
-
-/* ── Scoped styles ──────────────────────────────────────────────────────── */
 const SCOPED_CSS = `
 .anl-backdrop {
   position: fixed; inset: 0; z-index: 1100;
@@ -762,7 +579,6 @@ const SCOPED_CSS = `
 .anl-modal {
   width: 100%; max-width: 820px;
   margin: auto;
-  /* Positioning context for .anl-saving-veil. */
   position: relative;
   background: #fff;
   border-radius: 20px;
@@ -773,9 +589,6 @@ const SCOPED_CSS = `
   max-height: calc(100vh - 72px);
 }
 .anl-modal *, .anl-modal *::before, .anl-modal *::after { box-sizing: border-box; }
-/* Above the sticky footer, and blurring the form it covers — .busy-veil only
-   brings the scrim + spinner, since it is normally paired with BusyOverlay's
-   own .busy-content wrapper, which this modal has no room to introduce. */
 .anl-saving-veil {
   z-index: 20;
   border-radius: 20px;
@@ -784,9 +597,6 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .anl-saving-veil { background: rgba(6, 22, 33, .55); }
 
-/* Header — teal/cyan gradient matching the Assign Leads modal so the
- * two sibling popups (both fired from the same My Workplace toolbar)
- * share one visual identity. */
 .anl-head {
   position: relative;
   padding: 16px 22px;
@@ -795,8 +605,6 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   overflow: hidden;
 }
-/* Decorative bubble orbs (from the figma header) — two soft white circles
-   clipped by the header's overflow:hidden, sitting behind the content. */
 .anl-head::before {
   content: '';
   position: absolute;
@@ -834,29 +642,16 @@ const SCOPED_CSS = `
   position: relative; z-index: 1;
 }
 .anl-close:hover:not(:disabled) { background: rgba(255,255,255,.22); transform: rotate(90deg); }
-/* Locked shut while a save is in flight — dismissing the modal mid-POST
-   drops the user back on the list with no idea whether the lead landed,
-   and a retry then creates a duplicate. */
 .anl-close:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
-/* Body */
 .anl-body {
   padding: 16px 22px 18px;
   display: flex; flex-direction: column; gap: 14px;
   background: linear-gradient(180deg, #f0fdff 0%, #ffffff 100%);
   overflow-y: auto;
 }
-/* A frozen form must LOOK frozen. The inert attribute alone blocks input
-   silently, so a user who keeps typing gets no explanation for why nothing
-   appears — the dimmed, wait-cursor state is what tells them a save is
-   running. (No backticks in here: this block is a template literal.) */
 .anl-body[inert] { opacity: .6; cursor: wait; user-select: none; }
 
-/* Existing-customer auto-fill in flight. The fields underneath keep their
-   layout (so the modal does not jump) but are dimmed and sealed off behind
-   a translucent sheet carrying the spinner, which is what tells the user
-   the blanks are about to be filled rather than left empty.
-   (No backticks in here: this block is a template literal.) */
 .anl-fill-zone { position: relative; display: flex; flex-direction: column; gap: 14px; }
 .anl-fill-zone.is-loading > *:not(.anl-fill-overlay) {
   opacity: .4; pointer-events: none; user-select: none;
@@ -877,9 +672,6 @@ const SCOPED_CSS = `
   animation: anl-spin 0.6s linear infinite;
 }
 
-/* Existing-customer toggle — green border to flag this as the "shortcut"
-   row that pulls saved customer records, distinct from the cyan form
-   below it. */
 .anl-existing-toggle {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 14px;
@@ -912,7 +704,6 @@ const SCOPED_CSS = `
   margin-top: 1px;
 }
 
-/* Section header pill */
 .anl-section-label {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 9.5px; font-weight: 800;
@@ -926,7 +717,6 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 
-/* Grids */
 .anl-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .anl-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .anl-col-span-2 { grid-column: span 2; }
@@ -940,7 +730,6 @@ const SCOPED_CSS = `
   .anl-col-span-2 { grid-column: span 1; }
 }
 
-/* Field */
 .anl-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .anl-label {
   font-size: 9.5px; font-weight: 700;
@@ -954,7 +743,6 @@ const SCOPED_CSS = `
   margin-top: 2px;
 }
 
-/* Input shells */
 .anl-input-wrap {
   position: relative;
   width: 100%;
@@ -987,7 +775,6 @@ const SCOPED_CSS = `
   transition: color .18s ease;
 }
 .anl-input-wrap:focus-within .anl-input-icon { color: #0891b2; }
-/* Fixed +91 country-code chip for India mobile numbers */
 .anl-input-prefix {
   position: absolute; left: 1.5px; top: 1.5px; bottom: 1.5px;
   display: flex; align-items: center; padding: 0 9px;
@@ -998,13 +785,6 @@ const SCOPED_CSS = `
 .anl-input-wrap.has-prefix .anl-input { padding-left: 48px; }
 [data-bs-theme="dark"] .anl-input-prefix { background: transparent; color: #cffafe; border-right-color: rgba(34, 211, 238, 0.22); }
 
-/* Select arrow */
-.anl-select { appearance: none; -webkit-appearance: none; padding-right: 32px; cursor: pointer; }
-.anl-select-arrow {
-  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-  font-size: 18px; color: #94a3b8; pointer-events: none;
-}
-
 .anl-input-wrap.has-error .anl-input {
   border-color: #ef4444;
   background: #fef2f2;
@@ -1014,7 +794,6 @@ const SCOPED_CSS = `
 }
 .anl-field.has-error .anl-label { color: #ef4444; }
 
-/* Footer */
 .anl-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 22px;
@@ -1077,7 +856,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .anl-input:disabled { background: #0e2940; color: #6b7280; }
 [data-bs-theme="dark"] .anl-input-icon { color: #6b7280; }
 [data-bs-theme="dark"] .anl-input-wrap:focus-within .anl-input-icon { color: #67e8f9; }
-[data-bs-theme="dark"] .anl-select-arrow { color: #6b7280; }
 [data-bs-theme="dark"] .anl-label { color: #8aa1d9; }
 [data-bs-theme="dark"] .anl-section-label { color: #67e8f9; }
 [data-bs-theme="dark"] .anl-section-icon { background: rgba(8, 145, 178, 0.22); color: #67e8f9; }
@@ -1092,23 +870,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .anl-input-wrap.has-error .anl-input { background: rgba(239, 68, 68, 0.12); border-color: #ef4444; color: #fecaca; }
 [data-bs-theme="dark"] .anl-field-error    { color: #fca5a5; }
 
-/* MasterSelect / MasterFormStyles icon-prefixed wrappers used for
-   Customer Name, Country, State. The light-mode shell is provided by
-   masterFormKit; here we only adjust the leading icon's tint so it
-   stays visible against the dark input surface. */
 [data-bs-theme="dark"] .master-modal .anl-modal .master-field-icon { color: #6b7280; }
 [data-bs-theme="dark"] .master-modal .anl-modal .master-field:focus-within .master-field-icon { color: #67e8f9; }
 
-/* Country / State carry the SAME dark surface as the text inputs beside them.
- *
- * MasterSelect renders a <button>, not an <input>, so none of the
- * [data-bs-theme="dark"] .anl-input rules above ever reached it — it kept
- * masterFormKit's neutral shell, var(--vz-card-bg), which is Velzon's grey
- * #212529 against this modal's teal #102a3a. Disabled State was a third
- * colour again (--vz-secondary-bg), so the row read as three different
- * fields. Every value below is the one .anl-input uses for the same state,
- * so the two controls can only drift if that palette is edited in one place
- * and not the other. */
 [data-bs-theme="dark"] .master-modal .anl-modal .master-select-toggle {
   background: #102a3a;
   border-color: rgba(34, 211, 238, 0.22);
@@ -1122,8 +886,6 @@ const SCOPED_CSS = `
   border-color: rgba(34, 211, 238, 0.40);
   box-shadow: none;
 }
-/* .show and .invalid are declared !important in MasterSelect.css, so the
-   teal focus ring has to answer in kind. */
 [data-bs-theme="dark"] .master-modal .anl-modal .master-select-wrap.show .master-select-toggle {
   background: #0c1f2e;
   border-color: #06b6d4 !important;
@@ -1139,8 +901,6 @@ const SCOPED_CSS = `
   background: #0e2940;
   color: #6b7280;
 }
-/* Matches .anl-input::placeholder — "Select country first" should read as
-   unfilled, not as a value. */
 [data-bs-theme="dark"] .master-modal .anl-modal .master-select-placeholder {
   color: #94a3b8;
   opacity: 0.7;

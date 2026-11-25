@@ -1,5 +1,3 @@
-/* Productivity Tracker (Sales To-Do) page styles.
-   Extracted from SalesTodo.tsx; all rules are scoped under .td-root. */
 
 .td-root {
   font-family: var(--font-sans);
@@ -18,22 +16,15 @@
 .td-no-access-title { font-size:16px; font-weight:800; color:#0d9488; }
 .td-no-access-sub   { font-size:12px; color:#64748b; margin-top:8px; max-width:540px; margin-left:auto; margin-right:auto; line-height:1.55; }
 
-/* Toolbar */
 .td-root .td-toolbar { display:flex; flex-direction:column; gap:8px; }
-/* Keep the whole toolbar on a single line — Virtual / Physical / List /
-   Calendar tabs on the left, Add + Search on the right. Wraps only on very
-   small screens (<900px) to avoid horizontal scroll. */
 .td-root .td-toolbar-row {
   display:flex; align-items:center;
   gap:10px; flex-wrap: nowrap; min-width: 0;
 }
-/* Search + Add button group anchors to the right together (Figma): the
-   search-wrap takes the auto margin so it sits beside the Add button. */
 @media (max-width: 900px) {
   .td-root .td-toolbar-row { flex-wrap: wrap; }
 }
 .td-root .td-filters { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; min-width: 0; }
-/* View toggle row (Reminder tab, screenshot 1 — view toggle alone below filters) */
 .td-root .td-reminder-view-row {
   display: flex; align-items: center; gap: 6px;
   padding: 0; margin-top: 2px;
@@ -44,7 +35,6 @@
   border-radius: 8px;
 }
 
-/* Meeting status sub-filter row (under primary pills) */
 .td-root .td-meeting-status-row {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   padding: 8px 14px;
@@ -61,7 +51,6 @@
 @media (max-width: 900px) {
   .td-root .td-toolbar-right { flex-wrap: wrap; }
 }
-/* Meeting sub-tab */
 .td-root .td-meeting-sub {
   display: flex; gap: 6px;
   padding: 4px;
@@ -83,7 +72,6 @@
   box-shadow: 0 2px 6px rgba(13,148,136,.3);
 }
 
-/* Table card */
 .td-root .td-table-card {
   background: #fff;
   border: 1.5px solid #99f6e4;
@@ -130,7 +118,6 @@
 .td-root .td-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #0d9488; font-weight: 600; font-size: 10.5px; }
 .td-root .td-cust-sub { color: #94a3b8; font-size: 10px; margin-top: 2px; }
 
-/* TODAY indicator pill in Set Date column — amber matches screenshot */
 .td-root .td-today-pill {
   display: inline-block; margin-left: 6px;
   font-size: 9.5px; font-weight: 800;
@@ -140,7 +127,6 @@
   letter-spacing: .06em;
 }
 
-/* Virtual/Physical type badge next to meeting code */
 .td-root .td-mtg-type {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 9px; font-weight: 700;
@@ -186,7 +172,7 @@
   display: flex; flex-direction: column;
   box-shadow: 0 24px 60px rgba(13,148,136,.25), 0 8px 24px rgba(0,0,0,.1);
   overflow: hidden;
-  position: relative;   /* positioning context for the saving lock overlay */
+  position: relative;
 }
 .td-modal-header {
   background: linear-gradient(135deg, #0d9488 0%, #065f46 60%, #064e3b 100%);
@@ -195,7 +181,6 @@
   flex-shrink: 0;
   position: relative; overflow: hidden;
 }
-/* Decorative bubble orbs — exact Figma values (solid translucent circles) */
 .td-modal-header::before {
   content:''; position:absolute; right:-40px; top:-40px;
   width:160px; height:160px; border-radius:50%;
@@ -237,7 +222,6 @@
   overflow-y: auto; flex: 1;
 }
 
-/* Saving lock — blankets the whole modal so no field/button can be edited mid-save. */
 .td-form-lock {
   position: absolute; inset: 0; z-index: 30;
   display: flex; flex-direction: column; gap: 10px;
@@ -271,13 +255,6 @@
   margin: 0;
   line-height: 1.3;
 }
-/* Force every form control (input, native select via .td-inp, custom select
-   trigger via .td-cs-trigger, date/time inputs) to share the SAME box —
-   exact height, identical padding, identical font metrics — so adjacent
-   fields in a row sit on the same baseline. Without these overrides the
-   browser's native UI for date/time inputs renders slightly taller than a
-   plain text input, which made the Edit Meeting popup's 3-col row
-   (Date / Start / End) look misaligned. */
 .td-modal .td-inp,
 .td-modal .td-cs-trigger {
   box-sizing: border-box;
@@ -285,11 +262,9 @@
   min-height: 36px;
   padding: 6px 11px;
   font-size: 12px;
-  line-height: 22px;       /* 22 + 6 + 6 + 2 border = 36px exactly */
+  line-height: 22px;
   vertical-align: middle;
 }
-/* Fields render on white so they stand out from the tinted (#f0fdfa) modal
-   body — the Master select / date toggles otherwise blend into the body. */
 .td-modal .master-select-toggle,
 .td-modal .master-datepicker-toggle { background: #fff; }
 .td-modal textarea.td-inp {
@@ -298,16 +273,11 @@
   padding: 8px 11px;
   line-height: 1.45;
 }
-/* Inline validation — red border on the offending input + red helper text
-   directly under the field (replaces the old lumped error box). */
 .td-modal .td-inp.td-inp-err { border-color: #ef4444 !important; background: #fef2f2; }
 .td-modal .td-inp.td-inp-err:focus { box-shadow: 0 0 0 3px rgba(239,68,68,.15); }
 .td-field-err { margin-top: 4px; font-size: 10.5px; font-weight: 600; color: #dc2626; line-height: 1.35; }
 [data-bs-theme="dark"] .td-modal .td-inp.td-inp-err { background: rgba(239,68,68,.12); }
 [data-bs-theme="dark"] .td-field-err { color: #f87171; }
-/* Date / time inputs — strip the browser-injected internal padding so the
-   value text aligns vertically with the text-input siblings in the same
-   row, and stretch them to the full cell width. */
 .td-modal input[type="date"].td-inp,
 .td-modal input[type="time"].td-inp {
   width: 100%;
@@ -322,17 +292,9 @@
 }
 .td-modal input[type="date"].td-inp::-webkit-calendar-picker-indicator:hover,
 .td-modal input[type="time"].td-inp::-webkit-calendar-picker-indicator:hover { opacity: 1; }
-/* 3-column rows (Date / Start / End) — slightly tighter gap looks balanced
-   when the three controls are narrow, and gives the row visual rhythm.
-   Extra top margin separates this row from the standalone Meeting Link /
-   Venue field above it (those use colSpan=2 without a .td-form-row wrapper,
-   so they don't contribute a bottom margin). */
 .td-form-row-3 { gap: 10px 12px; margin-top: 9px; }
-/* Standalone colSpan=2 fields (Meeting Link / Venue / Meeting Agenda) — give
-   them their own bottom margin so they don't crowd the next row. */
 .td-modal-body > .td-field { margin-bottom: 9px; }
 
-/* Virtual / Physical toggle at top of meeting modal */
 .td-mtg-toggle {
   display: flex; margin-bottom: 14px;
   border-radius: 10px; overflow: hidden;
@@ -346,25 +308,18 @@
   background: #f0fdfa; color: #0d9488;
 }
 .td-mtg-toggle-btn + .td-mtg-toggle-btn { border-left: 1.5px solid #99f6e4; }
-/* Hover feedback on the INACTIVE tab (light mode had none) — a soft teal tint
-   so it clearly reacts, without mimicking the active tab. */
 .td-mtg-toggle-btn:hover:not(.active) { background: #ccfbf1; color: #0f766e; }
-/* Selected tab stays boldly highlighted: solid teal gradient, white text, and
-   a subtle lift so it's unmistakably the active choice. */
 .td-mtg-toggle-btn.active {
   background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.15), 0 2px 8px rgba(13,148,136,.35);
 }
 
-/* Attachment dropzone */
 .td-file-drop {
   display: flex; align-items: flex-start; gap: 9px;
   cursor: pointer;
   border: 1.5px dashed #99f6e4; border-radius: 8px;
   padding: 9px 12px; background: #f0fdfa;
-  /* Same height as the Remark textarea so the two fields line up evenly,
-     matching the lead-matrix reminder modal. */
   height: 76px; transition: all .15s;
 }
 .td-file-drop:hover { border-color: #14b8a6; background: #ccfbf1; }
@@ -383,14 +338,10 @@
 }
 .td-file-clear:hover { background: #f43f5e; color: #fff; border-color: #f43f5e; }
 
-/* Existing-attachment chip — shows in edit mode when the row already has
-   a file. Lets the user open / replace / detach it without re-uploading. */
 .td-file-existing {
   display: flex; align-items: center; gap: 9px;
   border: 1.5px solid #5eead4; border-radius: 8px;
   padding: 7px 12px; background: #ccfbf1;
-  /* Same height as the file picker + Remark textarea so the row stays even
-     when an existing attachment chip is shown. */
   height: 76px;
 }
 .td-file-existing-link {
@@ -417,7 +368,6 @@
 }
 .td-file-remove:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
 
-/* TdSelect — themed custom dropdown */
 .td-cs { position: relative; }
 .td-cs-trigger {
   display: flex; align-items: center; justify-content: space-between;
@@ -452,8 +402,6 @@
   display: flex; flex-direction: column;
 }
 @keyframes tdCsIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-/* Search row — only rendered when options.length > 4. Sticks to the top
-   of the menu and scrolls with the option list underneath it. */
 .td-cs-search {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 8px 6px 10px; margin: 2px 2px 4px;
@@ -528,7 +476,6 @@
 .td-form-error-list { margin:0; padding-left:16px; display:flex; flex-direction:column; gap:2px; }
 .td-form-error-list li { line-height:1.4; }
 .td-char-count { font-size:10px; color:#94a3b8; align-self:flex-end; margin-top:2px; }
-/* Read-only reminder "view" modal */
 .td-view-modal { max-width: 560px; }
 .td-view-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
 .td-view-item { display:flex; flex-direction:column; gap:3px; min-width:0; }
@@ -550,12 +497,6 @@
   display:flex; align-items:center; gap:5px;
 }
 .td-footer-actions { display:flex; gap:8px; }
-/* Semantic table-cell classes — replace inline color styles so dark mode can
-   override them. Inline style color always wins over CSS, which is why the
-   meeting table looked dim on dark bg before this refactor. */
-/* Meeting table: every cell stays on one line (Figma) — the code + Virtual/
-   Physical badge sit inline, and the wide table scrolls horizontally rather
-   than wrapping rows onto two lines. */
 .td-root .td-table-mtg tbody td { white-space: nowrap; }
 .td-root .td-table-mtg .td-mtg-type { vertical-align: middle; }
 .td-cell-strong  { font-weight: 600; color: #1e293b; }
@@ -617,7 +558,6 @@
 }
 @keyframes td-spin { to { transform: rotate(360deg); } }
 
-/* ── Calendar view ── */
 .td-root .td-cal-topbar {
   background: linear-gradient(135deg, #134e4a 0%, #0d9488 55%, #2dd4bf 100%);
   border-radius: 14px; padding: 12px 20px;
@@ -698,8 +638,6 @@
 .td-root .td-cal-grid {
   flex:1; min-height:0; overflow-y:auto;
   display:grid; grid-template-columns:repeat(7,1fr);
-  /* 150px (was 116px) so a full cell — date badge + 3 pills + the "+N more"
-     row (~147px) — fits without the bottom entries bleeding out of the cell. */
   grid-auto-rows: minmax(150px, 1fr);
   gap:1px;
   scrollbar-width: thin; scrollbar-color: #5eead4 transparent;
@@ -712,7 +650,6 @@
 [data-bs-theme="dark"] .td-root .td-cal-grid::-webkit-scrollbar-thumb { background: rgba(94,234,212,.4); background-clip: content-box; }
 .td-root .td-cal-cell {
   background-color:#fff;
-  /* faint diagonal "paper" texture so empty days read as designed, not blank */
   background-image: repeating-linear-gradient(135deg,
     rgba(13,148,136,.032) 0, rgba(13,148,136,.032) 1px,
     transparent 1px, transparent 12px);
@@ -733,7 +670,6 @@
   box-shadow: inset 0 0 0 2px #14b8a6;
 }
 .td-root .td-cal-cell-today:hover { background-color:#dff5ed; }
-/* Out-of-month days: stronger muted hatch so they clearly read as "off" */
 .td-root .td-cal-cell-out {
   background-color:#f4f7f6;
   background-image: repeating-linear-gradient(135deg,
@@ -783,7 +719,6 @@
   box-shadow: 0 1px 2px rgba(16,24,40,.07), inset 0 0 0 1px rgba(255,255,255,.4);
   transition: transform .13s, box-shadow .13s, filter .13s;
 }
-/* round the inline left-accent into a soft pill edge */
 .td-root .td-cal-pill { border-left-width:3px !important; border-top-left-radius:7px; border-bottom-left-radius:7px; }
 .td-root .td-cal-pill:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgba(16,24,40,.16); filter: brightness(.98); }
 .td-root .td-cal-more {
@@ -796,16 +731,11 @@
 }
 .td-root .td-cal-more:hover { background:#ccfbf1; }
 
-/* Popover */
 .td-cal-popover {
   position: fixed; z-index: 10500;
   background:#fff; border-radius:16px;
   box-shadow: 0 24px 70px rgba(2,44,40,.28), 0 6px 24px rgba(0,0,0,.10);
   min-width:340px; max-width:380px;
-  /* Never taller than the viewport — the header stays pinned and the list
-     below scrolls. The list itself caps at 3 rows (see .td-cal-popover-list),
-     so the popover stays compact and extra entries go behind the scrollbar
-     (QA 15/16/17). */
   max-height: calc(100vh - 24px);
   display:flex; flex-direction:column;
   overflow:hidden; border:1px solid rgba(13,148,136,.18);
@@ -821,7 +751,7 @@
   padding:12px 14px 12px 12px;
   display:flex; align-items:flex-start; gap:9px;
   cursor: grab; user-select:none; position:relative; overflow:hidden;
-  flex-shrink:0;   /* header stays pinned; the list below is what scrolls */
+  flex-shrink:0;
 }
 .td-cal-popover-hdr::after {
   content:''; position:absolute; right:-30px; top:-34px;
@@ -853,8 +783,6 @@
   transition: background .12s; position:relative; z-index:1;
 }
 .td-cal-popover-close:hover { background: rgba(255,255,255,.34); }
-/* Show only ~3 rows at a time (each row ≈ 60px); everything else is reached
-   via the scrollbar so the popover never grows tall (QA 15/16/17). */
 .td-cal-popover-list { flex:1 1 auto; min-height:0; max-height:188px; overflow-y:auto; padding:4px 0; }
 .td-cal-popover-list::-webkit-scrollbar { width:7px; }
 .td-cal-popover-list::-webkit-scrollbar-thumb { background:#5eead4; border-radius:4px; border:2px solid #fff; }
@@ -892,18 +820,10 @@
 .td-cal-popover-status-inprog { background:#dbeafe; color:#1d4ed8; }
 .td-cal-popover-status-done   { background:#dcfce7; color:#166534; }
 
-/* ════════════════════════════════════════════════════════════════════
- * DARK MODE — bound to Velzon's data-bs-theme="dark" attribute on <html>.
- * Mirrors the override pattern already used by Toaster / ConfirmContext /
- * recruitment.css so all themed surfaces stay consistent in dark mode.
- * Keeps the teal accent for actions (it works against dark surfaces) and
- * just inverts page chrome (page bg, cards, table rows, inputs, modals).
- * ════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .td-root {
   background: linear-gradient(160deg, #0b1220 0%, #0f1e2b 50%, #0a1620 100%);
   color: #e2e8f0;
 }
-/* Table card */
 [data-bs-theme="dark"] .td-root .td-table-card {
   background: #11182a; border-color: rgba(94,234,212,.25);
   box-shadow: 0 6px 24px rgba(0,0,0,.35);
@@ -912,16 +832,13 @@
 [data-bs-theme="dark"] .td-root .td-table tbody tr:hover { background: rgba(20,184,166,.08); }
 [data-bs-theme="dark"] .td-root .td-table tbody td { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-root .td-today-row td { background: transparent; }
-/* TODAY pill — translucent amber on dark (was bright cream). */
 [data-bs-theme="dark"] .td-root .td-today-pill { background: rgba(245,158,11,.20); color: #fcd34d; border-color: rgba(245,158,11,.38); }
-/* Status badges — translucent tint + light ink on dark (matches role-pill style). */
 [data-bs-theme="dark"] .td-root .td-inprog { background: rgba(59,130,246,.22); color: #93c5fd; border-color: rgba(59,130,246,.35); }
 [data-bs-theme="dark"] .td-root .td-done   { background: rgba(34,197,94,.22);  color: #6ee7b7; border-color: rgba(34,197,94,.35); }
 [data-bs-theme="dark"] .td-root .td-post   { background: rgba(245,158,11,.20); color: #fcd34d; border-color: rgba(245,158,11,.35); }
 [data-bs-theme="dark"] .td-root .td-cancel { background: rgba(239,68,68,.20);  color: #fca5a5; border-color: rgba(239,68,68,.35); }
 [data-bs-theme="dark"] .td-root .td-empty { color: #64748b; }
 
-/* Modal */
 [data-bs-theme="dark"] .td-modal { background: #0e1726; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
 [data-bs-theme="dark"] .td-modal-body { background: #11182a; }
 [data-bs-theme="dark"] .td-form-lock { background: rgba(17, 24, 42, .62); }
@@ -981,7 +898,6 @@
 }
 [data-bs-theme="dark"] .td-btn-cancel:hover { background: rgba(255,255,255,.06); }
 
-/* Calendar — dark cells + popover */
 [data-bs-theme="dark"] .td-cal-card { background: #11182a; border-color: rgba(94,234,212,.25); }
 [data-bs-theme="dark"] .td-cal-grid { background: rgba(94,234,212,.10); }
 [data-bs-theme="dark"] .td-cal-cell {
@@ -997,10 +913,6 @@
     transparent 1px, transparent 10px);
 }
 [data-bs-theme="dark"] .td-cal-cell-out-num { color: #475569; }
-/* Calendar hover — the light-mode rules use near-white tints (#f5fffe etc.)
-   which bleed through to dark mode and create a harsh bright flash on
-   hover. Override each hover variant with a soft teal-tinted dark surface
-   that reads as "highlighted" without losing the dark-mode feel. */
 [data-bs-theme="dark"] .td-cal-cell:hover {
   background: rgba(20,184,166,.10) !important;
   box-shadow: inset 0 0 0 1.5px rgba(94,234,212,.30);
@@ -1016,7 +928,6 @@
 [data-bs-theme="dark"] .td-cal-cell-out:hover { background: rgba(15,23,42,.4) !important; box-shadow:none; }
 [data-bs-theme="dark"] .td-cal-num { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-cal-num-we { color: #5eead4; }
-/* Weekday header row */
 [data-bs-theme="dark"] .td-cal-day-hdr {
   background: rgba(94,234,212,.18);
   border-bottom-color: rgba(94,234,212,.25);
@@ -1030,20 +941,15 @@
   background: linear-gradient(135deg, #0d9488, #0f766e);
   color: #fff; box-shadow: inset 0 -3px 0 #115e59;
 }
-/* Today cell base (only :hover was overridden before — base stayed light) */
 [data-bs-theme="dark"] .td-cal-cell-today {
   background: linear-gradient(160deg, rgba(20,184,166,.16), rgba(20,184,166,.08));
   box-shadow: inset 0 0 0 2px #14b8a6, inset 2px 0 0 #14b8a6;
 }
-/* Count chip + "+more" pill */
 [data-bs-theme="dark"] .td-cal-count { background: rgba(148,163,184,.18); color: #94a3b8; border-color: rgba(148,163,184,.28); }
 [data-bs-theme="dark"] .td-cal-cell-today .td-cal-count { background: rgba(20,184,166,.22); color: #5eead4; border-color: rgba(20,184,166,.4); }
 [data-bs-theme="dark"] .td-cal-more {
   background: rgba(20,184,166,.14); color: #5eead4; border-color: rgba(94,234,212,.30);
 }
-/* Event pills: their light pastel fill + dark text are set inline (per-event
-   hash colour) and glare in dark mode. Override the surface to a dark slate and
-   the text to light; the inline coloured left-accent stays for event identity. */
 [data-bs-theme="dark"] .td-cal-pill {
   background: rgba(30,41,59,.92) !important;
   color: #e2e8f0 !important;
@@ -1060,29 +966,16 @@
 [data-bs-theme="dark"] .td-cal-popover-row:hover { background: rgba(20,184,166,.10); }
 [data-bs-theme="dark"] .td-cal-popover-row-title { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-cal-popover-pill-muted { color:#94a3b8; background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.22); }
-/* Code chip (M-026 etc.) gets a light pastel fill inline — glares in dark.
-   Override only the coloured chip, not the muted ones. */
 [data-bs-theme="dark"] .td-cal-popover-pill:not(.td-cal-popover-pill-muted) {
   background: rgba(94,234,212,.14) !important;
   color: #5eead4 !important;
   border-color: rgba(94,234,212,.30) !important;
 }
-/* Status badges: light tints → translucent dark tint + light ink */
 [data-bs-theme="dark"] .td-cal-popover-status-inprog { background: rgba(59,130,246,.22); color:#93c5fd; }
 [data-bs-theme="dark"] .td-cal-popover-status-done   { background: rgba(34,197,94,.20);  color:#86efac; }
 [data-bs-theme="dark"] .td-cal-popover-list::-webkit-scrollbar-thumb { border-color:#0e1726; }
 
-/* ════════════════════════════════════════════════════════════════════
- * RESPONSIVE — three breakpoints: mobile (≤640), tablet (641-1024),
- * big-screen cap (>1440). Above 900px the layout is already locked to a
- * single row by the toolbar rules above; here we just shrink padding,
- * collapse the toolbar to two stacked rows on mobile, and allow tables to
- * scroll horizontally so the page never overflows the viewport.
- * ════════════════════════════════════════════════════════════════════ */
 @media (max-width: 1024px) {
-  /* Release the desktop fixed-height / internal-scroll shell on mobile so the
-     page flows and scrolls naturally — otherwise the taller stacked toolbar
-     eats the calc() height and the table + pagination get clipped. */
   .td-root { padding: 12px 12px 18px; font-size: 13px; height: auto; overflow: visible; }
   .td-root .td-table { font-size: 11px; }
   .td-root .td-table thead th { padding: 9px 8px; font-size: 9px; }
@@ -1110,10 +1003,7 @@
   .td-footer-actions { width: 100%; justify-content: flex-end; }
 }
 
-/* ═══ List-page alignment (Customers / Consignee / Quotations V/S PI / Lead Ack) ═══ */
 
-/* The page's own teal for the shared list pieces (tab rails, search track, table
-   header band, pager). DataTable's "teal" accent is cyan, not this page's teal. */
 .td-root,
 .td-root .dt-tabrail.dt-tabrail,
 .td-root .dt-root.dt-root {
@@ -1122,12 +1012,9 @@
   --dt-a-700: #0f766e; --dt-a-800: #115e59; --dt-a-rgb: 13, 148, 136;
 }
 
-/* Page: transparent like the other lists, 8px between the strips. */
 .td-root { background: transparent; padding: 14px 0 22px; margin: -1rem 0 0; gap: 8px; }
 [data-bs-theme="dark"] .td-root { background: transparent; }
 
-/* Header — the Supplier list header (.sup-fig .cstrip) in teal. Edges as on the
-   Customers list: icon starts 19px in, the tab rail ends 15px in. */
 .td-root .sup-fig { flex-shrink: 0; }
 .td-root .sup-fig .cstrip {
   padding-left: 18px; padding-right: 14px;
@@ -1154,12 +1041,9 @@
 [data-bs-theme="dark"] .td-root .sup-fig .cstrip__title { color: #ccfbf1; }
 [data-bs-theme="dark"] .td-root .sup-fig .cstrip__sub { color: #5eead4; }
 
-/* Every tab rail on the page: the list size (40px / 12.5px). */
 .td-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
 .td-root .dt-tabrail .dt-tab svg { flex-shrink: 0; }
 
-/* Toolbar — the Customers list toolbar band (its own card here, since it serves
-   both the list and the calendar view). First control starts 19px in. */
 .td-root .td-toolbar {
   flex-shrink: 0; gap: 10px;
   padding: 14px;
@@ -1174,8 +1058,6 @@
 [data-bs-theme="dark"] .td-root .td-toolbar { background: rgba(20,184,166,.06); border-color: rgba(45,212,191,.18); box-shadow: 0 8px 28px rgba(0,0,0,.30); }
 [data-bs-theme="dark"] .td-root .td-meeting-status-row { background: transparent; }
 
-/* Search — full width, drawn as the tab rail's track (1px border, 3px padding,
-   tint) with the 40px field inside it; same as the other Sales lists. */
 .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search {
   position: relative; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
   height: 48px; min-height: 48px;
@@ -1200,7 +1082,6 @@
 [data-bs-theme="dark"] .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search::before { background: rgba(255,255,255,.03); border-color: rgba(var(--dt-a-rgb), .25); }
 
-/* Add — the Supplier header's own button, in teal, as tall as the rails beside it. */
 .td-root .td-toolbar .cstrip__action-btn {
   height: auto; min-height: 40px; padding-top: 0; padding-bottom: 0;
   background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
@@ -1211,8 +1092,6 @@
   box-shadow: 0 8px 24px rgba(13,148,136,.6), 0 2px 6px rgba(15,118,110,.35), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 
-/* Table — the list header band comes from DataTable (.dt-root.hr-dt .dt-table);
-   the old solid teal bar is dropped. */
 .td-root .td-table-card .td-table.dt-table thead tr { background: transparent; box-shadow: none; }
 .td-root .td-table-card .tc-wl-pag { margin: 0; }
 .td-root .td-table-card {
@@ -1226,11 +1105,8 @@
 [data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-menu button { color: #99f6e4; }
 [data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-menu button:hover { background: rgba(20, 184, 166, .18); color: #fff; }
 [data-bs-theme="dark"] .td-root .td-table-card .tc-wl-rows-menu button.is-on { background: #0d9488; color: #fff; }
-/* Status pills at the Customers list pill size (.smc-wa). */
 .td-root .td-badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 
-/* Action buttons — the Customers list .smc-act buttons (SalesCustomers.css isn't
-   loaded here, so restated), plus del / warn / info for this page's actions. */
 .td-root .td-table .smc-act {
   width: 28px; height: 28px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1260,9 +1136,6 @@
 [data-bs-theme="dark"] .td-root .td-table .smc-act-warn  { border-color: rgba(252,211,77,.35);  background: rgba(245,158,11,.12);  color: #fcd34d; }
 [data-bs-theme="dark"] .td-root .td-table .smc-act-del   { border-color: rgba(248,113,113,.35); background: rgba(239,68,68,.10);   color: #fca5a5; }
 
-/* Empty state ("No reminders found" / "No meetings found"): the table stretches to
-   the scroll area and the empty row takes the spare height, so the message sits in
-   the middle of the table instead of just under the header. */
 .td-root .td-table:has(.td-empty) { height: 100%; }
 .td-root .td-table:has(.td-empty) tbody tr:has(.td-empty) { height: 100%; }
 .td-root .td-table .td-empty { vertical-align: middle; border-bottom: 0; }

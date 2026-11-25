@@ -3,18 +3,6 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Lead Activity Tracker — timeline modal triggered by the clock icon in the
- * worksheet table. Shows the lead's lifecycle, newest-first:
- *
- *   generated   → the lead was captured (manual / CRM)
- *   assigned    → first owner set
- *   reassigned  → owner changed from one salesperson to another
- *
- * Data comes from GET /sales/leads/{id}/activity, which reads the generic
- * activity_logs table (target_type='lead'). The endpoint is tenant-scoped,
- * so an out-of-scope lead 404s before any rows are returned.
- * ───────────────────────────────────────────────────────────────────────── */
 
 type ActivityRow = {
   id:          number;
@@ -35,9 +23,7 @@ type Props = {
   onClose: () => void;
 };
 
-/* Per-action visual config — dot colour + glyph. Unknown actions fall back
- * to a neutral slate dot so a future action type never renders blank. */
-const ACTION_META: Record<string, { color: string; bg: string; label: string; icon: JSX.Element }> = {
+const ACTION_META: Record<string, { color: string; bg: string; label: string; icon: React.JSX.Element }> = {
   generated: {
     color: '#16a34a', bg: '#dcfce7', label: 'Generated',
     icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>,
@@ -57,7 +43,6 @@ const FALLBACK_META = {
   icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>,
 };
 
-/* Footer relationship label — makes the actor read as "who did the action". */
 const FOOT_LABEL: Record<string, string> = {
   generated:  'Created by',
   assigned:   'Assigned by',
@@ -74,7 +59,6 @@ function fmt(at: string | null): string {
   });
 }
 
-/* "2 hours ago" / "just now" — a soft secondary label next to the exact time. */
 function rel(at: string | null): string {
   if (!at) return '';
   const d = new Date(at).getTime();
@@ -92,7 +76,6 @@ function rel(at: string | null): string {
   return `${Math.round(mo / 12)} year${mo >= 24 ? 's' : ''} ago`;
 }
 
-/* Two-letter initials for the actor avatar. */
 function initials(name?: string | null): string {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -101,7 +84,6 @@ function initials(name?: string | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/* Deterministic avatar tint from a name so each person keeps one colour. */
 const AVATAR_TINTS = ['#0891b2', '#7c3aed', '#db2777', '#d97706', '#16a34a', '#2563eb', '#0d9488', '#dc2626'];
 function tint(name?: string | null): string {
   if (!name) return AVATAR_TINTS[0];
@@ -209,8 +191,6 @@ export default function LeadActivityModal({ open, leadId, oppCode, onClose }: Pr
 
                       <div className="lat-desc">{r.description ?? '—'}</div>
 
-                      {/* Ownership transition — from → to chips for a reassignment,
-                          a single "to" chip for a first assignment. */}
                       {(fromName || toName) && (
                         <div className="lat-flow">
                           {fromName && (
@@ -233,7 +213,6 @@ export default function LeadActivityModal({ open, leadId, oppCode, onClose }: Pr
                         </div>
                       )}
 
-                      {/* Generated meta — where the lead came from. */}
                       {isGenerated && (source || platform || oppCode) && (
                         <div className="lat-flow lat-meta">
                           {source && (
@@ -336,7 +315,6 @@ const LAT_CSS = `
 .lat-timeline { position: relative; padding: 2px 0; }
 .lat-item { display: flex; gap: 14px; position: relative; }
 .lat-rail { position: relative; display: flex; flex-direction: column; align-items: center; width: 30px; flex-shrink: 0; }
-/* vertical connector — soft gradient so the chain reads top-to-bottom */
 .lat-item:not(:last-child) .lat-rail::after {
   content: ''; position: absolute; top: 32px; bottom: -10px; left: 50%;
   width: 2px; transform: translateX(-50%);
@@ -362,7 +340,6 @@ const LAT_CSS = `
 }
 [data-bs-theme="dark"] .lat-tag-dot { background: color-mix(in srgb, var(--lat-c) 55%, #fff); }
 
-/* Each event is a card so the timeline reads as discrete, scannable rows. */
 .lat-card {
   flex: 1; min-width: 0; margin-bottom: 14px;
   background: #fff; border: 1px solid #e8edf3; border-radius: 12px;
@@ -382,7 +359,6 @@ const LAT_CSS = `
 
 .lat-desc { font-size: 12.5px; font-weight: 600; color: #0f172a; margin-top: 8px; line-height: 1.45; }
 
-/* Ownership transition row — avatar chips + arrow. */
 .lat-flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .lat-owner {
   display: inline-flex; align-items: center; gap: 6px;

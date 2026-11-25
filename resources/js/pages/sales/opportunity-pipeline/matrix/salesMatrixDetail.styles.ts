@@ -1,16 +1,3 @@
-/* ────────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Opportunity Detail — scoped CSS module.
- *
- * Extracted from SalesMatrixDetail.tsx so the component file stays
- * readable and the styles can be co-located across stage renderers
- * if needed. Exported as a plain string and injected via
- *
- *     <style>{SALES_MATRIX_DETAIL_CSS}</style>
- *
- * inside the page root. Class names are prefixed `.smd-*` and scoped
- * under `.smd-root` so they don't leak into other surfaces that
- * happen to use the same generic words (`step`, `card`, `meta`, etc.).
- * ──────────────────────────────────────────────────────────────────────── */
 
 export const SALES_MATRIX_DETAIL_CSS = `
 .page-content:has(> .container-fluid > .smd-root) {
@@ -21,32 +8,11 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-root {
   font-family: var(--font-sans);
   background: linear-gradient(160deg,#faf5ff 0%,#f5f3ff 35%,#fafafa 100%);
-  /* One 8px gutter on all four sides — the app-wide number .page-content sets
-     (app.css) and every other page already follows.
-     The margin exists so the gradient background bleeds across the whole
-     content area instead of stopping at the gutter, so it must cancel exactly
-     what .page-content applies and no more. It said -1rem/-0.75rem, written
-     against Velzon's stock padding; app.css has since overridden that to a
-     flat 8px, so this was over-pulling by 8px at the top and 4px at the sides.
-     The visible gap above the customer banner was 8 - 16 + 10 = 2px, not the
-     10px the padding reads as — and 0px once the padding was evened up. */
   padding: 8px;
   margin: -8px;
-  /* At least the viewport height — the columns fill it (see the card
-     min-height below) and the page scrolls in the layout's own content area
-     (whose scrollbar already starts below the navbar). Giving .smd-root its own
-     overflow created a SECOND scrollbar, so it stays min-height only.
-     overflow-x hidden keeps the page-wide horizontal bar off — the step /
-     action rows scroll their own overflow-x internally. */
   flex: 1 1 auto;
   display: flex; flex-direction: column;
-  /* clip (not hidden) kills the page-wide horizontal bar WITHOUT turning
-     overflow-y into auto — hidden would create a second vertical scrollbar. */
   overflow-x: clip;
-  /* Promote the page to its own GPU layer so scrolling COMPOSITES the layer
-     instead of repainting every card shadow + the gradient each frame — that
-     per-frame repaint made the scroll wavy/laggy. (Safe: no position:fixed
-     descendants live inside .smd-root.) */
   transform: translateZ(0);
   backface-visibility: hidden;
   color: #1e293b;
@@ -54,7 +20,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-root *,.smd-root *::before,.smd-root *::after { box-sizing: border-box; }
 
-/* ── Customer banner — premium lavender strip with glow, sheen, glass pills ── */
 .smd-cust-banner {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
@@ -68,20 +33,17 @@ export const SALES_MATRIX_DETAIL_CSS = `
     0 8px 28px rgba(139,92,246,.20),
     0 2px 8px rgba(0,0,0,.06);
 }
-/* Left accent bar */
 .smd-cust-accent {
   position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
   background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
   border-radius: 16px 0 0 16px;
 }
-/* Soft radial glows behind content */
 .smd-cust-glow {
   position: absolute; inset: 0; pointer-events: none;
   background:
     radial-gradient(ellipse at 10% 50%, rgba(196,181,253,.45) 0%, transparent 50%),
     radial-gradient(ellipse at 90% 50%, rgba(167,139,250,.25) 0%, transparent 55%);
 }
-/* Top sheen */
 .smd-cust-sheen {
   position: absolute; top: 0; left: 0; right: 0; height: 50%;
   pointer-events: none;
@@ -89,7 +51,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-radius: 16px 16px 0 0;
 }
 
-/* Left: avatar + name + glass badge */
 .smd-cust-left {
   display: flex; align-items: center; gap: 13px;
   flex-shrink: 0; z-index: 1;
@@ -116,9 +77,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   display: inline-flex; align-items: center; gap: 4px;
   margin-top: 3px;
   padding: 1px 9px; border-radius: 20px;
-  /* Solid-ish fill instead of a translucent + backdrop-blur pill: backdrop-filter
-     re-composites the blurred backdrop on every scroll frame, which made the
-     whole stage page scroll shaky/laggy. A near-opaque white reads the same. */
   background: rgba(255,255,255,.88);
   border: 1px solid rgba(139,92,246,.35);
 }
@@ -131,18 +89,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
   text-transform: uppercase; letter-spacing: .1em;
 }
 
-/* Right: meta pills + 3-dot separators + line + back button */
 .smd-cust-meta {
   display: flex; align-items: center; gap: 7px;
   flex: 0 1 auto; justify-content: flex-end; flex-wrap: nowrap;
   z-index: 1;
 }
 
-/* WhatsApp Status — green pill that lives at the head of the meta row
-   (relocated from the action toolbar). Solid green gradient with a
-   translucent-white icon badge on the left, matching the prototype's
-   header design. When the lead is marked connected the pill gets a
-   slightly deeper green + small status dot. */
 .smd-hdr-wa {
   display: inline-flex; align-items: center; gap: 8px;
   box-sizing: border-box; height: 40px;
@@ -173,9 +125,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   font-size: 12.5px; font-weight: 700; letter-spacing: .01em;
   white-space: nowrap;
 }
-/* Connected variant — slightly deeper gradient + tiny status dot
-   appended after the label so the user can see at a glance that
-   WhatsApp communication is already on record. */
 .smd-hdr-wa-on {
   background: linear-gradient(135deg, #16a34a 0%, #15803d 55%, #166534 100%);
 }
@@ -186,7 +135,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .25);
 }
 
-/* 3-dot vertical separator between pills */
 .smd-cust-sep {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 0 1px;
@@ -196,13 +144,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: rgba(124,58,237,.30);
 }
 
-/* Glass pill — translucent with blur */
 .smd-meta {
   display: flex; align-items: center; gap: 9px;
   box-sizing: border-box; height: 40px;
   padding: 0 14px;
-  /* Near-opaque instead of translucent + backdrop-blur — see .smd-cust-tag:
-     the blur was re-composited every scroll frame and made the page shaky. */
   background: rgba(255,255,255,.92);
   border: 1.5px solid rgba(139,92,246,.30);
   border-radius: 12px;
@@ -231,7 +176,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
 
-/* Vertical hairline before the back button */
 .smd-cust-line {
   width: 1px; height: 30px;
   margin: 0 3px;
@@ -242,7 +186,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
     transparent);
 }
 
-/* Back button — tri-stop violet with top sheen ::before */
 .smd-back-btn {
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
@@ -282,7 +225,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-back-btn:active { transform: translateY(0); }
 
-/* ── Stepper card — unified white container that also holds the action toolbar ── */
 .smd-stepper-card {
   background: #fff;
   border: 1px solid #ede9fe;
@@ -294,7 +236,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
     inset 0 1px 0 rgba(255,255,255,.90);
 }
 
-/* ── Stepper — separated cards with right-pointing chevron arrows between ── */
 .smd-stepper { display: flex; align-items: stretch; gap: 16px; }
 .smd-step {
   flex: 1; min-width: 0;
@@ -303,21 +244,14 @@ export const SALES_MATRIX_DETAIL_CSS = `
   padding: 5px 8px 5px 10px;
   display: flex; flex-direction: column;
   cursor: pointer; user-select: none;
-  /* overflow visible so the ::after chevron arrow can draw outside the
-     card into the 16px gap. The ::before sheen sits inside the card so
-     it's unaffected. */
   overflow: visible;
   transition: transform .17s ease, box-shadow .17s ease;
 }
-/* Locked step — a future stage that hasn't been reached yet. Not clickable
-   (the onClick no-ops); show a not-allowed cursor and a faint dimming so the
-   user sees it's gated until the current stage is completed. */
 .smd-step-locked {
   cursor: not-allowed;
   opacity: .82;
 }
 .smd-step-locked:hover { transform: none; box-shadow: none; }
-/* Top sheen — shown only on active + done via opacity overrides below. */
 .smd-step::before {
   content: '';
   position: absolute; top: 0; left: 0; right: 0; height: 44%;
@@ -325,7 +259,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-radius: 9px 9px 0 0;
   opacity: 0;
 }
-/* Right-pointing chevron arrow in the gap, coloured per source-card state. */
 .smd-step::after {
   content: '';
   position: absolute;
@@ -338,7 +271,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-step:last-child::after { display: none; }
 
-/* ─── ACTIVE ─── */
 .smd-step-active {
   background: linear-gradient(150deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
   border: 1.5px solid #6d28d9;
@@ -358,7 +290,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-step-active::after { background: #9b72f5; opacity: .65; }
 
-/* ─── DONE ─── */
 .smd-step-done {
   background: linear-gradient(150deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
   border: 1.5px solid #c4b5fd;
@@ -378,7 +309,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-step-done::after { background: #9b72f5; opacity: .65; }
 
-/* ─── UPCOMING (idle) ─── */
 .smd-step-idle {
   background: linear-gradient(150deg, #f8fafc, #f1f5f9);
   border: 1.5px solid #e2e8f0;
@@ -389,7 +319,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-step-idle::after { background: #d1d8e2; opacity: .35; }
 
-/* Content above the sheen. */
 .smd-step > * { position: relative; z-index: 1; }
 
 .smd-step-head { margin-bottom: 2px; }
@@ -402,7 +331,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-step-done   .smd-step-num { color: #b8a0f8; }
 .smd-step-idle   .smd-step-num { color: #d1d8e2; }
 
-/* Chip — absolute top-right corner. */
 .smd-step-badge {
   position: absolute; top: 5px; right: 6px; z-index: 11;
   display: inline-flex; align-items: center; gap: 3px;
@@ -468,14 +396,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-step-done   .smd-step-ghost { color: rgba(124,58,237,.06); }
 .smd-step-idle   .smd-step-ghost { color: rgba(148,163,184,.09); }
 
-/* Divider between stepper and action toolbar (inside .smd-stepper-card). */
 .smd-stepper-divider {
   height: 1px;
   margin: 12px 0;
   background: linear-gradient(90deg, transparent, #ddd6fe 20%, #ddd6fe 80%, transparent);
 }
 
-/* ── Action toolbar — lives inside .smd-stepper-card below the divider ── */
 .smd-toolbar {
   display: flex; align-items: center; gap: 7px;
   width: 100%;
@@ -489,9 +415,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-toolbar::-webkit-scrollbar { height: 3px; }
 .smd-toolbar::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
-/* Buttons grow to share the full toolbar width edge-to-edge so the row
-   spans the container instead of clustering on the left with empty space
-   on the right. Separators stay fixed-size hairlines. */
 .smd-toolbar > .smd-act { flex: 1 1 auto; justify-content: center; }
 .smd-act-sep {
   display: inline-block;
@@ -500,7 +423,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: linear-gradient(to bottom, transparent, #ddd6fe, transparent);
 }
 .smd-act {
-  /* 40px — the height of every other button on the page (banner, Back). */
   display: inline-flex; align-items: center; gap: 6px;
   box-sizing: border-box; height: 40px;
   padding: 0 13px; border-radius: 10px;
@@ -537,13 +459,9 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 [data-bs-theme="dark"] .smd-act-disabled .smd-act-icon,
 [data-bs-theme="dark"] .smd-act-disabled .smd-act-trail { color: #64748b; }
-/* Deal-locked toolbar button (PI signed) — KEEP the button's original colour;
-   just lay a subtle translucent veil over it (no grey-out, no recolour). The
-   button is still clickable so a click can raise the "deal locked" toast. */
 .smd-act-locked { position: relative; cursor: not-allowed; }
 .smd-act-locked::after {
   content: ''; position: absolute; inset: 0; border-radius: inherit;
-  /* Neutral slate-grey veil — reads clearly as "disabled" (not the old rose). */
   background: rgba(100,116,139,.34); pointer-events: none;
 }
 [data-bs-theme="dark"] .smd-act-locked::after { background: rgba(148,163,184,.30); }
@@ -555,27 +473,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
   margin-left: 1px; color: #a78bfa;
 }
 .smd-act-trail svg { width: 10px; height: 10px; }
-.smd-act-wa {
-  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-  border-color: #86efac;
-  color: #15803d;
-  box-shadow:
-    0 2px 7px rgba(34,197,94,.10),
-    inset 0 1px 0 rgba(255,255,255,.90);
-}
-.smd-act-wa .smd-act-icon { color: currentColor; }
-.smd-act-wa:hover {
-  background: linear-gradient(135deg, #16a34a, #15803d);
-  color: #fff;
-  border-color: #15803d;
-  box-shadow: 0 5px 14px rgba(22,163,74,.32);
-}
-.smd-act-wa:hover .smd-act-icon { color: #fff; }
 
-/* Key Opportunity — applied after the user confirms in the
-   KeyOpportunityModal so the toolbar visibly reflects the
-   high-priority flag. Amber wash with a slightly stronger glow than
-   the other neutral action pills. */
 .smd-act-key {
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   border-color: #d97706;
@@ -590,44 +488,18 @@ export const SALES_MATRIX_DETAIL_CSS = `
   box-shadow: 0 5px 14px rgba(245, 158, 11, .50);
 }
 
-/* ── Body — flex row: CLM 20% · Stage (fills the rest) · Deal 30%.
-   When a side card is collapsed the JSX swaps it for a thin .smd-rail,
-   whose fixed flex-basis (see .smd-rail below) shrinks that side so the
-   middle stage card absorbs the freed width. ── */
 .smd-body {
-  /* Grid (not flex) so the centre column can OPT OUT of setting the row
-     height: with min-height:0 on .smd-stage-card the row's height is
-     driven by the side panels' natural content, and the centre stretches
-     to match them, scrolling its own overflow internally. This keeps all
-     three columns the same height whether the LEFT is tall (segments) or
-     the CENTRE is tall (Stage 6 shipment summary). */
   display: grid;
   grid-template-columns: 20% 1fr 30%;
   gap: 10px;
   align-items: stretch;
-  /* No transition on grid-template-columns.
-     The tracks go from 20% to 44px — different units — so the browser
-     interpolates through calc() and RE-LAYS-OUT the centre column on every
-     frame of the 300ms. The Stage 6 panel is a grid of its own, so its content
-     reflowed ~18 times in a row: that is the flicker, not a repaint glitch.
-     Collapsing is a single deliberate click; it does not need easing, and
-     without it the panel simply changes width and stays put. */
 }
-/* Collapsed side rails shrink their column to the 44px rail width. */
 .smd-body-clm-collapsed  { grid-template-columns: 44px 1fr 30%; }
 .smd-body-deal-collapsed { grid-template-columns: 20% 1fr 44px; }
 .smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 44px 1fr 44px; }
-/* The row is as tall as its tallest column, and a side panel full of segment
-   cards is often the one setting that height. Collapse it and the row loses
-   its tallest member, so the CENTRE shrank at the exact moment the user made
-   room for it — the opposite of what collapsing is for.
-   The floor keeps the row where it was. It is the same figure the three cards
-   already use, so nothing new is being invented here; it just has to survive
-   the panel that was supplying it going away. */
 .smd-body-clm-collapsed,
 .smd-body-deal-collapsed { min-height: 480px; }
 
-/* ── Collapsed side rail ── */
 .smd-rail {
   flex: 0 0 44px;
   background: #fff;
@@ -643,7 +515,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   box-shadow: 0 2px 12px rgba(124,58,237,.07);
 }
 .smd-rail:hover { box-shadow: 0 4px 14px rgba(124,58,237,.15); }
-/* Arrow stays the violet gradient (matches the card-header collapse btn). */
 .smd-rail-btn {
   width: 24px; height: 24px; border-radius: 6px;
   background: linear-gradient(135deg, #7c3aed, #6d28d9); border: none; color: #fff;
@@ -672,37 +543,23 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-radius: 14px;
   overflow: hidden; display: flex; flex-direction: column;
   min-width: 0;
-  /* A 480px floor, not the full viewport: filling the screen left a large
-     empty band under short stages and pushed Save & Next / Save to the
-     bottom. The SIDE panels keep this floor and grow with their content,
-     driving the grid row height; the centre opts out (min-height:0 below)
-     and stretches to match them, scrolling its own overflow internally. */
   min-height: 480px;
   box-shadow: 0 2px 16px rgba(124,58,237,.10);
 }
-/* Per-card flex sizing (CLM 20% · Stage fills · Deal 30%). */
 .smd-clm-card {
   flex: 0 0 20%;
   border: 1px solid #ede9fe;
   box-shadow: 0 2px 12px rgba(124,58,237,.07);
-  /* No width transition either: collapsing does not resize this card, it
-     REPLACES it with the 44px rail. The transition never had anything to
-     animate and only added another moving part to the same frames. */
 }
 .smd-stage-card {
   flex: 1 1 0%;
   box-shadow: 0 2px 16px rgba(124,58,237,.09);
 }
-/* ── Signed-PI lock veil (centre stage column) ──
-   A translucent disabled layer over the whole stage card that intercepts every
-   click and shows the "PI is signed" toaster — applied across all stages 1-6. */
 .smd-stage-card-locked { position: relative; }
 .smd-stage-veil {
   position: absolute; inset: 0; z-index: 20;
   display: flex; align-items: flex-start; justify-content: center;
   padding-top: 14px;
-  /* Light disabled tint — just enough to read as inactive without darkening
-     the content. */
   background: rgba(148, 163, 184, 0.10);
   cursor: not-allowed;
   border-radius: inherit;
@@ -714,8 +571,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   font-size: 11px; font-weight: 700; letter-spacing: .01em;
   box-shadow: 0 4px 12px rgba(15,23,42,.18);
 }
-/* Keep the stage footer (← Previous / Save & Next →) ABOVE the veil so the user
-   can still navigate even though the rest of the stage is read-only. */
 .smd-stage-card-locked .smd-stg-foot { position: relative; z-index: 25; }
 [data-bs-theme="dark"] .smd-stage-veil { background: rgba(15, 23, 42, 0.22); }
 [data-bs-theme="dark"] .smd-stage-veil-badge { background: #334155; }
@@ -726,7 +581,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   transition: flex .3s ease;
 }
 
-/* ── CLM panel ── */
 .smd-clm-header {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
@@ -764,9 +618,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-clm-collapse:hover { background: rgba(255,255,255,.28); }
 
-/* Group cards — lavender gradient with hover lift */
-/* The first group starts 12px under the header, like the stage body and the
-   Task Manager rail, so all three columns' content starts level. */
 .smd-clm-header + .smd-clm-group { margin-top: 12px; }
 .smd-clm-group {
   margin: 8px 14px;
@@ -796,7 +647,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-clm-group-title { font-size: 10px; font-weight: 800; color: #3b0764; letter-spacing: -.1px; line-height: 1.25; }
 .smd-clm-group-sub   { font-size: 7px; color: #a78bfa; font-weight: 600; margin-top: 1px; }
 
-/* Row buttons — white with colored icon + progress bar */
 .smd-clm-row {
   position: relative;
   padding: 8px 10px; border-radius: 8px;
@@ -837,20 +687,13 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-clm-progress-fill-orange  { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 .smd-clm-progress-label { font-size: 8.5px; font-weight: 700; color: #7c6f9a; text-align: right; margin-top: 3px; }
 
-/* Clickable rows (Customer / Consignee deep-link to Evidence Vault) — pointer + lift */
 .smd-clm-row-clickable { cursor: pointer; outline: none; }
 .smd-clm-row-clickable:focus-visible { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.20); }
 .smd-clm-row-clickable:active { transform: translateY(1px); }
 
-/* Disabled — while any modal is open, prevent both rows from opening
- * a second modal underneath. Reduces opacity, removes pointer cursor,
- * and pulls focusability via aria-disabled (set on the row itself). */
 .smd-clm-row-disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
 .smd-clm-row-disabled .smd-clm-row-go { cursor: not-allowed; }
 
-/* Loading — subtle shimmer on the sub-text only so the row layout
- * doesn't shift during the vault fetch. The 0% progress bar already
- * communicates "nothing yet." */
 .smd-clm-row-loading .smd-clm-row-sub {
   color: transparent;
   background: linear-gradient(90deg, #e9e3fe 0%, #d8ceff 50%, #e9e3fe 100%);
@@ -864,9 +707,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   .smd-clm-row-loading .smd-clm-row-sub { animation: none; }
 }
 
-/* Error — soft red border + slightly tinted background, retry icon
- * already swapped in the JSX. The whole row stays clickable so the
- * onRetry handler triggers from anywhere on it. */
 .smd-clm-row-error {
   border-color: #fca5a5;
   background: #fef2f2;
@@ -880,7 +720,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   box-shadow: 0 3px 8px rgba(220,38,38,.18);
 }
 
-/* Empty state — only when neither customer nor consignee is mapped yet */
 .smd-clm-empty {
   padding: 14px 12px; border-radius: 8px;
   background: #fbfaff; border: 1.5px dashed #ddd6fe;
@@ -888,7 +727,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   text-align: center;
 }
 
-/* ── Deal panel ── */
 .smd-deal-card { border: 1px solid #ede9fe; }
 .smd-deal-header {
   position: relative; overflow: hidden;
@@ -918,7 +756,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-deal-title { font-size: 11px; font-weight: 900; letter-spacing: -.3px; line-height: 1.2; }
 .smd-deal-sub   { font-size: 7px; color: rgba(255,255,255,.65); font-weight: 600; letter-spacing: .07em; margin-top: 2px; }
-/* Green status dot in the card header sub-lines (Deal + CLM), replacing the literal ●. */
 .smd-deal-dot, .smd-clm-dot {
   display: inline-block; width: 6px; height: 6px;
   border-radius: 50%; background: #22c55e;
@@ -926,11 +763,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
   margin-right: 6px; vertical-align: middle;
 }
 
-/* Tab strip — lavender pill container */
-/* Tabs = the Customers list tab rail (.dt-tabrail): 40px tabs in the 48px
-   violet rail. Four tabs share the narrow column, so they split it evenly
-   at 11.5px; the SOON tag sits inside the tab's top-right corner. */
-.smd-deal-tabs { margin: 12px 10px 0; } /* top = .smd-stg-body padding (columns start level); sides = .smd-deal-form padding (rail spans the fields) */
+.smd-deal-tabs { margin: 12px 10px 0; }
 .smd-deal-tabs .dt-tabs { display: flex; width: 100%; }
 .smd-deal-tabs .dt-tab.smd-deal-tab {
   position: relative; flex: 1 1 0; min-width: 0;
@@ -947,13 +780,8 @@ export const SALES_MATRIX_DETAIL_CSS = `
   text-transform: uppercase;
 }
 
-/* flex:1 lets the form fill the right card's height so the Save button
-   (margin-top:auto below) drops to the bottom edge, lining up with the
-   middle card's Save & Next footer button. */
 .smd-deal-form { padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; }
 .smd-deal-row  { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.smd-field     { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.smd-field-label { font-size: 8px; font-weight: 800; letter-spacing: .1em; color: #8b7fc8; text-transform: uppercase; }
 .smd-input {
   width: 100%; padding: 7px 10px;
   border: 1.5px solid #e0d9ff; border-radius: 8px;
@@ -976,8 +804,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   font-size: 8px; font-weight: 800; letter-spacing: .1em; color: #a78bfa;
   text-align: center; padding: 2px 0; margin: 6px 0 2px;
   text-transform: uppercase;
-  /* Centered divider label with hairlines on each side (Figma) — not a
-     filled bar. Same row height as before so the column doesn't shift. */
   background: none; border-radius: 0; white-space: nowrap;
 }
 .smd-deal-section-label::before,
@@ -998,11 +824,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   transition: all .17s;
 }
 .smd-deal-save-btn:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124,58,237,.45); }
-/* Saving state (QA #254 / #255).
-   The spinner says the click landed and the app is working; the dimmed,
-   not-allowed form says the fields are out of reach until it finishes. The
-   fields themselves are disabled in the markup — this only makes that
-   visible, so a user cannot tell the difference between "busy" and "broken". */
 .smd-deal-save-btn:disabled { opacity: .75; cursor: not-allowed; transform: none; box-shadow: none; }
 .smd-deal-save-btn:disabled:hover { transform: none; box-shadow: none; }
 .tm-save-spin {
@@ -1013,11 +834,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 @keyframes tm-save-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tm-save-spin { animation: none; } }
-/* The whole form reads as unavailable while the POST is in flight. */
 .smd-deal-form :disabled { opacity: .6; cursor: not-allowed; }
-/* Right-card (Task Manager) inputs — match the prototype's lavender fill
-   (#f5f3ff / #c4b5fd border / #5b21b6 text, focus → #ede9fe). Scoped to
-   the deal form so the middle stage-card inputs keep their own styling. */
 .smd-deal-form .smd-input {
   background: #f5f3ff;
   border-color: #c4b5fd;
@@ -1028,9 +845,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-color: #7c3aed;
   background: #ede9fe;
 }
-/* Buying Plan date picker — give its trigger the same fill/border/height
-   as the text inputs above. Scoped to the deal form so the shared
-   MasterDatePicker keeps its own styling everywhere else. */
 .smd-deal-form .master-datepicker-toggle {
   background: #f5f3ff;
   border: 1.5px solid #c4b5fd;
@@ -1061,9 +875,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-deal-form .master-datepicker-toggle:hover:not([aria-disabled="true"]) { border-color: #8b5cf6; }
 .smd-deal-form .master-datepicker-icon { color: #7c3aed; }
 
-/* Buying Plan calendar popup — violet instead of the picker's default cyan.
-   The popup portals to <body>, so it is targeted through the picker's own
-   popupClassName hook (smd-cal) rather than the .smd-deal-form scope. */
 .master-datepicker-popup.smd-cal .master-datepicker-nav:hover { background: rgba(124,58,237,.10); color: #7c3aed; border-color: rgba(124,58,237,.30); }
 .master-datepicker-popup.smd-cal .master-datepicker-title-btn.is-clickable { background: rgba(124,58,237,.08); border-color: rgba(124,58,237,.20); color: #7c3aed; }
 .master-datepicker-popup.smd-cal .master-datepicker-title-btn.is-clickable:hover { background: rgba(124,58,237,.16); border-color: rgba(124,58,237,.40); color: #6d28d9; }
@@ -1081,17 +892,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-cell.is-today,
 [data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-footer .today-btn { color: #c4b5fd; }
 
-/* One header line across the three columns: the CLM panel, the stage card and the
-   Deal panel headers are each sized by their own content (28 / 32 / 34px icons),
-   so their bottom edges never met. A fixed 56px height puts all three on one line. */
 .smd-clm-header, .smd-deal-header, .smd-stage-card .smd-stg-head {
   box-sizing: border-box; height: 56px; flex-shrink: 0;
   padding-top: 0; padding-bottom: 0;
 }
-
-/* Every heading in the three lead columns is 12px (QA #309): the three panel
-   headers, the CLM group / row titles, and each stage's section and card titles.
-   Scoped under .smd-root so it outranks the stages' own <style> blocks. */
 .smd-root .smd-clm-title,
 .smd-root .smd-deal-title,
 .smd-root .smd-stg-head-title,
@@ -1100,22 +904,15 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-root .smd-sect-title,
 .smd-root .smd-st2-status-title,
 .smd-root .smd-st2-activity-title,
-.smd-root .s3-ready-title,
-.smd-root .s3-ready-item-title,
 .smd-root .s3-card-title,
 .smd-root .s4-card-title { font-size: 12px; }
-/* ...and every sub-heading under them is 8px (QA #311). */
 .smd-root .smd-clm-sub,
 .smd-root .smd-deal-sub,
 .smd-root .smd-stg-head-sub,
 .smd-root .smd-clm-group-sub,
 .smd-root .smd-clm-row-sub,
 .smd-root .smd-st2-activity-sub,
-.smd-root .s3-ready-sub,
-.smd-root .s3-ready-item-sub,
-.smd-root .s3-card-sub,
-.smd-root .s4-card-sub { font-size: 8px; }
-/* ...and every button label on the lead page is 11.5px (QA #312). */
+.smd-root .s3-card-sub { font-size: 8px; }
 .smd-root .smd-hdr-wa-text,
 .smd-root .smd-back-btn,
 .smd-root .smd-act,
@@ -1129,17 +926,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-root .s4-back-btn,
 .smd-root .s5-summary-btn,
 .smd-root .s5-create-btn,
-.smd-root .s5-seg-btn,
 .smd-root .s6-cta { font-size: 11.5px; }
 
-/* ── Stage card (middle column shell) — 4px rainbow accent on top ── */
 .smd-stage-card {
   position: relative;
-  /* Opt OUT of driving the grid row height (min-height:0): the stage content
-     lives in the absolutely-positioned .smd-stg-scroll (out of flow), so the row
-     height is set by the SIDE panels and the centre stretches to match, scrolling
-     tall content (e.g. Stage 6) INSIDE the card instead of growing the whole page
-     and pushing the ← Previous / Save buttons off-screen. */
   min-height: 0;
   border: 1.5px solid #c4b5fd;
 }
@@ -1150,23 +940,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-radius: 14px 14px 0 0;
   z-index: 2;
 }
-/* Internal scroll container for the stage content. Positioned ABSOLUTE so
-   it's out of flow: the stage card therefore contributes zero intrinsic
-   height to the grid row, which is then driven solely by the side panels.
-   align-items:stretch stretches the (empty-flow) card to that row height,
-   and this container fills it (inset:0) and scrolls its own overflow. Net
-   effect: the centre always equals the side panels' height — whether the
-   LEFT is tall (segments) or the CENTRE content is tall (Stage 6) — with
-   tall centre content scrolling internally instead of growing the row.
-   Stays a flex column so short stages fill the card the same as before. */
 .smd-stg-scroll {
-  /* Fill the card (absolute → out of flow) so the centre column contributes 0
-     intrinsic height to the grid row — the row height is driven by the side
-     panels and the centre matches them (all three cards equal height). This
-     wrapper itself does NOT scroll (overflow:hidden); its header + footer stay
-     pinned and the .smd-stg-body flex child scrolls internally instead. (Two
-     scrolling containers — this + .smd-stg-body — used to fight and let the card
-     grow past the side panels on Stage 6.) */
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -1174,10 +948,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   flex-direction: column;
 }
 
-/* Side widths are percentage-based now, so they scale down on their own —
-   no per-breakpoint column overrides needed until the layout stacks. */
-/* Large laptops (~1440): give the data-heavy centre more room by shrinking the
-   side panels, and tighten the 6-step stepper so it stays on one clean row. */
 @media (max-width: 1440px) {
   .smd-body { grid-template-columns: 18% 1fr 25%; gap: 10px; }
   .smd-body-clm-collapsed  { grid-template-columns: 44px 1fr 25%; }
@@ -1190,32 +960,23 @@ export const SALES_MATRIX_DETAIL_CSS = `
   .smd-stepper-card { padding: 8px 10px; }
   .smd-toolbar { padding: 8px 10px; }
 }
-/* Small laptops (~1200): the 6-step chevron row + the horizontally-scrolling
-   action toolbar cramp before the panels stack. Switch the stepper to a clean
-   3-col grid and let the toolbar WRAP onto multiple rows instead of scrolling. */
 @media (max-width: 1200px) {
   .smd-stepper { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .smd-step { margin-right: 0; }
   .smd-step, .smd-step:first-child, .smd-step:last-child {
     clip-path: none; border-radius: 10px; border: 1px solid #e5e7eb; padding: 8px 12px;
   }
-  .smd-step::after { display: none; }   /* no chevron arrows in grid mode */
+  .smd-step::after { display: none; }
   .smd-toolbar { flex-wrap: wrap; overflow-x: visible; white-space: normal; row-gap: 7px; }
   .smd-toolbar > .smd-act { flex: 0 1 auto; }
   .smd-act-sep { display: none; }
 }
 @media (max-width: 1100px) {
-  /* Stack the three panels into a single grid column; each takes its
-     content height (the viewport min-height only applies to the
-     side-by-side desktop view, and the centre no longer needs an
-     internal scroll once stacked). */
   .smd-body,
   .smd-body-clm-collapsed,
   .smd-body-deal-collapsed,
   .smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 1fr; }
   .smd-clm-card, .smd-stage-card, .smd-deal-card { min-height: auto; }
-  /* Back to in-flow on mobile so the stacked stage card grows with its
-     content instead of collapsing to the absolute container's zero box. */
   .smd-stg-scroll { position: static; inset: auto; overflow: visible; }
   .smd-stepper { grid-template-columns: repeat(3,1fr); gap: 4px; }
   .smd-step { margin-right: 0; }
@@ -1224,10 +985,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   }
 }
 
-/* Phones (QA #69): the opportunity header + 6-stage stepper overflowed /
-   overlapped because the header meta row was flex-nowrap (forcing horizontal
-   scroll) and the stepper stayed at 3 cramped columns. Stack the header and
-   let its meta wrap; drop the stepper to 2 columns. */
 @media (max-width: 640px) {
   .smd-cust-banner {
     flex-direction: column; align-items: stretch;
@@ -1235,63 +992,38 @@ export const SALES_MATRIX_DETAIL_CSS = `
   }
   .smd-cust-left { padding-left: 0; }
   .smd-cust-name { white-space: normal; overflow-wrap: anywhere; }
-  /* A 2-column GRID, not wrapping flex.
-     The row holds a wide WhatsApp button and three chips of quite different
-     widths, so wrapping them left every line a different length and the block
-     read as misaligned. On a grid they line up in equal columns, matching the
-     2-column stepper directly below. The decorative dividers go: they only
-     make sense on a single unbroken line. */
   .smd-cust-meta {
     display: grid; grid-template-columns: 1fr 1fr;
     gap: 8px; width: 100%; align-items: stretch; justify-content: stretch;
   }
-  /* Grid items default to min-width: auto, so a long opportunity code or
-     country name would widen its own column out of the pair. */
   .smd-cust-meta > * { min-width: 0; }
   .smd-meta { width: 100%; }
   .smd-meta-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .smd-cust-sep, .smd-cust-line { display: none; }
-  /* Full width on its own row — it is the action, not another fact. */
   .smd-back-btn { grid-column: 1 / -1; margin-left: 0; justify-content: center; }
   .smd-hdr-wa { justify-content: center; }
 
-  /* Action pills on the same 2-column grid as everything else here.
-     They wrap from 1200px down, and as flex items each took its own content
-     width — so "Remark" sat beside "Key Opportunity" and every row ended
-     somewhere different. Equal columns line the block up with the meta row
-     above and the stepper below. The hairline separators are dropped: they
-     divide a continuous row, and this is no longer one. */
   .smd-toolbar {
     display: grid; grid-template-columns: repeat(2, 1fr);
     gap: 7px; overflow-x: visible;
   }
   .smd-toolbar > .smd-act {
     width: 100%; min-width: 0;
-    /* Left-aligned icon + label reads faster down a column than centred text,
-       which drifts about as each label changes length. */
     justify-content: flex-start;
   }
   .smd-toolbar > .smd-act-sep { display: none; }
 
-  /* 2 columns × 3 rows fits a phone cleanly; 3 columns squeezed the labels. */
   .smd-stepper { grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .smd-stepper-card { padding: 8px; }
   .smd-step, .smd-step:first-child, .smd-step:last-child { padding: 7px 9px; }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Dark mode — every surface flips against the slate base so the page
-   reads as part of the dark theme instead of glowing white panels.
-   Selectors are scoped to .smd-root so they don't leak into other
-   pages that share generic class names.
-   ═══════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .smd-root,
 [data-layout-mode="dark"] .smd-root {
   background: linear-gradient(160deg, #0b0a1a 0%, #14102a 45%, #0b0a1a 100%);
   color: #cbd5e1;
 }
 
-/* ─── Customer banner ─── */
 [data-bs-theme="dark"] .smd-root .smd-cust-banner {
   background: linear-gradient(110deg, #1a1538 0%, #20184a 25%, #2a1e5c 55%, #3b2f6e 85%, #4c1d95 100%);
   border-color: rgba(167, 139, 250, .25);
@@ -1300,7 +1032,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
     0 8px 28px rgba(0, 0, 0, .45),
     0 2px 8px rgba(0, 0, 0, .25);
 }
-/* Tone down the bright sheen/glow overlays for dark mode. */
 [data-bs-theme="dark"] .smd-root .smd-cust-sheen {
   background: linear-gradient(180deg, rgba(255, 255, 255, .04), transparent);
 }
@@ -1321,7 +1052,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-cust-line {
   background: linear-gradient(to bottom, transparent, rgba(196, 181, 253, .35) 40%, rgba(196, 181, 253, .35) 60%, transparent);
 }
-/* Glass pills — dark translucent surface with violet inset. */
 [data-bs-theme="dark"] .smd-root .smd-meta {
   background: rgba(20, 16, 42, .55);
   border-color: rgba(167, 139, 250, .30);
@@ -1335,14 +1065,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-meta-label { color: #a78bfa; }
 [data-bs-theme="dark"] .smd-root .smd-meta-value { color: #ede9fe; }
 
-/* ─── Stepper card + STEP cards ─── */
 [data-bs-theme="dark"] .smd-root .smd-stepper-card {
   background: #14102a;
   border-color: rgba(167, 139, 250, .22);
   box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
 }
 
-/* ─── UPCOMING (idle) — dark slate violet card with readable content ─── */
 [data-bs-theme="dark"] .smd-root .smd-step-idle {
   background: linear-gradient(150deg, #1f1845 0%, #2a2150 100%);
   border: 1.5px solid rgba(167, 139, 250, .30);
@@ -1364,7 +1092,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-step-idle .smd-step-sub   { color: rgba(196, 181, 253, .70); }
 [data-bs-theme="dark"] .smd-root .smd-step-idle .smd-step-ghost { color: rgba(167, 139, 250, .12); }
 
-/* ─── DONE — deep emerald wash with dark border ─── */
 [data-bs-theme="dark"] .smd-root .smd-step-done {
   background: linear-gradient(135deg, rgba(16,185,129,.28) 0%, rgba(16,185,129,.14) 100%);
   border: 1.5px solid rgba(110, 231, 183, .30);
@@ -1388,7 +1115,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-step-badge-done .smd-step-badge-text,
 [data-bs-theme="dark"] .smd-root .smd-step-badge-done svg { color: #d1fae5; }
 
-/* ─── ACTIVE — vivid violet gradient (matches the 3-stop light-mode design) ─── */
 [data-bs-theme="dark"] .smd-root .smd-step-active {
   background: linear-gradient(150deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
   border: 1.5px solid #6d28d9;
@@ -1403,12 +1129,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-color: rgba(255, 255, 255, .30);
 }
 
-/* Divider between stepper and toolbar — keep visible against dark surface. */
 [data-bs-theme="dark"] .smd-root .smd-stepper-divider {
   background: linear-gradient(90deg, transparent, rgba(167, 139, 250, .30) 20%, rgba(167, 139, 250, .30) 80%, transparent);
 }
 
-/* ─── Action toolbar — transparent (sits inside the stepper card) ─── */
 [data-bs-theme="dark"] .smd-root .smd-toolbar {
   background: transparent;
   border-top: none;
@@ -1437,8 +1161,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 [data-bs-theme="dark"] .smd-root .smd-act:not(.smd-act-locked):hover .smd-act-icon,
 [data-bs-theme="dark"] .smd-root .smd-act:not(.smd-act-locked):hover .smd-act-trail { color: #fff; }
-/* Header WhatsApp pill — keep the green wash in dark mode but soften
-   the glow so it doesn't blow out against the darker banner. */
 [data-bs-theme="dark"] .smd-root .smd-hdr-wa {
   background: linear-gradient(135deg, #16a34a 0%, #15803d 55%, #14532d 100%);
   box-shadow: 0 3px 12px rgba(22, 163, 74, .45), inset 0 1px 0 rgba(255, 255, 255, .12);
@@ -1446,13 +1168,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-hdr-wa-on {
   background: linear-gradient(135deg, #15803d 0%, #166534 55%, #14532d 100%);
 }
-
-[data-bs-theme="dark"] .smd-root .smd-act-wa {
-  background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.10));
-  border-color: rgba(110, 231, 183, .45);
-  color: #6ee7b7;
-}
-[data-bs-theme="dark"] .smd-root .smd-act-wa .smd-act-icon { color: #34d399; }
 [data-bs-theme="dark"] .smd-root .smd-act-trail { color: rgba(255,255,255,.55); }
 [data-bs-theme="dark"] .smd-root .smd-act-key {
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
@@ -1465,7 +1180,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-color: #fbbf24;
 }
 
-/* ─── Left column: CLM Details panel ─── */
 [data-bs-theme="dark"] .smd-root .smd-clm-card {
   background: #14102a;
   border-color: rgba(167, 139, 250, .22);
@@ -1485,21 +1199,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 [data-bs-theme="dark"] .smd-root .smd-clm-row:hover { background: #2a2150; border-color: #a78bfa; }
 [data-bs-theme="dark"] .smd-root .smd-clm-row-title  { color: #ede9fe; }
-[data-bs-theme="dark"] .smd-root .smd-clm-row-meta   { color: #94a3b8; }
-/* The track element's class is .smd-clm-progress (see the base rule) — this
-   override used to target .smd-clm-progress-track, which doesn't exist, so the
-   light track (#f5f3ff) stayed white in dark mode: the bright bars under
-   Customer / Consignee Details. Also dim the % label and the loading shimmer,
-   which were light-on-dark for the same reason. */
 [data-bs-theme="dark"] .smd-root .smd-clm-progress { background: rgba(255,255,255,.10); }
 [data-bs-theme="dark"] .smd-root .smd-clm-progress-label { color: #a78bfa; }
 [data-bs-theme="dark"] .smd-root .smd-clm-row-loading .smd-clm-row-sub {
   background: linear-gradient(90deg, rgba(167,139,250,.18) 0%, rgba(167,139,250,.32) 50%, rgba(167,139,250,.18) 100%);
   background-size: 200% 100%;
 }
-/* Inner divider between the group head and its rows + the empty-state
- * card. Without these the dashed empty-state stayed near-white with
- * pale violet text — a bright island inside the dark CLM panel. */
 [data-bs-theme="dark"] .smd-root .smd-clm-group-head {
   border-bottom-color: rgba(167, 139, 250, .22);
 }
@@ -1509,34 +1214,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
   color: #c4b5fd;
 }
 
-/* ─── Middle column: Stage content card ─── */
 [data-bs-theme="dark"] .smd-root .smd-stage-card {
   background: #14102a;
   border-color: rgba(167, 139, 250, .22);
   box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
 }
-[data-bs-theme="dark"] .smd-root .smd-stage-header,
-[data-bs-theme="dark"] .smd-root .smd-stage-banner {
-  background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
-  color: #fff;
-}
-[data-bs-theme="dark"] .smd-root .smd-opp-card,
-[data-bs-theme="dark"] .smd-root .smd-pdm-card {
-  background: #1a1538;
-  border-color: rgba(167, 139, 250, .22);
-}
-[data-bs-theme="dark"] .smd-root .smd-opp-title,
-[data-bs-theme="dark"] .smd-root .smd-pdm-title {
-  color: #ede9fe;
-}
-[data-bs-theme="dark"] .smd-root .smd-kv-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .smd-root .smd-kv-value { color: #ede9fe; }
-[data-bs-theme="dark"] .smd-root .smd-kv {
-  background: #1f1845;
-  border-color: rgba(167, 139, 250, .22);
-}
 
-/* ─── Right column: Deal Execution & Decision Engine panel ─── */
 [data-bs-theme="dark"] .smd-root .smd-deal-card {
   background: #14102a;
   border-color: rgba(167, 139, 250, .22);
@@ -1546,14 +1229,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
   color: #fff;
 }
-/* Tab strip — was light lavender pill in light mode; needs dark wash here. */
 [data-bs-theme="dark"] .smd-root .smd-deal-tab-soon {
   background: rgba(167, 139, 250, .14);
   border-color: rgba(167, 139, 250, .35);
   color: #a78bfa;
 }
 
-/* PURCHASE DECISION MAKER divider — was lavender pill bleeding light. */
 [data-bs-theme="dark"] .smd-root .smd-deal-section-label {
   background: none;
   color: #a78bfa;
@@ -1563,8 +1244,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: rgba(167,139,250,.30);
 }
 
-/* Attach File button — uses .smd-input + .smd-input-file but it's a
- * <button>, so the input-targeted dark overrides above don't catch it. */
 [data-bs-theme="dark"] .smd-root .smd-input-file {
   background: #1f1845;
   border-color: rgba(167, 139, 250, .30);
@@ -1576,15 +1255,9 @@ export const SALES_MATRIX_DETAIL_CSS = `
   color: #ede9fe;
 }
 [data-bs-theme="dark"] .smd-root .smd-input-file svg { color: currentColor; }
-[data-bs-theme="dark"] .smd-root .smd-deal-section-title { color: #c4b5fd; }
-[data-bs-theme="dark"] .smd-root .smd-deal-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .smd-root .smd-deal-input,
 [data-bs-theme="dark"] .smd-root .smd-deal-card input,
 [data-bs-theme="dark"] .smd-root .smd-deal-card select,
 [data-bs-theme="dark"] .smd-root .smd-deal-card textarea,
-/* The Buying Plan date picker's toggle is a <div>, not an <input>, so it
-   was missed by the rule above and rendered white. Match it to the other
-   deal-panel inputs. */
 [data-bs-theme="dark"] .smd-root .smd-deal-card .master-datepicker-toggle {
   background: #2a2150 !important;
   border-color: rgba(167, 139, 250, .30) !important;
@@ -1592,41 +1265,14 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 [data-bs-theme="dark"] .smd-root .smd-deal-card .master-datepicker-value { color: #ede9fe !important; }
 [data-bs-theme="dark"] .smd-root .smd-deal-card .master-datepicker-placeholder { color: rgba(196,181,253,.55) !important; }
-[data-bs-theme="dark"] .smd-root .smd-deal-input::placeholder,
 [data-bs-theme="dark"] .smd-root .smd-deal-card input::placeholder,
 [data-bs-theme="dark"] .smd-root .smd-deal-card textarea::placeholder {
   color: #6b7280 !important;
 }
-[data-bs-theme="dark"] .smd-root .smd-deal-input:focus,
 [data-bs-theme="dark"] .smd-root .smd-deal-card input:focus,
 [data-bs-theme="dark"] .smd-root .smd-deal-card select:focus,
 [data-bs-theme="dark"] .smd-root .smd-deal-card textarea:focus {
   border-color: #a78bfa !important;
   box-shadow: 0 0 0 3px rgba(167, 139, 250, .20) !important;
-}
-[data-bs-theme="dark"] .smd-root .smd-deal-attach {
-  background: #2a2150; border-color: rgba(167, 139, 250, .30); color: #c4b5fd;
-}
-[data-bs-theme="dark"] .smd-root .smd-deal-divider {
-  background: rgba(167, 139, 250, .20);
-  color: #c4b5fd;
-}
-
-/* ─── Generic helpers used inside the panels ─── */
-[data-bs-theme="dark"] .smd-root .smd-section-title,
-[data-bs-theme="dark"] .smd-root .smd-card-title {
-  color: #ede9fe;
-}
-[data-bs-theme="dark"] .smd-root .smd-divider {
-  background: rgba(167, 139, 250, .20);
-}
-
-/* Fallback — any card-style surface that uses #fff inline still gets
-   visually muted by a translucent overlay so it's not blinding. */
-[data-bs-theme="dark"] .smd-root .smd-card,
-[data-bs-theme="dark"] .smd-root .smd-card-light {
-  background: #14102a;
-  border-color: rgba(167, 139, 250, .22);
-  color: #ede9fe;
 }
 `;

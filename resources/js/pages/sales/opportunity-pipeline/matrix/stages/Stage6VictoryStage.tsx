@@ -6,30 +6,14 @@ import CreateShipmentOrderModal, { type ShipmentInitialContext } from './CreateS
 import RupeeRain from './RupeeRain';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Stage 6: Victory Stage
- *
- *  Celebration view + Shipment Order flow:
- *   1. Initial visit  → confetti burst + "Create Shipment ID" CTA
- *   2. Click CTA      → opens the amber Shipment Order modal (ported
- *                       from IDIMS's BT module)
- *   3. After save     → CTA replaced by SHP-### details card with the
- *                       full shipping + logistics block
- *
- *  Data sources:
- *   GET /sales/leads/{id}                           lead + won_at
- *   GET /sales/quotations?opp_id={id}&per_page=1    latest quote
- *   GET /sales/proforma-invoices?opp_id={id}&p=1    latest PI
- *   GET /sales/leads/{id}/shipment-order            shipment (if any)
- * ───────────────────────────────────────────────────────────────────── */
 
 type LeadDetail = {
   id:            number;
   won_at:        string | null;
   created_at?:   string | null;
-  opportunity_date_iso?: string | null;  // ISO opportunity date (query_time ?? created_at)
-  pi_signed_at?: string | null;   // when the PI was e-signed (null = not signed)
-  pi_sent_at?:   string | null;   // when the PI was sent for signature (fallback end-date)
+  opportunity_date_iso?: string | null;
+  pi_signed_at?: string | null;
+  pi_sent_at?:   string | null;
   qualified:     boolean;
   lead_stage_id: number;
   sender_country_iso?: string | null;
@@ -43,22 +27,14 @@ type DealDoc = {
   currency:   string | null;
   grand_total:number | string | null;
   created_at: string;
-  // Domestic / International — drives the Create-Shipment form's conditional
-  // fields (INCO Term hidden + ports optional for Domestic).
   doc_type?:          string | null;
-  /* Place of supply — REQUIRED on a Domestic PI, and the authority for the
-   * shipment header's State Code. Stored as the full label ("27 – Maharashtra"). */
   state_code?:        string | null;
-  // Logistics fields carried over to the Create-Shipment form (PI rows
-  // return the full model, so these are present on the latest PI).
   inco_term?:         string | null;
   port_of_loading?:   string | null;
   port_of_discharge?: string | null;
   final_destination?: string | null;
   origin_country?:    string | null;
-  shipping?:          number | string | null;   // PI shipping cost → seeds Freight Cost
-  /* Domestic PI fields — seed the shipment's Place of Dispatch / Delivery and
-   * (preferred over the customer relation) the header GST number. */
+  shipping?:          number | string | null;
   dispatch_from?:     string | null;
   deliver_to?:        string | null;
   customer_gst_no?:   string | null;
@@ -66,18 +42,12 @@ type DealDoc = {
 
 type Shipment = {
   id:                   number;
-  // Real, per-client sequential Shipment ID (e.g. "SHP-258"). Display THIS —
-  // never fabricate one from the primary key `id`, which gives the wrong code.
   shipment_code:        string | null;
   lead_id:              number;
   proforma_invoice_id:  number | null;
   shipping_liability:   string | null;
   cold_chain:           boolean;
-  // Labelled "Mode of Transport" — one column, both flows.
   shipping_mode:        string | null;
-  /* A row populates the export set OR the domestic set, never both — decided by
-   * its PI's doc_type. See the add_domestic_fields_to_shipment_orders migration. */
-  // International only
   zip_code:             string | null;
   freight_cost:         number | string | null;
   inco_term:            string | null;
@@ -85,16 +55,12 @@ type Shipment = {
   port_of_unloading:    string | null;
   final_destination:    string | null;
   origin_country:       string | null;
-  // Domestic only
   pin_code?:            string | null;
   shipping_cost?:       number | string | null;
   place_of_dispatch?:   string | null;
   place_of_delivery?:   string | null;
   remarks:              string | null;
   attachments:          string[] | null;
-  /* Absolute URLs built server-side (file_url). Prefer these over resolving the
-     bare `attachments` path on the client — a client-built URL resolves against
-     the SPA origin and gets bounced to the dashboard by the router (QA #55). */
   attachments_url?:     string[] | null;
   created_at:           string;
   proforma_invoice?:    { id: number; code: string | null; created_at: string } | null;
@@ -106,7 +72,6 @@ const fmtDate = (s: string | null | undefined): string => {
   if (!s) return '—';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '—';
-  // DD-Mon-YYYY (e.g. 04-Jul-2026)
   return `${String(d.getDate()).padStart(2, '0')}-${DMY_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 };
 
@@ -121,15 +86,9 @@ const fmtCcy = (v: number | string | null | undefined, ccy = '$'): string => {
   if (v == null) return '—';
   const num = Number(v);
   if (!Number.isFinite(num)) return '—';
-  // Domestic shipping cost is in INR (₹); export freight cost in USD ($).
   return `${ccy} ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-/* B28: persist "already celebrated" leads in localStorage so the
- *  confetti fires exactly once per lead across tab reloads / navigation
- *  away and back. The earlier module-Set lived only for the lifetime
- *  of the SPA session, so closing + reopening the tab re-confetti'd
- *  every won deal. */
 const CELEBRATED_KEY = 'cbc_stage6_celebrated_leads';
 const loadCelebrated = (): Set<number> => {
   try {
@@ -143,14 +102,10 @@ const loadCelebrated = (): Set<number> => {
 };
 const persistCelebrated = (s: Set<number>): void => {
   try {
-    /* Cap the stored list at 500 entries so a long-lived user doesn't
-     *  bloat localStorage. FIFO eviction keeps the most recent N. */
     const arr = Array.from(s);
     const trimmed = arr.length > 500 ? arr.slice(-500) : arr;
     localStorage.setItem(CELEBRATED_KEY, JSON.stringify(trimmed));
   } catch {
-    /* Quota errors or private-mode → silent no-op; worst case is the
-     *  user re-sees confetti next session. Not worth blocking the UI. */
   }
 };
 const celebratedLeads = loadCelebrated();
@@ -164,14 +119,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   const [latestQt, setLatestQt]     = useState<DealDoc | null>(null);
   const [latestPi, setLatestPi]     = useState<DealDoc | null>(null);
   const [shipment, setShipment]     = useState<Shipment | null>(null);
-  /* Which flow the SAVED shipment used — drives the Logistics Instructions
-   * labels/fields below.
-   *
-   * The code prefix is the authority, not the PI: it was allocated from the
-   * PI's doc_type at save time, so it can never drift from the columns that
-   * were actually populated (a PI edited to a different doc_type afterwards
-   * would otherwise make us render the wrong — all-empty — field set).
-   * Fall back to the PI only for a legacy row with no recognisable code. */
   const shipmentIsDomestic = (() => {
     const code = (shipment?.shipment_code ?? '').toUpperCase();
     if (code.startsWith('DSHP-')) return true;
@@ -180,8 +127,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   })();
   const [confetti, setConfetti]     = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  // KPI counts shown above the Create-Shipment CTA (figma): how many
-  // products / quotations / PIs the opportunity produced.
   const [counts, setCounts] = useState<{ products: number; quotations: number; pis: number }>(
     { products: 0, quotations: 0, pis: 0 });
 
@@ -201,8 +146,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     if (qtRes.status === 'fulfilled')   setLatestQt(qtRes.value.data.data?.[0] ?? null);
     if (piRes.status === 'fulfilled')   setLatestPi(piRes.value.data.data?.[0] ?? null);
     if (shpRes.status === 'fulfilled')  setShipment(shpRes.value.data.data ?? null);
-    // Counts: quotations / PIs come from pagination.total (the per_page:1
-    // call still reports the full total); products from the array length.
     const qtTotal   = qtRes.status === 'fulfilled' ? (qtRes.value.data.pagination?.total ?? qtRes.value.data.data?.length ?? 0) : 0;
     const piTotal   = piRes.status === 'fulfilled' ? (piRes.value.data.pagination?.total ?? piRes.value.data.data?.length ?? 0) : 0;
     const prodTotal = prodRes.status === 'fulfilled' && Array.isArray(prodRes.value.data.data) ? prodRes.value.data.data.length : 0;
@@ -213,19 +156,13 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   useEffect(() => {
     if (!leadId) return;
     void fetchAll(false);
-    // A one-shot session flag set by Save & Next on Stage 5 forces the
-    // celebration EVERY time the deal is freshly won — even for a lead that
-    // already burst confetti before (the localStorage gate only fires once
-    // per lead ever). Consume it so a later revisit / refresh doesn't re-fire.
     let forced = false;
     try {
       forced = sessionStorage.getItem('cbc_celebrate_victory') === String(leadId);
       if (forced) sessionStorage.removeItem('cbc_celebrate_victory');
-    } catch { /* private mode → ignore */ }
+    } catch {  }
 
     if (forced || !celebratedLeads.has(leadId)) {
-      // Keep the once-per-lead gate in sync so the first-visit path doesn't
-      // double-fire alongside a forced celebration.
       if (!celebratedLeads.has(leadId)) {
         celebratedLeads.add(leadId);
         persistCelebrated(celebratedLeads);
@@ -238,24 +175,13 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
 
   const wonOn = useMemo(() => fmtDate(lead?.won_at ?? null), [lead?.won_at]);
 
-  // Opportunity date for the Shipment Details cell. `header.oppDate` is a
-  // dd/mm/yyyy display string that fmtDate (new Date(...)) can't parse, so it
-  // rendered as "—". Prefer the server's ISO opportunity date (query_time ??
-  // created_at), then created_at, then fall back to the already-formatted
-  // header string as-is.
   const oppDateText = useMemo(() => {
     const iso = lead?.opportunity_date_iso ?? lead?.created_at;
     if (iso) { const f = fmtDate(iso); if (f !== '—') return f; }
     return header.oppDate || '—';
   }, [lead?.opportunity_date_iso, lead?.created_at, header.oppDate]);
 
-  // Days the deal took: from when the LEAD was created to the moment its PI
-  // was SIGNED. Null (shows "—") until the PI is signed. Falls back to the
-  // opportunity date if the lead's created_at isn't present.
   const days = useMemo(() => {
-    /* Parse a date that may be ISO (from the server) OR a dd/mm/yyyy display
-     * string (header.oppDate). `new Date('10/04/2026')` mis-reads dd/mm as
-     * mm/dd, so reorder dd/mm/yyyy to yyyy-mm-dd before parsing. */
     const parse = (s?: string | null): Date | null => {
       if (!s) return null;
       const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s.trim());
@@ -263,16 +189,9 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                   : new Date(s);
       return Number.isNaN(d.getTime()) ? null : d;
     };
-    // Start = opportunity date. Prefer the server's ISO opportunity date (the
-    // SAME source the header shows — query_time ?? created_at), then created_at,
-    // then the dd/mm/yyyy header string (which falls back to a hardcoded default
-    // on a fresh page load). End = PI signed date, or — while the PI is still
-    // pending — the date it was sent (pi_sent_at).
     const start = parse(lead?.opportunity_date_iso) ?? parse(lead?.created_at) ?? parse(header.oppDate);
     const end   = parse(lead?.pi_signed_at) ?? parse(lead?.pi_sent_at);
     if (!start || !end) return null;
-    // Compare calendar dates only (ignore time-of-day) so the same date always
-    // reads as 0 days, regardless of the timestamps' hours.
     const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
     const endDay   = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
     const d = Math.round((endDay - startDay) / 86_400_000);
@@ -292,41 +211,26 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     piDate:          latestPi?.created_at ?? null,
     piId:            latestPi?.id ?? null,
     piCurrency:      latestPi?.currency ?? null,
-    // Domestic / International — gates the shipment form's INCO Term + ports.
     docType:         latestPi?.doc_type ?? null,
     customerCode:    lead?.customer?.customer_code ?? null,
     customerName:    lead?.customer?.company_name ?? header.customer,
-    /* Domestic header only.
-     * State Code comes from the PI's own `state_code` — that is the PLACE OF
-     * SUPPLY the invoice was raised against (and what drives CGST/SGST vs
-     * IGST), so it is the authority. Only fall back to deriving it from the
-     * GSTIN's first 2 chars (27AADCI… → 27) on a legacy PI that has none. */
-    /* Prefer the PI's own captured GST number; fall back to the customer
-     * record. (The PI snapshots it at issue time, so it's the authority.) */
     customerGstNumber: latestPi?.customer_gst_no ?? lead?.customer?.gst_number ?? null,
     customerStateCode: latestPi?.state_code
       ?? ((latestPi?.customer_gst_no ?? lead?.customer?.gst_number ?? '').trim().slice(0, 2) || null),
-    // PI dispatch_from / deliver_to → seed the shipment's dispatch/delivery.
     placeOfDispatch:   latestPi?.dispatch_from ?? null,
     placeOfDelivery:   latestPi?.deliver_to ?? null,
     consigneeCode:   lead?.consignee?.consignee_code ?? null,
     consigneeName:   lead?.consignee?.company_name ?? null,
-    // Auto-fill the shipping/logistics fields shared with the Proforma
-    // Invoice form so ops doesn't re-key them. PI's port_of_discharge maps
-    // to the shipment's Port of Unloading.
     incoTerm:         latestPi?.inco_term ?? null,
     portOfLoading:    latestPi?.port_of_loading ?? null,
     portOfDischarge:  latestPi?.port_of_discharge ?? null,
     finalDestination: latestPi?.final_destination ?? null,
     originCountry:    latestPi?.origin_country ?? null,
-    // PI's Shipping Cost pre-fills the shipment's Freight Cost (still editable).
     shippingCost:    latestPi?.shipping ?? null,
   }), [header.oppId, header.oppDate, header.customer, latestPi, lead]);
 
   const onShipmentCreated = () => {
     void fetchAll(true);
-    /* Burst confetti again to celebrate the Shipment ID being created
-     * (reuses the same one-shot effect as the initial victory landing). */
     setConfetti(true);
     setTimeout(() => setConfetti(false), 25_000);
   };
@@ -355,7 +259,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
       <div className="smd-stg-body s6-body">
         {confetti && <RupeeRain />}
 
-        {/* ── A. Pre-shipment view: celebration + Create CTA + Deal Summary ── */}
         {!shipment && (
           <>
             <div className="s6-celebrate smd-fade-in">
@@ -399,8 +302,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
               dealValue={dealValue}
             />
 
-            {/* KPI strip (figma) — quick deal-effort metrics shown before
-                the Shipment ID is created. */}
             <div className="s6-kpis smd-fade-in">
               <KpiTile tone="blue"    label="PRODUCTS"  value={counts.products}   loading={loading}
                 icon={<><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 8l2.5-5h13L21 8M12 3v5"/></>} />
@@ -414,7 +315,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
           </>
         )}
 
-        {/* ── B. Post-shipment view: success banner + details + logistics ── */}
         {shipment && (
           <div className="s6-shp-wrap smd-fade-in">
             <div className="s6-success-banner">
@@ -428,7 +328,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
               <span className="s6-shp-code">{shipment.shipment_code || `SHP-${String(shipment.id).padStart(3, '0')}`}</span>
             </div>
 
-            {/* SHIPMENT DETAILS */}
             <div className="s6-shp-card">
               <div className="s6-shp-card-head s6-shp-head-amber">
                 <span className="s6-shp-ico">📦</span>
@@ -446,7 +345,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
               </div>
             </div>
 
-            {/* INQUIRY DETAILS */}
             <div className="s6-shp-card">
               <div className="s6-shp-card-head s6-shp-head-blue">
                 <span className="s6-shp-ico">🔍</span>
@@ -462,26 +360,15 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
               </div>
             </div>
 
-            {/* LOGISTICS INSTRUCTIONS */}
             <div className="s6-shp-card">
               <div className="s6-shp-card-head s6-shp-head-emerald">
                 <span className="s6-shp-ico">🚢</span>
                 LOGISTICS INSTRUCTIONS
               </div>
-              {/* Mirrors the Create-Shipment form exactly: a Domestic shipment
-                  stores pin_code / shipping_cost / place_* and leaves every
-                  export column NULL, so rendering the export labels here would
-                  just print a wall of "—". Labels follow the same rename
-                  (PIN Code, Shipping Cost, Mode of Transport). */}
               <div className="s6-shp-grid s6-shp-grid-3">
                 <Cell label="SHIPPING LIABILITY" value={shipment.shipping_liability ?? '—'} emerald />
                 <Cell label="COLD CHAIN"         value={shipment.cold_chain ? 'Yes — Required' : 'No — Not Required'} emerald />
                 {shipmentIsDomestic ? (
-                  /* 9 cells → three even rows of 3 in the 3-col grid.
-                     GST Number + State Code are the buyer's GST identity: the
-                     GSTIN from the customer, and the place of supply from the
-                     PI (what drives CGST/SGST vs IGST). Export shipments have
-                     no Indian GST, so they're domestic-only. */
                   <>
                     <Cell label="PIN CODE"          value={shipment.pin_code ?? '—'} />
                     <Cell label="SHIPPING COST"     value={fmtCcy(shipment.shipping_cost, '₹')} emerald />
@@ -497,8 +384,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                     <Cell label="FREIGHT COST"       value={fmtCcy(shipment.freight_cost)} emerald />
                     <Cell label="MODE OF TRANSPORT"  value={shipment.shipping_mode ?? '—'} emerald />
                     <Cell label="INCO TERM"          value={shipment.inco_term ?? '—'} emerald />
-                    {/* Port of Loading on its own full-width row, then
-                        Unloading / Final Destination / Origin Country below. */}
                     <Cell label="PORT OF LOADING"    value={shipment.port_of_loading ?? '—'} wide />
                     <Cell label="PORT OF UNLOADING"  value={shipment.port_of_unloading ?? '—'} />
                     <Cell label="FINAL DESTINATION"  value={shipment.final_destination ?? '—'} amber />
@@ -516,15 +401,9 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                     <div className="s6-shp-label">ATTACHMENTS</div>
                     <div className="s6-shp-attach">
                       {shipment.attachments.map((a, i) => {
-                        // Prefer the server-built absolute URL (index-matched);
-                        // fall back to client resolution only for legacy rows.
                         const href = shipment.attachments_url?.[i] ?? resolveFileUrl(a);
                         return (
                         <a key={i} href={href} target="_blank" rel="noreferrer"
-                          // Open via window.open with a cache-bust, exactly like the
-                          // customer/consignee document viewers — a re-uploaded file
-                          // then never shows a stale cached copy. The href stays for
-                          // middle-click / right-click.
                           onClick={(e) => {
                             if (!href) return;
                             e.preventDefault();
@@ -567,7 +446,6 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   );
 }
 
-/* ── Deal Summary card (pre-shipment view) ── */
 function DealSummary({ loading, header, wonOn, lead, latestQt, latestPi, dealValue }: {
   loading: boolean;
   header: StageProps['header'];
@@ -636,7 +514,6 @@ function SummaryCell({ tone, label, children }: {
   );
 }
 
-/* ── KPI tile (pre-shipment metrics strip) ── */
 function KpiTile({ tone, label, value, icon, loading }: {
   tone: 'blue' | 'violet' | 'green' | 'amber';
   label: string;
@@ -671,8 +548,6 @@ function Cell({ label, value, amber, blue, emerald, wide }: {
 }
 
 const STAGE6_CSS = `
-/* Lavender header — matches the figma + the rest of the stage chrome /
-   side panels (was a one-off green). */
 .s6-head { background: linear-gradient(110deg, #ede9fe 0%, #ddd6fe 40%, #c4b5fd 100%); border-bottom: 1px solid #c4b5fd; }
 .s6-head .smd-stg-head-icon  { background: linear-gradient(135deg, #7c3aed, #5b21b6); }
 .s6-head .smd-stg-head-title { color: #3b0764; }
@@ -688,8 +563,6 @@ const STAGE6_CSS = `
   position: relative;
 }
 
-/* Money-rain celebration is now drawn on a <canvas> by the <RupeeRain />
-   component (see RupeeRain.tsx) — no CSS particles needed here. */
 .s6-celebrate {
   position: relative; z-index: 1;
   width: 100%; max-width: 560px;
@@ -754,9 +627,6 @@ const STAGE6_CSS = `
   border: 1.5px solid;
   display: flex; flex-direction: column; gap: 3px;
   min-height: 48px;
-  /* Grid items default to min-width: auto (= their content width), so a long
-     company name or destination widened its own column past 1fr and pushed the
-     whole grid outside the card — the narrower the screen, the worse. */
   min-width: 0;
 }
 .s6-cell-violet  { border-color: #ddd6fe; }
@@ -771,8 +641,6 @@ const STAGE6_CSS = `
 .s6-cell-value   {
   font-size: 12.5px; font-weight: 700; color: #1e293b;
   display: flex; align-items: center; min-height: 18px;
-  /* Wrap rather than run out of the cell: these carry free text (company
-     names, destinations) with no natural break points. */
   min-width: 0; overflow-wrap: anywhere;
 }
 .s6-code {
@@ -785,8 +653,6 @@ const STAGE6_CSS = `
 .s6-value { font-variant-numeric: tabular-nums; color: #047857; font-weight: 800; }
 .s6-status { display: inline-block; padding: 3px 11px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 10.5px; font-weight: 800; }
 
-/* ── KPI strip (pre-shipment metrics, figma) — 4 pastel tiles each with
-   an icon, a big number and an uppercase label. ── */
 .s6-kpis {
   width: 100%; max-width: 760px; margin-top: 10px;
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
@@ -813,7 +679,6 @@ const STAGE6_CSS = `
 .s6-kpi-amber  { background: linear-gradient(180deg,#fffbeb,#fff); border-color: #fde68a; }
 .s6-kpi-amber  .s6-kpi-ico { background:#fef3c7; color:#d97706; } .s6-kpi-amber  .s6-kpi-num { color:#b45309; } .s6-kpi-amber  .s6-kpi-label { color:#d97706; }
 
-/* ── Post-shipment view ── */
 .s6-shp-wrap { width: 100%; display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
 
 .s6-success-banner {
@@ -858,7 +723,6 @@ const STAGE6_CSS = `
   background: linear-gradient(180deg, #dbeafe, #eff6ff);
   color: #1e40af; border-bottom-color: #bfdbfe;
 }
-/* Logistics card → lavender/purple to match the figma (was emerald). */
 .s6-shp-head-emerald {
   background: linear-gradient(180deg, #ede9fe, #f5f3ff);
   color: #6d28d9; border-bottom-color: #ddd6fe;
@@ -870,7 +734,6 @@ const STAGE6_CSS = `
 .s6-shp-grid-4 { grid-template-columns: repeat(4, 1fr); }
 .s6-shp-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .s6-shp-cell-wide { grid-column: 1 / -1; }
-/* Attachment chips (shipment form uploads). */
 .s6-shp-attach { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .s6-shp-attach-chip {
   display: inline-flex; align-items: center; gap: 6px; max-width: 260px;
@@ -890,7 +753,6 @@ const STAGE6_CSS = `
 .s6-shp-val.s6-shp-blue    { color: #1e40af; }
 .s6-shp-val.s6-shp-emerald { color: #6d28d9; }
 
-/* Dark mode */
 [data-bs-theme="dark"] .s6-head { background: linear-gradient(110deg, #1f1845 0%, #2a2150 40%, #3b2f6e 100%); border-bottom-color: rgba(167, 139, 250, .30); }
 [data-bs-theme="dark"] .s6-head .smd-stg-head-title { color: #ede9fe; }
 [data-bs-theme="dark"] .s6-head .smd-stg-head-sub   { color: #c4b5fd; }
@@ -937,8 +799,6 @@ const STAGE6_CSS = `
 @media (max-width: 520px) {
   .s6-summary-grid, .s6-shp-grid-3, .s6-shp-grid-4 { grid-template-columns: 1fr; }
   .s6-kpis { grid-template-columns: repeat(2, 1fr); }
-  /* The base size is 21px, so this rule was GROWING the title on the
-     narrowest screens — the one place it has least room. */
   .s6-title { font-size: 18px; }
 }
 `;

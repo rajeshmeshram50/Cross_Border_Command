@@ -620,11 +620,6 @@ export default function SalesQPI() {
     if (!host) return;
     const fit = () => {
       const cardEl = cardRef.current;
-      /* Where the card may end: the bottom of the scrolling area, less
-         .page-content's 8px padding. The app footer has its own slot below
-         that area, so it is already left out -- measuring against the window
-         instead ran the card 40px past it and gave the page a scrollbar. Only
-         a footer inside the scroller is subtracted here. */
       const scrollEl = (cardEl?.closest('.main-content') as HTMLElement | null) ?? null;
       const footEl = document.querySelector('footer.footer') as HTMLElement | null;
       const footIn = footEl && scrollEl?.contains(footEl) ? footEl.offsetHeight : 0;
@@ -637,11 +632,6 @@ export default function SalesQPI() {
         setFillH(prev => (prev === cardH ? prev : cardH));
       }
       if (rppManualRef.current) return;
-      /* Measured, not estimated (same fix as the Customers / Consignee lists): the
-         rows get the space from the bottom of the header row to the card's bottom
-         edge (see limit / fillH), less the real pager, the real horizontal
-         scrollbar, and the card border + host's 1px bottom padding. The old fixed
-         allowances (56 + 15 + 16) could round a fitting last row away. */
       const top      = host.getBoundingClientRect().top;
       const theadEl  = host.querySelector('thead') as HTMLElement | null;
       const theadBot = theadEl ? theadEl.getBoundingClientRect().bottom : top + 14 + 44;
@@ -650,7 +640,6 @@ export default function SalesQPI() {
       const scroller = host.querySelector('.table-responsive') as HTMLElement | null;
       const sbH      = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
       const avail    = limit - theadBot - pagerH - sbH - 2;
-      // +2: sub-pixel row heights must not cost a whole row.
       const rowsFit  = Math.max(4, Math.floor((avail + 2) / rowH));
       setRpp(prev => (prev === rowsFit ? prev : rowsFit));
     };
@@ -1418,9 +1407,6 @@ export default function SalesQPI() {
     <div className="qpi-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Header strip + "What We Are Doing Here" — the Supplier list's header
-          (.sup-fig .cstrip) and step-card banner, in one .sup-fig as on that page.
-          The Quotation / Proforma Invoice rail sits where Supplier has its button. */}
       <div className="sup-fig">
         <div className="cstrip">
           <span className="cstrip__accent" />
@@ -4204,20 +4190,14 @@ const SCOPED_CSS = `
   padding: 0;
   margin: 0;
   color: var(--vz-body-color);
-  /* 8px between the header block and the table: the header is the Supplier
-     list's (.sup-fig .cstrip), so app.css's HRMS-strip margins don't apply. */
   display: flex; flex-direction: column; gap: 8px;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
-/* Tabs 40px / 12.5px; search, document-type filter and the table-bar button stand the same 40px. */
 .qpi-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
 .qpi-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
-/* Left edges: header icon, banner icon and first tab start 19px in; right edges end 15px in. */
 .qpi-root .sup-fig .cstrip { padding-left: 18px; padding-right: 14px; }
 .qpi-root .sup-fig .cstrip__left { padding-left: 0; }
 .master-select-menu.qpi-doctype-menu { width: 186px !important; min-width: 186px !important; max-width: 186px !important; }
-/* Search, Doc Type filter and Create Quotation stretch to the tab rail's full height (40px tabs + the rail's padding and
-   border) so every control in the row is the same height; 40px floor for a wrapped row. */
 .qpi-root .qpi-tablebar { align-items: stretch; }
 .qpi-root .qpi-tablebar .dt-search,
 .qpi-root .qpi-tablebar .qpi-doctype-filter { height: auto; min-height: 40px; }
@@ -4762,7 +4742,6 @@ const SCOPED_CSS = `
 .qpi-modal-pill {
   background: rgba(255,255,255,.08);
   border: 1.5px solid rgba(255,255,255,.2);
-  /* Same height and corner as the ✕ beside it. */
   box-sizing: border-box; height: 40px;
   border-radius: 10px;
   padding: 0 12px;
@@ -5491,9 +5470,6 @@ const SCOPED_CSS = `
   .qpi-convert-btn { padding: 6px 8px; }
 }
 
-/* Search = the tab rail's track: the same 1px border, 3px padding and tint as
-   .dt-tabs (so both stand 48px), with the 40px field drawn inside it by ::before
-   — the icon, input and clear button all sit inside that field. */
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
   position: relative;
   height: 48px; min-height: 48px;

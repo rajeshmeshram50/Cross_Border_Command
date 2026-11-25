@@ -1,12 +1,5 @@
 import type { OppHeaderData, StageNum } from '../SalesMatrixDetail';
 
-/* Customer Standard-Documents gate for Stage 5's Create PI button.
- *   'ok'         every MANDATORY core doc is on file (or the segment rules
- *                require none) — Create PI is allowed.
- *   'incomplete' at least one mandatory doc is still missing.
- *   'checking'   the customer's vault tally is still in flight.
- *   'error'      the tally fetch failed — completeness is unknown.
- * Only 'ok' opens the button; the other three block it. */
 export type PiDocGate = 'ok' | 'incomplete' | 'checking' | 'error';
 
 export type StageProps = {
@@ -14,77 +7,19 @@ export type StageProps = {
   stage:  StageNum;
   onPrev: () => void;
   onNext: () => void;
-  /* Tells the parent to re-fetch the lead. Stage 2 calls this after
-   * saving acknowledgements so the Activity Report reflects the
-   * append-only history (and the lead's qualified flag flips).
-   * Returns the in-flight promise so callers can await it before
-   * reading dependent state (e.g., Stage 2's submitPicker awaits this
-   * so a click on Save & Next immediately afterwards sees fresh data). */
   reloadLead?: () => Promise<unknown> | void;
-  /* Stage 5 calls this whenever a Proforma Invoice is created or
-   * edited. Parent (SalesMatrixDetail) wires it to bump
-   * `agreementRefreshTick`, which refetches /clm/leads/{id}/agreement-
-   * applicable — that endpoint's `pi` field is what unlocks the
-   * Segment Details card on the left rail. Without this hook the
-   * card stayed locked until the user manually clicked Save & Next
-   * (the only other path that re-rendered the parent with new
-   * server state). */
   onPiChange?: () => void;
-  /* Asked BEFORE a stage writes its advance, not after.
-   * The page owns the rules for entering a stage (Stage 3 needs a
-   * salesperson). Those rules used to live only in the page's navigation
-   * guard, which runs on onNext() — i.e. after the stage had already PUT the
-   * new lead_stage_id and shown "Stage advanced". The move was refused, but
-   * the row said stage 3 and the user had just been told it worked.
-   * Returns false when the move is not allowed; the guard raises its own
-   * message, so the caller only has to stop. */
   canEnterNextStage?: () => boolean;
-  /* When the stage is rendered inside a toolbar popup (not the pipeline),
-   * the "Save & Next / Previous" footer is suppressed — the popup is a
-   * quick-action view, not a pipeline step. All in-table actions still
-   * persist immediately, so nothing is lost by hiding the footer. */
   embedded?: boolean;
-  /* Stage 5: state of the CUSTOMER's Standard Documents (core KYC / DD /
-   * Licence uploads) — the Create PI gate. Derived by the parent from the SAME
-   * vault tally it already fetches for the left "Customer Details" card, then
-   * passed down, so Stage 5 never re-fetches the vault itself (the call was a
-   * duplicate of the parent's).
-   *
-   * It is a state, not a boolean, because "not known to be incomplete" is NOT
-   * the same as "complete": while the vault tally is still loading — or after
-   * it failed — a plain boolean read false and left Create PI fully live, so a
-   * PI could be started on a customer with zero documents on file. The gate
-   * fails CLOSED on both. */
   piDocGate?: PiDocGate;
-  /* Deal lock — true once the Proforma Invoice has been e-signed. Stages
-   * become read-only (Stage 5 disables Create Quotation / Create PI / convert).
-   * Stage 6 ignores it so "Create Shipment" stays usable. */
   locked?: boolean;
-  /* Bumped by the parent whenever the opportunity's product mappings change
-   * outside this stage (e.g. the toolbar Product Directory popup maps/edits/
-   * removes a product). Stage 3 watches it to re-fetch its product list so the
-   * inline view + count badges stay live without a page refresh. */
   refreshTick?: number;
-  /* Emitted by Stage 3 after one of ITS OWN in-table actions changes a product
-   * (set sourcing status, mark sourced, create procurement). The parent wires
-   * this to bump `refreshTick`, so the OTHER Stage 3 instance (the inline
-   * pipeline view vs. the Product Sourcing popup — they hold separate state)
-   * re-syncs without a page refresh. */
   onProductsChanged?: () => void;
-  /* Bumped by the parent whenever a shared price changes outside this stage
-   * (the toolbar "Share Prices" popup shares a quoted price). Stage 4 watches
-   * it to re-fetch its shared-price list so the inline view + tabs stay live
-   * without a full page refresh. */
   priceRefreshTick?: number;
-  /* Emitted by Stage 4 after IT shares a quoted price. The parent wires this to
-   * bump `priceRefreshTick`, so the OTHER Stage 4 instance (inline pipeline view
-   * vs. the Share Prices popup — separate state) re-syncs immediately. */
   onPricesChanged?: () => void;
 };
 
-/* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */
 export const SHARED_STAGE_CSS = `
-/* ─── Shimmer skeleton system (re-used by every stage table) ─────── */
 @keyframes smd-shimmer {
   0%   { background-position: -400px 0; }
   100% { background-position:  400px 0; }
@@ -103,10 +38,8 @@ export const SHARED_STAGE_CSS = `
 .smd-skel-chip   { height: 22px; border-radius: 7px;   max-width: 80px; }
 .smd-skel-input  { height: 30px; border-radius: 8px;   max-width: 130px; }
 .smd-skel-btn    { height: 30px; border-radius: 8px;   max-width: 84px; }
-.smd-skel-circle { height: 26px; width: 26px; border-radius: 8px; }
 .smd-skel-num    { height: 14px; max-width: 32px; }
 .smd-skel-name   { height: 14px; max-width: 70%; }
-.smd-skel-cell   { padding: 12px 14px; }
 
 [data-bs-theme="dark"] .smd-skel,
 [data-layout-mode="dark"] .smd-skel {
@@ -114,7 +47,6 @@ export const SHARED_STAGE_CSS = `
   background-size: 800px 100%;
 }
 
-/* ─── Smooth fade-in for tab content + cards ──────────────────────── */
 @keyframes smd-fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -122,12 +54,9 @@ export const SHARED_STAGE_CSS = `
 .smd-fade-in {
   animation: smd-fade-in .22s ease-out both;
 }
-/* Respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .smd-fade-in { animation: none; }
   .smd-skel    { animation: none; background: #e2e8f0; }
-  /* Keep the static fallback dark-mode aware so the loader doesn't flash
-     a bright light bar over the dark table. */
   [data-bs-theme="dark"] .smd-skel,
   [data-layout-mode="dark"] .smd-skel { background: rgba(167,139,250,.18); }
 }
@@ -137,8 +66,6 @@ export const SHARED_STAGE_CSS = `
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
   padding: 11px 16px 10px;
-  /* Lavender gradient header — sits between two deep-violet side panels.
-   * Title is dark purple ink; the deep colour lives in the icon + ACTIVE pill. */
   background: linear-gradient(110deg, #ede9fe 0%, #ddd6fe 40%, #c4b5fd 100%);
   color: #3b0764;
   border-bottom: 1px solid #c4b5fd;
@@ -148,7 +75,6 @@ export const SHARED_STAGE_CSS = `
   background: linear-gradient(180deg, rgba(255,255,255,.55), transparent);
   pointer-events: none;
 }
-/* Radial glow accent in the upper-left of the header. */
 .smd-stg-head::after {
   content: ''; position: absolute;
   top: -20px; left: 30px;
@@ -172,7 +98,6 @@ export const SHARED_STAGE_CSS = `
   font-weight: 600; letter-spacing: .06em;
   display: flex; align-items: center; gap: 4px;
 }
-/* ACTIVE pill with green pulsing dot via ::before. */
 .smd-stg-head-badge {
   position: relative; z-index: 1;
   font-size: 8px; font-weight: 800; letter-spacing: .08em;
@@ -197,14 +122,10 @@ export const SHARED_STAGE_CSS = `
   50%      { opacity: .5; transform: scale(.7); }
 }
 
-/* min-height:0 lets this flex child shrink below its content and scroll
-   internally (without it the body grows to fit its content and pushes the card
-   taller than the side panels on Stage 6). */
 .smd-stg-body { padding: 12px 14px; flex: 1; min-height: 0; overflow-y: auto; }
 .smd-stg-body::-webkit-scrollbar { width: 4px; }
 .smd-stg-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
 
-/* Footer — lavender-tinted strip with amber note + violet save button. */
 .smd-stg-foot {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
@@ -213,8 +134,7 @@ export const SHARED_STAGE_CSS = `
   background: linear-gradient(135deg, #f5f3ff, #ede9fe);
   border-top: 1.5px solid #ddd6fe;
 }
-.smd-stg-foot-note,
-.smd-stg-note {
+.smd-stg-foot-note {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 10.5px; line-height: 1.4; color: #5b21b6;
   background: linear-gradient(135deg, #f5f3ff, #ede9fe);
@@ -222,19 +142,11 @@ export const SHARED_STAGE_CSS = `
   border-radius: 8px;
   padding: 4px 10px;
 }
-.smd-stg-foot-note strong,
-.smd-stg-note strong { font-weight: 800; color: #4c1d95; }
+.smd-stg-foot-note strong { font-weight: 800; color: #4c1d95; }
 .smd-stg-foot-note { align-items: baseline; padding: 7px 12px; min-width: 0; flex: 0 1 auto; }
 .smd-stg-foot-note strong { white-space: nowrap; flex-shrink: 0; }
-.smd-stg-note { margin: 8px 16px 12px; }
-.smd-stg-note::before {
-  content: ''; width: 12px; height: 12px; border-radius: 50%;
-  background: #f59e0b; flex-shrink: 0;
-}
 
-/* Previous (ghost) button. */
 .smd-stg-btn {
-  /* Every button on the lead page is 40px (QA #308). */
   box-sizing: border-box; height: 40px;
   padding: 0 16px; border-radius: 10px;
   border: 1.5px solid #c4b5fd;
@@ -249,7 +161,6 @@ export const SHARED_STAGE_CSS = `
 }
 .smd-stg-btn:hover { background: #ede9fe; transform: translateY(-1px); }
 
-/* Primary (Save & Next) button. */
 .smd-stg-btn-primary {
   padding: 0 18px; border-radius: 10px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
@@ -265,9 +176,6 @@ export const SHARED_STAGE_CSS = `
 }
 .smd-stg-btn-row { display: flex; gap: 6px; flex-shrink: 0; }
 
-/* Section block — small inline header label, then a bordered data
- * table with alternating row backgrounds. Matches the HTML reference's
- * .sec-hdr + .data-table pattern. */
 .smd-sect {
   background: transparent;
   border: none;
@@ -301,12 +209,9 @@ export const SHARED_STAGE_CSS = `
   border-right: 1.5px solid #ddd6fe;
   border-bottom: 1.5px solid #ddd6fe;
 }
-/* Two-column striping: cells 3,4 of each 4-cell block are white. */
 .smd-sect-field:nth-child(4n+3),
 .smd-sect-field:nth-child(4n+4) { background: #fff; }
-/* Remove the right border on the last cell of each row. */
 .smd-sect-field:nth-child(2n)   { border-right: none; }
-/* Remove the bottom border on the last visible row. */
 .smd-sect-field:nth-last-child(-n+2):nth-child(2n+1),
 .smd-sect-field:nth-last-child(1) { border-bottom: none; }
 .smd-sect-field:nth-last-child(1):nth-child(2n+1) { border-right: none; }
@@ -319,13 +224,6 @@ export const SHARED_STAGE_CSS = `
 .smd-sect-value { font-size: 10.5px; font-weight: 700; color: #3b0764; }
 .smd-sect-value-muted { font-size: 10.5px; color: #c4b5fd; font-weight: 600; }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Dark mode — every stage component (Stage1..Stage6) renders these
-   .smd-stg-* / .smd-sect-* classes inside the middle "stage-card"
-   surface of SalesMatrixDetail. Tints flip against the deep-slate
-   page surface so the content isn't a bright white box on dark.
-   ═══════════════════════════════════════════════════════════════════ */
-/* ─── Stage header — darker lavender gradient that mirrors light-mode ─── */
 [data-bs-theme="dark"] .smd-stg-head,
 [data-layout-mode="dark"] .smd-stg-head {
   background: linear-gradient(110deg, #1f1845 0%, #2a2150 40%, #3b2f6e 100%);
@@ -354,7 +252,6 @@ export const SHARED_STAGE_CSS = `
   box-shadow: 0 2px 10px rgba(124, 58, 237, .50);
 }
 
-/* ─── Body ─── */
 [data-bs-theme="dark"] .smd-stg-body,
 [data-layout-mode="dark"] .smd-stg-body {
   background: #14102a;
@@ -365,7 +262,6 @@ export const SHARED_STAGE_CSS = `
   background: rgba(167, 139, 250, .35);
 }
 
-/* ─── Section block — section card stays transparent, data-table gets dark borders ─── */
 [data-bs-theme="dark"] .smd-sect,
 [data-layout-mode="dark"] .smd-sect {
   background: transparent;
@@ -406,23 +302,18 @@ export const SHARED_STAGE_CSS = `
 [data-bs-theme="dark"] .smd-sect-value-muted,
 [data-layout-mode="dark"] .smd-sect-value-muted { color: rgba(196, 181, 253, .55); }
 
-/* ─── Footer — dark lavender wash, amber note pill, violet buttons ─── */
 [data-bs-theme="dark"] .smd-stg-foot,
 [data-layout-mode="dark"] .smd-stg-foot {
   background: linear-gradient(135deg, #1f1845, #2a2150);
   border-top: 1.5px solid rgba(167, 139, 250, .25);
 }
-[data-bs-theme="dark"] .smd-stg-note,
 [data-bs-theme="dark"] .smd-stg-foot-note,
-[data-layout-mode="dark"] .smd-stg-note,
 [data-layout-mode="dark"] .smd-stg-foot-note {
   background: linear-gradient(135deg, rgba(124, 58, 237, .12), rgba(124, 58, 237, .18));
   border: 1px solid rgba(167, 139, 250, .35);
   color: #c4b5fd;
 }
-[data-bs-theme="dark"] .smd-stg-note strong,
 [data-bs-theme="dark"] .smd-stg-foot-note strong,
-[data-layout-mode="dark"] .smd-stg-note strong,
 [data-layout-mode="dark"] .smd-stg-foot-note strong { color: #ddd6fe; }
 [data-bs-theme="dark"] .smd-stg-btn,
 [data-layout-mode="dark"] .smd-stg-btn {

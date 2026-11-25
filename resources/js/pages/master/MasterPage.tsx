@@ -1620,9 +1620,6 @@ function MasterPageInner({
               </div>
             )}
             {!hasStatus && cfg.slug !== 'roles' && (
-              /* A master with no Active / Inactive status gets a heading -- its
-                 name, the record count and what it holds -- not a tab strip
-                 with a single tab in it. */
               <div className="mp-subhead">
                 <div className="mp-subhead__title">
                   {mpPlural(singular)}

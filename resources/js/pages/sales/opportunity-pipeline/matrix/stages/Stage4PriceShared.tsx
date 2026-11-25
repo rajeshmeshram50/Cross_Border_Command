@@ -7,23 +7,6 @@ import '../../../../../components/ui/DataTable.css';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Stage 4: Price Shared
- *
- *   Two-tab view:
- *     · Price To Be Share — every mapped product on the lead with an
- *       inline Quoted Price input + Submit. Drafts / inactive products
- *       are blocked at the controller (mirrors IDIMS).
- *     · Shared Price      — append-only history of every quoted price
- *       across the lead, with View / Download PDF actions.
- *
- *   A nested history view (replaces the Price To Be Share table) opens
- *   when the eye icon next to a product is clicked, showing every
- *   quotation submitted for that specific product mapping.
- *
- *   Save & Next: at least one shared price must exist before advancing
- *   to Stage 5.
- * ───────────────────────────────────────────────────────────────────── */
 
 type Tab = 'to_share' | 'shared';
 type ViewMode = 'list' | 'history';
@@ -67,10 +50,6 @@ const isIncompleteStatus = (s: string | null): boolean => {
   return lc === 'draft' || lc === 'inactive' || lc === 'pending';
 };
 
-/* Currency code → symbol (matches Stage 3 / the Product Directory & Price
- * modals). Falls back to the raw code so an unmapped currency still reads
- * sensibly. Used for the Target/Quoted price columns (symbol) while the new
- * Currency column carries the plain code. */
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
 };
@@ -79,7 +58,6 @@ const currencySymbol = (code: string | null | undefined): string => {
   const c = String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase();
   return CURRENCY_SYMBOLS[c] ?? `${c} `;
 };
-/* Just the normalized code (e.g. "USD") for the Currency column chip. */
 const currencyCode = (code: string | null | undefined): string =>
   code ? String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase() : '—';
 
@@ -102,33 +80,23 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const [loading, setLoading] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [submittingId, setSubmittingId] = useState<number | null>(null);
-  /* Which shared-price entry's PDF is being opened/downloaded, and via which
-   * action — drives the per-button spinner (so the user sees the exact View /
-   * Download they clicked is working) and blocks a double-click firing twice. */
   const [pdfBusy, setPdfBusy] = useState<{ id: number; action: 'view' | 'download' } | null>(null);
 
   const [products, setProducts]     = useState<LeadProductRow[]>([]);
   const [sharedRows, setSharedRows] = useState<SharedRow[]>([]);
   const [quotedDraft, setQuotedDraft] = useState<Record<number, string>>({});
 
-  /* How many times each product's price has been submitted (shared) — drives
-   * the "View price history" tooltip count. Keyed by lead_product id. */
   const submitCountByProduct = useMemo(() => {
     const m: Record<number, number> = {};
     for (const s of sharedRows) m[s.lead_product_id] = (m[s.lead_product_id] ?? 0) + 1;
     return m;
   }, [sharedRows]);
 
-  /* History sub-view state */
   const [historyHeader, setHistoryHeader] = useState<LeadProductRow | null>(null);
   const [historyRows, setHistoryRows]     = useState<HistoryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  /* Search on Shared Price tab */
 
-  /* Both fetches kicked off in parallel via Promise.allSettled so a single
-   * failure doesn't block the other from rendering — and the loading
-   * spinner only flips off once BOTH have settled. */
   const fetchAll = useCallback(async () => {
     if (!leadId) return;
     setLoading(true);
@@ -143,8 +111,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     setLoading(false);
   }, [leadId, toast]);
 
-  /* Lightweight reload for after a successful submit — only the shared
-   * price list needs refetching since products haven't changed. */
   const reloadShared = useCallback(async () => {
     if (!leadId) return;
     try {
@@ -160,21 +126,14 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     void fetchAll();
   }, [leadId, fetchAll]);
 
-  /* Re-fetch when the parent bumps priceRefreshTick — i.e. the OTHER Stage 4
-   * instance (inline view vs. Share Prices popup) shared a price. Skip the
-   * initial render; the mount effect above already loaded the data. */
   const firstPriceTick = useRef(true);
   useEffect(() => {
     if (firstPriceTick.current) { firstPriceTick.current = false; return; }
     if (leadId) void fetchAll();
   }, [priceRefreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Submit a quoted price ───────────────────────────────────────── */
-  /* Frontend validation mirrors IDIMS exactly: required + numeric. Backend
-   * `min:0` handles negative-number rejection so the surface still refuses
-   * those — direct API hits get a 422. */
   const onSubmitQuoted = async (row: LeadProductRow) => {
-    if (!leadId || locked) return;   // signed PI → read-only
+    if (!leadId || locked) return;
     if (isIncompleteStatus(row.product_status)) {
       toast.warning('Activate this product first', 'Drafts and inactive products cannot have a shared price.');
       return;
@@ -195,8 +154,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       toast.success('Quoted price recorded', `${row.product_name ?? 'Product'} · ${row.currency} ${num.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
       setQuotedDraft(prev => ({ ...prev, [row.id]: '' }));
       await reloadShared();
-      // Tell the parent a price was shared so the OTHER Stage 4 instance (the
-      // inline pipeline view vs. the Share Prices popup) refreshes immediately.
       onPricesChanged?.();
     } catch (e: any) {
       toast.error('Submit failed', e?.response?.data?.message ?? 'Could not record the quoted price');
@@ -205,7 +162,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     }
   };
 
-  /* ── Open per-product history view ──────────────────────────────── */
   const openHistory = async (row: LeadProductRow) => {
     if (!leadId) return;
     if (isIncompleteStatus(row.product_status)) {
@@ -234,14 +190,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     setHistoryRows([]);
   };
 
-  /* ── PDF actions ─────────────────────────────────────────────────── */
   const fetchPdfBlob = async (entryId: number): Promise<Blob> => {
     const res = await api.get(`/sales/shared-prices/${entryId}/pdf`, { responseType: 'blob' });
     return new Blob([res.data as BlobPart], { type: 'application/pdf' });
   };
 
   const onViewPdf = async (entryId: number) => {
-    if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
+    if (pdfBusy !== null) return;
     setPdfBusy({ id: entryId, action: 'view' });
     toast.info('Opening PDF…', 'Generating the quotation PDF');
     try {
@@ -257,7 +212,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   };
 
   const onDownloadPdf = async (entryId: number) => {
-    if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
+    if (pdfBusy !== null) return;
     setPdfBusy({ id: entryId, action: 'download' });
     toast.info('Preparing download…', 'Generating the quotation PDF');
     try {
@@ -275,31 +230,17 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     }
   };
 
-  /* ── Save & Next ─────────────────────────────────────────────────── */
   const onSaveAndNext = async () => {
     if (!leadId) {
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
-    /* A customer must be mapped (via the toolbar above) before advancing to
-     * Stage 5. The consignee is NOT required here — it can be picked/mapped
-     * directly in the Create Quotation form on Stage 5. */
     if (!header.customerId) {
       toast.warning('Map a customer first', 'Add a customer from the toolbar above before advancing to Stage 5.');
       return;
     }
-    /* When the lead has ALREADY progressed past Stage 4 (e.g. a PI/shipment
-     * exists and the user is just revisiting this completed stage), the
-     * forward-advance validation below must not run — re-showing "Share a
-     * price first" on a done deal is a false alarm, and re-PUTting
-     * lead_stage_id:5 would regress a lead that's further along. Just
-     * navigate forward. */
     const alreadyAdvanced = (header.leadStageId ?? 0) > 4;
     if (!alreadyAdvanced) {
-      /* EVERY priceable (active) product must have at least one quoted price
-       * before advancing — you can't move to Stage 5 with some products still
-       * unpriced. Draft/inactive products can't be quoted (input is disabled),
-       * so they're excluded from the requirement. */
       const activeProducts = products.filter(p => (p.product_status ?? '').toLowerCase() === 'active');
       const unpriced = activeProducts.filter(p => (submitCountByProduct[p.id] ?? 0) === 0);
       if (unpriced.length > 0) {
@@ -318,8 +259,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     }
     setAdvancing(true);
     try {
-      // Don't regress an already-advanced lead's stage; only push it to 5
-      // when this is the genuine forward step from a not-yet-completed Stage 4.
       if (!alreadyAdvanced) {
         await api.put(`/sales/leads/${leadId}`, { lead_stage_id: 5 });
       }
@@ -338,13 +277,8 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const sharedCount = sharedRows.length;
   const toShareCount = products.length;
 
-  /* While a quoted-price Submit is in flight, freeze the WHOLE tab — every
-   * amount input and every button — so the price can't be edited mid-request
-   * and the user clearly sees the action is in progress. Only one submit runs
-   * at a time (submittingId is a single id), so this one flag covers it. */
   const isSubmittingAny = submittingId !== null;
 
-  /* ──────────────────────────── render ──────────────────────────── */
   return (
     <>
       <style>{SHARED_STAGE_CSS}{STAGE4_CSS}</style>
@@ -370,23 +304,17 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       </div>
 
       <div className="smd-stg-body">
-        {/* ── HISTORY VIEW ── */}
         {view === 'history' && (
           <div className="s4-card s4-card-navy smd-fade-in" key="history">
             <div className="s4-card-head s4-card-head-navy">
-              {/* Left: product name + id (no "Price History" title, no count). */}
               <div className="s4-card-head-titlewrap">
                 <div className="s4-card-title s4-history-titlerow">
                   <span className="s4-history-code">{formatProductCode(historyHeader?.product_code) || '—'}</span>
-                  {/* Single-line ellipsis — a 100+ char name otherwise wraps the
-                      header and pushes the Back button off the card (QA #98).
-                      Full name stays on the tooltip. */}
                   <Tooltip label={historyHeader?.product_name ?? ''} themed maxWidth={420}>
                     <span className="s4-history-name">{historyHeader?.product_name ?? '—'}</span>
                   </Tooltip>
                 </div>
               </div>
-              {/* Right: back button. */}
               <button type="button" className="s4-back-btn" onClick={goBackToList}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                   <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
@@ -452,7 +380,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         </td>
                         <td>
                           <div className="s4-pdf-actions">
-                            {/* Each button shows its own spinner while that exact action loads. */}
                             <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(h.id)} disabled={pdfBusy !== null}>
                               {pdfBusy?.id === h.id && pdfBusy.action === 'view'
                                 ? <span className="s4-spin" />
@@ -480,7 +407,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
 
         {view === 'list' && (
           <>
-            {/* Pill tabs + Map Product CTA (always visible — mirrors IDIMS) */}
             <div className="s4-tab-row">
               <div className="s4-tabs dt-tabrail hr-dt" data-accent="violet">
                 <div className="dt-tabs" role="tablist">
@@ -521,11 +447,8 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
               </div>
             </div>
 
-            {/* ── PRICE TO BE SHARE TAB ── */}
             {tab === 'to_share' && (
               <div className="s4-card s4-card-navy smd-fade-in" key="t-share">
-                {/* No banner header here — the figma goes straight from the
-                    tabs into the table. (History view keeps its own header.) */}
                 <div className="s4-table-wrap">
                   <table className="s4-table">
                     <thead className="s4-thead-navy">
@@ -538,9 +461,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         <th style={{ width: 140 }}>Target Price</th>
                         <th style={{ width: 90 }}>Currency</th>
                         <th style={{ width: 170 }}>Quoted Price</th>
-                        {/* Wide enough for the Submit button (min-width 108) + the
-                            eye/history icon button + its corner badge + cell
-                            padding, so the eye no longer clips at the edge. */}
                         <th style={{ width: 190 }}>Action</th>
                       </tr>
                     </thead>
@@ -584,14 +504,8 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                 ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '—'}
                             </td>
-                            {/* Dedicated Currency column (QA #110) — carries the
-                                plain code so the price columns can show just the
-                                symbol. */}
                             <td><span className="s4-curr-chip">{currencyCode(r.currency)}</span></td>
                             <td>
-                              {/* Currency now has its own column to the left, so
-                                  the input stands alone — no inline chip to avoid
-                                  showing the currency twice in adjacent cells. */}
                               <div className="s4-quote-group">
                                 <input
                                   type="number" min="0" step="any"
@@ -623,7 +537,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                 <button
                                   type="button"
                                   className="s4-icon-btn s4-eye-btn"
-                                  /* Count shows as the corner badge; tooltip is the plain action. */
                                   title={blocked ? 'Complete product status first' : 'View price history'}
                                   onClick={() => void openHistory(r)}
                                   disabled={blocked || isSubmittingAny}
@@ -646,10 +559,8 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
               </div>
             )}
 
-            {/* ── SHARED PRICE TAB ── */}
             {tab === 'shared' && (
               <div className="s4-card s4-card-navy smd-fade-in" key="t-shared">
-                {/* No banner header — search moved up beside the tabs row. */}
                 <div className="s4-table-wrap">
                   <table className="s4-table">
                     <thead className="s4-thead-navy">
@@ -712,7 +623,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             </td>
                             <td>
                               <div className="s4-pdf-actions">
-                                {/* Each button shows its own spinner while that exact action loads. */}
                                 <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(r.id)} disabled={pdfBusy !== null}>
                                   {pdfBusy?.id === r.id && pdfBusy.action === 'view'
                                     ? <span className="s4-spin" />
@@ -741,7 +651,6 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
         )}
       </div>
 
-      {/* Footer — pipeline navigation; hidden when opened as a toolbar popup. */}
       {!embedded && (
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
@@ -766,36 +675,21 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
 }
 
 const STAGE4_CSS = `
-/* ═══════════════════════════════ TAB ROW ═══════════════════════════════ */
 .s4-tab-row {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
 }
-.s4-map-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 9px 18px; border-radius: 10px;
-  background: linear-gradient(135deg, #5b21b6, #7c3aed);
-  color: #fff; border: none; cursor: pointer;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
-  box-shadow: 0 3px 10px rgba(124,58,237,.30);
-  transition: all .15s;
-}
-.s4-map-btn:hover { background: linear-gradient(135deg, #7c3aed, #8b5cf6); transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124,58,237,.40); }
 
-/* Tabs = the Customers list tab rail (.dt-tabrail): 40px tabs, 12.5px, count
-   chips, 48px rail. A price submit in flight still freezes them (disabled). */
 .s4-tabs .dt-tab { height: 40px; font-size: 12.5px; }
 .s4-tabs .dt-tab:disabled { cursor: not-allowed; }
 .s4-tab-ico { display: inline-flex; align-items: center; justify-content: center; }
 
-/* ═══════════════════════════════ CARDS ═══════════════════════════════ */
 .s4-card {
   background: #fff;
   border: 1.5px solid; border-radius: 14px;
   overflow: hidden;
 }
 .s4-card-navy    { border: 1.5px solid #e9d5ff; border-top: 3px solid #7c3aed; box-shadow: 0 4px 20px rgba(124,58,237,.09), 0 1px 3px rgba(0,0,0,.04); }
-.s4-card-emerald { border-color: #a7f3d0; }
 
 .s4-card-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -807,42 +701,18 @@ const STAGE4_CSS = `
   background: linear-gradient(180deg, #f5f3ff, #ede9fe);
   border-bottom-color: #ddd6fe;
 }
-.s4-card-head-emerald {
-  background: linear-gradient(180deg, #d1fae5, #ecfdf5);
-  border-bottom-color: #a7f3d0;
-}
 .s4-card-head-titlewrap { display: flex; gap: 10px; align-items: center; }
-.s4-card-icon {
-  width: 30px; height: 30px; border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-}
-.s4-card-icon-navy    { background: linear-gradient(135deg,#5b21b6,#7c3aed); }
-.s4-card-icon-emerald { background: linear-gradient(135deg,#10b981,#047857); }
 .s4-card-title {
   font-size: 13.5px; font-weight: 800;
   display: flex; align-items: center; gap: 8px;
 }
 .s4-card-head-navy .s4-card-title    { color: #5b21b6; }
-.s4-card-head-emerald .s4-card-title { color: #064e3b; }
-.s4-card-sub {
-  font-size: 11px; color: #64748b; margin-top: 2px;
-  display: flex; align-items: center; gap: 8px;
-}
 .s4-history-code {
   font-family: 'Inter',monospace; font-size: 11px; font-weight: 800;
   padding: 2px 9px; border-radius: 6px;
   background: #ede9fe; color: #5b21b6; border: 1px solid #ddd6fe;
 }
 
-.s4-card-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px;
-  font-size: 10.5px; font-weight: 800; color: #fff;
-}
-.s4-card-count-navy    { background: linear-gradient(135deg,#5b21b6,#7c3aed); }
-.s4-card-count-emerald { background: linear-gradient(135deg,#10b981,#047857); }
-
-/* Back = the lead page's Back to My Workplace button (.smd-back-btn). */
 .s4-back-btn {
   display: inline-flex; align-items: center; gap: 7px;
   box-sizing: border-box; height: 40px;
@@ -856,41 +726,14 @@ const STAGE4_CSS = `
 }
 .s4-back-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.50), inset 0 1px 0 rgba(255,255,255,.20); }
 
-/* Search box */
-.s4-search {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border-radius: 8px;
-  background: #fff; border: 1.5px solid #ddd6fe;
-  color: #6d28d9;
-}
-.s4-search input {
-  border: none; outline: none; background: transparent;
-  font-family: inherit; font-size: 12px; color: #0f172a;
-  min-width: 180px;
-}
-.s4-search input::placeholder { color: #94a3b8; }
-
-/* ═══════════════════════════════ TABLE ═══════════════════════════════ */
 .s4-table-wrap { overflow: auto; max-height: 380px; background: #fff; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 .s4-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
 .s4-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s4-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s4-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-/* table-layout:fixed + width:100% lets the flexible Product Name column absorb
-   slack and truncate (ellipsis + hover tooltip) on a wide stage. A min-width
-   guarantees the fixed columns can't squeeze Product Name to 0 when BOTH side
-   panels (CLM Details + Decision Engine) are open — instead the wrap scrolls
-   horizontally so every column, Product Name included, stays visible and in
-   its own column (QA #114). */
 .s4-table { width: 100%; min-width: 1080px; border-collapse: collapse; table-layout: fixed; }
 .s4-table thead th { position: sticky; top: 0; z-index: 2; }
 .s4-thead-navy th {
-  padding: 12px 14px; text-align: left;
-  font-size: 11.5px; font-weight: 800; color: #fff;
-  background: linear-gradient(180deg, #7c3aed, #6d28d9);
-  white-space: nowrap;
-}
-.s4-thead-emerald th {
   padding: 12px 14px; text-align: left;
   font-size: 11.5px; font-weight: 800; color: #fff;
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
@@ -910,7 +753,6 @@ const STAGE4_CSS = `
   font-size: 11.5px; font-weight: 800;
 }
 .s4-sr-navy    { background: #ede9fe; color: #5b21b6; }
-.s4-sr-emerald { background: #d1fae5; color: #047857; }
 
 .s4-code {
   display: inline-block;
@@ -918,10 +760,7 @@ const STAGE4_CSS = `
   padding: 4px 10px; border-radius: 8px; border: 1.5px solid;
 }
 .s4-code-navy    { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
-.s4-code-emerald { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
 
-/* Currency column chip — carries the plain code (USD/GBP/…) beside the price
-   columns, which now show only the symbol. */
 .s4-curr-chip {
   display: inline-block;
   font-family: 'Inter', monospace; font-size: 11px; font-weight: 800;
@@ -930,20 +769,12 @@ const STAGE4_CSS = `
   letter-spacing: .03em;
 }
 
-/* Clamp long product names to 2 lines — an unclamped 100+ char name stacked
-   to 5 lines and stretched every row of the Price Shared table. Full name
-   stays on the title tooltip. */
 .s4-prod-name {
   font-weight: 700; color: #1e293b; font-size: 12.5px;
   max-width: 340px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere;
 }
-/* A long segment ("Travel & Luggage…") used to run the full row width and shove
-   the price columns off-screen. Cap + ellipsize; full value is on the hover
-   tooltip. max-width:100% keeps it inside the product cell (table-layout:fixed);
-   vertical-align keeps the clipped chip aligned with the name above it. */
-/* Segment = the Customers list segment pill: name + Reg badge in one rounded pill. */
 .s4-cat-badge {
   display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
   margin-top: 4px; padding: 2px 3px 2px 10px; border-radius: 20px;
@@ -963,45 +794,22 @@ const STAGE4_CSS = `
 .s4-pill-inactive { background: #fee2e2; color: #dc2626; }
 .s4-pill-draft    { background: #fef3c7; color: #b45309; }
 
-/* Both prices read green in the Figma. */
 .s4-price  { font-weight: 700; color: #047857; }
 .s4-quoted { font-weight: 800; color: #047857; }
 
-/* Date & Time → rounded chip with a clock icon (Figma), single line. */
 .s4-dt {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 12px;
   background: #f5f3ff; border: 1px solid #e9e3ff;
   color: #6d28d9; font-weight: 700; font-size: 11px;
-  /* Wrap the date/time INSIDE its column instead of overflowing into the
-     Quantity column when the stage is narrow (both side panels open) — the
-     chip was white-space:nowrap and spilled past a squeezed fixed column
-     (QA #113). max-width keeps it inside the cell. */
   white-space: normal; flex-wrap: wrap; justify-content: center;
   max-width: 100%; row-gap: 1px;
 }
 .s4-dt svg { flex-shrink: 0; opacity: .85; }
 .s4-dt-sep { color: #c4b5fd; margin: 0 2px; font-weight: 600; }
 
-/* Quoted price input — currency chip + numeric input live side-by-side
- * so the user reads them as two distinct fields. The chip is pinned to
- * the row's currency master value; the input takes a clean number. */
 .s4-quote-group {
   display: inline-flex; align-items: stretch; gap: 6px;
-}
-.s4-quote-curr {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 46px; height: 32px;
-  padding: 0 10px; border-radius: 8px;
-  background: #f5f3ff; color: #5b21b6;
-  border: 1.5px solid #ddd6fe;
-  font-family: 'Inter', monospace; font-size: 11px; font-weight: 800;
-  letter-spacing: .04em;
-  user-select: none;
-}
-.s4-quote-curr-disabled {
-  background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0;
-  border-style: dashed;
 }
 .s4-quote-num {
   width: 110px; height: 32px;
@@ -1024,7 +832,7 @@ const STAGE4_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
   box-sizing: border-box; height: 40px;
   padding: 0 18px; border: none; cursor: pointer;
-  min-width: 108px; text-align: center;   /* stable width so "Submit" → "Submitting…" doesn't jump */
+  min-width: 108px; text-align: center;
   background: linear-gradient(135deg, #5b21b6, #7c3aed);
   color: #fff;
   font-family: inherit; font-size: 11.5px; font-weight: 700;
@@ -1032,11 +840,9 @@ const STAGE4_CSS = `
   box-shadow: 0 2px 6px rgba(124,58,237,.30);
   transition: all .12s;
 }
-/* The eye beside Submit matches its 40px height. */
 .s4-icon-btn.s4-eye-btn { width: 40px; height: 40px; border-radius: 10px; }
 .s4-submit-btn:hover:not(:disabled) { background: linear-gradient(135deg, #7c3aed, #8b5cf6); transform: translateY(-1px); }
 .s4-submit-btn:disabled { opacity: .55; cursor: not-allowed; }
-/* While submitting, keep the button bright so the white spinner reads clearly. */
 .s4-submit-btn:disabled:has(.s4-submit-loading) { opacity: 1; cursor: progress; }
 .s4-submit-loading { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .s4-spin-w {
@@ -1048,14 +854,11 @@ const STAGE4_CSS = `
   background: linear-gradient(135deg, #94a3b8, #64748b);
 }
 
-/* History header: product code + name on one row (no "Price History" title). */
 .s4-history-titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
-/* Truncate the header product name to one line with an ellipsis (QA #98). */
 .s4-history-name {
   max-width: 360px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* Eye (view history) button with a corner count badge = # of times submitted. */
 .s4-eye-btn { position: relative; overflow: visible; }
 .s4-eye-count {
   position: absolute; top: -6px; right: -6px;
@@ -1066,8 +869,6 @@ const STAGE4_CSS = `
 }
 [data-bs-theme="dark"] .s4-eye-count { box-shadow: 0 0 0 2px #14102a; }
 
-/* Row-level loader — while a row's PDF is generating, the WHOLE row shows a
-   violet shimmer sweep, its content dims, and clicks are blocked. */
 @keyframes s4-row-sweep { 0% { background-position: -360px 0; } 100% { background-position: 360px 0; } }
 .s4-row-busy { pointer-events: none; }
 .s4-row-busy td {
@@ -1080,7 +881,6 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-row-busy td {
   background-image: linear-gradient(90deg, rgba(167,139,250,0) 0%, rgba(167,139,250,.20) 50%, rgba(167,139,250,0) 100%) !important;
 }
-/* PDF-action loading spinner (prevents double-click + shows it's working). */
 .s4-spin {
   display: inline-block; width: 13px; height: 13px;
   border: 2px solid rgba(124,58,237,.30); border-top-color: #7c3aed;
@@ -1101,45 +901,28 @@ const STAGE4_CSS = `
   background: #f5f3ff; border-color: #7c3aed;
 }
 .s4-icon-btn:disabled { opacity: .35; cursor: not-allowed; }
-/* The action actually loading stays bright + shows its spinner, even though the
-   row-busy shimmer dims the rest of the row. */
 .s4-row-busy td > .s4-pdf-actions { opacity: 1; }
 .s4-icon-btn:disabled:has(.s4-spin) { opacity: 1; cursor: progress; }
 .s4-pdf-actions { display: flex; gap: 6px; }
 
-/* Dark mode */
-/* Segmented control on dark — the track is a subtle translucent panel,
-   the active tab a bright purple pill that clearly stands out. */
 [data-bs-theme="dark"] .s4-card { background: #14102a; }
 [data-bs-theme="dark"] .s4-card-navy    { border-color: rgba(167,139,250,.30); border-top-color: #7c3aed; }
-[data-bs-theme="dark"] .s4-card-emerald { border-color: rgba(110,231,183,.30); }
 [data-bs-theme="dark"] .s4-card-head-navy {
   background: rgba(124,58,237,.18); border-bottom-color: rgba(167,139,250,.30);
 }
-[data-bs-theme="dark"] .s4-card-head-emerald {
-  background: rgba(16,185,129,.14); border-bottom-color: rgba(110,231,183,.30);
-}
 [data-bs-theme="dark"] .s4-card-head-navy .s4-card-title { color: #ddd6fe; }
-[data-bs-theme="dark"] .s4-card-head-emerald .s4-card-title { color: #6ee7b7; }
-[data-bs-theme="dark"] .s4-card-sub { color: rgba(196,181,253,.55); }
 [data-bs-theme="dark"] .s4-history-code { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
-
-[data-bs-theme="dark"] .s4-search { background: #1f1845; border-color: rgba(167,139,250,.35); color: #c4b5fd; }
-[data-bs-theme="dark"] .s4-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .s4-table-wrap { background: #14102a; scrollbar-color: rgba(148,163,184,.45) transparent; }
 [data-bs-theme="dark"] .s4-table-wrap::-webkit-scrollbar-track { background: transparent; }
 [data-bs-theme="dark"] .s4-table-wrap::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
 [data-bs-theme="dark"] .s4-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
 [data-bs-theme="dark"] .s4-thead-navy th    { background: #5b21b6; }
-[data-bs-theme="dark"] .s4-thead-emerald th { background: #065f46; }
 [data-bs-theme="dark"] .s4-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .s4-table tbody tr:hover { background: rgba(124,58,237,.10); }
 [data-bs-theme="dark"] .s4-empty { color: rgba(196,181,253,.55); }
 [data-bs-theme="dark"] .s4-sr-navy    { background: rgba(167,139,250,.22); color: #ddd6fe; }
-[data-bs-theme="dark"] .s4-sr-emerald { background: rgba(110,231,183,.22); color: #6ee7b7; }
 [data-bs-theme="dark"] .s4-curr-chip { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s4-code-navy    { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
-[data-bs-theme="dark"] .s4-code-emerald { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s4-prod-name { color: #ede9fe; }
 [data-bs-theme="dark"] .s4-cat-badge { background: rgba(124,58,237,.22); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-pill-active   { background: rgba(16,185,129,.18); color: #6ee7b7; }
@@ -1149,12 +932,6 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-quoted { color: #6ee7b7; }
 [data-bs-theme="dark"] .s4-dt { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.25); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-dt-sep { color: rgba(167,139,250,.5); }
-[data-bs-theme="dark"] .s4-quote-curr {
-  background: rgba(167,139,250,.14); color: #ddd6fe; border-color: rgba(167,139,250,.40);
-}
-[data-bs-theme="dark"] .s4-quote-curr-disabled {
-  background: rgba(167,139,250,.08); color: rgba(196,181,253,.45); border-color: rgba(167,139,250,.25);
-}
 [data-bs-theme="dark"] .s4-quote-num {
   background: rgba(167,139,250,.06); border-color: rgba(167,139,250,.35); color: #ede9fe;
 }
@@ -1165,85 +942,4 @@ const STAGE4_CSS = `
 
 @media (max-width: 900px) {
   .s4-card-head { flex-direction: column; align-items: flex-start; }
-  .s4-search { width: 100%; }
-  .s4-search input { width: 100%; }
-}
-
-/* ═══════════════════════════════ MAP PRODUCT MODAL ═══════════════════════════════ */
-.s4-mp-backdrop {
-  position: fixed; inset: 0; z-index: 1090;
-  background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
-  display: flex; align-items: center; justify-content: center; padding: 16px;
-}
-.s4-mp-modal {
-  width: min(480px, 100%); max-height: 90vh;
-  background: #fff; border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(15,23,42,.28);
-  overflow: hidden; display: flex; flex-direction: column;
-}
-.s4-mp-head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 18px;
-  background: linear-gradient(180deg, #5b21b6, #7c3aed); color: #fff;
-}
-.s4-mp-head-left { display: flex; gap: 9px; align-items: center; font-size: 14px; font-weight: 700; }
-.s4-mp-head-ico {
-  width: 26px; height: 26px; border-radius: 8px;
-  background: rgba(255,255,255,.18);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.s4-mp-close {
-  width: 28px; height: 28px; border: none; cursor: pointer;
-  background: rgba(255,255,255,.18); color: #fff;
-  border-radius: 7px;
-  display: flex; align-items: center; justify-content: center;
-}
-.s4-mp-close:hover { background: rgba(255,255,255,.32); }
-
-.s4-mp-body { padding: 16px 18px; flex: 1; overflow-y: auto; background: #f8fafc; display: flex; flex-direction: column; gap: 12px; }
-.s4-mp-field { display: flex; flex-direction: column; gap: 5px; }
-.s4-mp-field-full { }
-.s4-mp-label { font-size: 11px; font-weight: 700; color: #5b21b6; letter-spacing: .04em; text-transform: uppercase; }
-.s4-mp-req { color: #dc2626; }
-.s4-mp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
-.s4-mp-input {
-  height: 34px; padding: 0 11px;
-  border: 1.5px solid #cbd5e1; border-radius: 8px;
-  background: #fff; font-size: 12.5px; color: #0f172a;
-  outline: none; font-family: inherit;
-  transition: border-color .15s, box-shadow .15s;
-}
-.s4-mp-input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.16); }
-.s4-mp-input-err { border-color: #ef4444 !important; }
-.s4-mp-err { color: #dc2626; font-size: 10.5px; font-weight: 600; }
-
-.s4-mp-foot {
-  padding: 12px 18px; display: flex; justify-content: flex-end; gap: 10px;
-  background: #fff; border-top: 1px solid #e2e8f0;
-}
-.s4-mp-btn {
-  padding: 8px 18px; border-radius: 8px;
-  font-family: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer;
-  border: 1.5px solid transparent;
-  min-width: 110px;
-  transition: all .15s;
-}
-.s4-mp-btn-cancel { background: #fff; border-color: #cbd5e1; color: #475569; }
-.s4-mp-btn-cancel:hover:not(:disabled) { background: #f1f5f9; }
-.s4-mp-btn-primary {
-  background: linear-gradient(135deg, #5b21b6, #7c3aed); color: #fff;
-  box-shadow: 0 3px 10px rgba(124,58,237,.30);
-}
-.s4-mp-btn-primary:hover:not(:disabled) { background: linear-gradient(135deg, #7c3aed, #8b5cf6); transform: translateY(-1px); }
-.s4-mp-btn:disabled { opacity: .6; cursor: not-allowed; }
-
-[data-bs-theme="dark"] .s4-mp-modal { background: #14102a; }
-[data-bs-theme="dark"] .s4-mp-body  { background: #1a1538; }
-[data-bs-theme="dark"] .s4-mp-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .s4-mp-input { background: rgba(167,139,250,.06); border-color: rgba(167,139,250,.30); color: #ede9fe; }
-[data-bs-theme="dark"] .s4-mp-input:focus { border-color: #a78bfa; }
-[data-bs-theme="dark"] .s4-mp-foot  { background: #1a1538; border-top-color: rgba(167,139,250,.25); }
-[data-bs-theme="dark"] .s4-mp-btn-cancel { background: #1f1845; border-color: rgba(167,139,250,.30); color: #ddd6fe; }
-[data-bs-theme="dark"] .s4-mp-btn-cancel:hover:not(:disabled) { background: #2a2150; }
-`;
+}`;
