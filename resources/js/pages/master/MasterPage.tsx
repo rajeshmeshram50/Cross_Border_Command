@@ -1815,6 +1815,7 @@ function EmployeeTreeModal({
   const [loading, setLoading] = useState(false);
   const [roots, setRoots] = useState<TreeNode[] | null>(null);
   const [error, setError] = useState('');
+  const [badPhotos, setBadPhotos] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (!open || !department?.id) return;
@@ -1836,21 +1837,32 @@ function EmployeeTreeModal({
     return '#d97706';
   };
 
-  const renderNode = (node: TreeNode): React.ReactNode => {
+  const chart = useMemo(() => layoutOrgChart(roots ?? []), [roots]);
+  const ET_ZOOM_DEFAULT = 0.75;
+  const [zoom, setZoom] = useState(ET_ZOOM_DEFAULT);
+  useEffect(() => { if (open) setZoom(ET_ZOOM_DEFAULT); }, [open]);
+  const zoomBy = (d: number) => setZoom(z => Math.min(1.5, Math.max(0.4, Math.round((z + d) * 100) / 100)));
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
+  }, [chart, zoom]);
+
+  const renderNode = (node: TreeNode, left: number, top: number): React.ReactNode => {
     const accent = accentFor(node);
     return (
-      <li key={node.id}>
+      <div key={node.id} className="et-pos" style={{ left, top }}>
         <div className="et-node" style={{ background: `linear-gradient(180deg, ${accent}20 0%, transparent 58%), var(--vz-card-bg)`, borderColor: `${accent}45`, boxShadow: `0 10px 26px ${accent}26` }}>
           <div className="et-avatar-ring" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}66)`, boxShadow: `0 6px 16px ${accent}55` }}>
-            {node.photo
-              ? <img className="et-avatar et-avatar-img" src={node.photo} alt={node.name} />
+            {node.photo && !badPhotos.has(node.id)
+              ? <img className="et-avatar et-avatar-img" src={node.photo} alt={node.name}
+                  onError={() => setBadPhotos(s => new Set(s).add(node.id))} />
               : <div className="et-avatar" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>{initials(node.name)}</div>}
           </div>
-          <div className="et-name">{node.name}</div>
+          <div className="et-name" title={node.name}>{node.name}</div>
           <div className="et-role" style={{ background: `${accent}1f`, color: accent }}>{node.role}</div>
         </div>
-        {node.children && node.children.length > 0 && <ul>{node.children.map(renderNode)}</ul>}
-      </li>
+      </div>
     );
   };
 
@@ -1873,8 +1885,15 @@ function EmployeeTreeModal({
         ) : error ? (
           <div className="text-center text-danger py-4">{error}</div>
         ) : roots && roots.length ? (
-          <div className="et-scroll">
-            <div className="et-tree"><ul>{roots.map(renderNode)}</ul></div>
+          <div className="et-scroll" ref={scrollRef}>
+            <div className="et-zoom-box" style={{ width: chart.width * zoom, height: chart.height * zoom }}>
+              <div className="et-canvas" style={{ width: chart.width, height: chart.height, transform: `scale(${zoom})` }}>
+                <svg className="et-lines" width={chart.width} height={chart.height} aria-hidden>
+                  <path d={chart.lines} />
+                </svg>
+                {chart.placed.map(p => renderNode(p.node, p.left, p.top))}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="text-center text-muted py-4">No employees in this department yet.</div>
@@ -1883,6 +1902,19 @@ function EmployeeTreeModal({
       <div className="spi-mdl-foot">
         <span className="whm-footnote"><i className="ri-information-line" style={{ fontSize: 15, color: '#0891b2' }} /> Reporting lines in this department</span>
         <div className="spi-mdl-foot-btns">
+          {chart.placed.length > 0 && (
+            <div className="et-zoom" role="group" aria-label="Zoom">
+              <button type="button" className="et-zoom-btn" onClick={() => zoomBy(-0.1)} disabled={zoom <= 0.4} aria-label="Zoom out" title="Zoom out">
+                <i className="ri-zoom-out-line" />
+              </button>
+              <button type="button" className="et-zoom-val" onClick={() => setZoom(ET_ZOOM_DEFAULT)} title="Reset to 75%">
+                {Math.round(zoom * 100)}%
+              </button>
+              <button type="button" className="et-zoom-btn" onClick={() => zoomBy(0.1)} disabled={zoom >= 1.5} aria-label="Zoom in" title="Zoom in">
+                <i className="ri-zoom-in-line" />
+              </button>
+            </div>
+          )}
           <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -1890,22 +1922,114 @@ function EmployeeTreeModal({
   );
 }
 
+type OrgNode = { id: string; children?: OrgNode[] };
+const ET_CARD_W = 150;
+const ET_CARD_H = 150;
+const ET_GAP_X = 30;
+const ET_GAP_Y = 58;
+
+function layoutOrgChart<T extends OrgNode>(roots: T[]) {
+  type Item = { node: T; x: number; depth: number; parentId: string | null };
+  type Sub = { items: Item[]; left: number[]; right: number[] };
+
+  const lay = (node: T, depth: number, parentId: string | null): Sub => {
+    const kids = (node.children ?? []) as T[];
+    const self: Item = { node, x: 0, depth, parentId };
+    if (!kids.length) return { items: [self], left: [0], right: [0] };
+
+    const subs = kids.map(k => lay(k, depth + 1, node.id));
+    const offsets: number[] = [];
+    const accL: number[] = [];
+    const accR: number[] = [];
+    subs.forEach((s, i) => {
+      let off = 0;
+      if (i > 0) {
+        off = -Infinity;
+        const n = Math.min(accR.length, s.left.length);
+        for (let d = 0; d < n; d++) off = Math.max(off, accR[d] - s.left[d] + ET_CARD_W + ET_GAP_X);
+      }
+      offsets.push(off);
+      s.left.forEach((v, d) => { accL[d] = accL[d] === undefined ? v + off : Math.min(accL[d], v + off); });
+      s.right.forEach((v, d) => { accR[d] = accR[d] === undefined ? v + off : Math.max(accR[d], v + off); });
+    });
+    const mid = (offsets[0] + offsets[offsets.length - 1]) / 2;
+    const items: Item[] = [self];
+    subs.forEach((s, i) => s.items.forEach(it => items.push({ ...it, x: it.x + offsets[i] - mid })));
+    return { items, left: [0, ...accL.map(v => v - mid)], right: [0, ...accR.map(v => v - mid)] };
+  };
+
+  const virtual = { id: '__root', children: roots } as unknown as T;
+  const items = roots.length ? lay(virtual, -1, null).items.filter(it => it.node.id !== '__root') : [];
+  if (!items.length) return { placed: [] as { node: T; left: number; top: number }[], lines: '', width: 0, height: 0 };
+
+  let minX = Math.min(...items.map(i => i.x));
+  const maxX = Math.max(...items.map(i => i.x));
+  if (roots.length === 1) {
+    const rootX = items.find(i => i.node.id === roots[0].id)!.x;
+    minX = rootX - Math.max(rootX - minX, maxX - rootX);
+  }
+  const rowH = ET_CARD_H + ET_GAP_Y;
+  const pos = new Map<string, { left: number; top: number }>();
+  items.forEach(i => pos.set(i.node.id, { left: i.x - minX, top: i.depth * rowH }));
+
+  let lines = '';
+  items.forEach(i => {
+    if (!i.parentId || i.parentId === '__root') return;
+    const p = pos.get(i.parentId)!;
+    const c = pos.get(i.node.id)!;
+    const px = p.left + ET_CARD_W / 2;
+    const py = p.top + ET_CARD_H;
+    const my = py + ET_GAP_Y / 2;
+    const cx = c.left + ET_CARD_W / 2;
+    lines += `M${px} ${py}V${my}H${cx}V${c.top}`;
+  });
+
+  const width = roots.length === 1
+    ? 2 * (items.find(i => i.node.id === roots[0].id)!.x - minX) + ET_CARD_W
+    : maxX - minX + ET_CARD_W;
+  const height = Math.max(...items.map(i => i.depth)) * rowH + ET_CARD_H;
+  return { placed: items.map(i => ({ node: i.node, ...pos.get(i.node.id)! })), lines, width, height };
+}
+
 const ET_TREE_CSS = `
-.et-modal-wrap .modal-dialog { max-width: 94vw; }
+.et-zoom-box { position: relative; margin: 0 auto; }
+.et-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; transition: transform .15s ease; }
+.et-zoom {
+  display: inline-flex; align-items: center; height: 40px; padding: 3px; gap: 2px;
+  border: 1px solid #cfe8ef; border-radius: 12px; background: #fff;
+}
+.et-zoom-btn, .et-zoom-val {
+  height: 32px; border: 0; border-radius: 9px; background: transparent; color: #0e7490;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  font-family: inherit; transition: background .15s;
+}
+.et-zoom-btn { width: 32px; font-size: 16px; }
+.et-zoom-val { min-width: 52px; padding: 0 6px; font-size: 12.5px; font-weight: 700; }
+.et-zoom-btn:hover:not(:disabled), .et-zoom-val:hover { background: #ecfeff; }
+.et-zoom-btn:disabled { opacity: .4; cursor: not-allowed; }
+[data-bs-theme="dark"] .et-zoom { background: rgba(255,255,255,.04); border-color: rgba(34,211,238,.25); }
+[data-bs-theme="dark"] .et-zoom-btn, [data-bs-theme="dark"] .et-zoom-val { color: #67e8f9; }
+[data-bs-theme="dark"] .et-zoom-btn:hover:not(:disabled), [data-bs-theme="dark"] .et-zoom-val:hover { background: rgba(34,211,238,.12); }
+.et-lines { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.et-lines path { fill: none; stroke: rgba(8,145,178,0.35); stroke-width: 2; }
+.et-pos { position: absolute; width: ${ET_CARD_W}px; }
+.et-canvas .et-node { width: ${ET_CARD_W}px; height: ${ET_CARD_H}px; min-height: 0; box-sizing: border-box; overflow: hidden; justify-content: center; }
+.et-canvas .et-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; }
+.et-modal-wrap .modal-dialog { width: min(1200px, 94vw); max-width: min(1200px, 94vw); }
 .et-modal {
   border-radius: 26px !important; overflow: hidden; border: 1px solid rgba(255,255,255,.7);
   box-shadow: 0 50px 120px -30px rgba(8,47,73,.7), 0 0 0 6px rgba(255,255,255,.12);
-  width: fit-content; min-width: 340px; max-width: 100%; margin: 0 auto;
+  width: min(1200px, 94vw); max-width: 100%; margin: 0 auto;
 }
 .et-modal-body {
   position: relative;
-  max-height: 76vh; overflow-y: auto;
+  height: 70vh; overflow: hidden;
   background:
     radial-gradient(circle at 10% 8%,  rgba(34,211,238,0.14), transparent 26%),
     radial-gradient(circle at 90% 90%, rgba(8,145,178,0.10),  transparent 28%),
     linear-gradient(180deg, #f4fbfd 0%, #eef7fa 100%);
 }
-.et-scroll { position: relative; z-index: 1; overflow-x: auto; padding: 16px 6px 8px; }
+.et-scroll { position: relative; z-index: 1; height: 100%; overflow: auto; padding: 16px 6px 8px; box-sizing: border-box; }
 .et-tree { display: inline-block; text-align: center; }
 .et-avatar-img { object-fit: cover; background: var(--vz-card-bg); }
 .et-tree ul { position: relative; padding: 26px 0 0; margin: 0; display: flex; justify-content: center; list-style: none; }
@@ -1926,8 +2050,8 @@ const ET_TREE_CSS = `
 }
 .et-tree > ul { padding-top: 0; }
 .et-node {
-  display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 9px;
-  width: 184px; min-height: 184px; padding: 18px 14px 15px; border-radius: 16px;
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 7px;
+  width: 150px; min-height: 148px; padding: 14px 10px 12px; border-radius: 14px;
   border: 1px solid rgba(34,211,238,0.12); background: var(--vz-card-bg);
   box-shadow: 0 8px 20px rgba(76,29,149,0.10); transition: transform .15s ease, box-shadow .15s ease;
 }
@@ -1941,14 +2065,15 @@ const ET_TREE_CSS = `
   padding: 3px; border-radius: 50%; display: inline-flex;
 }
 .et-avatar {
-  width: 60px; height: 60px; border-radius: 50%; color: #fff; display: flex;
-  align-items: center; justify-content: center; font-weight: 800; font-size: 20px;
-  border: 3px solid var(--vz-card-bg);
+  width: 46px; height: 46px; border-radius: 50%; color: #fff; display: flex;
+  align-items: center; justify-content: center; font-weight: 800; font-size: 16px;
+  border: 2.5px solid var(--vz-card-bg);
 }
-.et-name { font-weight: 700; font-size: 14.5px; line-height: 1.25; color: var(--vz-body-color); text-align: center; }
+.et-name { font-weight: 700; font-size: 12.5px; line-height: 1.25; color: var(--vz-body-color); text-align: center; }
 .et-role {
-  display: inline-block; padding: 4px 12px; border-radius: 999px;
-  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  text-align: center; line-height: 1.35;
 }
 `;
 
