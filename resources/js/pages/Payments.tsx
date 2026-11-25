@@ -502,6 +502,8 @@ export default function Payments() {
               minWidth={1500}
               fitToViewport
               autoFitRows
+              minAutoRows={10}
+              fillToFooter
               loading={loading}
               tabs={statusTabs}
               activeTab={statusFilter || 'all'}

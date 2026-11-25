@@ -277,6 +277,8 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
         minWidth={1200}
         fitToViewport
         autoFitRows
+        minAutoRows={10}
+        fillToFooter
         loading={loading}
         searchValue={search}
         onSearchChange={setSearch}
