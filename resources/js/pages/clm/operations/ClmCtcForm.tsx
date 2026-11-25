@@ -1277,26 +1277,29 @@ function Stage1(p: {
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="9" y1="12" x2="9" y2="12" /><line x1="9" y1="15" x2="9" y2="15" /></svg>
                 </div>
-                <span style={{ flex: 1, fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>Our Organisation Details</span>
-                <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '3px 9px' }}>{orgPct}%</span>
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>Our Organisation Details</span>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '3px 9px' }}>{orgPct}%</span>
               </div>
               <div style={{ padding: 10 }}>
             <div style={{ position: 'relative' }}>
               {!p.org ? (
-                <div onClick={() => { if (!prevLocked) p.setOrgOpen(!p.orgOpen); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1.5px dashed #C4B5FD', background: 'transparent', cursor: prevLocked ? 'not-allowed' : 'pointer', opacity: prevLocked ? 0.5 : 1 }}>
-                  <div style={{ width: 15, height: 15, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></div>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED' }}>Select Organisation</span>
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', transform: p.orgOpen ? 'rotate(180deg)' : 'none' }}><polyline points="6 9 12 15 18 9" /></svg>
+                /* A 40px picker row, not a 9px label in a bright dashed outline:
+                   the #C4B5FD dash glared on the dark card and the text was
+                   smaller than every field around it. */
+                <div onClick={() => { if (!prevLocked) p.setOrgOpen(!p.orgOpen); }} style={{ display: 'flex', alignItems: 'center', gap: 9, height: 40, padding: '0 12px', boxSizing: 'border-box', borderRadius: 10, border: `1.5px dashed ${t.dark ? 'rgba(167,139,250,.38)' : '#C4B5FD'}`, background: t.dark ? 'rgba(124,58,237,.08)' : '#FAF7FF', cursor: prevLocked ? 'not-allowed' : 'pointer', opacity: prevLocked ? 0.5 : 1 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>Select Organisation</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#A78BFA'} strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', transform: p.orgOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
               ) : (
                 <div style={{ borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Organisation</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
-                    <div style={{ flex: 1, minWidth: 0 }}><div title={p.org.name.length > 25 ? p.org.name : undefined} style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.org.name.length > 25 ? p.org.name.slice(0, 25) + '…' : p.org.name}</div><div style={{ fontSize: 8.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
-                    {!prevLocked && <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Organisation</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 8px' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 11.5, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
+                    <div style={{ flex: 1, minWidth: 0 }}><div title={p.org.name.length > 25 ? p.org.name : undefined} style={{ fontSize: 12.5, fontWeight: 800, color: t.textStrong, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.org.name.length > 25 ? p.org.name.slice(0, 25) + '…' : p.org.name}</div><div style={{ fontSize: 10, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
+                    {!prevLocked && <button onClick={p.onResetOrg} style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
                   </div>
-                  <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <OrgDetail t={t} label="Country" text={p.org.country} /><OrgDetail t={t} label="State" text={p.org.state} /><OrgDetail t={t} label="Short Code" text={p.org.shortCode} />
                   </div>
                 </div>
@@ -2378,14 +2381,14 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
         </div>
         {/* footer */}
         <div style={{ flexShrink: 0, padding: '12px 18px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sent via secure e-sign link</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden' }}><svg style={{ flexShrink: 0 }} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sent via secure e-sign link</span>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={onClose} style={{ whiteSpace: 'nowrap', height: 40, padding: '0 18px', boxSizing: 'border-box', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
             {/* Live only once the contact persons have loaded. The recipients ARE
                 the contacts, so until they land the click could only ever fail
                 — it ran submit() against an empty list and answered a
                 still-loading screen with "No recipients". */}
-            <button onClick={submit} disabled={loading} title={loading ? 'Loading contact persons…' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 9, border: 'none', background: loading ? '#C4B5FD' : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: loading ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> {loading ? 'Loading contacts…' : <>Send for Signing &amp; Negotiation</>}</button>
+            <button onClick={submit} disabled={loading} title={loading ? 'Loading contact persons…' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 40, padding: '0 18px', whiteSpace: 'nowrap', boxSizing: 'border-box', borderRadius: 9, border: loading ? `1.5px solid ${t.dark ? 'rgba(167,139,250,.38)' : '#DDD6FE'}` : '1.5px solid transparent', background: loading ? (t.dark ? 'rgba(124,58,237,.16)' : '#EDE9FE') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: loading ? (t.dark ? '#c4b5fd' : '#6D28D9') : '#fff', fontSize: 12.5, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: loading ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>{loading ? <svg className="ctc-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>} {loading ? 'Loading contacts…' : <>Send for Signing &amp; Negotiation</>}</button>
           </div>
         </div>
       </div>
@@ -3026,8 +3029,8 @@ function OrgMiniCard({ t, org }: { t: OpsTokens; org: Org }) {
 function OrgDetail({ t, label, text }: { t: OpsTokens; label?: string; text: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
-      {label && <span style={{ flexShrink: 0, fontSize: 8.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: t.textMuted }}>{label}</span>}
-      <span title={text} style={{ minWidth: 0, marginLeft: label ? 'auto' : 0, textAlign: label ? 'right' : 'left', fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+      {label && <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: t.textMuted }}>{label}</span>}
+      <span title={text} style={{ minWidth: 0, marginLeft: label ? 'auto' : 0, textAlign: label ? 'right' : 'left', fontSize: 12, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
     </div>
   );
 }

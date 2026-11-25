@@ -938,7 +938,15 @@ const CTC_CSS = `
   border-color: transparent;
   box-shadow: none;
 }
-[data-bs-theme="dark"] .ctc-tabrail > button.active { color: #fff; border-color: transparent; }
+/* The dark rule above sets every tab transparent, and at equal specificity it
+   came later, so it erased the selected tab's violet fill - the active tab
+   showed as a dark box. Restated here so the selection is the solid gradient. */
+[data-bs-theme="dark"] .ctc-tabrail > button.active {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
+  background-origin: border-box;
+  box-shadow: 0 6px 16px -5px rgba(124,58,237,.6);
+}
 [data-bs-theme="dark"] .ctc-tab-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.30); }
 /* Recessed, not 90% white: on a dark page a near-white disc is the brightest
    thing on screen and the eye goes to the counter instead of the data. */

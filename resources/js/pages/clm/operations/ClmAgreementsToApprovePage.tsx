@@ -79,13 +79,17 @@ type AtaTab = 'all' | 'pending' | 'clarification' | 'approved' | 'rejected';
  * text at this size.
  */
 function Avatar({ name }: { name: string }) {
+  /* Dark: the bright #DFF9FD tile was the lightest thing on the dark table,
+     a row of white squares down every name column. */
+  const { dark } = useOpsTheme('cyan');
   return (
     <div style={{
       width: 24, height: 24, borderRadius: 8, flexShrink: 0, boxSizing: 'border-box',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(12deg,#67E8F9,#DFF9FD)',
+      background: dark ? 'rgba(6,182,212,.16)' : 'linear-gradient(12deg,#67E8F9,#DFF9FD)',
+      border: dark ? '1px solid rgba(103,232,249,.35)' : 'none',
     }}>
-      <span style={{ fontSize: 9, fontWeight: 700, color: '#0E7490', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: dark ? '#67e8f9' : '#0E7490', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
     </div>
   );
 }
