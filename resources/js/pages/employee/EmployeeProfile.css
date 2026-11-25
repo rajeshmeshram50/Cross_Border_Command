@@ -441,7 +441,7 @@
         }
 
         /* ── Submit New Expense Claim modal ── */
-        .ep-claim-modal { --accent: #f97316; --accent-2: #fb923c; --accent-soft: rgba(249,115,22,0.10); --accent-border: rgba(249,115,22,0.30); }
+        .ep-claim-modal { --accent: #7c5cfc; --accent-2: #a78bfa; --accent-soft: rgba(124,92,252,0.10); --accent-border: rgba(124,92,252,0.30); }
         .ep-claim-modal.is-advance { --accent: #6366f1; --accent-2: #8b5cf6; --accent-soft: rgba(99,102,241,0.10); --accent-border: rgba(99,102,241,0.30); }
         .ep-claim-hero {
           background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
@@ -711,7 +711,7 @@
           cursor: pointer;
           transition: background .15s ease;
         }
-        .ep-claim-upload:hover { background: rgba(249,115,22,0.16); }
+        .ep-claim-upload:hover { background: rgba(124,92,252,0.16); }
         .ep-claim-upload.is-invalid {
           border-color: #ef4444;
           background: rgba(239,68,68,0.06);
@@ -720,7 +720,7 @@
         .ep-claim-upload-icon {
           display: inline-flex; align-items: center; justify-content: center;
           width: 32px; height: 32px; border-radius: 9px;
-          background: rgba(249,115,22,0.15); color: var(--accent);
+          background: rgba(124,92,252,0.15); color: var(--accent);
           margin-bottom: 6px; font-size: 14px;
         }
         .ep-claim-intel {

@@ -29,6 +29,7 @@ import {
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 import LeaveSummaryPanel from './LeaveSummaryPanel';
@@ -4688,6 +4689,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </button>
           </div>
         </div>
+        {/* Full "Saving…" loader while the claim submits — blocks the whole
+            screen, same as the Revise Salary save. */}
+        {claimSubmitting && <FullPageLoader label="Saving…" />}
       </EpModal>
       <EpModal open={pwOpen} onClose={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }} size="sm">
         {/* Header — gradient banner so the dialog reads as a distinct
