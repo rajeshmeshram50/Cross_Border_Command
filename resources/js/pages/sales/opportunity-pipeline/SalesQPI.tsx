@@ -387,7 +387,6 @@ function MoreOptionsMenu(props: {
             className="qpi-moremenu-item"
             disabled={busy !== null}
             onClick={() => {
-              if (kind === 'quotation') { pick('view', true); return; }
               onError(`Not signed yet — sign this ${docLabel} via Zoho to view the signed PDF.`); onClose();
             }}
           >
@@ -411,7 +410,6 @@ function MoreOptionsMenu(props: {
             className="qpi-moremenu-item"
             disabled={busy !== null}
             onClick={() => {
-              if (kind === 'quotation') { pick('download', true); return; }
               onError(`Not signed yet — sign this ${docLabel} via Zoho to download the signed PDF.`); onClose();
             }}
           >
@@ -750,11 +748,12 @@ export default function SalesQPI() {
 
   const [emailingKeys, setEmailingKeys] = useState<Set<string>>(new Set());
   const emailingRef = useRef<Set<string>>(new Set());
-  const isEmailing = (kind: 'quotation' | 'pi', id: number) => emailingKeys.has(`${kind}:${id}`);
+  const isEmailing = (kind: 'quotation' | 'pi', id: number | undefined) => id != null && emailingKeys.has(`${kind}:${id}`);
 
   const [emailCooldowns, setEmailCooldowns] = useState<Record<string, number>>({});
   const cdKey = (kind: 'quotation' | 'pi', id: number) => `${kind}:${id}`;
-  const cooldownLeft = (kind: 'quotation' | 'pi', id: number): number => {
+  const cooldownLeft = (kind: 'quotation' | 'pi', id: number | undefined): number => {
+    if (id == null) return 0;
     const end = emailCooldowns[cdKey(kind, id)];
     return end ? Math.max(0, Math.ceil((end - Date.now()) / 1000)) : 0;
   };
@@ -3446,7 +3445,7 @@ function BasicForm(props: {
               value={form.opportunity}
               customerId={form.customerId}
               excludeWithPi
-              docType={form.docType}
+              docType={form.docType === 'International' || form.docType === 'Domestic' ? form.docType : undefined}
               onPick={(val, row) => onOpportunityChange(val, row)}
             />
           )}

@@ -613,6 +613,48 @@ const ALM_CSS = `
 }
 [data-bs-theme="dark"] .alm-note { background: rgba(8,145,178,.18); border-color: rgba(34,211,238,.3); color: #67e8f9; }
 
+.alm-body { padding: 16px 22px 18px; background: linear-gradient(180deg, #f0fdff 0%, #ffffff 100%); }
+.alm-label, .alm-label-icon {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: #0e7490; margin-bottom: 4px;
+}
+.alm-label-icon svg { width: 12px; height: 12px; }
+.alm-modal .master-select-wrap .master-select-toggle,
+.alm-modal .master-datepicker-wrap .master-datepicker-toggle {
+  height: 34px; min-height: 34px; padding-top: 0; padding-bottom: 0;
+  border: 1.5px solid #e2e8f0; border-radius: 9px;
+  font-size: 12px; font-weight: 500;
+}
+.alm-modal .master-select-wrap .master-select-toggle:hover:not(:disabled),
+.alm-modal .master-datepicker-wrap .master-datepicker-toggle:hover { border-color: #cbd5e1; }
+.alm-err { font-size: 11px; font-weight: 500; }
+.alm-foot { padding: 14px 22px; background: #fff; border-top: 1px solid #cffafe; }
+.alm-foot-hint { font-size: 11.5px; font-weight: 400; color: #64748b; }
+.alm-btn-ghost { border: 1.5px solid #e2e8f0; color: #475569; }
+.alm-btn-ghost:hover:not(:disabled) { background: #f1f5f9; border-color: #cbd5e1; color: #475569; transform: none; box-shadow: none; }
+.alm-btn-primary { border: none; box-shadow: 0 4px 12px rgba(8,145,178,.30); }
+.alm-btn-primary:hover:not(:disabled) { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 6px 16px rgba(8,145,178,.40); }
+
+[data-bs-theme="dark"] .alm-modal { background: #0c1f2e; color: #cffafe; }
+[data-bs-theme="dark"] .alm-body { background: linear-gradient(180deg, #0e2940 0%, #0c1f2e 100%); }
+[data-bs-theme="dark"] .alm-label,
+[data-bs-theme="dark"] .alm-label-icon { color: #8aa1d9; }
+[data-bs-theme="dark"] .alm-label-icon svg { color: #67e8f9; }
+[data-bs-theme="dark"] .alm-modal .master-select-wrap .master-select-toggle,
+[data-bs-theme="dark"] .alm-modal .master-datepicker-wrap .master-datepicker-toggle {
+  background: #102a3a; border-color: rgba(34,211,238,.22); color: #cffafe;
+}
+[data-bs-theme="dark"] .alm-modal .master-select-wrap .master-select-toggle:hover:not(:disabled),
+[data-bs-theme="dark"] .alm-modal .master-datepicker-wrap .master-datepicker-toggle:hover { border-color: rgba(34,211,238,.40); }
+[data-bs-theme="dark"] .alm-modal .master-select-wrap.show .master-select-toggle {
+  background: #0c1f2e; border-color: #06b6d4 !important; box-shadow: 0 0 0 3px rgba(6,182,212,.20) !important;
+}
+[data-bs-theme="dark"] .alm-modal :is(.master-select-placeholder, .master-datepicker-placeholder) { color: #94a3b8; opacity: .7; }
+[data-bs-theme="dark"] .alm-foot { background: #0e2940; border-top-color: #102a3a; }
+[data-bs-theme="dark"] .alm-foot-hint { color: #94a3b8; }
+[data-bs-theme="dark"] .alm-btn-ghost { background: transparent; color: #cbd5e1; border-color: rgba(34,211,238,.22); }
+[data-bs-theme="dark"] .alm-btn-ghost:hover:not(:disabled) { background: #102a3a; border-color: rgba(34,211,238,.45); color: #cbd5e1; box-shadow: none; }
+
 /* Phone — single-column date range, fewer side paddings, full-width buttons */
 @media (max-width: 520px) {
   .alm-backdrop { padding: 12px; }
