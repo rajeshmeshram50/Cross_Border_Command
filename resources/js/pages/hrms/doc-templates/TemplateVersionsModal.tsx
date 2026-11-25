@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Modal, Spinner } from 'reactstrap';
+import { Modal } from 'reactstrap';
 import api from '../../../api';
 import { SalaryModalStyles } from '../../../components/SalaryStructureModal';
+import FullPageLoader from '../../../components/ui/FullPageLoader';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Document template version history — every save a template has had, each
@@ -57,14 +58,16 @@ export default function TemplateVersionsModal({ open, onClose, template }: Props
   useEffect(() => {
     if (!open || !template) return;
     let live = true;
+    let hold: number | undefined;
     setLoading(true);
     setError(null);
     setRows([]);
     api.get(`/hr-document-templates/${template.id}/versions`)
       .then(({ data }) => { if (live) setRows(data?.versions ?? []); })
       .catch((e: any) => { if (live) setError(e?.response?.data?.message || 'Could not load the version history.'); })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+      // Hold the loader ~5s so it is clearly visible.
+      .finally(() => { hold = window.setTimeout(() => { if (live) setLoading(false); }, 5000); });
+    return () => { live = false; if (hold) clearTimeout(hold); };
   }, [open, template?.id]);
 
   const MIME = {
@@ -135,9 +138,12 @@ export default function TemplateVersionsModal({ open, onClose, template }: Props
 
         <div className="ssm-body tvm-body">
           {loading && (
-            <div className="text-center py-5">
-              <Spinner size="sm" /> <span className="ms-2 text-muted" style={{ fontSize: 12.5 }}>Loading history…</span>
-            </div>
+            <>
+              {/* Holds the popup at a stable height while the loader (portaled
+                  out of the body) is up, so the dialog doesn't collapse small. */}
+              <div style={{ minHeight: 320 }} />
+              <FullPageLoader label="Loading version history…" />
+            </>
           )}
 
           {!loading && error && (
