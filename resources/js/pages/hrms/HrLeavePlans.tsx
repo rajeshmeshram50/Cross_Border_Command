@@ -28,6 +28,7 @@ interface LeaveTypeRow {
   quotaLabel: string;
   endOfYearLabel: string;
   configured: boolean;
+  inactive?: boolean;
 }
 
 interface LeavePlan {
@@ -299,6 +300,7 @@ function apiTypeToCatalog(api: ApiLeaveType): CatalogType {
     fg: tone.fg,
     accent: tone.color,
     group: api.type === 'Incident Based Leave' ? 'incidental' : 'regular',
+    inactive: String(api.status ?? '').toLowerCase() === 'inactive',
   };
 }
 
@@ -311,6 +313,7 @@ function apiTypeToAssigned(api: ApiLeaveType): LeaveTypeRow {
     quotaLabel: api.pivot?.quota_summary || 'Not Setup',
     endOfYearLabel: api.pivot?.eoy_summary || 'Not Setup',
     configured: !!api.pivot?.is_setup,
+    inactive: String(api.status ?? '').toLowerCase() === 'inactive',
   };
 }
 
@@ -1164,6 +1167,7 @@ function ConfigurationTab({
           <div className="d-flex align-items-center gap-2">
             <span className="lp-type-dot" style={{ background: t.color }} />
             <span className="fw-semibold fs-13">{t.name}</span>
+            {t.inactive && <span className="lp-inactive-pill" title="Marked Inactive in the Leave Type master">INACTIVE</span>}
           </div>
         );
       },
@@ -1276,6 +1280,7 @@ type CatalogType = {
   fg: string;
   accent: string;
   group: 'regular' | 'incidental';
+  inactive?: boolean;
 };
 
 function LeaveTypesTab({
@@ -1320,6 +1325,15 @@ function LeaveTypesTab({
           </div>
         );
       },
+    },
+    {
+      header: 'Status',
+      id: 'status',
+      accessorFn: (t: CatalogType) => (t.inactive ? 'Inactive' : 'Active'),
+      meta: { width: 110, align: 'center' },
+      cell: info => (info.row.original.inactive
+        ? <span className="lp-inactive-pill" title="Marked Inactive in the Leave Type master">INACTIVE</span>
+        : <span className="lp-active-pill">ACTIVE</span>),
     },
     {
       header: 'Type',

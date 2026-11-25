@@ -401,7 +401,7 @@ const LDP_CSS = `
 .ldp-header-card {
   position: relative; overflow: hidden;
   width: 100%; flex-shrink: 0;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   border: 1px solid #cef3f9; border-radius: 16px;
   background: linear-gradient(110deg, #f0fdff 0%, #e6fafe 25%, #d0f5fb 55%, #bef0f8 85%, #a8eaf5 100%);
   box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 4px 16px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
@@ -486,7 +486,7 @@ const LDP_CSS = `
 
 .ldp-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-  padding: 0 0 4px;
+  padding: 4px 0 4px;
   flex-shrink: 0;
 }
 .ldp-stat {
@@ -770,13 +770,13 @@ const LDP_CSS = `
 
 @media (max-width: 640px) {
   .ldp-page { padding: 0; }
-  .ldp-header-card { border-radius: 0; border-left: none; border-right: none; margin-bottom: 10px; }
+  .ldp-header-card { border-radius: 0; border-left: none; border-right: none; margin-bottom: 6px; }
   .ldp-header { padding: 14px 16px; gap: 12px; flex-direction: column; align-items: flex-start; }
   .ldp-header-left { gap: 10px; }
   .ldp-header-right { flex-wrap: wrap; gap: 8px; }
   .ldp-header-right .ldp-back-btn { flex: 1; justify-content: center; }
   .ldp-hp { flex: 1; justify-content: center; }
-  .ldp-stats { grid-template-columns: 1fr; padding: 0 16px 4px; gap: 10px; }
+  .ldp-stats { grid-template-columns: 1fr; padding: 4px 16px 4px; gap: 10px; }
   .ldp-stat-value { font-size: 24px; }
   .ldp-table-wrap { margin: 12px 16px 16px; }
   .ldp-pagination { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
