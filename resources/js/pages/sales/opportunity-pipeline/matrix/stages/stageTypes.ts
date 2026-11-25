@@ -224,6 +224,8 @@ export const SHARED_STAGE_CSS = `
 }
 .smd-stg-foot-note strong,
 .smd-stg-note strong { font-weight: 800; color: #4c1d95; }
+.smd-stg-foot-note { align-items: baseline; padding: 7px 12px; min-width: 0; flex: 0 1 auto; }
+.smd-stg-foot-note strong { white-space: nowrap; flex-shrink: 0; }
 .smd-stg-note { margin: 8px 16px 12px; }
 .smd-stg-note::before {
   content: ''; width: 12px; height: 12px; border-radius: 50%;

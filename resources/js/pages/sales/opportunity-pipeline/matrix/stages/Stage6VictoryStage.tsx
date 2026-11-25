@@ -549,7 +549,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
         <div className="smd-stg-foot-note">
           {shipment
             ? <>🏆 <strong>All set.</strong> Shipment order saved — logistics can dispatch.</>
-            : <>⚠ <strong>Note :</strong> Congratulations! Create the Shipment ID to complete this opportunity.</>}
+            : <>⚠ <strong>Note:</strong> Congratulations! Create the Shipment ID to complete this opportunity.</>}
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>

@@ -655,7 +655,7 @@ function DashboardRoutesInner({ user }: { user: any }) {
             {!routeAllowed ? (
               <AccessDenied />
             ) : (
-            <Suspense key={location.pathname} fallback={<RouteFallback />}>
+            <Suspense key={location.pathname.replace(/^(\/sales\/matrix\/[^/]+)\/stage\/[^/]+$/, '$1')} fallback={<RouteFallback />}>
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
               <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />

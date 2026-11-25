@@ -1122,7 +1122,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
-          ⚠ <strong>Note :</strong> Verify the quotation matches the proforma invoice before advancing to Stage 6.
+          ⚠ <strong>Note:</strong> Verify the quotation matches the proforma invoice before advancing to Stage 6.
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>

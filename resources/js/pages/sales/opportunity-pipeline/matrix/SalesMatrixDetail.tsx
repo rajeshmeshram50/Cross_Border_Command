@@ -444,7 +444,7 @@ export default function SalesMatrixDetail() {
   const [resolvedLeadId, setResolvedLeadId] = useState<number | undefined>(seedHeader.leadId);
 
   useEffect(() => {
-    setResolvedLeadId(seedHeader.leadId);
+    if (seedHeader.leadId !== undefined) setResolvedLeadId(seedHeader.leadId);
   }, [seedHeader.leadId]);
 
   /* True once we KNOW whether this opportunity maps to a lead id — either the

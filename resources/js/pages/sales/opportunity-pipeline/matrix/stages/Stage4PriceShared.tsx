@@ -745,7 +745,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       {!embedded && (
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
-          ⚠ <strong>Note :</strong> Map a customer and share at least one quoted price before advancing to Stage 5. The consignee can be set in the Create Quotation form.
+          ⚠ <strong>Note:</strong> Map a customer and share at least one quoted price before advancing to Stage 5. The consignee can be set in the Create Quotation form.
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev} type="button" disabled={advancing || isSubmittingAny}>← Previous</button>

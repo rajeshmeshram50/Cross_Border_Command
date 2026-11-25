@@ -13,6 +13,11 @@
  * ──────────────────────────────────────────────────────────────────────── */
 
 export const SALES_MATRIX_DETAIL_CSS = `
+.page-content:has(> .container-fluid > .smd-root) {
+  min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column;
+}
+.page-content > .container-fluid:has(> .smd-root) { flex: 1 1 auto; display: flex; flex-direction: column; }
+.smd-root > .smd-body { flex: 1 1 auto; }
 .smd-root {
   font-family: var(--font-sans);
   background: linear-gradient(160deg,#faf5ff 0%,#f5f3ff 35%,#fafafa 100%);
@@ -33,7 +38,8 @@ export const SALES_MATRIX_DETAIL_CSS = `
      overflow created a SECOND scrollbar, so it stays min-height only.
      overflow-x hidden keeps the page-wide horizontal bar off — the step /
      action rows scroll their own overflow-x internally. */
-  min-height: calc(100vh - 70px);
+  flex: 1 1 auto;
+  display: flex; flex-direction: column;
   /* clip (not hidden) kills the page-wide horizontal bar WITHOUT turning
      overflow-y into auto — hidden would create a second vertical scrollbar. */
   overflow-x: clip;
