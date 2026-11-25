@@ -484,6 +484,7 @@ export default function AddNewLeadModal(props: {
                     <i className="ri-user-line master-field-icon" />
                     <MasterSelect
                       value={pickedCustomerId}
+                      fitWidth
                       onChange={(v) => { void onPickExisting(v); }}
                       placeholder={customersLoading ? 'Loading customers…' : 'Select a customer'}
                       /* Domestic (India) vs International pill on each option, so
