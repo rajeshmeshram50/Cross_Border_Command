@@ -4590,6 +4590,10 @@ const SCOPED_CSS = `
   background: #110c25 !important;
   border-color: #3b2a6b !important;
 }
+.acm-root .master-select-placeholder {
+  opacity: 1;
+  color: color-mix(in srgb, var(--vz-secondary-color) 65%, transparent);
+}
 [data-bs-theme="dark"] .acm-field .avm-input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
 [data-bs-theme="dark"] .acm-radio-pill { background: #131c33; border-color: rgba(167,139,250,0.40); color: #ddd6fe; }
 [data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.45); border-color: #a78bfa; color: #ffffff; }
