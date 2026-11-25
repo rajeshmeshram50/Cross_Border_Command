@@ -11,17 +11,7 @@ import CreateProcurementModal, { type SelectedProduct } from './CreateProcuremen
 import ProcurementDetailsModal from './ProcurementDetailsModal';
 import VendorMappingsModal, { useVendorMappings } from './VendorMappingsModal';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Stage 3: Product Sourcing
- *
- *  Custom CBC design (pill-style tabs, amber-tinted Sourcing Required
- *  card, per-row "+ Create" CTA, footer progress bar). Backend behaviour
- *  unchanged: sourcing_status, mark-sourced, procurement create — same
- *  endpoints we've been hardening through the negative + security suites.
- * ───────────────────────────────────────────────────────────────────── */
 
-/* Currency code → symbol (matches the Product Directory / Price modals). Falls
- * back to the raw code so an unmapped currency still reads sensibly. */
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
 };
@@ -39,7 +29,7 @@ type Row = {
   product_code:      string | null;
   product_name:      string | null;
   product_status:    string | null;
-  product_category:  string | null;   // segment name → small badge under the name
+  product_category:  string | null;
   currency:          string;
   quantity:          number | string | null;
   target_price:      number | string | null;
@@ -68,24 +58,13 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   const [procModalOpen, setProcModalOpen]   = useState(false);
   const [procModalRows, setProcModalRows]   = useState<SelectedProduct[]>([]);
   const [procViewId, setProcViewId]         = useState<number | null>(null);
-  // Vendor Count column click → loads the mappings first and only opens the
-  // popup when the server returned some (Sales dept gets an empty list back).
   const vendorMaps                          = useVendorMappings();
 
   const leadId = header.leadId;
 
-  /* Ref to the readiness checklist so we can scroll it into view + flash
-   * it when the user clicks Save & Next while issues remain. Beats a
-   * blink-and-it's-gone toast because the user can read the list, click
-   * straight into the failing tab, and watch issues drop off as they fix
-   * them. */
   const readinessRef = useRef<HTMLDivElement | null>(null);
   const [readinessFlash, setReadinessFlash] = useState(false);
 
-  /* Initial-mount fetch flips the loading flag (shows skeleton). For
-   * after-action refreshes (post Create Procurement, post Mark Sourced)
-   * we want the table to update silently so users don't see a jarring
-   * full-table skeleton flash for what is actually a single-row change. */
   const fetchRows = useCallback(async (showSkeleton = true) => {
     if (!leadId) { setRows([]); return; }
     if (showSkeleton) setLoading(true);
@@ -101,23 +80,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   useEffect(() => { void fetchRows(true); }, [fetchRows]);
 
-  /* Re-fetch (silently — no skeleton flash) when the parent signals that the
-   * opportunity's product mappings changed elsewhere, e.g. the toolbar Product
-   * Directory popup mapped/edited/removed a product. Skip the very first run
-   * (the mount fetch above already covers it). */
   const firstTickRef = useRef(true);
   useEffect(() => {
     if (firstTickRef.current) { firstTickRef.current = false; return; }
     void fetchRows(false);
   }, [refreshTick, fetchRows]);
 
-  /* A product's Active/Inactive status can flip OUTSIDE this screen — e.g.
-   * mapping a supplier in P2P → Product Management activates the product
-   * (vendors step complete). The productsTick re-sync only covers in-matrix
-   * popups, so ALSO revalidate silently whenever the user returns to this
-   * tab/window; the STATUS column + readiness checklist then update without
-   * a manual page refresh (QA #94). Throttled so focus + visibilitychange
-   * firing together (alt-tab back) costs one request, not two. */
   const lastFocusFetchRef = useRef(0);
   useEffect(() => {
     const revalidate = () => {
@@ -135,7 +103,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     };
   }, [fetchRows]);
 
-  /* ── Bucketed views ─────────────────────────────────────────────── */
   const detailsRows     = useMemo(() => rows.filter(r => r.sourcing_status === null),         [rows]);
   const requiredRows    = useMemo(() => rows.filter(r => r.sourcing_status === 'required'),    [rows]);
   const notRequiredRows = useMemo(() => rows.filter(r => r.sourcing_status === 'not_required'),[rows]);
@@ -147,23 +114,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     () => requiredRows.filter(r => r.procurement_id == null),
     [requiredRows],
   );
-  /* Group procurement bundles 2+ products into one procurement, so it only
-   * makes sense when there are at least two products still to procure. With a
-   * single product the row's own "+ Create" covers it — no group affordance. */
   const canGroup = procurableRows.length >= 2;
 
-  /* Product Details progress — how many rows have a sourcing decision. */
   const detailsTotal = rows.length;
   const detailsSet   = rows.filter(r => r.sourcing_status !== null).length;
-  /* Sourcing Required progress — how many required rows are marked done. */
   const requiredDone = requiredRows.filter(r => r.procurement_done).length;
 
-  /* Friendly readiness checklist — every item that would block Save &
-   * Next is surfaced here as a one-line action, so the user can see ALL
-   * blockers at once instead of fixing one and tripping the next toast.
-   * Each item carries an optional CTA that either flips to the right
-   * tab or scrolls to the right row. The Save & Next handler reuses
-   * `pendingChecks.length` for its disabled/badge state. */
   type Check = {
     key:    string;
     title:  string;
@@ -221,9 +177,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   }, [leadId, rows.length, detailsRows.length, inactiveRows.length, requiredRows]);
   const isReady = pendingChecks.length === 0;
 
-  /* ── Set sourcing status ─────────────────────────────────────────── */
   const onSourcingChange = async (row: Row, status: 'required' | 'not_required') => {
-    if (!leadId || locked) return;   // signed PI → read-only
+    if (!leadId || locked) return;
     setUpdatingId(row.id);
     try {
       const { data } = await api.patch<{ status: boolean; data: Row }>(
@@ -235,7 +190,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         sourcing_status:  data.data.sourcing_status,
         procurement_done: data.data.procurement_done,
       } : r));
-      onProductsChanged?.();   // re-sync the sibling Stage 3 instance (inline ↔ popup)
+      onProductsChanged?.();
     } catch (e: any) {
       toast.error('Update failed', e?.response?.data?.message ?? 'Could not update sourcing status');
     } finally {
@@ -243,7 +198,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     }
   };
 
-  /* ── Selection ───────────────────────────────────────────────────── */
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -263,9 +217,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     currency:             r.currency,
   });
 
-  /* ── Open Create Procurement modal ─────────────────────────────── */
   const onCreateOne = (row: Row) => {
-    if (locked) return;   // signed PI → read-only
+    if (locked) return;
     if (!leadId) {
       toast.warning('No lead in context', 'Open this stage from the Lead Worksheet first');
       return;
@@ -275,7 +228,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   };
 
   const onCreateGroup = () => {
-    if (locked) return;   // signed PI → read-only
+    if (locked) return;
     if (selectedIds.size === 0) {
       toast.warning('Pick at least one row', 'Tick the checkboxes for the products to bundle');
       return;
@@ -286,51 +239,31 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   };
 
   const onProcurementCreated = async () => {
-    /* B25: clear selection AFTER the refetch resolves so a slow server
-     *  doesn't leave the table briefly showing stale "checked" rows
-     *  alongside a "Create Procurement" CTA that has already fired. The
-     *  silent reload still drives the table content; we just gate the
-     *  UI reset on its completion. */
     setProcModalRows([]);
     await fetchRows(false);
     setSelectedIds(new Set());
-    onProductsChanged?.();   // re-sync the sibling Stage 3 instance (inline ↔ popup)
+    onProductsChanged?.();
   };
 
-  /* ── Mark Sourced ────────────────────────────────────────────────── */
   const onMarkSourced = async (row: Row) => {
-    if (!leadId || locked) return;   // signed PI → read-only
+    if (!leadId || locked) return;
     setMarkingId(row.id);
     try {
-      /* B26: trust the server's echo for `procurement_done` instead of
-       *  optimistically flipping to true. If the API actually rejected
-       *  the call (e.g., 409 idempotency from B24) but the catch branch
-       *  is swallowed, the optimistic update would have left the UI
-       *  permanently lying. Reading the response body keeps state in
-       *  lock-step with the DB. */
       const res = await api.patch<{ data?: { procurement_done?: boolean } }>(
         `/sales/leads/${leadId}/products/${row.id}/mark-sourced`,
       );
       const done = res.data?.data?.procurement_done === true;
       setRows(prev => prev.map(r => r.id === row.id ? { ...r, procurement_done: done } : r));
       toast.success('Sourced', `"${row.product_name ?? 'Product'}" marked done`);
-      onProductsChanged?.();   // re-sync the sibling Stage 3 instance (inline ↔ popup)
+      onProductsChanged?.();
     } catch (e: any) {
       toast.error('Mark failed', e?.response?.data?.message ?? 'Could not mark as done');
-      /* On failure, refetch the row so the UI never lies. Cheap because
-       * fetchRows hits a single endpoint with a small payload. */
       void fetchRows(false);
     } finally {
       setMarkingId(null);
     }
   };
 
-  /* ── Save & Next ─────────────────────────────────────────────────── */
-  /* If anything in the readiness checklist is pending we don't throw a
-   * toast — we scroll the panel into view and pulse it for 1.2s so the
-   * user can read the full list, then click into the failing tab. The
-   * panel always reflects current state so they get live feedback as
-   * they fix items. */
   const onSaveAndNext = async () => {
     if (!isReady) {
       toast.warning(
@@ -352,7 +285,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     }
   };
 
-  /* ──────────────────────────── render ──────────────────────────── */
   return (
     <>
       <style>{SHARED_STAGE_CSS}{STAGE3_CSS}</style>
@@ -380,7 +312,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
       </div>
 
       <div className="smd-stg-body">
-        {/* Tabs = the Customers list tab rail (.dt-tabrail) */}
         <div className="s3-tabs dt-tabrail hr-dt" data-accent="violet">
           <div className="dt-tabs" role="tablist">
           <button
@@ -433,7 +364,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
           </div>
         </div>
 
-        {/* ─── PRODUCT DETAILS TAB ─── */}
         {tab === 'details' && (
           <div className="s3-card s3-card-violet smd-fade-in" key="t-details">
             <div className="s3-card-head">
@@ -552,7 +482,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
               </table>
             </div>
 
-            {/* PROGRESS bar */}
             <div className="s3-progress">
               <span className="s3-progress-label">PROGRESS</span>
               <div className="s3-progress-bar">
@@ -566,7 +495,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
           </div>
         )}
 
-        {/* ─── SOURCING REQUIRED TAB ─── */}
         {tab === 'required' && (
           <div className="smd-fade-in" key="t-required">
             <div className="s3-warn">
@@ -599,9 +527,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 <table className="s3-table s3-table-amber">
                   <thead>
                     <tr>
-                      {/* Select-all — toggles every selectable (no-procurement)
-                          row at once (QA #115); indeterminate when only some are
-                          ticked. */}
                       <th style={{ width: 36, textAlign: 'center' }}>
                         {(() => {
                           const selectable = requiredRows.filter(r => r.procurement_id == null).map(r => r.id);
@@ -665,10 +590,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <tr key={r.id}>
                           <td>
                             {canGroup && (
-                              /* Always show the checkbox so the column reads
-                                 consistently; a product that already has a
-                                 procurement shows it DISABLED (and unchecked)
-                                 rather than blank — it can't be bundled again. */
                               <input
                                 type="checkbox"
                                 className="s3-cb"
@@ -760,7 +681,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 </table>
               </div>
 
-              {/* Procurement progress bar */}
               <div className="s3-progress s3-progress-amber">
                 <span className="s3-progress-label">PROCUREMENT PROGRESS</span>
                 <div className="s3-progress-bar">
@@ -773,8 +693,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
               </div>
             </div>
 
-            {/* Create Group Procurement button — only when 2+ products are
-                selected (a "group" of one is just a single procurement). */}
             {canGroup && selectedIds.size >= 2 && !locked && (
               <div className="s3-cta-row">
                 <button type="button" className="s3-group-btn" onClick={onCreateGroup}>
@@ -786,7 +704,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
           </div>
         )}
 
-        {/* ─── SOURCING NOT REQUIRED TAB ─── */}
         {tab === 'not_required' && (
           <div className="s3-card s3-card-mint smd-fade-in" key="t-notreq">
             <div className="s3-card-head s3-card-head-mint">
@@ -877,9 +794,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         </td>
                         <td><span className="s3-skip">Ready</span></td>
                         <td style={{ textAlign: 'center' }}>
-                          {/* Send the product back into sourcing — flips
-                              sourcing_status to 'required' so it reappears on
-                              the Sourcing Required tab. */}
                           <Tooltip label={locked ? 'PI is signed — read-only' : 'Convert to Sourcing Required'}>
                             <button
                               type="button"
@@ -891,8 +805,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                               {updatingId === r.id ? (
                                 <span className="s3-convert-spin" />
                               ) : (
-                                /* Revert / send-back arrow — this row goes BACK
-                                   into "Sourcing Required". */
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                                   <polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" />
                                 </svg>
@@ -910,7 +822,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         )}
       </div>
 
-      {/* Footer — pipeline navigation; hidden when opened as a toolbar popup. */}
       {!embedded && (
       <div className="smd-stg-foot">
         <div className={`smd-stg-foot-note ${isReady ? 's3-foot-note-ok' : ''}`}>
@@ -941,10 +852,6 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         leadContext={{
           oppId:        header.oppId,
           oppDate:      header.oppDate,
-          // Only surface the customer (name/code/country) when a real customer is
-          // MAPPED to the lead. Without this, header.customer fell back to the
-          // lead's seed name, so the procurement modal showed a "customer" even
-          // when none was mapped. No mapping → blank → the modal renders "—".
           customer:     header.customerId ? header.customer : '',
           customerCode: header.customerId ? header.customerCode : '',
           country:      header.customerId ? header.country : '',
@@ -977,21 +884,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 }
 
 const STAGE3_CSS = `
-/* Header — green status dot (replaces the literal ●) + suppress the shared
-   pulsing ::before dot so the ACTIVE badge's own ● isn't doubled. */
 .smd-stg-head-dot {
   display: inline-block; width: 6px; height: 6px;
   border-radius: 50%; background: #22c55e;
   box-shadow: 0 0 0 2px rgba(34,197,94,.22);
   margin-right: 6px; vertical-align: middle;
 }
-/* ═══════════════════════════════ READINESS PANEL ═══════════════════════════════
- * Persistent, friendly version of what used to be a one-shot toast.
- * Two variants:
- *   .s3-ready-warn — amber, lists pending blockers with inline CTAs.
- *   .s3-ready-ok   — slim mint ribbon, lets the user know they're clear.
- * .s3-ready-flash triggers a 1.2s shake when the user clicks Save & Next
- * while blockers remain, drawing their eye back to the panel. */
 .s3-ready {
   border-radius: 12px;
   margin-bottom: 14px;
@@ -1076,7 +974,6 @@ const STAGE3_CSS = `
 }
 .s3-ready-cta:hover { background: linear-gradient(135deg, #b45309, #92400e); transform: translateY(-1px); }
 
-/* Footer note variants — green when ready, amber when blocked. */
 .s3-foot-note-ok {
   background: linear-gradient(135deg, #ecfdf5, #d1fae5) !important;
   border-color: #6ee7b7 !important;
@@ -1084,9 +981,6 @@ const STAGE3_CSS = `
 }
 .s3-foot-note-ok strong { color: #064e3b !important; }
 
-/* Save & Next, blocked state — desaturated + amber outline so the user
- * sees at a glance the button isn't currently the "happy path." Click
- * still fires onSaveAndNext, which scrolls to the checklist. */
 .s3-next-blocked {
   background: linear-gradient(135deg, #94a3b8, #64748b) !important;
   box-shadow: 0 2px 6px rgba(100, 116, 139, .30) !important;
@@ -1096,12 +990,10 @@ const STAGE3_CSS = `
   background: linear-gradient(135deg, #64748b, #475569) !important;
 }
 
-/* ═══════════════════════════════ TABS ═══════════════════════════════ */
 .s3-tabs { align-self: flex-start; width: fit-content; max-width: 100%; margin-bottom: 16px; }
 .s3-tabs .dt-tab { height: 40px; font-size: 12.5px; }
 .s3-tab-ico { display: inline-flex; align-items: center; justify-content: center; }
 
-/* ═══════════════════════════════ WARN BANNER ═══════════════════════════════ */
 .s3-warn {
   display: flex; align-items: center; gap: 10px;
   padding: 11px 16px; margin-bottom: 12px;
@@ -1115,17 +1007,13 @@ const STAGE3_CSS = `
   background: #ede9fe; color: #6d28d9; font-size: 13px; flex-shrink: 0;
 }
 
-/* ═══════════════════════════════ CARD ═══════════════════════════════ */
 .s3-card {
   background: #fff;
   border: 1.5px solid; border-radius: 14px;
-  /* solid violet top bar — !important so the per-variant border-color
-     (.s3-card-violet / -amber / -mint) doesn't repaint the top edge. */
   border-top: 3px solid #7c3aed !important;
   overflow: hidden;
 }
 .s3-card-violet { border-color: #ddd6fe; }
-/* Required + Not-Required sections share the Sales-Matrix violet theme. */
 .s3-card-amber  { border-color: #ddd6fe; background: linear-gradient(180deg,#faf5ff,#fff); }
 .s3-card-mint   { border-color: #ddd6fe; background: linear-gradient(180deg,#faf5ff,#fff); }
 
@@ -1137,7 +1025,6 @@ const STAGE3_CSS = `
   border-bottom: 1.5px solid #ede9fe;
   gap: 12px; flex-wrap: wrap;
 }
-/* Left vertical accent strip (Figma) — solid violet bar on the header div. */
 .s3-card-head::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
   width: 4px; background: linear-gradient(180deg, #7c3aed, #6d28d9);
@@ -1185,11 +1072,9 @@ const STAGE3_CSS = `
 .s3-legend-on  { background: #dcfce7; color: #15803d; }
 .s3-legend-off { background: #fee2e2; color: #b91c1c; }
 
-/* ═══════════════════════════════ TABLE ═══════════════════════════════ */
 .s3-table-wrap {
   overflow-x: auto; background: #fff;
-  border-top: 1px solid #ede9fe;   /* top border on the table div (Figma) */
-  /* Plain, neutral horizontal scrollbar (not the themed violet one). */
+  border-top: 1px solid #ede9fe;
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
 }
@@ -1197,19 +1082,7 @@ const STAGE3_CSS = `
 .s3-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s3-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s3-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-/* table-layout:fixed + width:100% lets the flexible Product Name column absorb
-   slack and truncate on a wide stage. A min-width stops the fixed columns from
-   squeezing Product Name to 0 when both side panels are open — the wrap scrolls
-   horizontally instead, so Product Name keeps its own column and its name /
-   segment badge no longer overlap Status (QA #114/#123). The amber
-   Sourcing-Required table (3 extra columns) raises this to 1200 below. */
 .s3-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
-/* Table header — light lavender gradient matching the Product Sourcing
-   popup's table (gradient on the tr so it sweeps the whole row; cells stay
-   transparent). The amber Sourcing-Required table keeps its own header via
-   the .s3-table-amber override below. */
-/* All three tabs (Details / Required / Not-Required) share ONE header look:
-   the solid violet bar with white labels. */
 .s3-table thead tr { background: transparent; }
 .s3-table thead th {
   padding: 11px 14px; text-align: left;
@@ -1218,11 +1091,6 @@ const STAGE3_CSS = `
   border-bottom: 1.5px solid #6d28d9;
   white-space: nowrap;
 }
-/* The Sourcing-Required table carries 3 extra columns (checkbox, Procurement
-   ID, Vendor Count) over the other two tabs. table-layout:fixed + width:100%
-   was squeezing the flexible PRODUCT NAME column to ~0, so its header ran over
-   QTY. A min-width keeps every column at its intended size; the wrap's
-   overflow-x scrolls if the popup is ever narrower than this. */
 .s3-table-amber { min-width: 1200px; }
 .s3-table-amber thead th {
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
@@ -1263,25 +1131,15 @@ const STAGE3_CSS = `
 .s3-code-amber  { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .s3-code-mint   { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 
-/* Long product names used to expand the cell and blow the table out sideways
-   (a 100+ char name pushed the Target Price / Actions columns off-screen).
-   Clamp to 2 lines with an ellipsis and break mid-word for the pathological
-   no-space case; the full name stays available on the title tooltip. */
 .s3-prod-name {
   font-weight: 700; color: #1e293b; font-size: 12.5px;
   display: block; max-width: 100%; min-width: 0;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
-/* Segment badge under the product name — same chip in every tab, only the
-   colour matches the tab theme (violet / amber / mint). */
 .s3-cat-badge {
   display: inline-block; margin-top: 3px;
   padding: 2px 8px; border-radius: 6px;
   font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-  /* A long segment name ("Travel & Luggage…") used to run the full width of the
-     row and shove the other columns off-screen. Cap it and ellipsize; the full
-     value is on the hover tooltip. max-width:100% keeps it inside the product
-     cell; vertical-align keeps the clipped chip aligned with the name above. */
   max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   vertical-align: bottom;
@@ -1308,7 +1166,6 @@ const STAGE3_CSS = `
   border: 1px solid transparent;
   font-size: 11px; font-weight: 800;
 }
-/* Currency badge colour matches the tab theme (violet / amber / mint). */
 .s3-curr-violet { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
 .s3-curr-amber  { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
 .s3-curr-mint   { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
@@ -1318,20 +1175,15 @@ const STAGE3_CSS = `
 
 .s3-spin { color: #6d28d9; font-style: italic; font-size: 11.5px; }
 
-/* SET column pills */
 .s3-set { display: inline-block; padding: 4px 11px; border-radius: 999px; font-size: 10.5px; font-weight: 800; }
 .s3-set-required { background: #fef3c7; color: #b45309; border: 1.5px solid #fcd34d; }
 .s3-set-notreq   { background: #d1fae5; color: #047857; border: 1.5px solid #6ee7b7; }
 .s3-set-none     { color: #94a3b8; font-style: italic; font-weight: 600; background: transparent; border: none; }
 
-/* Sourcing Required tab specifics */
 .s3-cb {
-  /* Match the table head (violet), not the old amber. */
   width: 17px; height: 17px; cursor: pointer; accent-color: #6d28d9;
   margin: 0;
 }
-/* Disabled = a product that already has a procurement: greyed + not-allowed so
-   it clearly reads as "shown but can't be picked again". */
 .s3-cb:disabled { cursor: not-allowed; opacity: .4; }
 .s3-dash { color: #cbd5e1; font-weight: 700; font-size: 13px; }
 .s3-proc-pill {
@@ -1343,7 +1195,6 @@ const STAGE3_CSS = `
   text-decoration: underline; text-decoration-color: #7c3aed;
 }
 .s3-proc-pill:hover { background: #ddd6fe; }
-/* Vendor Count chip — clickable, opens the vendor-mappings popup. */
 .s3-vendor-count {
   display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
   font-family: inherit; font-size: 12px; font-weight: 800;
@@ -1352,7 +1203,6 @@ const STAGE3_CSS = `
   transition: background .15s, transform .12s;
 }
 .s3-vendor-count:hover { transform: translateY(-1px); }
-/* Vendor-count badge colour matches the tab theme. */
 .s3-vc-amber  { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
 .s3-vc-amber:hover  { background: #ddd6fe; }
 .s3-vc-mint   { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
@@ -1408,8 +1258,6 @@ const STAGE3_CSS = `
   font-size: 10.5px; font-weight: 800;
 }
 
-/* Convert-to-Sourcing-Required — compact icon tile, amber (the colour of the
-   Required tab it sends the row to). Tooltip carries the label. */
 .s3-convert-btn {
   width: 40px; height: 40px; padding: 0; box-sizing: border-box;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1426,9 +1274,6 @@ const STAGE3_CSS = `
   box-shadow: 0 4px 10px rgba(124,58,237,.35);
 }
 .s3-convert-btn:disabled { opacity: .6; cursor: wait; }
-/* Dark mode: the light lavender gradient read as a bright white square in the
-   dark action column. Swap to a translucent violet tint that sits on the dark
-   surface; hover keeps the solid violet from the base rule. */
 [data-bs-theme="dark"] .s3-convert-btn {
   background: rgba(124,58,237,.20);
   border-color: rgba(167,139,250,.42);
@@ -1445,7 +1290,6 @@ const STAGE3_CSS = `
 }
 @keyframes s3-convert-rotate { to { transform: rotate(360deg); } }
 
-/* ═══════════════════════════════ PROGRESS BAR ═══════════════════════════════ */
 .s3-progress {
   display: flex; align-items: center; gap: 14px;
   padding: 12px 18px;
@@ -1475,7 +1319,6 @@ const STAGE3_CSS = `
 }
 .s3-progress-amber .s3-progress-count { color: #6d28d9; }
 
-/* Group create CTA */
 .s3-cta-row { display: flex; justify-content: center; padding: 16px 0 4px; }
 .s3-group-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1496,7 +1339,6 @@ const STAGE3_CSS = `
   font-size: 11.5px; font-weight: 800;
 }
 
-/* Dark mode */
 [data-bs-theme="dark"] .s3-card { background: #14102a; }
 [data-bs-theme="dark"] .s3-card-violet { border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .s3-card-amber  { border-color: rgba(167,139,250,.30); background: #1a1538; }
@@ -1511,8 +1353,6 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-table-wrap { background: #14102a; border-top-color: rgba(167,139,250,.20); scrollbar-color: rgba(148,163,184,.45) transparent; }
 [data-bs-theme="dark"] .s3-table-wrap::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
 [data-bs-theme="dark"] .s3-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
-/* The light thead-tr gradient bleeds through the translucent th in dark
-   mode — neutralise it so the header reads as a dark amber bar. */
 [data-bs-theme="dark"] .s3-table thead tr { background: transparent; }
 [data-bs-theme="dark"] .s3-table-amber thead th { background: linear-gradient(180deg, #7c3aed, #6d28d9); color: #fff; border-bottom-color: #6d28d9; }
 [data-bs-theme="dark"] .s3-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
@@ -1532,7 +1372,6 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-legend-on  { background: rgba(34,197,94,.18); color: #86efac; }
 [data-bs-theme="dark"] .s3-legend-off { background: rgba(239,68,68,.18); color: #fca5a5; }
 [data-bs-theme="dark"] .s3-price { color: #6ee7b7; }
-/* (currency colour now comes from the per-tab .s3-curr-* variants) */
 [data-bs-theme="dark"] .s3-set-required { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.40); }
 [data-bs-theme="dark"] .s3-set-notreq   { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s3-set-none     { color: rgba(196,181,253,.45); }
@@ -1553,11 +1392,7 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-dash    { color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s3-proc-pill { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.45); }
 [data-bs-theme="dark"] .s3-proc-pill:hover { background: rgba(124,58,237,.28); }
-/* (vendor-count colour now comes from the per-tab .s3-vc-* variants) */
 
-/* Readiness panel — dark mode. Warn variant uses translucent amber on
- * the deep-slate body; ok variant uses translucent mint. Items + CTAs
- * mirror the light scheme. */
 [data-bs-theme="dark"] .s3-ready-warn {
   background: linear-gradient(135deg, rgba(252,191,36,.10), rgba(252,191,36,.18));
   border-color: rgba(252,191,36,.40);
