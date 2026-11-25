@@ -1211,6 +1211,11 @@
   box-shadow: 0 1px 4px rgba(var(--dt-a-rgb), .14);
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.on {
+  /* A transparent 1px border, same as .off. With `border: 0` the colour fell
+     back to currentColor (#fff here), so on deselect the .off rule's
+     border-color transition faded a WHITE outline out round the previous tab
+     (QA #16). Matching widths also stops the tab shifting by a pixel. */
+  border: 1px solid transparent;
   color: #fff;
   background: linear-gradient(135deg, var(--dt-a-400), var(--dt-a-600) 55%, var(--dt-a-700));
   box-shadow: 0 6px 16px -5px rgba(var(--dt-a-rgb), .55), inset 0 1px 0 rgba(255, 255, 255, .25);
