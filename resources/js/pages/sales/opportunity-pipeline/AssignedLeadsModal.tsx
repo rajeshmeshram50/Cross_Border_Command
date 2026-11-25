@@ -3,6 +3,7 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useNavigateContext } from '../../../components/App';
 import LeadsKpiModal, { type KpiFilter } from './LeadsKpiModal';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Lead Distribution — full-screen "Assigned Leads" experience.
@@ -356,15 +357,10 @@ export default function AssignedLeadsModal() {
                 Showing {startIdx + 1}–{endIdx} of {totalCount}
               </div>
               <div className="ldp-pagination-controls">
-                <label className="ldp-rows-per-page">
+                <span className="ldp-rows-per-page">
                   <span>Rows per page:</span>
-                  <select
-                    value={pageSize}
-                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                  >
-                    {[...new Set([pageSize, 10, 25, 50])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </label>
+                  <RowsPerPageSelect pageSize={pageSize} options={[10, 25, 50]} onChange={n => { setPageSize(n); setPage(1); }} />
+                </span>
                 <div className="ldp-page-indicator">
                   {safePage}/{totalPages}
                 </div>
@@ -592,22 +588,12 @@ const LDP_CSS = `
 .ldp-stat-clickable { cursor: pointer; }
 .ldp-stat-clickable:focus-visible { outline: 2px solid var(--ldp-tone-accent, #0891b2); outline-offset: 2px; }
 /* KPI tones — all in the page's cyan family (sky / cyan / deep cyan / bright cyan). */
-.ldp-stat-slate {
-  --ldp-tone-accent: #0284c7; --ldp-tone-border: #bae6fd; --ldp-tone-icon-bg: #e0f2fe;
-  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0369a1;    --ldp-tone-shadow: rgba(2,132,199,.16);
-}
-.ldp-stat-cyan {
+.ldp-stat-slate, .ldp-stat-cyan, .ldp-stat-green, .ldp-stat-red {
   --ldp-tone-accent: #0891b2; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #cffafe;
   --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0e7490;    --ldp-tone-shadow: rgba(8,145,178,.16);
 }
-.ldp-stat-green {
-  --ldp-tone-accent: #0e7490; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #cffafe;
-  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0e7490;    --ldp-tone-shadow: rgba(14,116,144,.16);
-}
-.ldp-stat-red {
-  --ldp-tone-accent: #06b6d4; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #ecfeff;
-  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0891b2;    --ldp-tone-shadow: rgba(6,182,212,.16);
-}
+.ldp-stat { box-sizing: border-box; min-height: 80px; display: flex; flex-direction: column; justify-content: center; }
+.ldp-stat-body { align-items: center; }
 .ldp-stat-stripe {
   position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
   background: var(--ldp-tone-accent, #6366f1);
@@ -835,18 +821,9 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-header-sub   { color: #67e8f9; }
 [data-bs-theme="dark"] .ldp-stat { background: #0f2233; color: #e0f2fe; }
 [data-bs-theme="dark"] .ldp-stat-label { color: #94a3b8; }
-[data-bs-theme="dark"] .ldp-stat-slate {
-  --ldp-tone-accent: #7dd3fc; --ldp-tone-border: rgba(56,189,248,.40); --ldp-tone-icon-bg: rgba(56,189,248,.16);
-  --ldp-tone-value: #e0f2fe;  --ldp-tone-sub: #7dd3fc;
-}
-[data-bs-theme="dark"] .ldp-stat-cyan {
-  --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
-  --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
-}
-[data-bs-theme="dark"] .ldp-stat-green {
-  --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
-  --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
-}
+[data-bs-theme="dark"] .ldp-stat-slate,
+[data-bs-theme="dark"] .ldp-stat-cyan,
+[data-bs-theme="dark"] .ldp-stat-green,
 [data-bs-theme="dark"] .ldp-stat-red {
   --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
   --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
@@ -869,7 +846,13 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-pagination { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
 [data-bs-theme="dark"] .ldp-pagination-info,
 [data-bs-theme="dark"] .ldp-rows-per-page { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
-[data-bs-theme="dark"] .ldp-rows-per-page select { color: #a5f3fc; }
+.ldp-rows-per-page { --tcwl-accent: #0891b2; --tcwl-text: #0e7490; --tcwl-border: #a5f3fc; --tcwl-band: #ecfeff; }
+.ldp-rows-per-page .tc-wl-rows-btn { color: #0891b2; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-btn { color: #67e8f9; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu { background: #0c1f2e; border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu button { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu button:hover { background: rgba(34, 211, 238, .16); color: #fff; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu button.is-on { background: #0891b2; color: #fff; }
 [data-bs-theme="dark"] .ldp-page-btn { background: rgba(15,34,51,.8); border-color: rgba(103,232,249,.30); color: #67e8f9; }
 
 /* Tablet — 2-up stats, header pills wrap below the back button */

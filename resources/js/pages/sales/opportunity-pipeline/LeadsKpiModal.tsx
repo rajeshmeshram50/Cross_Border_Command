@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { FitTip } from '../../p2p/purchase-management/order/create-po/form-fields';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Lead Distribution → KPI popup.
@@ -170,6 +171,13 @@ export default function LeadsKpiModal(props: {
     return () => { document.body.style.overflow = prev; };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   const colWidths = useMemo(
     () => ['5%', '10%', '9%', '9%', '11%', '8%', '13%', '10%', '10%', '8%', '7%'],
     [],
@@ -280,15 +288,10 @@ export default function LeadsKpiModal(props: {
                 : <>Showing <strong>{startIdx + 1}–{endIdx}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="lkm-pag-ctrl">
-            <label className="lkm-rows-per-page">
+            <span className="lkm-rows-per-page">
               <span>Rows per page:</span>
-              <select
-                value={pageSize}
-                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-              >
-                {[10, 15, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
+              <RowsPerPageSelect pageSize={pageSize} options={[10, 15, 25, 50]} onChange={n => { setPageSize(n); setPage(1); }} />
+            </span>
             <span className="lkm-pag-range">{safePage}/{pages}</span>
             <button
               className="lkm-pag-btn"
@@ -480,10 +483,13 @@ const LKM_CSS = `
   padding: 4px 12px; border-radius: 20px;
   box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
-.lkm-rows-per-page select {
-  border: none; background: transparent; font-family: inherit;
-  font-size: 11.5px; color: #0891b2; font-weight: 700; cursor: pointer; outline: none;
-}
+.lkm-rows-per-page { --tcwl-accent: #0891b2; --tcwl-text: #0e7490; --tcwl-border: #a5f3fc; --tcwl-band: #ecfeff; }
+.lkm-rows-per-page .tc-wl-rows-btn { color: #0891b2; }
+[data-bs-theme="dark"] .lkm-rows-per-page .tc-wl-rows-btn { color: #67e8f9; }
+[data-bs-theme="dark"] .lkm-rows-per-page .tc-wl-rows-menu { background: #0c1f2e; border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .lkm-rows-per-page .tc-wl-rows-menu button { color: #a5f3fc; }
+[data-bs-theme="dark"] .lkm-rows-per-page .tc-wl-rows-menu button:hover { background: rgba(34, 211, 238, .16); color: #fff; }
+[data-bs-theme="dark"] .lkm-rows-per-page .tc-wl-rows-menu button.is-on { background: #0891b2; color: #fff; }
 .lkm-pag-range {
   font-size: 11.5px; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);

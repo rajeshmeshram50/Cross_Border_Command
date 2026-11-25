@@ -379,7 +379,8 @@ const LDD_CSS = `
 .ldd-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
 /* Header reference pills = the Create PO header (.spi-dt-pill): icon tile,
    small-caps label over a mono value, dotted separators. */
-.ldd-hp { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 12px; min-width: 0;
+.ldd-hp { display: flex; align-items: center; gap: 9px; padding: 0 14px; border-radius: 12px; min-width: 0;
+  box-sizing: border-box; height: 40px; min-height: 40px; max-height: 40px; flex-shrink: 0;
   background: rgba(255,255,255,.65); border: 1.5px solid rgba(8,145,178,.3);
   box-shadow: 0 2px 8px rgba(6,182,212,.12), inset 0 1px 0 rgba(255,255,255,.95);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
@@ -399,8 +400,8 @@ const LDD_CSS = `
 .ldd-header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
 .ldd-search {
   display: flex; align-items: center; gap: 7px;
-  background: #fff; border: 1.5px solid #a5f3fc; border-radius: 10px;
-  padding: 0 12px; height: 40px;
+  background: #fff; border: 1.5px solid #a5f3fc; border-radius: 12px;
+  padding: 0 12px; height: 40px; box-sizing: border-box;
   transition: border-color .15s, box-shadow .15s;
 }
 .ldd-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
@@ -412,7 +413,7 @@ const LDD_CSS = `
 /* Back = the My Workplace toolbar button (.lwp-bact): cyan gradient, 40px, 11.5 / 700. */
 .ldd-back-btn {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 40px; padding: 0 18px;
+  height: 40px; padding: 0 18px; box-sizing: border-box; flex-shrink: 0;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); color: #fff;
   border: none; border-radius: 12px;
   font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
