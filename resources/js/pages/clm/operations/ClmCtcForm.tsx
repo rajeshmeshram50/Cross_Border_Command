@@ -573,18 +573,28 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 
   // ── Lifecycle transitions (sender side) ──
   // After a rejection: push the corrected draft back for internal review.
-  const resubmitDraft = async () => {
-    if (!workingId || resubmitting) return;
-    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); setStage(1); return; }
+  // `approval` (optional) = the approver list chosen in the resubmit popup. The
+  // resubmit endpoint replaces the approvers when one is sent; without it the
+  // previous approvers are reset to pending, as before.
+  const resubmitDraft = async (approval?: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }): Promise<boolean> => {
+    if (!workingId || resubmitting) return false;
+    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); setStage(1); return false; }
     setResubmitting(true);
     try {
-      await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, { content: draft || null, title: agTitle, page_config: { margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }, header_config: header, footer_config: footer });
-      toast.success('Resubmitted', 'Revised draft sent back for internal review.');
+      await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, {
+        content: draft || null, title: agTitle, page_config: { margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }, header_config: header, footer_config: footer,
+        ...(approval ? { approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder } : {}),
+      });
       await refreshRecord();
       goStage(2);
-    } catch (e) { toast.error('Could not resubmit', errMsg(e) || 'Please try again.'); }
+      toast.success('Resubmitted', 'Revised draft sent back for internal review.');
+      return true;
+    } catch (e) { toast.error('Could not resubmit', errMsg(e) || 'Please try again.'); return false; }
     finally { setResubmitting(false); }
   };
+  /* The approvers of the last round, for pre-filling the resubmit popup. The
+     one who rejected carries a "Rejected" tag so the sender can drop or keep them. */
+  const prevApprovers = (Array.isArray(record?.approvers) ? record!.approvers : []) as { name?: string; email?: string; role?: string; mandatory?: boolean; status?: string }[];
 
   // Approved → after choosing signers, open the positioning step where the
   // user drags each signer's signature box, then sends via Zoho Sign.
@@ -741,7 +751,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
               editLock={editLock} lockReason={lockReason} signedUrl={signedDocUrl}
-              resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft} resubmitting={resubmitting}
+              resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft} resubmitting={resubmitting} prevApprovers={prevApprovers}
               declineReason={signDecline?.reason} declinedBy={signDecline?.by}
               onNext={() => goStage(2)}
             />
@@ -843,7 +853,8 @@ function Stage1(p: {
   margins: CtcMargins; setMargins: (m: CtcMargins) => void;
   isEditing: boolean; onUpdate: () => void;
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>;
-  resubmitMode: boolean; onResubmit: () => void; resubmitting?: boolean;
+  resubmitMode: boolean; onResubmit: (approval?: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>; resubmitting?: boolean;
+  prevApprovers?: { name?: string; email?: string; role?: string; mandatory?: boolean; status?: string }[];
   declineReason?: string; declinedBy?: string;
   // Draft is view-only unless it's fresh / internally-rejected / counterparty-
   // declined. lockReason explains why (awaiting approval, out for signature, signed).
@@ -884,6 +895,7 @@ function Stage1(p: {
   const [phOpen, setPhOpen] = useState(false);                  // placeholder picker
   const [clauseOpen, setClauseOpen] = useState(false);          // clause library picker
   const [approvalOpen, setApprovalOpen] = useState(false);      // Review & Approval Workflow popup
+  const [resubmitApprovalOpen, setResubmitApprovalOpen] = useState(false); // same popup, for a resubmit after rejection
   // TipTap-backed rich editor (replaces the old contentEditable + execCommand
   // machinery). The hook owns the ProseMirror document model, formatting-toolbar
   // commands, caret-safe insertion, and debounced sync back to the parent draft.
@@ -1415,7 +1427,16 @@ function Stage1(p: {
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
                   </div>
-                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'start' }}>
+                  {/* Equal halves, and the Type dropdown dressed as the Title input
+                      beside it - same height, border, radius, fill and text size
+                      (QA #76). Scoped to .ctc-agtype so no other MasterSelect moves. */}
+                  <style>{`
+                    .ctc-agtype .master-select-toggle { height: 34px !important; min-height: 34px !important; padding-top: 0 !important; padding-bottom: 0 !important; border: 1.5px solid ${t.searchBorder} !important; border-radius: 9px !important; background: ${t.dark ? 'rgba(255,255,255,.04)' : '#fff'} !important; font-size: 11px !important; font-weight: 400 !important; color: ${t.text} !important; box-shadow: none !important; }
+                    .ctc-agtype .master-select-toggle * { font-size: 11px !important; }
+                    .ctc-agtype .master-select-placeholder { color: ${t.textMuted} !important; }
+                    .ctc-agtype .master-select-toggle:disabled, .ctc-agtype .master-select-toggle.disabled { background: ${t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC'} !important; opacity: 1 !important; }
+                  `}</style>
+                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, alignItems: 'start' }}>
                     {/* 255-char limit enforced + surfaced WHILE typing (QA #43) —
                         maxLength hard-stops entry and the inline message shows the
                         moment the cap is hit, instead of only failing at Submit for
@@ -1425,7 +1446,7 @@ function Stage1(p: {
                       label="Agreement Title *"
                       counter={
                         <span style={{
-                          fontSize: 9, fontWeight: 800, letterSpacing: 0, textTransform: 'none',
+                          fontSize: 9, lineHeight: 1, fontWeight: 800, letterSpacing: 0, textTransform: 'none',
                           // Amber at the cap — the same "you've hit the limit" cue
                           // the Trade Document / Agreement Wizard titles use.
                           color: p.agTitle.length >= AG_TITLE_MAX ? '#b45309' : (t.dark ? 'rgba(255,255,255,.5)' : '#94a3b8'),
@@ -1434,7 +1455,7 @@ function Stage1(p: {
                       error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= AG_TITLE_MAX ? `Agreement title cannot exceed ${AG_TITLE_MAX} characters.` : undefined)}
                     ><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, AG_TITLE_MAX))} maxLength={AG_TITLE_MAX} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
-                      <MasterSelect optionTipPosition="top" value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
+                      <div className="ctc-agtype"><MasterSelect optionTipPosition="top" value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} /></div>
                     </Field>
                   </div>
                 </div>
@@ -1627,7 +1648,7 @@ function Stage1(p: {
                 );
               })()
             ) : p.resubmitMode ? (
-              <button onClick={() => { if (!p.resubmitting && validateAll()) p.onResubmit(); }} disabled={p.resubmitting} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: p.resubmitting ? 'wait' : 'pointer', opacity: p.resubmitting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
+              <button onClick={() => { if (!p.resubmitting && validateAll()) setResubmitApprovalOpen(true); }} disabled={p.resubmitting} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: p.resubmitting ? 'wait' : 'pointer', opacity: p.resubmitting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
                 {p.resubmitting
                   ? <svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                   : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>}
@@ -1647,6 +1668,30 @@ function Stage1(p: {
         </Panel>
       </div>
       {approvalOpen && <ApprovalWorkflowModal t={t} orgName={p.org?.name ?? 'Our Organisation'} onClose={() => setApprovalOpen(false)} onSubmit={(data) => p.onSubmitForApproval(data)} />}
+      {/* Resubmit after a rejection: the same approver popup, pre-filled with
+          the last round's approvers (the one who rejected is tagged), so the
+          sender can keep them, drop them, or add someone new. */}
+      {resubmitApprovalOpen && (
+        <ApprovalWorkflowModal
+          t={t}
+          orgName={p.org?.name ?? 'Our Organisation'}
+          mode="resubmit"
+          initial={(p.prevApprovers ?? []).filter(a => a.email || a.name).map((a, i) => ({
+            name: String(a.name || a.email || 'Approver'),
+            email: String(a.email || ''),
+            role: String(a.role || ''),
+            initials: orgInitials(String(a.name || a.email || '')),
+            grad: ORG_GRADS[i % ORG_GRADS.length],
+            tags: [
+              ...(a.role ? [[String(a.role), '#7C3AED']] as [string, string][] : []),
+              ...(a.status === 'rejected' ? [['Rejected', '#DC2626']] as [string, string][] : []),
+            ],
+            locked: false,
+          }))}
+          onClose={() => setResubmitApprovalOpen(false)}
+          onSubmit={async (data) => { const ok = await p.onResubmit(data); if (ok) setResubmitApprovalOpen(false); return ok; }}
+        />
+      )}
 
       {/* Evidence Vault — opened from a counterparty's compliance ring so the
           user can upload the missing mandatory documents; on close the CP's
@@ -3019,9 +3064,12 @@ function Field({ t, label, green, error, counter, children }: { t: OpsTokens; la
 
 /* ── Counterparty picker modal ── */
 /* ── Stage-1 Step-3 "Submit & Send for Approval" → Review & Approval Workflow popup ── */
-type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean };
-function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean> }) {
-  const [approvers, setApprovers] = useState<Approver[]>([]);
+type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean; role?: string };
+/* mode "resubmit" = the same popup reopened after a rejection: `initial` holds
+   the previous round's approvers, and the copy / button say Resubmit. */
+function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit, initial, mode = 'submit' }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>; initial?: Approver[]; mode?: 'submit' | 'resubmit' }) {
+  const resubmit = mode === 'resubmit';
+  const [approvers, setApprovers] = useState<Approver[]>(() => initial ?? []);
   // Fixed default approval window — the on-screen steppers were removed, but
   // the values still drive the timeline preview and the backend payload.
   const [days] = useState(7);
@@ -3035,7 +3083,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
   const submit = async () => {
     if (submitting || approvers.length === 0) return;
     setSubmitting(true);
-    const ok = await onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder });
+    const ok = await onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.role ?? a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder });
     if (!ok) setSubmitting(false);
   };
   const mergeApprovers = (picked: Approver[]) => {
@@ -3050,7 +3098,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
         <div style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
-            <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Review &amp; Approval Workflow</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>Select approvers for this agreement draft</div></div>
+            <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>{resubmit ? 'Resubmit for Review' : <>Review &amp; Approval Workflow</>}</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>{resubmit ? 'Keep, remove or add approvers for the revised draft' : 'Select approvers for this agreement draft'}</div></div>
           </div>
           <button onClick={() => { if (!submitting) onClose(); }} disabled={submitting} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? .5 : 1, fontSize: 13, flexShrink: 0 }}>✕</button>
         </div>
@@ -3097,7 +3145,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
             {submitting
               ? <svg className="ctc-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
-            {submitting ? 'Submitting…' : 'Submit for Approval'}
+            {submitting ? (resubmit ? 'Resubmitting…' : 'Submitting…') : (resubmit ? 'Resubmit for Review' : 'Submit for Approval')}
           </button>
         </div>
       </div>

@@ -63,6 +63,24 @@ class CtcContractController extends Controller
         });
     }
 
+    /* Pre-render the approver's PDF after the response has been sent, so opening
+       the agreement in Agreements To Approve reads it from cache instead of
+       waiting on a full dompdf render. Failure only means the approver renders
+       it on open, exactly as before. */
+    private function warmApproverPreview(int $id): void
+    {
+        app()->terminating(function () use ($id) {
+            try {
+                $c = CtcContract::find($id);
+                if ($c && trim((string) $c->content) !== '') {
+                    app(ClmSignatureController::class)->warmCtcPreview($c);
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
+    }
+
     private function myApproverStatus(CtcContract $c, string $email): ?string
     {
         $email = strtolower(trim($email));
@@ -819,6 +837,7 @@ class CtcContractController extends Controller
         });
 
         $this->broadcastApproval($row);
+        $this->warmApproverPreview((int) $row->id);
         return response()->json(['status' => true, 'data' => $this->shapeList($row), 'code' => $row->code], 201);
     }
 
@@ -843,6 +862,7 @@ class CtcContractController extends Controller
             $this->assertCounterpartyCategories($data['counterparties'] ?? []);
         }
         $row->update($data);
+        $this->warmApproverPreview((int) $row->id);
         return response()->json(['status' => true, 'data' => $this->shapeList($row->fresh())]);
     }
 
@@ -1096,6 +1116,7 @@ class CtcContractController extends Controller
         $row->save();
 
         $this->broadcastApproval($row);
+        $this->warmApproverPreview((int) $row->id);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 

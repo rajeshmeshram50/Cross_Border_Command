@@ -15,6 +15,7 @@ import WorklistPager from '../../../components/ui/WorklistPager';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
+import { clmBottomReserve } from '../shared/clmShared';
 import { useIsClipped } from '../../../components/ui/DataTable';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
@@ -144,7 +145,7 @@ const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
    cell that sets nothing inherits it. */
 const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center', fontSize: 11.5, fontWeight: 500 } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
-const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.28'})` });
+const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 600, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.28'})` });
 
 const S_CFG = {
   approved:      { label: 'Approved', bg: '#ECFDF5', border: '#A7F3D0', color: '#059669', dot: '#10B981' },
@@ -226,9 +227,18 @@ export default function ClmAgreementsToApprovePage() {
     const byTab = tab === 'all' ? ata : ata.filter(c => c.status === tab);
     const q = search.trim().toLowerCase();
     if (!q) return byTab;
-    return byTab.filter(c =>
-      [c.id, c.title, c.createdBy, c.approver, ...(c.approvers ?? []).map(a => a.name)]
-        .some(v => String(v ?? '').toLowerCase().includes(q)));
+    /* Every column the table shows (QA #28): CTC date (as displayed
+       "25-Nov-2026", as sent "25 Nov 2026", plus the time "4:54 PM"), expiry
+       date both ways, the status label and the rejection reason. */
+    return byTab.filter(c => {
+      const ctc = dateTimeParts(c.date);
+      return [
+        c.id, c.title, c.createdBy, c.approver, ...(c.approvers ?? []).map(a => a.name),
+        c.date, ctc.date, ctc.time,
+        c.expDate, dashDate(c.expDate),
+        S_CFG[c.status]?.label, c.rejReason,
+      ].some(v => String(v ?? '').toLowerCase().includes(q));
+    });
   }, [ata, tab, search]);
   const actionContract = ata.find(c => c.id === actionId) || null;
   const reviewContract = ata.find(c => c.id === reviewId) || null;
@@ -306,7 +316,7 @@ export default function ClmAgreementsToApprovePage() {
       const top = el.getBoundingClientRect().top;
       // Stretch the card to the viewport (leave room for the layout footer + the
       // scroll container's padding, else the pager lands at the fold / cut off).
-      const fh = Math.max(240, window.innerHeight - top - 56);
+      const fh = Math.max(240, window.innerHeight - top - (clmBottomReserve() - 1)); /* measured footer + 8px gap */
       setFillH(prev => (prev === fh ? prev : fh));
 
       if (!autoFitRef.current) return;
@@ -579,15 +589,54 @@ function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
   const list = (c.approvers && c.approvers.length)
     ? c.approvers
     : (c.approver ? [{ name: c.approver, status: c.status }] : []);
+  /* One approver on the row, the rest behind a "+N" chip. Listing everyone
+     stacked made a multi-approver row twice as tall as its neighbours; the chip
+     opens a small popover with the full list (portalled so the table's own
+     scroll box cannot clip it). */
+  const [pop, setPop] = useState<{ x: number; y: number; up: boolean } | null>(null);
+  useEffect(() => {
+    if (!pop) return;
+    const close = () => setPop(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [pop]);
   if (!list.length) return <span style={{ fontSize: 11, color: t.textSub }}>—</span>;
+  const first = list[0];
+  const extra = list.length - 1;
+  const openPop = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (pop) { setPop(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    const estH = Math.min(260, 44 + extra * 34);
+    const up = window.innerHeight - r.bottom < estH + 12 && r.top > estH;
+    setPop({ x: Math.min(r.left, window.innerWidth - 236), y: up ? r.top - 6 : r.bottom + 6, up });
+  };
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {list.map((a, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Avatar name={a.name} />
-          <span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{a.name}</span>
-        </div>
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <Avatar name={first.name} />
+      <span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{first.name}</span>
+      {extra > 0 && (
+        <Tooltip label="View all approvers">
+          <button type="button" onClick={openPop} aria-label={`View all ${list.length} approvers`} style={{ height: 20, minWidth: 26, padding: '0 7px', borderRadius: 10, border: `1px solid ${t.dark ? 'rgba(103,232,249,.35)' : '#A5F3FC'}`, background: pop ? (t.dark ? 'rgba(6,182,212,.28)' : '#CFFAFE') : (t.dark ? 'rgba(6,182,212,.14)' : '#ECFEFF'), color: t.dark ? '#67e8f9' : '#0e7490', fontSize: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>+{extra}</button>
+        </Tooltip>
+      )}
+      {pop && createPortal(
+        <>
+          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
+          <div style={{ position: 'fixed', left: pop.x, top: pop.up ? undefined : pop.y, bottom: pop.up ? window.innerHeight - pop.y : undefined, zIndex: 200001, width: 228, maxHeight: 260, overflowY: 'auto', background: t.dark ? '#111827' : '#fff', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.22)'}`, borderRadius: 12, padding: 8, boxShadow: t.dark ? '0 18px 50px rgba(0,0,0,.6)' : '0 18px 50px rgba(15,23,42,.22)', fontFamily: 'var(--font-sans)' }}>
+            {/* Only the approvers hidden behind "+N" - the first is already on the row. */}
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0e7490', padding: '2px 6px 7px' }}>More approvers · {extra}</div>
+            {list.slice(1).map((a, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px', borderRadius: 8, background: i % 2 ? 'transparent' : (t.dark ? 'rgba(6,182,212,.06)' : '#F8FEFF') }}>
+                <Avatar name={a.name} />
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -644,7 +693,7 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                         <Tooltip label={dlId === c.id ? 'Preparing PDF…' : 'Download agreement PDF'}>
-                          <button type="button" onClick={() => onDownload(c.id)} disabled={dlId === c.id} aria-label="Download agreement PDF" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 27, height: 27, borderRadius: 8, border: `1px solid ${c.status === 'approved' ? '#A7F3D0' : '#FECACA'}`, background: c.status === 'approved' ? '#ECFDF5' : '#FEF2F2', color: c.status === 'approved' ? '#059669' : '#DC2626', cursor: dlId === c.id ? 'wait' : 'pointer', flexShrink: 0 }}>
+                          <button type="button" onClick={() => onDownload(c.id)} disabled={dlId === c.id} aria-label="Download agreement PDF" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 27, height: 27, borderRadius: 8, border: `1px solid ${c.status === 'approved' ? (t.dark ? 'rgba(52,211,153,.4)' : '#A7F3D0') : (t.dark ? 'rgba(248,113,113,.4)' : '#FECACA')}`, background: c.status === 'approved' ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2'), color: c.status === 'approved' ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#fca5a5' : '#DC2626'), cursor: dlId === c.id ? 'wait' : 'pointer', flexShrink: 0 }}>
                             {dlId === c.id
                               ? <svg className="ata-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                               : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
@@ -671,7 +720,7 @@ function AtaEmpty({ t, title, sub }: { t: OpsTokens; title: string; sub: string 
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', position: 'sticky', left: 0 }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 13, background: 'linear-gradient(135deg,#E0F7FA,#A5F3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
+        <div style={{ width: 48, height: 48, borderRadius: 13, background: t.dark ? 'rgba(6,182,212,.14)' : 'linear-gradient(135deg,#E0F7FA,#A5F3FC)', border: t.dark ? '1px solid rgba(103,232,249,.3)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
         <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#164e63', marginBottom: 5 }}>{title}</div>
         <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 280, lineHeight: 1.6 }}>{sub}</div>
       </div>
@@ -712,7 +761,7 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
                   onMouseEnter={e => { e.currentTarget.style.background = t.dark ? 'rgba(6,182,212,.14)' : 'rgba(6,182,212,.06)'; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
-                  <td style={TD_C}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', background: 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.28)' }}>{c.id}</span></td>
+                  <td style={TD_C}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0e7490', background: 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.28)' }}>{c.id}</span></td>
                   <td style={TD_C}>{(() => { const dt = dateTimeParts(c.date); return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dt.date}</span>{dt.time && <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0891b2', whiteSpace: 'nowrap' }}>{dt.time}</span>}</span>); })()}</td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
@@ -827,8 +876,14 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
               scrolled a 230px thread, lost the point they were querying, then
               scrolled back down to write it. Reject has no thread, so it keeps
               the single column. */}
-          <div className="ata-action-body" style={{ display: 'grid', gridTemplateColumns: isClarify ? '1.02fr .98fr' : '1fr', gap: 16, alignItems: 'start' }}>
-            {isClarify && <ClarificationThread contract={contract} typingName={typingName} t={t} />}
+          {/* The thread fills its cell absolutely, so the composer alone sets the
+              row height and both panes end on the same line (QA #74). */}
+          <div className="ata-action-body" style={{ display: 'grid', gridTemplateColumns: isClarify ? '1.02fr .98fr' : '1fr', gap: 16, alignItems: 'stretch' }}>
+            {isClarify && (
+              <div style={{ position: 'relative', minHeight: 200 }}>
+                <ClarificationThread contract={contract} typingName={typingName} t={t} fill />
+              </div>
+            )}
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? (contract.clarifications.length > 0 ? 'Add New Clarification Query' : 'Clarification Query') : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
               <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
@@ -856,14 +911,15 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
                   agreement, and a plain "Submit" on a red button would be the
                   one place in the flow where the label stops saying what the
                   click does. */}
+              {/* Equal halves, 40px: the pair read as one big and one small button. */}
               <div style={{ display: 'flex', gap: 9, marginTop: 12 }}>
-                <button onClick={submit} disabled={submitting} style={{ flex: 2, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? .75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
+                <button onClick={submit} disabled={submitting} style={{ flex: 1, height: 40, padding: '0 14px', borderRadius: 10, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? .75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
                   {submitting
                     ? <svg className="ata-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                     : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
                   {submitting ? 'Submitting…' : (choice === 'reject' ? 'Confirm Rejection' : 'Submit')}
                 </button>
-                <button onClick={close} disabled={submitting} style={{ flex: 1, padding: 13, borderRadius: 12, border: `1.5px solid ${t.searchBorder}`, background: 'transparent', color: t.textMuted, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? .55 : 1 }}>Cancel</button>
+                <button onClick={close} disabled={submitting} style={{ flex: 1, height: 40, padding: '0 14px', borderRadius: 10, border: `1.5px solid ${t.searchBorder}`, background: 'transparent', color: t.textMuted, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? .55 : 1 }}>Cancel</button>
               </div>
               {isClarify && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 11, fontSize: 10, fontWeight: 600, color: t.textMuted, lineHeight: 1.45 }}>
@@ -894,7 +950,7 @@ function ChoiceCard({ sel, onClick, grad, selBg, selBd, baseBg, baseBd, title, t
 /* ── Clarification conversation thread — embedded inside the Raise Clarification
  *    popup so the approver reads the full back-and-forth (plus a live "typing…"
  *    indicator) right above the box where they add their next query. ── */
-function ClarificationThread({ contract, typingName, t }: { contract: AtaContract; typingName: string | null; t: OpsTokens }) {
+function ClarificationThread({ contract, typingName, t, fill = false }: { contract: AtaContract; typingName: string | null; t: OpsTokens; fill?: boolean }) {
   /* Open on the NEWEST message, the way every chat does. The thread is
      oldest-first, so a conversation long enough to scroll opened on the first
      query — usually one already answered — with the live exchange below the
@@ -910,13 +966,15 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
      + note ≈ 265) so the two columns end level instead of one trailing a ragged
      edge below the other. */
   return (
-    <div ref={threadRef} className="ata-thread" style={{ background: t.dark ? '#102234' : '#F0FDFF', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.28)' : '#CFFAFE'}`, borderRadius: 14, padding: '12px 14px', maxHeight: 265, overflowY: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 11 }}>
+    /* `fill`: the parent cell is position:relative and as tall as the composer;
+       the thread covers it exactly and scrolls inside, so both panes end level. */
+    <div ref={threadRef} className="ata-thread" style={{ background: t.dark ? '#102234' : '#F0FDFF', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.28)' : '#CFFAFE'}`, borderRadius: 14, padding: '12px 14px', overflowY: 'auto', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', ...(fill ? { position: 'absolute', inset: 0 } : { maxHeight: 265 }) }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 11, flexShrink: 0 }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
         <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0891b2' }}>Conversation History</span>
       </div>
       {contract.clarifications.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '18px 10px', fontSize: 11, fontWeight: 600, color: t.textMuted }}>No previous clarification — this will be the first query.</div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '18px 10px', fontSize: 11, fontWeight: 600, color: t.textMuted }}>No previous clarification — this will be the first query.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {contract.clarifications.map((cl, i) => (
@@ -1164,7 +1222,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
             away); the inner div is the only thing that scrolls a long page. */}
         <div style={{ flex: 1, minHeight: 0, position: 'relative', background: t.dark ? 'radial-gradient(circle at 50% 0%, #14233a, #0b1220)' : 'radial-gradient(circle at 50% 0%, #eef4f8, #d8e2ea)' }}>
           <div ref={stageRef} style={{ position: 'absolute', inset: 0, overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px 64px' }}>
-            {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: t.dark ? '#cbd5e1' : '#475569' }}><span className="spinner-border text-info" role="status" aria-hidden="true" /><span style={{ fontSize: 12, fontWeight: 600 }}>Loading agreement…</span></div>}
+            {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: t.dark ? '#cbd5e1' : '#475569' }}><span className="spinner-border text-info" role="status" aria-hidden="true" /><span style={{ fontSize: 12, fontWeight: 600 }}>Loading agreement…</span><span style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#94a3b8' : '#64748b' }}>It takes a few seconds to preview the document.</span></div>}
             {error && <div style={{ alignSelf: 'center', textAlign: 'center', color: '#dc2626', fontWeight: 600, fontSize: 12.5 }}>Could not load the agreement PDF.</div>}
             {!loading && !error && (
               <div className="ata-paper" style={{ width: '100%', maxWidth: 620, borderRadius: 6, overflow: 'hidden', boxShadow: '0 12px 40px rgba(8,3,28,.35)', background: '#fff' }}>

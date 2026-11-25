@@ -1121,6 +1121,16 @@ class ClmSignatureController extends Controller
         }
     }
 
+    /**
+     * Render the approver preview ahead of time so it is already in the cache.
+     * Same arguments as ctcPreview() with no overrides, so the cache key is the
+     * one the approver's request will look up; nothing about the PDF changes.
+     */
+    public function warmCtcPreview(CtcContract $c): void
+    {
+        $this->renderCtcPdf($c, [], null, null, null, Str::uuid()->toString(), 60 * 24 * 7);
+    }
+
     private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid, int $cacheMinutes = 30)
     {
         @ini_set('memory_limit', '1024M');

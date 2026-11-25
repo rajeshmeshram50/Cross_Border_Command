@@ -4291,7 +4291,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     )}
                     {advTenureExceeds && (
                       <Col md={12}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fff1f2', border: '1px solid #fecdd3', color: '#9f1239', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
+                        <div className="ep-adv-note ep-adv-note--danger">
                           <i className="ri-error-warning-line" style={{ fontSize: 16, marginTop: 1 }} />
                           <span>This advance <strong>can’t be granted</strong> — at your available EMI headroom <strong>₹{advEmiCap.toLocaleString('en-IN')}</strong> it would take <strong>{advInstalmentsNeeded} instalments</strong> (over the {ADV_MAX_INSTALMENTS} limit). Reduce the amount, or <strong>clear your existing advances</strong> first.</span>
                         </div>
@@ -4301,7 +4301,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 )}
                 {/* Single Lump = one payroll deduction — needs salary to cover it. */}
                 {advUsedFor !== 'company' && advRecoveryMode === 'lumpsum' && (
-                  <div className="mb-3" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: advSingleLumpOk ? '#f0fbff' : '#fff7ed', border: `1px solid ${advSingleLumpOk ? '#cdeef6' : '#fed7aa'}`, color: advSingleLumpOk ? '#0e7490' : '#9a3412', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
+                  <div className={`ep-adv-note mb-3 ${advSingleLumpOk ? 'ep-adv-note--info' : 'ep-adv-note--warn'}`}>
                     <i className={advSingleLumpOk ? 'ri-information-line' : 'ri-error-warning-line'} style={{ fontSize: 16, marginTop: 1 }} />
                     <span>
                       {advEmiCap > 0 ? <>EMI headroom <strong>₹{advEmiCap.toLocaleString('en-IN')}</strong>{advEmiInfo && advEmiInfo.ongoing_emi > 0 ? <> (70% of ₹{advMonthlySalary.toLocaleString('en-IN')} − ₹{advEmiInfo.ongoing_emi.toLocaleString('en-IN')} ongoing)</> : ''}. </> : null}

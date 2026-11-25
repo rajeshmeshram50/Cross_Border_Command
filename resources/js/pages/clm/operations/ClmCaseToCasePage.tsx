@@ -11,6 +11,7 @@ import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
 import RowsPerPageSelect from '../../../components/ui/RowsPerPageSelect';
+import { clmBottomReserve } from '../shared/clmShared';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Case to Case Contracts.
@@ -342,9 +343,25 @@ export default function ClmCaseToCasePage() {
     finally { setCertId(null); }
   };
 
+  /* Search text for one row: every column the table shows (QA #112). Dates are
+     included both as displayed ("25-Nov-2026") and as the API sends them
+     ("25 Nov 2026"), so either way of typing a date finds the row. CP Signed
+     Date mirrors the cell's own fallback (signed rows show the CTC date). */
+  const haystack = (c: CtcContract) => {
+    const cpS = c.cpSignedDate !== '—' ? c.cpSignedDate : (c.status === 'signed' ? c.date : '');
+    const dates = [c.date, c.effDate, c.endDate, cpS].filter(d => d && d !== '—').flatMap(d => [d, dashDate(d)]);
+    return [
+      c.id, c.title, c.type, c.org, c.createdBy,
+      ...c.cp, ...(c.cpLabeled ?? []),
+      AP_CFG[c.approval]?.label ?? '', S_CFG[c.status]?.label ?? '',
+      ...dates,
+    ].join(' | ').toLowerCase();
+  };
+  const matches = (c: CtcContract, q: string) => haystack(c).includes(q);
+
   const counts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const f = q ? rows.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : rows;
+    const f = q ? rows.filter(c => matches(c, q)) : rows;
     return {
       all: f.length,
       signed: f.filter(c => c.status === 'signed').length,
@@ -355,7 +372,7 @@ export default function ClmCaseToCasePage() {
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let f = q ? rows.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : rows;
+    let f = q ? rows.filter(c => matches(c, q)) : rows;
     return tab === 'all' ? f : f.filter(c => c.status === tab);
   }, [search, tab, rows]);
 
@@ -374,7 +391,9 @@ export default function ClmCaseToCasePage() {
       // Leave room at the bottom for the layout footer + the scroll container's
       // padding — with only a 24px gap the card overshot the main-content scroll
       // area and the pagination footer landed at the fold (cut off).
-      const fh = Math.max(240, window.innerHeight - top - 56);
+      /* Measured app footer + 8px gap. clmBottomReserve also counts a 1px card
+         border; here the measured element IS the card, so that pixel comes off. */
+      const fh = Math.max(240, window.innerHeight - top - (clmBottomReserve() - 1));
       setFillH(prev => (prev === fh ? prev : fh));
 
       // Dynamic rows-per-page — fit as many rows as the card height allows so

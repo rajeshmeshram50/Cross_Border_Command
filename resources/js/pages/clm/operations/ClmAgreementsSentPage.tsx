@@ -17,6 +17,7 @@ import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcS
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
+import { clmBottomReserve } from '../shared/clmShared';
 
 type SentRow = AwsContract & { dbId: number; approver: string; clarifications: Clarification[]; rejReason?: string; expDate: string };
 
@@ -257,7 +258,7 @@ export default function ClmAgreementsSentPage() {
       const el = cardRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const fh = Math.max(240, window.innerHeight - top - 56);
+      const fh = Math.max(240, window.innerHeight - top - (clmBottomReserve() - 1)); /* measured footer + 8px gap */
       setFillH(prev => (prev === fh ? prev : fh));
 
       const toolbarH = (el.querySelector('.aws-toolbar') as HTMLElement | null)?.offsetHeight || 0;
@@ -1007,7 +1008,7 @@ function EmptyState({ msg, t, searching = false, title = 'No Contracts Found', i
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', position: 'sticky', left: 0 }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 13, background: 'linear-gradient(135deg,#E0F7FA,#A7F3D0)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 3px 10px rgba(6,182,212,.15)' }}>{icon ?? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</div>
+        <div style={{ width: 48, height: 48, borderRadius: 13, background: t.dark ? 'rgba(6,182,212,.14)' : 'linear-gradient(135deg,#E0F7FA,#A7F3D0)', border: t.dark ? '1px solid rgba(103,232,249,.3)' : 'none', color: t.dark ? '#67e8f9' : '#0891b2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 3px 10px rgba(6,182,212,.15)' }}>{icon ?? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</div>
         <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', marginBottom: 5 }}>{searching ? 'No Matching Contracts' : title}</div>
         <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>{searching ? 'No results match the current search.' : msg}</div>
       </div>
@@ -1022,7 +1023,7 @@ function EmptyState({ msg, t, searching = false, title = 'No Contracts Found', i
    the initials, the small captions under a clarification). */
 const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center', fontSize: 11.5, fontWeight: 500 } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
-const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'linear-gradient(135deg,rgba(6,182,212,.12),rgba(8,145,178,.06))', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.25'})`, whiteSpace: 'nowrap', letterSpacing: '.02em' });
+const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 600, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'linear-gradient(135deg,rgba(6,182,212,.12),rgba(8,145,178,.06))', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.25'})`, whiteSpace: 'nowrap', letterSpacing: '.02em' });
 
 const AWS_CSS = `
 @keyframes awsSlideUp { from { opacity:0; transform:translateY(24px) scale(.96); } to { opacity:1; transform:none; } }
