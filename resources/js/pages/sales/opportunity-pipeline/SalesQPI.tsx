@@ -3569,9 +3569,11 @@ function BasicForm(props: {
       </div>
 
       <div className={`qpi-note qpi-note-${theme}`}>
-        <span className="qpi-note-icon"><IconWarn /></span>
+        <div className="qpi-note-head">
+          <span className="qpi-note-icon"><IconWarn /></span>
+          <span className="qpi-note-title">Note</span>
+        </div>
         <div className="qpi-note-body">
-          <div className="qpi-note-line"><strong>Note</strong></div>
           <div className="qpi-note-line">
             <strong>Without Opportunity:</strong> You can create a general {partyKind === 'PI' ? 'PI' : 'quotation'} by directly selecting the customer; ensure the customer is fully created in the system. You do not need to select an Opportunity.
           </div>
@@ -4876,16 +4878,21 @@ const SCOPED_CSS = `
 
 .qpi-note {
   margin-top: 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: linear-gradient(110deg, #fffbeb 0%, #fef3c7 100%);
   border: 1px solid #fde68a; border-radius: 8px;
-  display: flex; gap: 10px; align-items: flex-start;
 }
-.qpi-note-icon { color: #d97706; flex-shrink: 0; margin-top: 1px; }
-.qpi-note-icon svg { width: 14px; height: 14px; }
-.qpi-note-body { flex: 1; }
+/* Icon and title share one centred row; the lines below are indented by the
+   icon's width + gap so every line starts under the title text. */
+.qpi-note-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.qpi-note-icon { color: #d97706; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
+.qpi-note-icon svg { width: 15px; height: 15px; display: block; }
+.qpi-note-title { font-size: 11.5px; font-weight: 800; color: #92400e; line-height: 16px; letter-spacing: .02em; }
+.qpi-note-body { padding-left: 24px; }
 .qpi-note-line { font-size: 11px; color: #78350f; line-height: 1.45; }
-.qpi-note-line + .qpi-note-line { margin-top: 2px; }
+.qpi-note-line + .qpi-note-line { margin-top: 4px; }
+.qpi-note-teal .qpi-note-title { color: #0c4a6e; }
+.qpi-note-purple .qpi-note-title { color: #4c1d95; }
 .qpi-note-line strong { color: #92400e; font-weight: 800; }
 .qpi-note-teal { background: linear-gradient(110deg, #ecfeff 0%, #cffafe 100%); border-color: #a5f3fc; }
 .qpi-note-teal .qpi-note-icon { color: #0e7490; }
@@ -5226,37 +5233,36 @@ const SCOPED_CSS = `
 }
 
 [data-bs-theme="dark"] .qpi-modal {
-  background: #1a1530;
+  background: #0b1220;
   box-shadow: 0 25px 60px rgba(0,0,0,.65);
 }
 [data-bs-theme="dark"] .qpi-modal-stepper {
-  background: #14101d;
-  border-bottom-color: rgba(167,139,250,.20);
+  background: #0c1322;
+  border-bottom-color: rgba(148,163,184,.16);
 }
-[data-bs-theme="dark"] .qpi-modal-body { background: #221a3a; color: #e9d5ff; }
-[data-bs-theme="dark"] .qpi-field-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-modal-body { background: #0c1322; color: #e2e8f0; }
 [data-bs-theme="dark"] .qpi-input,
 [data-bs-theme="dark"] .qpi-textarea {
-  background: #0f0c19;
-  border-color: rgba(167,139,250,.25);
-  color: #e9d5ff;
+  background: #0f172a;
+  border-color: rgba(148,163,184,.22);
+  color: #e2e8f0;
 }
 [data-bs-theme="dark"] .qpi-input::placeholder,
-[data-bs-theme="dark"] .qpi-textarea::placeholder { color: #7a6b9a; }
+[data-bs-theme="dark"] .qpi-textarea::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .qpi-input:focus,
 [data-bs-theme="dark"] .qpi-textarea:focus {
   border-color: #a78bfa;
   box-shadow: 0 0 0 3px rgba(167,139,250,.20);
 }
 [data-bs-theme="dark"] .qpi-input-readonly {
-  background: #0f0c19; color: #9aa0b4; cursor: not-allowed;
+  background: #0f172a; color: #9aa0b4; cursor: not-allowed;
 }
 [data-bs-theme="dark"] .qpi-field-label { color: #cbd5e1; }
 [data-bs-theme="dark"] .qpi-modal-body .master-select-toggle {
-  background-color: #0f0c19; border-color: rgba(167,139,250,.25); color: #e9d5ff;
+  background-color: #0f172a; border-color: rgba(148,163,184,.22); color: #e2e8f0;
 }
 [data-bs-theme="dark"] .qpi-modal-body .master-select-toggle:hover:not(:disabled) {
-  border-color: rgba(167,139,250,.45);
+  border-color: rgba(148,163,184,.40);
 }
 [data-bs-theme="dark"] .qpi-modal-body .master-select-wrap.show .master-select-toggle {
   border-color: #a78bfa !important;
@@ -5271,6 +5277,8 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .qpi-note-line   { color: #fde68a; }
 [data-bs-theme="dark"] .qpi-note-line strong { color: #fcd34d; }
+[data-bs-theme="dark"] .qpi-note-title { color: #fcd34d; }
+[data-bs-theme="dark"] .qpi-note-icon  { color: #fbbf24; }
 
 [data-bs-theme="dark"] .qpi-order-summary-purple { background: rgba(124,58,237,.15); border-color: rgba(167,139,250,.35); }
 [data-bs-theme="dark"] .qpi-order-summary-teal   { background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.35); }
@@ -5285,7 +5293,7 @@ const SCOPED_CSS = `
   border-bottom-color: rgba(167,139,250,.15); color: #d4d1de;
 }
 [data-bs-theme="dark"] .qpi-products-input-row td {
-  background: #1c1538;
+  background: #111a2e;
   box-shadow: inset 0 1px 0 0 rgba(167,139,250,.25);
 }
 [data-bs-theme="dark"] .qpi-products-wrap { scrollbar-color: rgba(255,255,255,.18) transparent; }
@@ -5314,8 +5322,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-summary-purple .qpi-summary-grand { border-top-color: rgba(167,139,250,.45); color: #c4b5fd; }
 
 [data-bs-theme="dark"] .qpi-modal-foot {
-  background: #1a1530;
-  border-top-color: rgba(167,139,250,.20);
+  background: #0b1220;
+  border-top-color: rgba(148,163,184,.16);
 }
 [data-bs-theme="dark"] .qpi-btn-back {
   background: rgba(167,139,250,.10);
