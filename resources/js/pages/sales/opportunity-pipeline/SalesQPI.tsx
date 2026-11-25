@@ -809,34 +809,6 @@ export default function SalesQPI() {
     }
   };
 
-  const sendReminder = async (kind: 'quotation' | 'pi', id: number, code: string) => {
-    if (!id) { toast.error('Cannot remind', 'This record has no server id yet.'); return; }
-    const key = `${kind}:${id}`;
-    if (emailingRef.current.has(key)) return;
-    emailingRef.current.add(key);
-    setEmailingKeys(s => new Set(s).add(key));
-    const url = kind === 'quotation'
-      ? `/sales/quotations/${id}/remind`
-      : `/sales/proforma-invoices/${id}/remind`;
-    try {
-      const { data } = await api.post(url, { signature: true });
-      const n = Number(data?.reminder_count ?? 0);
-      toast.success('Reminder sent', `${code} → ${data?.to ?? 'customer'} (#${n})`);
-      const patch = (r: any) => r.id === id ? { ...r, reminderCount: n } : r;
-      if (kind === 'quotation') setQuotations(rows => rows.map(patch));
-      else                       setPis(rows => rows.map(patch));
-    } catch (e: any) {
-      if (e?.response?.status === 429) {
-        toast.warning('Please wait', e?.response?.data?.message ?? 'Too many attempts — try again in a minute.');
-      } else {
-        const msg = e?.response?.data?.message ?? 'Could not send reminder.';
-        toast.error('Reminder failed', String(msg));
-      }
-    } finally {
-      emailingRef.current.delete(key);
-      setEmailingKeys(s => { const n = new Set(s); n.delete(key); return n; });
-    }
-  };
 
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'quotation' | 'pi'; id: number; code: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -1151,24 +1123,6 @@ export default function SalesQPI() {
               cooling={!!r.id && cooldownLeft('quotation', r.id) > 0}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
-            {false && (
-            <ActionBtn
-              title={
-                readOnly
-                  ? readOnlyHint
-                  : isEmailing('quotation', r.id)
-                    ? 'Sending…'
-                    : r.emailedAt
-                      ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                      : 'Send initial email first to enable reminders'
-              }
-              icon={<IconBellSm />}
-              color="#f59e0b"
-              disabled={readOnly || !r.emailedAt || (isEmailing('quotation', r.id))}
-              badge={r.reminderCount ?? 0}
-              onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
-            />
-            )}
             {(() => {
               const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
               const qConverted = r.status === 'converted_to_pi';
@@ -1322,24 +1276,6 @@ export default function SalesQPI() {
               cooling={!!r.id && cooldownLeft('pi', r.id) > 0}
               onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
             />
-            {false && (
-              <ActionBtn
-                title={
-                  readOnly
-                    ? readOnlyHint
-                    : isEmailing('pi', r.id)
-                      ? 'Sending…'
-                      : r.emailedAt
-                        ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                        : 'Send initial email first to enable reminders'
-                }
-                icon={<IconBellSm />}
-                color="#f59e0b"
-                disabled={readOnly || !r.emailedAt || (isEmailing('pi', r.id))}
-                badge={r.reminderCount ?? 0}
-                onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
-              />
-            )}
             {(() => {
               const pStatus = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
               const pSent   = pStatus === 'inprogress';
@@ -1385,15 +1321,6 @@ export default function SalesQPI() {
                 <IconKebab />
               </button>
             </Tooltip>
-            {false && (
-              <ActionBtn
-                title={readOnly ? readOnlyHint : 'Delete PI'}
-                icon={<IconTrash />}
-                color="#dc2626"
-                disabled={readOnly}
-                onClick={() => r.id && setDeleteTarget({ kind: 'pi', id: r.id, code: r.piNo })}
-              />
-            )}
           </div>
         );
       },
@@ -4106,12 +4033,6 @@ function SummaryItem(props: { label: string; value: string }) {
 }
 
 
-const IconBellSm = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-  </svg>
-);
 const IconFile = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
