@@ -1269,9 +1269,8 @@ const STAGE3_CSS = `
    no-space case; the full name stays available on the title tooltip. */
 .s3-prod-name {
   font-weight: 700; color: #1e293b; font-size: 12.5px;
-  max-width: 340px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; overflow-wrap: anywhere;
+  display: block; max-width: 100%; min-width: 0;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 /* Segment badge under the product name — same chip in every tab, only the
    colour matches the tab theme (violet / amber / mint). */
