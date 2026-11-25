@@ -1178,15 +1178,15 @@
    tint) with the 40px field inside it; same as the other Sales lists. */
 .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search {
   position: relative; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
-  height: auto; min-height: 48px;
-  padding: 3px 14px 3px 38px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  border: 0;
+  background: transparent;
   border-radius: 11px; box-shadow: none;
 }
 .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, box-shadow .16s;
@@ -1195,9 +1195,9 @@
 .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search .dt-search-icon { position: absolute; left: 16px; color: var(--dt-a-400); }
 .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search > .ui-search-clear { position: absolute; right: 11px; }
 .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search input { font-size: 13px; }
-.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
-[data-bs-theme="dark"] .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search::before { background: rgba(255,255,255,.03); border-color: rgba(var(--dt-a-rgb), .25); }
 
 /* Add — the Supplier header's own button, in teal, as tall as the rails beside it. */
