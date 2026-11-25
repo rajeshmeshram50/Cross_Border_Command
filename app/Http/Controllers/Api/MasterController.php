@@ -393,14 +393,29 @@ class MasterController extends Controller
                     && in_array($f['n'], $columns, true))
                 ->pluck('n')
                 ->all();
+            $refCols = collect($schema['fields'] ?? [])
+                ->filter(fn($f) => !empty($f['ref']) && isset(self::MODELS[$f['ref']]) && in_array($f['n'], $columns, true))
+                ->mapWithKeys(function ($f) {
+                    $refModel = self::MODELS[$f['ref']];
+                    $refTableCols = \Illuminate\Support\Facades\Schema::getColumnListing((new $refModel)->getTable());
+                    $label = in_array('name', $refTableCols, true) ? 'name'
+                        : collect($refTableCols)->first(fn($c) => str_ends_with($c, '_name') || in_array($c, ['title', 'label'], true));
+                    return $label ? [$f['n'] => [$refModel, $label]] : [];
+                })
+                ->all();
             $date = $this->searchDateRange($search, (string) $request->query('tz', ''));
-            $like = '%' . addcslashes($search, '%_\\') . '%';
-            $q->where(function ($w) use ($textCols, $like, $date, $columns, $model) {
+            $like = '%' . addcslashes(mb_strtolower($search), '%_\\') . '%';
+            $q->where(function ($w) use ($textCols, $refCols, $like, $date, $columns, $model) {
+                $grammar = $w->getGrammar();
                 foreach ($textCols as $col) {
-                    $w->orWhere($col, 'ilike', $like);
+                    $w->orWhereRaw('LOWER(' . $grammar->wrap($col) . ') LIKE ?', [$like]);
+                }
+                foreach ($refCols as $col => [$refModel, $label]) {
+                    $ids = $refModel::query()->whereRaw('LOWER(' . $grammar->wrap($label) . ') LIKE ?', [$like])->limit(500)->pluck('id')->map(fn($id) => (string) $id)->all();
+                    if ($ids) $w->orWhereIn($col, $ids);
                 }
                 if (method_exists($model, 'creator')) {
-                    $w->orWhereHas('creator', fn($u) => $u->where('name', 'ilike', $like));
+                    $w->orWhereHas('creator', fn($u) => $u->whereRaw('LOWER(name) LIKE ?', [$like]));
                 }
                 if ($date && in_array('created_at', $columns, true)) {
                     $w->orWhere(fn($m) => $m->where('created_at', '>=', $date[0])->where('created_at', '<', $date[1]));

@@ -1571,7 +1571,7 @@ function MasterPageInner({
       )}
 
       {cfg.slug === 'designations' && (
-        <DesignationExtras records={records} />
+        <DesignationExtras />
       )}
       {cfg.slug === 'roles' && (
         <RolesExtras records={records} />
@@ -2343,36 +2343,25 @@ function deriveValue(slug: string, fieldName: string, sourceValue: string): stri
 
 
 
-function DesignationExtras({ records }: { records: any[] }) {
-  const TIERS: {
-    label: string; tone: MpKpi['tone']; short: string; icon: string;
-    bg: string; fg: string; border: string;
-    deep: string; bright: string; accent: string;
-  }[] = [
-    { label: 'Director / CEO', tone: 'amber' as const,           short: 'Director / CEO', icon: 'ri-vip-crown-fill',  bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', deep: '#b45309', bright: '#f59e0b', accent: 'linear-gradient(135deg,#b45309 0%,#f59e0b 100%)' },
-    { label: 'Head of Department (HOD)', tone: 'violet' as const, short: 'HOD',            icon: 'ri-medal-2-fill',    bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', deep: '#6d28d9', bright: '#a78bfa', accent: 'linear-gradient(135deg,#6d28d9 0%,#a78bfa 100%)' },
-    { label: 'Team Leader', tone: 'sky' as const,              short: 'Team Leader',    icon: 'ri-team-fill',       bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', deep: '#1d4ed8', bright: '#60a5fa', accent: 'linear-gradient(135deg,#1d4ed8 0%,#60a5fa 100%)' },
-    { label: 'Executive', tone: 'teal' as const,                short: 'Executive',      icon: 'ri-user-star-fill',  bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', deep: '#0f766e', bright: '#2dd4bf', accent: 'linear-gradient(135deg,#0f766e 0%,#2dd4bf 100%)' },
-    { label: 'Employee', tone: 'green' as const,                 short: 'Employee',       icon: 'ri-user-3-fill',     bg: '#dcfce7', fg: '#15803d', border: '#22c55e', deep: '#15803d', bright: '#4ade80', accent: 'linear-gradient(135deg,#15803d 0%,#4ade80 100%)' },
-    { label: 'Intern / Trainee', tone: 'slate' as const,         short: 'Intern',         icon: 'ri-book-open-fill',  bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', deep: '#475569', bright: '#94a3b8', accent: 'linear-gradient(135deg,#475569 0%,#94a3b8 100%)' },
+function DesignationExtras() {
+  const TIERS: { label: string; icon: string; bg: string; fg: string; border: string; bright: string }[] = [
+    { label: 'Director / CEO',           icon: 'ri-vip-crown-fill', bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', bright: '#f59e0b' },
+    { label: 'Head of Department (HOD)', icon: 'ri-medal-2-fill',   bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', bright: '#a78bfa' },
+    { label: 'Team Leader',              icon: 'ri-team-fill',      bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', bright: '#60a5fa' },
+    { label: 'Executive',                icon: 'ri-user-star-fill', bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', bright: '#2dd4bf' },
+    { label: 'Employee',                 icon: 'ri-user-3-fill',    bg: '#dcfce7', fg: '#15803d', border: '#22c55e', bright: '#4ade80' },
+    { label: 'Intern / Trainee',         icon: 'ri-book-open-fill', bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', bright: '#94a3b8' },
   ];
-
-  const total = records.length;
-  const tierCounts = TIERS.map(t => ({
-    ...t,
-    count: records.filter(r => String(r.level ?? '') === t.label).length,
-  }));
 
   return (
     <div className="dsn-extras">
-
       <div className="dsn-hier-row">
         <span className="dsn-hier-label">Hierarchy</span>
         {TIERS.map((t, i) => (
           <span key={t.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <span
               className="dsn-hier-chip"
-              style={{ background: t.bg, color: t.fg, border: `1px solid ${t.border}55` }}
+              style={{ '--hc-bg': t.bg, '--hc-fg': t.fg, '--hc-bd': t.border, '--hc-br': t.bright } as React.CSSProperties}
             >
               <i className={t.icon} style={{ fontSize: 13 }} />
               {t.label}
@@ -2381,13 +2370,6 @@ function DesignationExtras({ records }: { records: any[] }) {
           </span>
         ))}
       </div>
-
-      <MpKpiCards
-        items={[
-          { key: 'total', label: 'Total', icon: 'ri-database-2-fill', value: total, tone: 'teal' },
-          ...tierCounts.map(t => ({ key: t.label, label: t.short, icon: t.icon, value: t.count, tone: t.tone })),
-        ]}
-      />
     </div>
   );
 }

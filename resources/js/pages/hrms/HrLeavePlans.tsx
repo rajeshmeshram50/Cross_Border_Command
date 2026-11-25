@@ -42,6 +42,7 @@ interface LeavePlan {
   employees: PlanEmployee[];
   leaveTypes: LeaveTypeRow[];
   unlocked?: boolean;
+  inactive?: boolean;
 }
 
 interface AccrualConfig {
@@ -356,6 +357,7 @@ function apiPlanToFrontend(api: ApiLeavePlan): LeavePlan {
     employees: (api.employees ?? []).map(apiEmployeeToPlanEmployee),
     leaveTypes: (api.leave_types ?? []).map(apiTypeToAssigned),
     unlocked: !!api.unlocked,
+    inactive: String(api.status ?? '').toLowerCase() === 'inactive',
   };
 }
 
@@ -878,8 +880,11 @@ export default function HrLeavePlans() {
                       >
                         <div className="d-flex align-items-center justify-content-between gap-2">
                           <PlanName name={p.name} className="lp-plan-name" />
-                          {p.isDefault && (
-                            <span className="lp-default-pill">DEFAULT</span>
+                          {(p.isDefault || p.inactive) && (
+                            <span className="d-inline-flex align-items-center gap-1 flex-shrink-0">
+                              {p.isDefault && <span className="lp-default-pill">DEFAULT</span>}
+                              {p.inactive && <span className="lp-inactive-pill" title="Marked Inactive in the Leave Plan master">INACTIVE</span>}
+                            </span>
                           )}
                         </div>
                         <div className="lp-plan-count">
@@ -923,6 +928,11 @@ export default function HrLeavePlans() {
                         <div className="min-w-0">
                           <h5 className="fw-bold mb-1 d-flex align-items-center gap-2 lp-main-title">
                             <PlanName name={activePlan.name} />
+                            {activePlan.inactive && (
+                              <span className="lp-inactive-pill lp-inactive-pill--lg" title="This plan is marked Inactive in the Leave Plan master">
+                                <i className="ri-forbid-2-line" /> Inactive
+                              </span>
+                            )}
                             {activePlanLocked && (
                               <span
                                 className="badge d-inline-flex align-items-center gap-1 lvp-locked-chip"

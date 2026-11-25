@@ -154,7 +154,7 @@ export function MasterSelect({
   onDisabledClick,
   menuClassName,
   fitWidth,
-  optionTipPosition = 'right',
+  optionTipPosition = 'top',
 }: {
   name?: string;
   value?: string;
@@ -178,7 +178,7 @@ export function MasterSelect({
   onDisabledClick?: (opt: { value: string; label: string; disabledReason?: string }) => void;
   menuClassName?: string;
   fitWidth?: boolean;
-  /* Where a long option's full-name tooltip opens; 'right' unless a screen asks otherwise. */
+  /* Where a long option's full-name tooltip opens; 'top' (centred) unless a screen asks otherwise. */
   optionTipPosition?: 'top' | 'right' | 'bottom' | 'left';
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
