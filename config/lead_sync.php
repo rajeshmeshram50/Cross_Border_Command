@@ -47,6 +47,7 @@ return [
             ['label' => 'Agrotech', 'crm_key' => env('INDIAMART_AGROTECH_KEY')],
             ['label' => 'Purvee',   'crm_key' => env('INDIAMART_PURVEE_KEY')],
             ['label' => 'Vortex',   'crm_key' => env('INDIAMART_VORTEX_KEY')],
+                ['label' => 'Healthcare', 'crm_key' => env('INDIAMART_HEALTHCARE_KEY')],
         ], fn ($row) => !empty($row['crm_key']))),
     ],
 
