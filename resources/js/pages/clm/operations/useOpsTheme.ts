@@ -141,7 +141,9 @@ export const OPS_SEARCH_CSS = `
    not the shared solid #cbd5e1 square (app.css .ui-search-clear). Same rule as
    the CLM masters (clmShared.ts). */
 [data-bs-theme="dark"] .ops-search .ui-search-clear:hover,
-[data-layout-mode="dark"] .ops-search .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent); color: #f8fafc; }
+[data-layout-mode="dark"] .ops-search .ui-search-clear:hover,
+/* Portalled panels (clause insert, party pickers) sit outside .ops-search. */
+[data-bs-theme="dark"] body:has(.ops-search) .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent); color: #f8fafc; }
 /* Chrome paints an autofilled / previously-searched input with its own pale
    fill, which shows through as a tinted band across the bar. The 1000px inset
    shadow is the only way to repaint that internal surface. */

@@ -1821,7 +1821,11 @@ body > .dropdown-menu.master-select-menu,
    hover is a stronger wash of the button's own colour with a light x, so it
    suits the teal masters and the violet CTC pages alike. Here, not in app.css,
    so nothing outside CLM changes. */
-[data-bs-theme="dark"] :is(.clm-root, .clm-search, .ops-search, .clm-modal, .ctc-cp-modal, .clm-mc) .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent); color: #f8fafc; }
+[data-bs-theme="dark"] :is(.clm-root, .clm-search, .ops-search, .clm-modal, .ctc-cp-modal, .clm-mc) .ui-search-clear:hover,
+/* And any clear button while a CLM page is on screen - CLM's filter modals,
+   clause panels and pickers are portalled to <body>, outside every wrapper
+   above (the DCP Filter Segment Rules search still went white). */
+[data-bs-theme="dark"] body:has(.clm-root, .clm-mc, .seg-page) .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent); color: #f8fafc; }
 [data-bs-theme="dark"] .clm-search > svg { stroke: #67e8f9; }
 [data-bs-theme="dark"] .clm-search input::placeholder { color: #5b8ca3; }
 /* Chrome/WebKit paints autofilled (and "previously-searched") inputs with a
@@ -2477,6 +2481,11 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   // Full response body, for extras such as tab counts.
   const [meta, setMeta] = useState<Partial<M>>({});
   const [loading, setLoading] = useState(true);
+  /* True once the first answer has landed. A table shows its skeleton only
+     before that; every later load (a search keystroke, a page move) keeps the
+     last answer on screen, dimmed, so the table does not blank and jump on each
+     letter typed. */
+  const [booted, setBooted] = useState(false);
   const [search, setSearch]   = useState('');
   const [debounced, setDebounced] = useState('');
   const [page, setPage] = useState(1);
@@ -2520,7 +2529,7 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
         setApplied({ search: debounced, page, rpp, params: paramsKey });
       })
       .catch((e) => { if (token === reqRef.current) { loadFailed(toast, 'the list', e); setRows([]); setTotal(0); } })
-      .finally(() => { if (token === reqRef.current) setLoading(false); });
+      .finally(() => { if (token === reqRef.current) { setLoading(false); setBooted(true); } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, page, rpp, debounced, paramsKey, reloadKey]);
 
@@ -2529,7 +2538,7 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   const replacing = loading
     && (applied.search !== debounced || applied.page !== page || applied.rpp !== rpp || applied.params !== paramsKey);
 
-  return { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
+  return { rows, total, loading, booted, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
 }
 
 /* Height a CLM list's table box may take.
@@ -2542,9 +2551,18 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
  *
  * From the CLM menu it is the CLM page's own flat allowance: the viewport less
  * the box's top and `reserve` (the footer + 8, or 64). */
-export function clmFillHeight(el: HTMLElement, min = 0, reserve = 64): number {
+/* Space a CLM list card leaves under itself: the app footer, MEASURED, plus
+   the 8px gap and the card's own 1px bottom border (the box measured is the
+   table inside the card, so the border sits below it). It was a flat 64 for
+   Agreements / T&C - 23px of gap - and footer + 8 elsewhere, which left 7px and
+   a 1px page scroll. */
+export function clmBottomReserve(): number {
+  const f = document.querySelector('footer.footer') as HTMLElement | null;
+  return f && f.offsetHeight > 0 ? f.offsetHeight + 9 : 15;
+}
+export function clmFillHeight(el: HTMLElement, min = 0, reserve?: number): number {
   if (!el.closest('.clm-mc')) {
-    return Math.max(min, window.innerHeight - el.getBoundingClientRect().top - reserve);
+    return Math.max(min, window.innerHeight - el.getBoundingClientRect().top - (reserve ?? clmBottomReserve()));
   }
   const scroller = el.closest('.main-content') as HTMLElement | null;
   const rect = el.getBoundingClientRect();
@@ -2586,6 +2604,14 @@ export function useAutoFitRows(
      its next load. Omit it and nothing is remembered — the list simply keeps
      measuring after its first fetch, as it did before. */
   endpoint?: string,
+  /* A row's real height, for a table whose rows are taller than the usual 46
+     (Trade Document Library carries a 40px Download Draft button: 49). Fitting
+     ten 49px rows as if they were 46 overflowed the card by 33px, and it shrank
+     back the moment a search returned fewer rows - the table "jumped". */
+  rowH = 46,
+  /* The fewest rows a page may fit. Ten by default; a table with taller rows
+     passes less, or the floor alone would push ten of them past the card. */
+  minRows = PER_PAGE,
 ) {
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -2602,13 +2628,12 @@ export function useAutoFitRows(
          or footer height, and 15 is the fallback for a surface with no
          footer at all (inside a modal, say). Same rule DataTable already
          uses — see bottomReserve() in components/ui/DataTable.tsx. */
-      const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
-      const footerH  = footerEl?.offsetHeight ?? 0;
-      const bottomReserve = footerH > 0 ? footerH + 8 : 15;
+      // Footer + 8px gap + the card's 1px border - see clmBottomReserve.
+      const bottomReserve = clmBottomReserve();
 
-      const THEAD = 40, ROW = 46, PAGER = 56;
+      const THEAD = 40, ROW = rowH, PAGER = 56;
       const avail = window.innerHeight - top - THEAD - PAGER - bottomReserve;
-      const fit = Math.max(PER_PAGE, Math.floor(avail / ROW));
+      const fit = Math.max(minRows, Math.floor(avail / ROW));
       if (autoFitRef.current) {
         if (endpoint) fittedPageSize.set(endpoint, fit);
         setRpp(prev => (prev === fit ? prev : fit));

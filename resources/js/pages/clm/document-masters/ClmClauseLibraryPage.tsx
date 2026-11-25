@@ -136,7 +136,7 @@ export default function ClmClauseLibraryPage() {
 
 function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<ClType>(CLAUSE_TYPES_URL, reloadKey);
   const [editing, setEditing] = useState<ClType | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -150,9 +150,9 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
      on screen: a first load has no rows, so it gets the skeleton; a refetch
      still shows the previous page, so it is dimmed rather than blanked —
      blanking it would make a page change look like the list emptied. */
-  const firstLoad  = loading && (rows.length === 0 || replacing);
+  /* Skeleton before the first answer only. A search keystroke or page move keeps the last answer on screen, dimmed, instead of blanking the table and making it jump. */ const firstLoad  = loading && !booted;
   const refreshing = loading && !firstLoad;
-  const isEmpty   = !loading && rows.length === 0;
+  const isEmpty   = booted && rows.length === 0;
   const start     = (page - 1) * rpp;
   const safePage  = page;
   const autoFitRef = useRef(true);
@@ -300,7 +300,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
               </div>
             )}
             {/* Shown when empty too (QA #47): the footer is part of the card, and without it an empty list was a bare box with nothing at the bottom. */}
-            {!loading && (
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -314,7 +314,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
 
 function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<ClLib>(CLAUSE_LIBRARY_URL, reloadKey);
   const [editing, setEditing] = useState<ClLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -323,9 +323,9 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   /* `rows` IS the page — the endpoint sorts, searches and slices. */
   const slice      = rows;
   // See the note in TypesPane — one `loading` split by what is already on screen.
-  const firstLoad  = loading && (rows.length === 0 || replacing);
+  /* Skeleton before the first answer only. A search keystroke or page move keeps the last answer on screen, dimmed, instead of blanking the table and making it jump. */ const firstLoad  = loading && !booted;
   const refreshing = loading && !firstLoad;
-  const isEmpty    = !loading && rows.length === 0;
+  const isEmpty    = booted && rows.length === 0;
   const start      = (page - 1) * rpp;
   const safePage   = page;
   const autoFitRef = useRef(true);
@@ -441,7 +441,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
               </div>
             )}
             {/* Shown when empty too (QA #47): the footer is part of the card, and without it an empty list was a bare box with nothing at the bottom. */}
-            {!loading && (
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>

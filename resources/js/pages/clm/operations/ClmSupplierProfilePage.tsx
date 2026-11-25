@@ -188,6 +188,9 @@ const CSS = `
 [data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
 [data-bs-theme="dark"] .bpa-seg { background: rgba(6,182,212,.10) !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; }
+/* Search clear (x) hover in dark: a soft wash of its own colour, not the
+   shared solid #cbd5e1 square - same rule as Customer Profile and the masters. */
+[data-bs-theme="dark"] .seg-page .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent) !important; color: #f8fafc !important; }
 /* light cyan gradient strips / surfaces (matched by their distinctive stop
  * colours) → dark */
 /* NOTE: browsers serialise inline hex colours as rgb() in the style

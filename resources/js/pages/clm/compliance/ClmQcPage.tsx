@@ -79,7 +79,7 @@ export default function ClmQcPage() {
   }, []);
 
   const start = (page - 1) * rpp;
-  const isEmpty = !loading && rows.length === 0;
+  /* booted, not !loading: during a search reload the last answer stays on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty = booted && rows.length === 0;
 
   const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
@@ -144,7 +144,7 @@ export default function ClmQcPage() {
 
         <div className="clm-tab-body has-data">
             <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-              <div className="clm-tscroll"><table className="clm-table">
+              <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>QC ID</th>
@@ -154,8 +154,8 @@ export default function ClmQcPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ClmSkeletonRows rows={rpp} cols={6} />}
-                  {!loading && rows.map((r, i) => (
+                  {loading && !booted && <ClmSkeletonRows rows={rpp} cols={6} />}
+                  {booted && rows.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -188,7 +188,7 @@ export default function ClmQcPage() {
                   <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add QC Document to create the first record.'}</div>
                 </div>
               )}
-              {!loading && (
+              {booted && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>

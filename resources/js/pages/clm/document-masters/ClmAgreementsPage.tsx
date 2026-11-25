@@ -292,12 +292,17 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     const recompute = () => {
       const el = scrollRef.current;
       if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
+      /* Rows fitted to the card's REAL height (clmFillHeight), less the
+         measured header and pager. The flat window-minus-136 guess disagreed
+         with the card by 17px, so ten 49px rows (these carry the Download
+         Draft button, QA #60) were fitted into a card that holds nine and the
+         card grew past the footer. */
+      const ROW = 49;
       const fh = clmFillHeight(el);
+      const theadH = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 40;
+      const pagerH = (el.querySelector('.wl-pager, .tc-wl-pag') as HTMLElement | null)?.offsetHeight || 58;
+      const fit = Math.max(4, Math.floor((fh - theadH - pagerH) / ROW));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
@@ -424,9 +429,29 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
         </Tooltip>
       </div>
 
+      {/* The Trade Document Library's "Download Draft" button and Doc / PDF
+          menu, copied under an agl- prefix so neither page depends on the
+          other's styles being mounted (QA #60). */}
+      <style>{`
+        .agl-dl-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; white-space: nowrap;
+          border: 1px solid rgba(8,145,178,.30); background: rgba(8,145,178,.07); color: #0e7490;
+          font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s; }
+        .agl-dl-btn:hover { background: rgba(8,145,178,.14); border-color: #0891b2; }
+        .agl-dl-backdrop { position: fixed; inset: 0; z-index: 9000; }
+        .agl-dl-menu { z-index: 9001; min-width: 180px; padding: 6px;
+          background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 12px 28px rgba(15,23,42,.18); }
+        .agl-dl-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px;
+          background: none; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #1e293b; cursor: pointer; text-align: left; transition: background .12s; }
+        .agl-dl-item:hover { background: #f1f5f9; }
+        [data-bs-theme="dark"] .agl-dl-btn { background: rgba(8,145,178,.14); border-color: rgba(6,182,212,.35); color: #67e8f9; }
+        [data-bs-theme="dark"] .agl-dl-btn:hover { background: rgba(8,145,178,.22); }
+        [data-bs-theme="dark"] .agl-dl-menu { background: #1e293b; border-color: rgba(148,163,184,.22); }
+        [data-bs-theme="dark"] .agl-dl-item { color: #e2e8f0; }
+        [data-bs-theme="dark"] .agl-dl-item:hover { background: rgba(148,163,184,.14); }
+      `}</style>
       <div className="clm-tab-body has-data">
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-            <div className="clm-tscroll"><table className="clm-table" style={{ minWidth: 960 }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ minWidth: 1100 }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 100, textAlign: 'center' }}>AGR. ID</th>
@@ -435,10 +460,15 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                 <th style={{ width: 130, textAlign: 'center' }}>REGULATORY</th>
                 <th style={{ width: 120, textAlign: 'left' }}>SEGMENT</th>
                 <th style={{ width: 150, textAlign: 'left' }}>APPLICABLE PARTY</th>
-                <th style={{ width: 128, textAlign: 'center' }}>ACTIONS</th>
+                {/* Purpose and a Download column, as the Trade Document Library
+                    has them (QA #60). Download used to be a bare icon among the
+                    row actions. */}
+                <th style={{ width: 220 }}>PURPOSE</th>
+                <th style={{ width: 150, textAlign: 'center' }}>DOWNLOAD</th>
+                <th style={{ width: 100, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <ClmSkeletonRows cols={8} />}
+                {loading && <ClmSkeletonRows cols={10} />}
                 {!loading && slice.map((r, i) => {
                   const isHigh = r.regulatory === 'highly';
                   return (
@@ -532,6 +562,31 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           );
                         })()}
                       </td>
+                      {/* Fills the column, then ellipsis with the full text in a
+                          tooltip - the Trade Document Library's Purpose cell. */}
+                      <TruncCell value={r.purpose?.trim() || '—'} cellClass="" textClass="clm-td-trunc" />
+                      <td style={{ textAlign: 'center' }}>
+                        <Tooltip label="Download the agreement as Doc or PDF">
+                          <button type="button" className="agl-dl-btn" disabled={downloadingId === r.id}
+                            onClick={(e) => {
+                              const b = e.currentTarget.getBoundingClientRect();
+                              setDlMenuFor(prev => prev?.row.id === r.id ? null : { row: r, top: b.bottom + 4, right: window.innerWidth - b.right });
+                            }}>
+                            {downloadingId === r.id ? (
+                              <>
+                                <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                                Preparing…
+                              </>
+                            ) : (
+                              <>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                                Download Draft
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 1 }}><polyline points="6 9 12 15 18 9" /></svg>
+                              </>
+                            )}
+                          </button>
+                        </Tooltip>
+                      </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
                           {/* An in-use agreement is frozen. The buttons must LOOK
@@ -548,13 +603,6 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                               disabled={!!r.in_use}
                               style={r.in_use ? { opacity: .4, cursor: 'not-allowed' } : undefined}
                               onClick={() => { if (r.in_use) return; setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                          </Tooltip>
-                          <Tooltip label={downloadingId === r.id ? 'Downloading…' : `Download ${r.code} — Doc / PDF`}>
-                            <button className="clm-act clm-act-dl" aria-label="Download" disabled={downloadingId === r.id}
-                              onClick={(e) => {
-                                const b = e.currentTarget.getBoundingClientRect();
-                                setDlMenuFor(prev => prev?.row.id === r.id ? null : { row: r, top: b.bottom + 4, right: window.innerWidth - b.right });
-                              }}>{downloadingId === r.id ? (<svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>) : (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>)}</button>
                           </Tooltip>
                           <Tooltip label={r.in_use ? `${r.title} is in use by a live agreement, so it can no longer be deleted.` : `Delete — ${r.title}`}>
                             <button className="clm-act clm-act-del" aria-label="Delete"
@@ -587,14 +635,11 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       {/* Download-format menu — Doc / PDF (anchored to the row's download button). */}
       {dlMenuFor && createPortal(
         <>
-          <div onClick={() => setDlMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 3000 }} />
-          <div style={{ position: 'fixed', top: dlMenuFor.top, right: dlMenuFor.right, zIndex: 3001, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,23,42,.16)', padding: 4, minWidth: 172 }}>
+          <div className="agl-dl-backdrop" onClick={() => setDlMenuFor(null)} />
+          <div className="agl-dl-menu" style={{ position: 'fixed', top: dlMenuFor.top, right: dlMenuFor.right }}>
             {([['docx', 'Download as Doc'], ['pdf', 'Download as PDF']] as const).map(([fmt, label]) => (
-              <button key={fmt} type="button"
-                onClick={() => { const row = dlMenuFor.row; setDlMenuFor(null); void onDownload(row, fmt); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, color: '#0f172a', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              <button key={fmt} type="button" className="agl-dl-item"
+                onClick={() => { const row = dlMenuFor.row; setDlMenuFor(null); void onDownload(row, fmt); }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 {label}
               </button>

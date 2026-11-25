@@ -113,7 +113,7 @@ export default function ClmTradeDocumentsPage() {
 
 function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<TdName>(TD_NAMES_URL, reloadKey);
   const [editing, setEditing] = useState<TdName | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -128,7 +128,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
   const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_NAMES_URL);
-  const isEmpty    = !loading && slice.length === 0;
+  /* booted, not !loading: a search reload keeps the last answer on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty    = booted && slice.length === 0;
 
   const onSave = async (name: string, id?: number) => {
     try {
@@ -166,7 +166,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
 
       <div className="clm-tab-body has-data">
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-            <div className="clm-tscroll"><table className="clm-table">
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 130, textAlign: 'center' }}>DOC NAME ID</th>
@@ -174,8 +174,8 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <ClmSkeletonRows cols={4} />}
-                {!loading && slice.map((r, i) => (
+                {loading && !booted && <ClmSkeletonRows cols={4} />}
+                {booted && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -224,7 +224,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Add Trade Document Type to create the first record.'}</div>
               </div>
             )}
-            {!loading && (
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -240,7 +240,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
 
 function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; segments: Seg[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<TdLib>(TD_LIBRARY_URL, reloadKey, LIST_VIEW);
   const [editing, setEditing] = useState<TdLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -342,8 +342,9 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   // the "Rows per page" dropdown we respect their choice.
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_LIBRARY_URL);
-  const isEmpty    = !loading && slice.length === 0;
+  // 49: these rows hold the 40px Download Draft button - see useAutoFitRows.
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_LIBRARY_URL, 49, 5);
+  /* booted, not !loading: a search reload keeps the last answer on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty    = booted && slice.length === 0;
 
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -386,7 +387,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
 
       <div className="clm-tab-body has-data">
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
-            <div className="clm-tscroll"><table className="clm-table">
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>TRADE DOC ID</th>
@@ -403,8 +404,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <ClmSkeletonRows cols={10} />}
-                {!loading && slice.map((r, i) => (
+                {loading && !booted && <ClmSkeletonRows cols={10} />}
+                {booted && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -565,7 +566,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                 <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Draft New Trade Document to create the first record.'}</div>
               </div>
             )}
-            {!loading && (
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>

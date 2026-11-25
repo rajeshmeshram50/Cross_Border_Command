@@ -119,7 +119,7 @@ export default function ClmAuthorityPage() {
   const start    = (page - 1) * rpp;
   const safePage = page;
   const pageCount = Math.max(1, Math.ceil(count / rpp));
-  const isEmpty = !loading && slice.length === 0;
+  /* booted, not !loading: during a search reload the last answer stays on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty = booted && slice.length === 0;
 
   /* Dynamic rows-per-page — the shared hook the Clause Library and Trade
      Document masters use, so all three behave identically.
@@ -362,7 +362,7 @@ export default function ClmAuthorityPage() {
               ref={scrollRef}
               style={{ minHeight: fillH, maxHeight: fillH }}
             >
-              <div className="clm-tscroll"><table className="clm-table">
+              <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>AUTHORITY ID</th>
@@ -371,8 +371,8 @@ export default function ClmAuthorityPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ClmSkeletonRows cols={5} />}
-                  {!loading && slice.map((r, i) => (
+                  {loading && !booted && <ClmSkeletonRows cols={5} />}
+                  {booted && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -414,7 +414,7 @@ export default function ClmAuthorityPage() {
               )}
               {/* Outside the scroll box — the pager is how you leave a page, so
                   it must not scroll away with the rows it pages through. */}
-              {!loading && (
+              {booted && (
                 <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
