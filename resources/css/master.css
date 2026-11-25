@@ -933,3 +933,26 @@ body:has(.master-modal) .master-select-menu[style*="min-width"] { width: 0 !impo
   align-self: center;
   box-sizing: border-box;
 }
+/* Toolbar buttons that sit in the same row as a search field match its 48px
+   (the tab rail's height) instead of the 40px above, so the Add / Import /
+   Export / filter buttons and the search are one height on every master.
+   Authority keeps its own 40px search and buttons (.auth-search). */
+:is(body:has(.mc-back-btn), body:has(.md-page)) :is(
+  .clm-tabs-bar:not(:has(.auth-search)), .dt-toolbar,
+  .spi-list .spi-segrow, .ord-list .spi-segrow
+) :is(
+  .clm-add-btn, .clm-ie-btn, .cie-export-btn, .tdl-dl-btn, .dt-filter-btn,
+  .clp-btn, .itm-btn, .ihr-btn, .lam-btn,
+  .btn:not(td .btn):not(.btn-icon):not(.btn-close)
+) {
+  height: 48px !important;
+  min-height: 48px !important;
+}
+/* CLM master headers: Back to Master List (and any header button) beside the
+   48px tab rail (Agreement Types / Agreement Library) matches the rail. */
+:is(body:has(.mc-back-btn), body:has(.md-page)) .clm-mc .clm-head-strip :is(
+  .mc-back-btn, .clm-add-btn, .clm-ie-btn, .btn:not(.btn-icon):not(.btn-close)
+) {
+  height: 48px !important;
+  min-height: 48px !important;
+}
