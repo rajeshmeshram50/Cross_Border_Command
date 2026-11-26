@@ -70,6 +70,9 @@ export default defineConfig({
      * MIN_BROWSERS in resources/js/utils/browserSupport.ts — all three describe
      * the same floor and are meant to be changed together. */
     build: {
+        // Keep previous builds' hashed chunks so a tab opened before a deploy
+        // can still fetch them (no stale-chunk reload). scripts/prune-build.mjs bounds growth.
+        emptyOutDir: false,
         target: ['chrome111', 'edge111', 'firefox128', 'safari16.4'],
         rollupOptions: {
             output: {
