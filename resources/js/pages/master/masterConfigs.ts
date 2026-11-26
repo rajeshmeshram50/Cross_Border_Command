@@ -339,6 +339,10 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-earth-line', iconColor: 'info', iconBg: 'info',
     desc: 'Country master — referenced on all trade documents',
     cat: 'Geography & Locations',
+    lockedFixed: true,
+    lockedReason: 'Countries is a fixed master. The seeded country list is used by addresses, trade documents and '
+      + 'the domestic / international rules across Sales, P2P and CLM, so no new countries can be added. '
+      + 'Existing countries can still be edited.',
     fields: [
       { n: 'name', l: 'Country Name', t: 'text', r: true, p: 'e.g. India', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'iso_code', l: 'ISO Code', t: 'text', p: 'e.g. IN' },
@@ -368,6 +372,9 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-map-2-line', iconColor: 'success', iconBg: 'success',
     desc: 'State list for addresses & GST place-of-supply',
     cat: 'Geography & Locations',
+    lockedFixed: true,
+    lockedReason: 'States is a fixed master. The seeded states drive addresses and GST place-of-supply, '
+      + 'so no new states can be added. Existing states can still be edited.',
     fields: [
       { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name' },
       { n: 'name', l: 'State Name', t: 'text', r: true, p: 'e.g. Maharashtra', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
@@ -392,6 +399,9 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-hashtag', iconColor: 'primary', iconBg: 'primary',
     desc: '2-digit GST state codes for tax filings',
     cat: 'Geography & Locations',
+    lockedFixed: true,
+    lockedReason: 'State Codes is a fixed master. Each state has one official 2-digit GST code, used to '
+      + 'check GSTINs on the Customer and Supplier forms, so no new codes can be added. Existing codes can still be edited.',
     fields: [
       { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name' },
       { n: 'state_code', l: 'State Code', t: 'text', r: true, p: 'e.g. 27 for Maharashtra', maxLen: 2, pattern: P_STATE_CODE, patternMessage: M_STATE_CODE },
