@@ -439,6 +439,17 @@ class MasterController extends Controller
         }
 
         if ($slim) {
+            /* Slim (fields=…) is the dropdown projection — bulk() and the form
+               country/state/department lookups all use it. A disabled master row
+               must never be offered in a picker, so active-only here fixes every
+               slim consumer at once. The paginated branch below (the master
+               manager) is untouched and still shows Inactive. status_tab=inactive
+               stays an explicit opt-out. */
+            if (\Illuminate\Support\Facades\Schema::hasColumn((new $modelClass)->getTable(), 'status')
+                && strtolower((string) $request->query('status_tab', '')) !== 'inactive') {
+                $q->where(fn($w) => $w->whereNull('status')
+                    ->orWhereRaw('LOWER(TRIM(CAST(status AS CHAR(32)))) <> ?', ['inactive']));
+            }
             $columns = collect(\Illuminate\Support\Facades\Schema::getColumnListing((new $modelClass)->getTable()));
             $safe = $requestedFields->intersect($columns)->values();
             if (!$safe->contains('id') && $columns->contains('id')) $safe->push('id');

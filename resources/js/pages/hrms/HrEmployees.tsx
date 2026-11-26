@@ -471,7 +471,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     [mHolidayGroups],
   );
   const departmentOptions = useMemo(
-    () => mDepts.map(d => ({ value: String(d.id), label: d.name })),
+    () => mDepts
+      .filter(d => String(d.status ?? 'Active').toLowerCase() === 'active') // active only
+      .map(d => ({ value: String(d.id), label: d.name })),
     [mDepts],
   );
   // 'Director / CEO' is embodied by the Branch User (branch director) — it is

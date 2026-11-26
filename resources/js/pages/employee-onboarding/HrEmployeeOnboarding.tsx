@@ -1848,7 +1848,10 @@ function InitiateOnboardingModal({
   const countryOpts     = mCountries
     .filter((c: any) => String(c.status ?? 'Active').toLowerCase() === 'active')
     .map(c => ({ value: String(c.id), label: c.name }));
-  const departmentOpts  = mDepts.map(d => ({ value: String(d.id), label: d.name }));
+  // Active only — a disabled department must not be pickable on onboarding.
+  const departmentOpts  = mDepts
+    .filter((d: any) => String(d.status ?? 'Active').toLowerCase() === 'active')
+    .map(d => ({ value: String(d.id), label: d.name }));
   const designationOpts = mDesignations
     .filter(d => d?.name !== 'Director / CEO')
     .map(d => ({ value: String(d.id), label: d.name }));
