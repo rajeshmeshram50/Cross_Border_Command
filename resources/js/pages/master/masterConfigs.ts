@@ -710,6 +710,10 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-store-2-line', iconColor: 'info', iconBg: 'info',
     desc: 'Supplier categories for procurement rules',
     cat: 'P2P Masters',
+    lockedFixed: true,
+    lockedReason: 'Supplier Types is a fixed master. The seeded types are each tied to a supplier '
+      + 'category (material, logistics or a service kind) that the Supplier forms, Purchase Orders '
+      + 'and Supplier Invoices depend on, so no new types can be added. Existing types can still be edited.',
     fields: [
       { n: 'name', l: 'Supplier Type', t: 'text', r: true, p: 'e.g. Farmer, Trader' },
       { n: 'description', l: 'Description', t: 'textarea', p: 'Type description', full: true },

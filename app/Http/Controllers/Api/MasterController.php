@@ -516,6 +516,7 @@ class MasterController extends Controller
         $lockedFixed = [
             'address_types' => 'Address Types is a fixed master. Only Registered Office, Warehouse, and Branch are allowed — no new types can be added.',
             'designations' => 'Designations is a fixed master. The six seeded titles (Director / CEO, Head of Department, Team Leader, Executive, Employee, Intern / Trainee) cover the whole hierarchy — no new designations can be added. Existing designations can still be edited.',
+            'vendor_types' => 'Supplier Types is a fixed master. Each seeded type is tied to a supplier category that the Supplier, Purchase Order and Supplier Invoice forms depend on — no new types can be added. Existing types can still be edited.',
         ];
         if (isset($lockedFixed[$slug])) {
             return response()->json(['message' => $lockedFixed[$slug]], 403);
