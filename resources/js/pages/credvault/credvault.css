@@ -19399,3 +19399,13 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   border-color: #f43f5e !important;
   box-shadow: 0 0 0 3px rgba(244, 63, 94, .12) !important;
 }
+
+/* ══ My Vault · fits at 125% zoom (~1530px wide): tabs and search share one row, and the open
+   "What We Are Doing Here" brief has a slimmer header. ══ */
+.cvx.myv-page .tvc-top .smt-proctype-tabs { gap: 2px; flex-shrink: 0; }
+.cvx.myv-page .tvc-top .smt-proctype-tab { gap: 7px; padding-left: 6px; padding-right: 11px; font-size: 12px; }
+.cvx.myv-page .tvc-top .smt-proctype-tab .parch-main-c { margin-left: 0; }
+.cvx.myv-page .tvc-top .bst-search.whm-main-search { flex: 1 1 200px; min-width: 200px; }
+
+.cvx.myv-page .sup-fig .bref-box__header { padding: 5px 12px; min-height: 40px; gap: 10px; }
+.cvx.myv-page .sup-fig .bref-box__header-ico { width: 30px; height: 30px; border-radius: 9px; }

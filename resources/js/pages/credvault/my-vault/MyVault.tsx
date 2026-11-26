@@ -175,7 +175,7 @@ export default function MyVault() {
           </>
         )} />
 
-      <CvBrief icon={IC.lock} label="My Vault" defaultOpen
+      <CvBrief icon={IC.lock} label="My Vault"
         sub="Saving your personal credentials securely, keeping them organised and strong, and sharing them only when needed."
         steps={STEPS} />
 
