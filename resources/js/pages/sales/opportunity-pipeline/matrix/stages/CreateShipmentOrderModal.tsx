@@ -109,8 +109,6 @@ const IcoDl = () => (
   </svg>
 );
 
-/* Tooltip body for the attached file: its name, type and size. (The shipment
- * carries one file, shown in the Attachment field itself.) */
 function fileTip(f: File) {
   const ext = (f.name.includes('.') ? f.name.split('.').pop() : '')?.toUpperCase() || 'File';
   const size = f.size >= 1024 * 1024 ? `${(f.size / (1024 * 1024)).toFixed(2)} MB` : `${Math.max(1, Math.round(f.size / 1024))} KB`;
@@ -590,9 +588,6 @@ export default function CreateShipmentOrderModal({
             {/* `attachments.*` rejections (type / 2 MB cap) land here — the
                 server key is dotted, so it is folded onto `attachments` above. */}
             <Field label="Attachment" error={errors.attachments}>
-              {/* One field: empty, it reads "Attach File"; with a file, the
-                  file's name sits at the left (click it to pick a different
-                  one) and Download / Remove at the right. */}
               <div className={`cso-att-row${attachments[0] ? ' has-file' : ''}`}>
                 <button type="button" className="cso-att-btn" onClick={() => fileRef.current?.click()}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -1027,9 +1022,6 @@ const SCOPED_CSS = `
 .cso-input-prefix-input { padding-left: 46px; }
 
 /* Attach */
-/* One white field, like the inputs beside it. Attach File is the field itself
-   (no separate dashed button) — click anywhere in it to pick — and the picked
-   file's chip sits inside it at the right. */
 .cso-att-row {
   display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
   height: 36px; padding: 0 6px 0 0; box-sizing: border-box; min-width: 0;
@@ -1047,14 +1039,10 @@ const SCOPED_CSS = `
   font-family: inherit; font-size: 12.5px; font-weight: 600; text-align: left;
   cursor: pointer;
 }
-/* The button is only the field's clickable face: no fill of its own in any
-   state, so the field shows the same background as every other input. */
 .cso-att-row .cso-att-btn,
 .cso-att-row .cso-att-btn:hover,
 .cso-att-row .cso-att-btn:focus,
 .cso-att-row .cso-att-btn:active { background: transparent !important; box-shadow: none; }
-/* With a file: its name at the left in the input's text colour, Download /
-   Remove at the right. */
 .cso-att-row.has-file .cso-att-btn { color: #1e293b; font-weight: 500; }
 .cso-att-row.has-file .cso-att-btn svg { color: #b45309; flex-shrink: 0; }
 .cso-att-btn > :not(svg) { min-width: 0; overflow: hidden; }
