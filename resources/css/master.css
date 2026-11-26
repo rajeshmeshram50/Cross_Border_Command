@@ -43,7 +43,9 @@
   border: 1px solid var(--vz-border-color);
   border-radius: 12px;
   background: #ffffff;
-  margin-bottom: 12px;
+  /* No margin of its own: the page's 8px flex gap (.spi-root) spaces it from
+     the table, the same as every other section (GT-130 #97). */
+  margin-bottom: 0;
 }
 
 @media (max-width: 575px) {
@@ -119,7 +121,7 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 0; /* the page's 8px flex gap spaces it, like the other sections */
 }
 
 @media (max-width: 1199px) {

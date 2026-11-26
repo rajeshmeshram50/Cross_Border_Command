@@ -2414,7 +2414,7 @@ function KpiExtras({ records }: { records: any[] }) {
   ];
 
   return (
-    <div className="kpi-extras mb-3">
+    <div className="kpi-extras">
 
       <div className="kpi-cards">
         {KPIS.map(k => (
