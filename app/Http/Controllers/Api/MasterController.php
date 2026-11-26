@@ -844,6 +844,7 @@ class MasterController extends Controller
         'customer_classifications' => [['customers', 'classification', 'name'], ['consignees', 'classification', 'name']],
         'customer_types'           => [['customers', 'type', 'name'], ['consignees', 'type', 'name']],
         'risk_levels'              => [['customers', 'risk_level', 'name'], ['consignees', 'risk_level', 'name']],
+        'overtime_rates'           => [['employees', 'overtime', 'rate_name']],
         'organization_types'       => [['clients', 'org_type', 'name']],
         'address_types'            => [['customer_addresses', 'type', 'name'], ['consignee_addresses', 'type', 'name'], ['vendor_addresses', 'address_type', 'name']],
         'currencies'               => [
