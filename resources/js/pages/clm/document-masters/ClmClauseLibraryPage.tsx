@@ -356,7 +356,11 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   const onDelete = async () => {
     if (!pendingDelete) return;
     try { await api.delete(`/clm/clause-library/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.name); setPendingDelete(null); reload(); }
-    catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    catch (e: any) {
+      toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete');
+      // 409 = it became used since the list loaded: close the popup and refresh so the lock shows.
+      if (e?.response?.status === 409) { setPendingDelete(null); reload(); }
+    }
   };
 
   const typeBadge = (t: string) => {
@@ -416,11 +420,11 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                       <div className="clm-actions">
                         <Tooltip label="Edit"><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
                         {(() => {
-                          // A clause inserted into a CTC agreement can't be deleted
-                          // (best-effort match, see libraryIndex). Guard mirrors clause types.
+                          // A clause inserted into a CTC agreement, Agreement Library, T&C or Trade Document
+                          // can't be deleted (best-effort match, see libraryIndex). Guard mirrors clause types.
                           const used = (r.in_use ?? 0) > 0;
                           return (
-                            <Tooltip label={used ? "Used in one or more CTC agreements — can't delete." : 'Delete'}>
+                            <Tooltip label={used ? "Used in a CTC agreement, Agreement Library, Terms and Conditions or Trade Document — can't delete." : 'Delete'}>
                               <button className="clm-act clm-act-del" aria-label="Delete" disabled={used} style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined} onClick={() => { if (used) return; setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                             </Tooltip>
                           );

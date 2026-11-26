@@ -225,7 +225,7 @@ class ClmClauseController extends Controller
 
         try {
             return \Illuminate\Support\Facades\Cache::remember(
-                'clm:clause:used:v1:' . $clientId,
+                'clm:clause:used:v2:' . $clientId,
                 now()->addSeconds(60),
                 $build
             );
@@ -255,6 +255,27 @@ class ClmClauseController extends Controller
                     if ($allDone) return false;
                 }
             });
+
+        // The same Clause Library picker also inserts clauses into Agreement Library templates, T&C
+        // entries and Trade Document drafts - a clause printed in any of them is in use too.
+        foreach (['clm_agreement_library', 'clm_tnc_library', 'clm_trade_doc_library'] as $table) {
+            $left = array_filter($items, fn($it) => !$it['row']->in_use);
+            if (!$left) return;
+            DB::table($table)->where('client_id', $clientId)->whereNotNull('content')
+                ->select('id', 'content')->orderBy('id')
+                ->chunk(50, function ($chunk) use ($left) {
+                    foreach ($chunk as $c) {
+                        $hay = mb_strtolower((string) $c->content);
+                        $allDone = true;
+                        foreach ($left as $it) {
+                            if ($it['row']->in_use) continue;
+                            if (mb_strpos($hay, $it['needle']) !== false) $it['row']->in_use = 1;
+                            else $allDone = false;
+                        }
+                        if ($allDone) return false;
+                    }
+                });
+        }
     }
 
     private function clauseNeedle(string $name): string
@@ -354,7 +375,7 @@ class ClmClauseController extends Controller
             $probe = (object) ['in_use' => 0];
             $this->scanCtcForClauses((int) $user->client_id, [['row' => $probe, 'needle' => $needle]]);
             if ($probe->in_use) {
-                return response()->json(['status' => false, 'message' => 'This clause is used in one or more CTC agreements and cannot be deleted.'], 409);
+                return response()->json(['status' => false, 'message' => 'This clause is used in a CTC agreement, Agreement Library, Terms and Conditions or Trade Document and cannot be deleted.'], 409);
             }
         }
         $row->delete();
