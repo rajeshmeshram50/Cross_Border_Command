@@ -165,6 +165,11 @@ class CredVaultController extends Controller
         ]);
         $this->sweepUnlocks($u->client_id);
         $tab = $f['tab'] ?? 'all';
+        // Tab badge counts don't change when the user only switches tab or page,
+        // so the client can ask to skip them (with_counts=0) and reuse the set it
+        // already has — that drops the per-call count query on those navigations.
+        // Absent param = true, so every existing caller is unaffected.
+        $withCounts = !$request->has('with_counts') || $request->boolean('with_counts');
 
         $vault = $vault ?? ($f['vault'] ?? null);
 
@@ -198,6 +203,10 @@ class CredVaultController extends Controller
 
         $sharedIds = $this->sharedWithMeIds($u);
         $overseen = $this->overseenUserIds($u);
+        // Resolved once (ints) so the five tab counts collapse into a single
+        // round-trip in tabCounts(); the active-tab query below still uses the
+        // $sharedIds sub-builder unchanged.
+        $sharedIdArr = (clone $sharedIds)->pluck('credential_id')->map(fn ($i) => (int) $i)->all();
         $views = [
             'all'    => fn () => (clone $teamSide),
             'mine'   => fn () => (clone $base)->where('owner_id', $u->id),
@@ -208,11 +217,14 @@ class CredVaultController extends Controller
             'shared' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id)->whereIn('credvault_credentials.id', $sharedIds),
             'others' => fn () => (clone $teamSide)->where('owner_id', '!=', $u->id),
         ];
-        $tabs = array_map(fn ($v) => $v()->count(), $views);
-        $sharedBy = CredentialShare::live()->where('client_id', $u->client_id)
-            ->whereIn('credential_id', Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id'));
-        $this->shareSearch($sharedBy, $u, $f['q'] ?? null);
-        $tabs['sharedby'] = $sharedBy->count();
+        $tabs = [];
+        if ($withCounts) {
+            $tabs = $this->tabCounts($views, $teamSide, $base, $u, $member, $overseen, $sharedIdArr, !empty($f['department_id']));
+            $sharedBy = CredentialShare::live()->where('client_id', $u->client_id)
+                ->whereIn('credential_id', Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->select('id'));
+            $this->shareSearch($sharedBy, $u, $f['q'] ?? null);
+            $tabs['sharedby'] = $sharedBy->count();
+        }
 
         $q = $views[$tab]();
 
@@ -234,6 +246,63 @@ class CredVaultController extends Controller
             'member' => $member ? ['id' => $member->id, 'name' => $member->name, 'designation' => $member->designation] : null,
             'meta'   => $this->pageMeta($page),
         ], 200);
+    }
+
+    /**
+     * The five tab badge counts (all / mine / team / shared / others) in ONE
+     * database round-trip instead of five, using Postgres `count(*) filter`.
+     *
+     * The remote DB makes every query a network hop, and these badges were five
+     * of them on every list load, tab switch and search keystroke. The FILTER
+     * predicates mirror the $views closures EXACTLY, so the numbers are
+     * identical — only the round-trip count changes.
+     *
+     * Two deliberate fallbacks keep it provably correct:
+     *   · when a member is being viewed ($member), that path adds extra scoping
+     *     to each view, so we keep the exact per-view counting there;
+     *   · `mine` reads from $base, which equals $teamSide only when no
+     *     department filter is applied — with one, `mine` is counted separately.
+     *
+     * $sharedIds / $overseen are credential/user ids sourced from the database,
+     * so inlining them as an integer list is injection-safe and avoids threading
+     * sub-query bindings through the FILTER clauses twice.
+     */
+    protected function tabCounts(array $views, Builder $teamSide, Builder $base, User $u, ?User $member, array $overseen, array $sharedIds, bool $hasDept): array
+    {
+        if ($member) {
+            return array_map(fn ($v) => $v()->count(), $views);
+        }
+
+        $uid     = (int) $u->id;
+        $intList = static function (array $ids): string {
+            $ids = array_values(array_filter(array_map('intval', $ids), fn ($n) => $n > 0));
+            return implode(',', $ids);
+        };
+
+        $shared      = $intList($sharedIds);
+        $inShared    = $shared !== '' ? "credvault_credentials.id in ($shared)"     : '1=0';
+        $notInShared = $shared !== '' ? "credvault_credentials.id not in ($shared)" : '1=1';
+        $overseenOr  = $overseen ? ' or owner_id in (' . $intList($overseen) . ')'  : '';
+
+        $select = [
+            'count(*) as all_c',
+            "count(*) filter (where owner_id <> $uid) as others_c",
+            "count(*) filter (where owner_id <> $uid and $inShared) as shared_c",
+            "count(*) filter (where (scope = 'team'$overseenOr) and owner_id <> $uid and $notInShared) as team_c",
+        ];
+        if (!$hasDept) {
+            $select[] = "count(*) filter (where owner_id = $uid) as mine_c";
+        }
+
+        $row = (clone $teamSide)->selectRaw(implode(', ', $select))->first();
+
+        return [
+            'all'    => (int) ($row->all_c ?? 0),
+            'mine'   => $hasDept ? (clone $base)->where('owner_id', $u->id)->count() : (int) ($row->mine_c ?? 0),
+            'team'   => (int) ($row->team_c ?? 0),
+            'shared' => (int) ($row->shared_c ?? 0),
+            'others' => (int) ($row->others_c ?? 0),
+        ];
     }
 
     protected function memberFilter(User $u, array $f): ?User
@@ -3008,7 +3077,10 @@ class CredVaultController extends Controller
             return response()->json(['status' => true, 'data' => ['id' => $c->id, 'code' => $c->code]], 201);
         }
         $fresh = $c->fresh(['owner:id,name', 'department:id,name']);
-        $body  = $this->detail($fresh, $u, $this->accessMap(collect([$fresh]), $u)[$fresh->id] ?? [self::RANK_FULL, $c->owner_id === $u->id ? 'owner' : 'admin']);
+        $acc   = $fresh->owner_id === $u->id
+            ? [self::RANK_FULL, 'owner']
+            : ($this->accessMap(collect([$fresh]), $u)[$fresh->id] ?? [self::RANK_FULL, 'admin']);
+        $body  = $this->detail($fresh, $u, $acc);
         if (!$creating) {
             $body['health'] = [
                 'resolved'   => array_map(fn ($i) => collect($i)->only(['type', 'severity', 'issue'])->all(), $resolved),
@@ -3877,7 +3949,7 @@ class CredVaultController extends Controller
 
         $out = $this->row($c, $u, $pol, $acc, $req, $shares);
         $out['locked']     = !$open;
-        $out['updated_by'] = $c->updated_by ? User::whereKey($c->updated_by)->value('name') : null;
+        $out['updated_by'] = $this->userBrief($c->updated_by)?->name;
 
         if ($steps) {
             $out['unlock_plan'] = $this->unlockPlan($c, $u, $steps);
@@ -3930,9 +4002,9 @@ class CredVaultController extends Controller
                 ->orderByDesc('id')->get()->map(fn ($s) => $this->shareRow($s, $u->client_id));
             $out['protection'] = [
                 'admin'        => $c->lock_admin,
-                'admin_user'   => $c->lock_admin_user_id ? User::whereKey($c->lock_admin_user_id)->first(['id', 'name']) : null,
+                'admin_user'   => ($lau = $this->userBrief($c->lock_admin_user_id)) ? ['id' => $lau->id, 'name' => $lau->name] : null,
                 'manager'      => $c->lock_manager,
-                'manager_user' => $c->lock_manager_user_id ? User::whereKey($c->lock_manager_user_id)->first(['id', 'name']) : null,
+                'manager_user' => ($lmu = $this->userBrief($c->lock_manager_user_id)) ? ['id' => $lmu->id, 'name' => $lmu->name] : null,
                 'otp'          => $c->lock_otp, 'otp_linked' => $c->twoStepLinked(),
                 'otp_method'   => $c->twofa_method,
                 'otp_email'    => $c->twofa_method === 'email' ? $c->twofa_email : null,
@@ -3946,7 +4018,7 @@ class CredVaultController extends Controller
     protected function unlockPlan(Credential $c, User $u, array $steps): array
     {
         $pol = Policy::for($u->client_id);
-        $person = fn (?int $id, string $role) => $id && ($x = User::whereKey($id)->first(['id', 'name', 'designation']))
+        $person = fn (?int $id, string $role) => ($x = $this->userBrief($id))
             ? ['id' => $x->id, 'name' => $x->name, 'initials' => $this->initials($x->name), 'role' => $role] : null;
 
         $out = [];
@@ -4488,7 +4560,13 @@ class CredVaultController extends Controller
     {
         $c   = Credential::where('client_id', $u->client_id)->with(['owner:id,name', 'department:id,name'])->find($id)
             ?? $this->reject('Credential not found.', null, 404);
-        $acc = $this->accessMap(collect([$c]), $u)[$c->id] ?? $this->reject('Credential not found.', null, 404);
+        // The owner always has Full Access — accessMap returns exactly this for an
+        // owned row too. Short-circuit it so opening your OWN credential skips the
+        // full access-map build (reporting tree, downline, share lookups): several
+        // remote round-trips saved on the common edit/open path.
+        $acc = $c->owner_id === $u->id
+            ? [self::RANK_FULL, 'owner']
+            : ($this->accessMap(collect([$c]), $u)[$c->id] ?? $this->reject('Credential not found.', null, 404));
         if ($acc[0] < $min) $this->reject($message, null, 403);
 
         return [$c, $acc];
@@ -4932,6 +5010,14 @@ class CredVaultController extends Controller
         if (!array_key_exists($key, $this->memo)) $this->memo[$key] = $fn();
 
         return $this->memo[$key];
+    }
+
+    /** A single user's display card, memoised so repeat ids in one request cost one query. */
+    protected function userBrief(?int $id): ?User
+    {
+        if (!$id) return null;
+
+        return $this->memo("ubrief:$id", fn () => User::whereKey($id)->first(['id', 'name', 'designation']));
     }
 
     protected function reject(string $message, ?string $field = null, int $status = 422): never
