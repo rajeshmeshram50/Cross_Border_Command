@@ -117,15 +117,21 @@ export default function CriticalVault() {
   }, [params, setParams]);
 
   const apiTab = TABS.find(t => t.key === tab)!.api;
-  const load = useCallback(async (silent = false) => {
+  // Tab badge counts move only with the search term or a data change — not on a
+  // tab / page switch, and not on the silent timer refreshes that only update
+  // unlock countdowns. We refetch them only when needed and keep them otherwise.
+  const countsDq = useRef<string | null>(null);
+  const load = useCallback(async (silent = false, forceCounts = false) => {
     const my = ++seq.current;
     if (!silent) setLoading(true);
+    const dqt = dq.trim();
+    const wantCounts = forceCounts || countsDq.current !== dqt;
     try {
-      const r = await cvData.list({ risk: 'critical', tab: apiTab, q: dq.trim() || undefined, page, per_page: perPage });
+      const r = await cvData.list({ risk: 'critical', tab: apiTab, q: dqt || undefined, page, per_page: perPage, with_counts: wantCounts ? 1 : 0 });
       if (my !== seq.current) return;
       if (!r.data.length && page > 1 && r.meta.last_page < page) { setPage(Math.max(1, r.meta.last_page)); return; }
       setRows(r.data);
-      setTabs(r.tabs);
+      if (wantCounts && r.tabs) { setTabs(r.tabs); countsDq.current = dqt; }
       setMeta(r.meta);
       setFetchedAt(Date.now());
       setError(null);
@@ -162,7 +168,7 @@ export default function CriticalVault() {
     return () => clearInterval(t);
   }, [anyWaiting, overlay, load]);
 
-  const refresh = useCallback(() => { load(true); }, [load]);
+  const refresh = useCallback(() => { load(true, true); }, [load]);
   const close = useCallback(() => setOverlay(null), []);
   const openRow = useCallback((r: CredentialRow) => setOverlay(r.unlock ? { kind: 'unlock', id: r.id } : { kind: 'view', id: r.id }), []);
 
