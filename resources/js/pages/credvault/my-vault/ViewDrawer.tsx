@@ -222,7 +222,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   };
   const launch = () => { if (launchRisky) setLaunchAsk(true); else openLaunch(); };
   const download = async (key: string) => {
-    try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not open the file', errMsg(e)); }
+    try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not download the file', errMsg(e)); }
   };
 
   const copyBtn = (fn: () => void, label?: string) => <button type="button" data-h40="skip" className="vd-ic" title={fieldLabels && label ? `Copy ${label}` : 'Copy'} onClick={fn}><Svg icon="copy" size={13} /></button>;
@@ -269,7 +269,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       return (
         <>
           <b>{v}</b>
-          {f.attachment_key && <button type="button" data-h40="skip" className="vd-ic" title="Open" onClick={() => download(f.attachment_key!)}><Svg icon="eye" size={13} /></button>}
+          {f.attachment_key && <button type="button" data-h40="skip" className="vd-ic" title="Download" onClick={() => download(f.attachment_key!)}><Svg icon={IC.download} size={13} /></button>}
         </>
       );
     }
@@ -430,7 +430,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
                     <div key={f.key} className={`crd-att__f crd-att__f--${k}`}>
                       <span className="crd-att__fi">{k.toUpperCase()}</span>
                       <div><b title={f.name}>{f.name}</b><small>{bytes(f.size)}{f.at ? ` · ${fmtDay(f.at)}` : ''}</small></div>
-                      <button type="button" data-h40="skip" className="crd-att__b" title="Open" onClick={() => download(f.key)}><Svg icon="eye" size={13} /></button>
+                      <button type="button" data-h40="skip" className="crd-att__b" title="Download" aria-label={`Download ${f.name}`} onClick={() => download(f.key)}><Svg icon={IC.download} size={13} /></button>
                     </div>
                   );
                 }) : <i className="vd-dash">No files attached — edit the credential to add proof</i>}
