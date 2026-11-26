@@ -5897,6 +5897,14 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-drop.has {
   background: rgba(6,182,212,.12); border-color: #0891b2; color: #67e8f9;
 }
+/* Expiry Yes / No: the selected answer is cyan like the header and the hover,
+   not the shared sheet's Supplier violet (which left a violet "No" beside a
+   cyan-hovered "Yes" in dark mode). */
+.cev-reup-ov.acm-reup .cev-reup-toggle button.on {
+  background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff;
+  font-weight: 700; box-shadow: 0 2px 8px rgba(8,145,178,.35);
+}
+.cev-reup-ov.acm-reup .cev-reup-toggle button:hover:not(.on) { background: #ecfeff; color: #0e7490; }
 [data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-toggle button:hover:not(.on) {
   background: rgba(6,182,212,.14); color: #67e8f9;
 }
