@@ -515,8 +515,12 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
     return null;
   }, [mLegalEntities, selectedBranchId]);
+  // Active only — the bulk master list carries Inactive rows (for the master
+  // manager), but a disabled country must not be pickable on the form.
   const countryOptions = useMemo(
-    () => mCountries.map(c => ({ value: String(c.id), label: c.name })),
+    () => mCountries
+      .filter(c => String(c.status ?? 'Active').toLowerCase() === 'active')
+      .map(c => ({ value: String(c.id), label: c.name })),
     [mCountries],
   );
   /* States are fetched for the country that was picked, not all of them.
@@ -536,12 +540,14 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     const id = String(countryId || '').trim();
     if (!id || statesInFlightRef.current.has(id)) return;
     statesInFlightRef.current.add(id);
-    api.get('/master/states', { params: { country_id: id, fields: 'id,name' } })
+    api.get('/master/states', { params: { country_id: id, fields: 'id,name,status' } })
       .then(r => {
         const list = Array.isArray(r.data) ? r.data : [];
         setStatesByCountry(prev => ({
           ...prev,
+          // Active only — a disabled state must not be pickable (same as country).
           [id]: [...list]
+            .filter((s: any) => String(s.status ?? 'Active').toLowerCase() === 'active')
             .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
             .map((s: any) => ({ value: String(s.id), label: s.name })),
         }));

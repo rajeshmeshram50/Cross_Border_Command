@@ -1843,7 +1843,11 @@ function InitiateOnboardingModal({
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  const countryOpts     = mCountries.map(c => ({ value: String(c.id), label: c.name }));
+  // Active only — bulk masters carry Inactive rows; a disabled country must not
+  // be pickable on the onboarding form.
+  const countryOpts     = mCountries
+    .filter((c: any) => String(c.status ?? 'Active').toLowerCase() === 'active')
+    .map(c => ({ value: String(c.id), label: c.name }));
   const departmentOpts  = mDepts.map(d => ({ value: String(d.id), label: d.name }));
   const designationOpts = mDesignations
     .filter(d => d?.name !== 'Director / CEO')

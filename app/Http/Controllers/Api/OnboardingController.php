@@ -159,8 +159,10 @@ class OnboardingController extends Controller
                 'website'            => $website,
             ],
             'masters' => [
-                'countries'    => \App\Models\Masters\Countries::orderBy('name')->get(['id', 'name']),
-                'states'       => \App\Models\Masters\States::orderBy('name')->get(['id', 'name', 'country_id']),
+                // Active only — a disabled country/state must not be offered on
+                // the public onboarding form (this bundle feeds those pickers).
+                'countries'    => \App\Models\Masters\Countries::whereRaw("LOWER(COALESCE(status,'active')) = 'active'")->orderBy('name')->get(['id', 'name']),
+                'states'       => \App\Models\Masters\States::whereRaw("LOWER(COALESCE(status,'active')) = 'active'")->orderBy('name')->get(['id', 'name', 'country_id']),
                 'departments'  => Departments::where($tenantScope)->orderBy('name')->get(['id', 'name']),
                 'designations' => \App\Models\Masters\Designations::where($tenantScope)->orderBy('name')->get(['id', 'name']),
                 'roles'        => \App\Models\Masters\Roles::where($tenantScope)->orderBy('name')->get(['id', 'name']),

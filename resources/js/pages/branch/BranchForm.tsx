@@ -589,7 +589,9 @@ export default function BranchForm({ onBack, editId }: Props) {
   }, []);
 
   const countryOptions = useMemo(
-    () => countries.map(c => ({ label: c.name, value: c.name })),
+    () => countries
+      .filter(c => String(c.status ?? 'Active').toLowerCase() === 'active') // active only
+      .map(c => ({ label: c.name, value: c.name })),
     [countries]
   );
 
@@ -599,6 +601,7 @@ export default function BranchForm({ onBack, editId }: Props) {
     if (!selected) return [];
     return statesAll
       .filter(s => Number(s.country_id) === selected.id)
+      .filter(s => String(s.status ?? 'Active').toLowerCase() === 'active') // active only
       .map(s => ({ label: s.name, value: s.name }));
   }, [form.country, countries, statesAll]);
 

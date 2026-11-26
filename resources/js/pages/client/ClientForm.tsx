@@ -366,7 +366,9 @@ export default function ClientForm({ onBack, editId }: Props) {
   // string values like 'USA' / 'UK' were used before the master table existed,
   // so we map them to their full ISO names so existing rows still render.
   const countryOptions = useMemo(
-    () => countries.map(c => ({ label: c.name, value: c.name })),
+    () => countries
+      .filter(c => String(c.status ?? 'Active').toLowerCase() === 'active') // active only
+      .map(c => ({ label: c.name, value: c.name })),
     [countries]
   );
 
