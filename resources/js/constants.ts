@@ -437,7 +437,8 @@ export const MENU_ITEMS: MenuItem[] = [
     groups: DEVELOPERS_GROUPS,
   },
   { id: 'gts', icon: 'Globe', label: 'GTS (E-Docs)', roles: ALL_TENANT_ROLES },
-  { id: 'inventory', icon: 'Boxes', label: 'Inventory Management System', roles: ALL_TENANT_ROLES },
+  // Temporarily hidden from the menus (route still works) — uncomment to show again.
+  // { id: 'inventory', icon: 'Boxes', label: 'Inventory Management System', roles: ALL_TENANT_ROLES },
   {
     id: 'master',
     icon: 'Database',

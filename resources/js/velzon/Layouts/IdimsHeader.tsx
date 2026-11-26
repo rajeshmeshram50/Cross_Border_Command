@@ -413,7 +413,8 @@ export default function IdimsHeader() {
       items.push({ id: 'payments', label: 'Payments', icon: IC.rupee });
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
-      if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
+      // Temporarily hidden from the header (route still works) — uncomment to show again.
+      // if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
 
@@ -423,7 +424,8 @@ export default function IdimsHeader() {
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
       items.push({ id: 'credentials-vault', label: 'CredVault', icon: IC.lock, dd: 'cv' });
       items.push({ id: 'my-plan', label: 'My Plan', icon: IC.card });
-      if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
+      // Temporarily hidden from the header (route still works) — uncomment to show again.
+      // if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
     if (can('credentials-vault')) items.push({ id: 'credentials-vault', label: 'CredVault', icon: IC.lock, dd: 'cv' });
@@ -438,12 +440,14 @@ export default function IdimsHeader() {
       items.push({ id: 'inventory-management', label: 'Inventory Management', icon: IC.warehouse, dd: 'inv' });
     }
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
-    if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
+    // Temporarily hidden from the header (route still works) — uncomment to show again.
+    // if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
     if (role === 'branch_user' || role === 'employee') {
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
     }
-    if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
+    // Temporarily hidden from the header (route still works) — uncomment to show again.
+    // if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
     return items;
   }, [user]);
 
