@@ -2656,6 +2656,10 @@ export function renderField(
     let refRows = (f.ref === undefined || editing == null)
       ? rows
       : rows.filter((r: any) => String(r.id) !== String(editing.id));
+    // Inactive master rows are not offered for new picks; the value already
+    // saved on the record stays listed so editing doesn't silently drop it.
+    refRows = refRows.filter((r: any) =>
+      mpStatusOf(r) === 'active' || (defaultVal != null && String(r.id) === String(defaultVal)));
     const cascadeKey = (f as any).cascadeFrom as string | undefined;
     if (cascadeKey) {
       const srcVal = radioValues[cascadeKey] ?? (editing != null ? String(editing[cascadeKey] ?? '') : '');
