@@ -2925,8 +2925,7 @@ class CredVaultController extends Controller
         }
         $def = Credential::typeDef($type);
         $pol = Policy::for($u->client_id);
-        $scopeIds = $creating ? [] : $this->healthScope($u)->pluck('id')->all();
-        $before = $creating ? [] : $this->singleIssues($c, $pol, $scopeIds);
+        $before = $creating ? [] : $this->singleIssues($c, $pol, $u);
 
         $inputFields = $data['fields'] ?? [];
         $toggle2fa = array_key_exists('twofa', $inputFields) ? $inputFields['twofa'] : null;
@@ -2995,7 +2994,7 @@ class CredVaultController extends Controller
         $result = $this->inTransaction($creating ? 'save the credential' : 'update the credential', function () use (
             $request, $u, $c, $creating, $data, $type, $def, $pol, $fields, $name, $scope, $deptId, $risk, $secret, $strength, $isPw,
             $changed, $rotation, $twofa, $lockAdmin, $lockManager, $lockOtp, $adminUserId, $managerUserId, $username, $url, $before,
-            $newSecret, $method, $email, $emailToken, $vault, $scopeIds, &$stored
+            $newSecret, $method, $email, $emailToken, $vault, &$stored
         ) {
             if ($creating) {
                 $c = new Credential([
@@ -3061,7 +3060,7 @@ class CredVaultController extends Controller
             }
 
             $resolved = [];
-            $open = $creating ? [] : $this->singleIssues($c, $pol, $scopeIds);
+            $open = $creating ? [] : $this->singleIssues($c, $pol, $u);
             foreach ($before as $issue) {
                 if (in_array($issue['type'], array_column($open, 'type'), true)) continue;
                 $resolved[] = $issue;
@@ -3440,13 +3439,30 @@ class CredVaultController extends Controller
         ];
     }
 
-    protected function singleIssues(Credential $c, array $pol, array $scopeIds = []): array
+    protected function singleIssues(Credential $c, array $pol, ?User $u = null): array
     {
-        $others = $c->has_password && $c->secret_hash
-            ? Credential::where('client_id', $c->client_id)->where('secret_hash', $c->secret_hash)->where('id', '!=', $c->id)
-                ->when($scopeIds, fn ($q) => $q->whereIn('id', $scopeIds))
-                ->limit(10)->get(['id', 'code', 'name'])->map(fn ($o) => ['id' => $o->id, 'code' => $o->code, 'name' => $o->name])->all()
-            : [];
+        $others = [];
+        if ($c->has_password && $c->secret_hash) {
+            // A reuse can only be a credential sharing this exact secret — a tiny,
+            // secret_hash-indexed set. Resolve "does the viewer have authority over
+            // it" against just those, and build the access map only if one of them
+            // isn't the viewer's own. This replaces scanning every credential the
+            // viewer can see on each save (the old healthScope() full fetch).
+            $matches = Credential::where('client_id', $c->client_id)
+                ->where('secret_hash', $c->secret_hash)->where('id', '!=', $c->id)
+                ->select(self::LIGHT_COLUMNS)->limit(100)->get();
+
+            if ($matches->isNotEmpty()) {
+                $auth = ['owner', 'admin', 'branch', 'manager', 'hod', 'team'];
+                $acc  = null;
+                $others = $matches->filter(function ($o) use ($u, $matches, &$acc, $auth) {
+                    if (!$u) return false;
+                    if ($o->owner_id === $u->id) return true;              // own reuse always counts
+                    $acc ??= $this->accessMap($matches, $u);               // built once, only if needed
+                    return in_array($acc[$o->id][1] ?? null, $auth, true);
+                })->take(10)->map(fn ($o) => ['id' => $o->id, 'code' => $o->code, 'name' => $o->name])->values()->all();
+            }
+        }
 
         return $this->issuesOf($c, $pol, $others, $this->shareBreakdown([$c->id])[$c->id] ?? [], $this->exposureSinceReset(collect([$c]))[$c->id] ?? 0);
     }
