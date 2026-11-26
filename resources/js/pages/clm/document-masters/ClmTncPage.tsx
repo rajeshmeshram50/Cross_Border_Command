@@ -34,7 +34,9 @@ export function deriveShortCode(name: string): string {
 }
 
 type Cat = { id: number; code: string; name: string };
-type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; content: string | null };
+type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; content: string | null;
+  /* Set by the API: the Proforma Invoices / Purchase Orders that print this entry (first 5 codes) - it can't be deleted then. */
+  in_use?: boolean; used_count?: number; used_in?: string[] };
 
 /* Segment names are cut at 15 characters with an ellipsis, the full name in a
    tooltip - in the column chip and in the +N popover alike. */
@@ -510,7 +512,11 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   const onDelete = async () => {
     if (!pendingDelete) return;
     try { await api.delete(`/clm/tnc-library/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.category); setPendingDelete(null); reload(); }
-    catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    catch (e: any) {
+      toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete');
+      // 409 = it became used since the list loaded: close and reload so the row shows locked.
+      if (e?.response?.status === 409) { setPendingDelete(null); reload(); }
+    }
   };
 
   // Segments with their regulatory tier — drives the wizard's tier-filtered
@@ -640,8 +646,17 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         <Tooltip label={`Edit Terms and Conditions — ${r.category}`}>
                           <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                         </Tooltip>
-                        <Tooltip label={`Delete Terms and Conditions — ${r.category}`}>
-                          <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        {/* Locked once Proforma Invoices print it, as Authority / DD lock theirs. The
+                            click still answers (a toast) instead of being a dead button. */}
+                        <Tooltip label={r.in_use
+                          ? `Used by ${r.used_count ?? 0} document${r.used_count === 1 ? '' : 's'} (${(r.used_in ?? []).slice(0, 3).join(', ')}${(r.used_count ?? 0) > 3 ? '…' : ''}) — can't delete`
+                          : `Delete Terms and Conditions — ${r.category}`}>
+                          <button className="clm-act clm-act-del" aria-label="Delete"
+                            style={r.in_use ? { opacity: 0.32, cursor: 'not-allowed' } : undefined}
+                            onClick={() => {
+                              if (r.in_use) { toast.warning('Terms and Conditions locked', `${r.code} is printed on ${r.used_count ?? 0} document${r.used_count === 1 ? '' : 's'} (Proforma Invoices / Purchase Orders), so it can't be deleted.`); return; }
+                              setPendingDelete(r);
+                            }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                         </Tooltip>
                       </div>
                     </td>

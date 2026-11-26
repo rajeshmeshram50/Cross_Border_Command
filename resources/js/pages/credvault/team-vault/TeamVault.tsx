@@ -164,7 +164,6 @@ export default function TeamVault() {
         icon={TV_IC.team}
         label="Team Vault"
         sub="Keeping your team's shared logins in one place, giving each member the right access, and tracking how they are used."
-        defaultOpen
         steps={[
           { icon: TV_IC.cred, title: 'Add Team Credentials', desc: 'Save logins, API keys and accounts the whole team uses, instead of passing them around in chats or sheets.' },
           { icon: TV_IC.perm, title: 'Control Member Access', desc: 'Decide who can use, view, copy or fully manage each credential, and for how long.' },

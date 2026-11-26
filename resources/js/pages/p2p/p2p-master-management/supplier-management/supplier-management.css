@@ -1333,17 +1333,11 @@ body:has(.smc-root.sup-list) .supfm-x { width: 40px; height: 40px; }
 .sup-fig .sup-table-wrap .table thead.table-light th { background: #e6f7fb !important; }
 [data-bs-theme="dark"] .sup-fig .sup-table-wrap .table thead.table-light th { background: #10303b !important; }
 
+/* The Action column is no longer pinned to the right. Pinned, the rest of a wide table slid sideways
+   underneath it while Action stood still - half the row frozen, half scrolling, with its own
+   background and shadow marking the seam. The whole row now scrolls together, like every other list. */
 @media (min-width: 821px) {
   .sup-fig .sup-table-wrap .table > :is(thead, tbody) { overflow: visible !important; }
-  .sup-fig .sup-table-wrap .table :is(thead th, tbody td):last-child {
-    position: sticky; right: 0; z-index: 2;
-    box-shadow: -8px 0 12px -10px rgba(15, 58, 77, .28);
-  }
-  .sup-fig .sup-table-wrap .table tbody td:last-child { background: #fff !important; }
-  .smc-root.sup-list .sup-fig .sup-table-wrap .table tbody tr:hover > td:last-child { background: #f5feff !important; }
-  .sup-fig .sup-table-wrap .table thead th:last-child { position: sticky !important; right: 0; z-index: 4; }
-  [data-bs-theme="dark"] .sup-fig .sup-table-wrap .table tbody td:last-child { background: #212529 !important; box-shadow: -8px 0 12px -10px rgba(0, 0, 0, .7); }
-  [data-bs-theme="dark"] .smc-root.sup-list .sup-fig .sup-table-wrap .table tbody tr:hover > td:last-child { background: linear-gradient(rgba(34, 211, 238, .1), rgba(34, 211, 238, .1)), #212529 !important; }
 }
 
 .sup-fig .sup-table-wrap > .table-responsive { scrollbar-width: auto; scrollbar-color: auto; }

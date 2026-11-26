@@ -2383,7 +2383,9 @@ function AssignLeaveTypesModal({
   const visibleSelectedCount = selected.size;
   useEffect(() => { if (isOpen) setSaving(false); }, [isOpen]);
 
-  const assignableTypes: AssignableType[] = useMemo(() => catalog.map(c => {
+  // Inactive leave types (frozen in the Leave Type master) must not be offered
+  // for assignment — they should not appear in this picker dropdown.
+  const assignableTypes: AssignableType[] = useMemo(() => catalog.filter(c => !c.inactive).map(c => {
     const category: AssignableType['category'] =
       c.type === 'Compensatory offs' ? 'compoff'
       : c.type === 'Incident based' ? 'incident'
