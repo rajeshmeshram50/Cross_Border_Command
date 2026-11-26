@@ -933,22 +933,20 @@ body:has(.master-modal) .master-select-menu[style*="min-width"] { width: 0 !impo
   align-self: center;
   box-sizing: border-box;
 }
-/* Toolbar buttons that sit in the same row as a search field match its 48px
-   (the tab rail's height) instead of the 40px above, so the Add / Import /
-   Export / filter buttons and the search are one height on every master,
-   Authority included (its page CSS pins its search and buttons to 40).
-   Bulk Data Import/Export (Authority, KYC, Due Diligence, Trade Licenses) is
-   left out: it keeps the 40px of the rule above. */
+/* Every button in a master's search row (Add / Import / Export / filter /
+   Bulk Data Import/Export) is 40px beside the 48px search, on every master.
+   This list carries page-specific button classes the rule above does not and
+   outranks page CSS that sized some of them to the search. */
 :is(body:has(.mc-back-btn), body:has(.md-page)) :is(
   .clm-tabs-bar, .dt-toolbar,
   .spi-list .spi-segrow, .ord-list .spi-segrow
 ) :is(
-  .clm-add-btn, .clm-ie-btn:not(.cie-bulk-btn), .cie-export-btn, .tdl-dl-btn, .dt-filter-btn,
+  .clm-add-btn, .clm-ie-btn, .cie-export-btn, .tdl-dl-btn, .dt-filter-btn,
   .clp-btn, .itm-btn, .ihr-btn, .lam-btn, .auth-xl-btn,
   .btn:not(td .btn):not(.btn-icon):not(.btn-close)
 ) {
-  height: 48px !important;
-  min-height: 48px !important;
+  height: 40px !important;
+  min-height: 40px !important;
 }
 /* The search bar is 48px on every master: generic masters and Lead Ack
    (.dt-search), CLM masters (.clm-search) and Inventory masters
