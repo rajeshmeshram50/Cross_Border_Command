@@ -142,7 +142,12 @@ export default function ResetPassword({ email, onPasswordReset, onBackToLogin }:
         subtitle="Your new password must be different from previous ones."
         icon={<Lock size={18} />}
       >
-        <form onSubmit={handleSubmit} className="space-y-4 mb-6">
+        {/* Tighter rhythm (space-y-3, 44px inputs, no trailing margin) so the
+            whole form fits a short screen; the card body scrolls once it
+            does not, and that scroll cut the New Password label in half.
+            ::-ms-reveal hides Edge's own eye beside ours - two eyes per field. */}
+        <style>{`.rp-pw::-ms-reveal, .rp-pw::-ms-clear { display: none !important; width: 0; height: 0; }`}</style>
+        <form onSubmit={handleSubmit} className="space-y-3 mb-1">
           <div className="flex flex-col gap-1">
             <label className="text-[14px] font-semibold text-primary-hover ml-1">
               New Password <span className="text-red-500">*</span>
@@ -153,7 +158,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToLogin }:
                 placeholder="••••••••"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
-                className="w-full h-12 px-4 pr-10 rounded-xl border-[1.5px] border-[#2f4fa3]/15 bg-white/70 text-[14px] text-[#1f2f5a] outline-none transition-all duration-200 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-4 focus:ring-[#2f4fa3]/10 placeholder:text-slate-400"
+                className="rp-pw w-full h-11 px-4 pr-10 rounded-xl border-[1.5px] border-[#2f4fa3]/15 bg-white/70 text-[14px] text-[#1f2f5a] outline-none transition-all duration-200 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-4 focus:ring-[#2f4fa3]/10 placeholder:text-slate-400"
               />
               <button
                 type="button"
@@ -165,7 +170,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToLogin }:
             </div>
 
             {newPassword && (
-              <div className="mt-2 space-y-1.5 px-1">
+              <div className="mt-1.5 space-y-1 px-1">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                     <div
@@ -177,21 +182,26 @@ export default function ResetPassword({ email, onPasswordReset, onBackToLogin }:
                     {strength.text}
                   </span>
                 </div>
-                <p className="text-[10px] text-[#5e6b85] font-medium pt-1">Password must contain:</p>
-                <ul className="text-[10.5px] space-y-1 pt-0.5">
-                  <li className={`flex items-center gap-1.5 ${validatePassword(newPassword).includes('At least 8 characters') ? 'text-slate-400' : 'text-emerald-600 font-medium'}`}>
-                    {validatePassword(newPassword).includes('At least 8 characters') ? '○' : '✓'} At least 8 characters
-                  </li>
-                  <li className={`flex items-center gap-1.5 ${validatePassword(newPassword).includes('One uppercase letter') ? 'text-slate-400' : 'text-emerald-600 font-medium'}`}>
-                    {validatePassword(newPassword).includes('One uppercase letter') ? '○' : '✓'} One uppercase letter (A-Z)
-                  </li>
-                  <li className={`flex items-center gap-1.5 ${validatePassword(newPassword).includes('One lowercase letter') ? 'text-slate-400' : 'text-emerald-600 font-medium'}`}>
-                    {validatePassword(newPassword).includes('One lowercase letter') ? '○' : '✓'} One lowercase letter (a-z)
-                  </li>
-                  <li className={`flex items-center gap-1.5 ${validatePassword(newPassword).includes('One number') ? 'text-slate-400' : 'text-emerald-600 font-medium'}`}>
-                    {validatePassword(newPassword).includes('One number') ? '○' : '✓'} One number (0-9)
-                  </li>
-                </ul>
+                {/* One compact row of chips instead of a four-line list, so the
+                    card no longer scrolls. Same four rules, same checks; the
+                    full wording stays on each chip's title. */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-[#5e6b85] font-medium mr-0.5">Must contain:</span>
+                  {([
+                    ['At least 8 characters', '8+ chars'],
+                    ['One uppercase letter', 'A–Z'],
+                    ['One lowercase letter', 'a–z'],
+                    ['One number', '0–9'],
+                  ] as const).map(([rule, short]) => {
+                    const ok = !validatePassword(newPassword).includes(rule);
+                    return (
+                      <span key={rule} title={rule}
+                        className={`inline-flex items-center gap-1 px-2 py-[1px] rounded-full border text-[10px] leading-[16px] ${ok ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-600 font-semibold' : 'border-slate-300/60 text-slate-400'}`}>
+                        {ok ? '✓' : '○'} {short}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -206,7 +216,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToLogin }:
                 placeholder="••••••••"
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}
-                className="w-full h-12 px-4 pr-10 rounded-xl border-[1.5px] border-[#2f4fa3]/15 bg-white/70 text-[14px] text-[#1f2f5a] outline-none transition-all duration-200 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-4 focus:ring-[#2f4fa3]/10 placeholder:text-slate-400"
+                className="rp-pw w-full h-11 px-4 pr-10 rounded-xl border-[1.5px] border-[#2f4fa3]/15 bg-white/70 text-[14px] text-[#1f2f5a] outline-none transition-all duration-200 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-4 focus:ring-[#2f4fa3]/10 placeholder:text-slate-400"
               />
               <button
                 type="button"
