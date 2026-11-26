@@ -4152,6 +4152,13 @@
   background: rgba(124, 58, 237, .14);
 }
 
+/* Dark hover: a violet wash, not the light theme's 60% white — on the dark
+   rail that read as a grey slab under purple text. */
+[data-bs-theme="dark"] .pv2pd-tab:not(.is-active):hover {
+  color: #ddd6fe;
+  background: rgba(139, 92, 246, .28);
+}
+
 [data-bs-theme="dark"] .pv2pd-tab-body {
   color: #ced4da;
 }
