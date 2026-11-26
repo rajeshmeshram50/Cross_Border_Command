@@ -45,7 +45,7 @@ class ModuleSeeder extends Seeder
             ['name' => 'Legal & Compliance',    'slug' => 'master.legal',        'icon' => 'Scale',       'description' => 'Licenses, risk, documents, hazards'],
             ['name' => 'Operations & Support',  'slug' => 'master.operations',   'icon' => 'Wrench',      'description' => 'Assets and asset categories'],
             ['name' => 'P2P Masters',           'slug' => 'master.p2p',          'icon' => 'Handshake',   'description' => 'Procure-to-pay configuration'],
-            ['name' => 'Warehouse Masters',     'slug' => 'master.warehouse',    'icon' => 'Warehouse',   'description' => 'Warehouse, zones, racks, freezers'],
+            ['name' => 'Inventory Master',       'slug' => 'master.warehouse',    'icon' => 'Warehouse',   'description' => 'Warehouse, zones, racks, freezers'],
             ['name' => 'Attendance Master Management', 'slug' => 'master.attendance', 'icon' => 'CalendarCheck', 'description' => 'Branch attendance configuration: leave types & leave plans'],
         ];
 
