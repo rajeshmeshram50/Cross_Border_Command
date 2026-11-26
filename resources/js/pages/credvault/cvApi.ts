@@ -290,8 +290,8 @@ export const cvApi = {
   generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength_level: number; meets_policy: boolean; policy_minimum: string } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
 
-  list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', q),
-  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, q),
+  list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', { ...q, tz: viewerTz() }),
+  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, { ...q, tz: viewerTz() }),
   nextCode: (critical = false) => get<{ data: { next_code: string } }>(`${vaultPath(critical)}/credentials/next-code`).then(r => r.data.next_code),
   show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => r.data),
   create: (body: Loose | FormData, critical = false) => send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials`, body),

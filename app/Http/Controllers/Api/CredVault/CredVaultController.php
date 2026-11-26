@@ -192,7 +192,7 @@ class CredVaultController extends Controller
         if (!empty($f['risk']))  $base->where('risk', $f['risk']);
         if (!empty($f['type']))  $base->where('type', $f['type']);
         if (!empty($f['group'])) $base->where('category_group', $f['group']);
-        $this->credentialSearch($base, $u, $f['q'] ?? null);
+        $this->credentialSearch($base, $u, $f['q'] ?? null, $f['tz'] ?? null);
 
         $teamSide = clone $base;
         if (!empty($f['department_id'])) $teamSide->where('department_id', $f['department_id']);
@@ -319,7 +319,7 @@ class CredVaultController extends Controller
             ?? $this->reject('That person is not part of your company.', 'member_id', 404);
     }
 
-    protected function credentialSearch(Builder $q, User $u, ?string $term): void
+    protected function credentialSearch(Builder $q, User $u, ?string $term, ?string $tz = null): void
     {
         if ($term === null || trim($term) === '') return;
         $like  = $this->likeTerm($term);
@@ -327,16 +327,34 @@ class CredVaultController extends Controller
         $types = collect(Credential::TYPES)->filter(fn ($t) => str_contains(mb_strtolower($t[0]), $needle))->keys()->all();
         $risks  = array_values(array_filter(Credential::RISKS, fn ($r) => str_contains($r, $needle)));
         $levels = array_keys(array_filter(Credential::STRENGTH_LABELS, fn ($l) => $l !== '' && str_contains(mb_strtolower($l), $needle)));
+        $twofa  = array_keys(array_filter(['yes' => 'enabled', 'no' => 'disabled', 'na' => 'n/a'], fn ($l) => str_contains($l, $needle)));
+        $scopes = array_values(array_filter(['personal', 'team'], fn ($s) => str_contains($s, $needle)));
+        $dates  = array_map(fn ($col) => $this->shownDateSql("credvault_credentials.{$col}", $tz ?? self::AUDIT_TZ), ['created_at', 'updated_at']);
 
-        $q->where(function ($w) use ($like, $types, $risks, $levels, $u) {
+        $q->where(function ($w) use ($like, $types, $risks, $levels, $twofa, $scopes, $dates, $u) {
             foreach (['name', 'code', 'username', 'url', 'category_group'] as $col) {
                 $w->orWhereRaw("lower(coalesce(credvault_credentials.{$col}, '')) like ?", [$like]);
             }
+            foreach ($dates as $sql) $w->orWhereRaw("{$sql} like ?", [$like]);
             if ($types) $w->orWhereIn('credvault_credentials.type', $types);
             if ($risks) $w->orWhereIn('credvault_credentials.risk', $risks);
             if ($levels) $w->orWhere(fn ($s) => $s->where('credvault_credentials.has_password', true)->whereIn('credvault_credentials.strength', $levels));
+            if ($twofa) $w->orWhereIn('credvault_credentials.twofa', $twofa);
+            if ($scopes) $w->orWhereIn('credvault_credentials.scope', $scopes);
             $w->orWhereIn('owner_id', User::where('client_id', $u->client_id)->whereRaw('lower(name) like ?', [$like])->select('id'));
         });
+    }
+
+    /** A UTC timestamp column as the table shows it in the viewer's zone, lower-cased:
+     *  "13/11/2026 13 nov 2026 12:18" (Credential ID date, then Last Updated date and time). */
+    protected function shownDateSql(string $col, string $tz): string
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            $local = "(({$col} AT TIME ZONE 'UTC') AT TIME ZONE " . DB::getPdo()->quote($tz) . ')';
+            return "lower(to_char({$local}, 'DD/MM/YYYY DD Mon YYYY HH24:MI'))";
+        }
+        $offset = DB::getPdo()->quote(now($tz)->format('P'));
+        return "lower(date_format(convert_tz({$col}, '+00:00', {$offset}), '%d/%m/%Y %d %b %Y %H:%i'))";
     }
 
     public function show(Request $request, int $id)
@@ -4949,6 +4967,7 @@ class CredVaultController extends Controller
             'q'        => ['nullable', 'string', 'max:100'],
             'page'     => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'tz'       => ['nullable', 'timezone:all_with_bc'],
         ];
     }
 
