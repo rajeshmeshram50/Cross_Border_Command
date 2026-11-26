@@ -29,6 +29,13 @@ interface ManagedUser {
 // Slugs hidden from grant UI (admin-only or not permissionable per-user)
 const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
+// Temporarily hidden from this page — the modules still exist and keep any permissions already
+// granted (they are carried through every save unchanged). To show one again, comment out its line.
+const TEMP_HIDDEN_SLUGS = new Set<string>([
+  'inventory',   // Inventory Management System
+  'dev-tools',   // Dev Tools
+]);
+
 export default function Permissions() {
   const { user: authUser } = useAuth();
   const toast = useToast();
@@ -42,6 +49,10 @@ export default function Permissions() {
   const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string>('');
   const [matrix, setMatrix] = useState<Record<number, PermRow>>({});
+  // TEMP_HIDDEN_SLUGS modules: not rendered or counted, but their loaded values are re-sent on save
+  // (a user save replaces all of that user's rows, so leaving them out would revoke them).
+  const [hiddenModules, setHiddenModules] = useState<PermModule[]>([]);
+  const [hiddenMatrix, setHiddenMatrix] = useState<Record<number, PermRow>>({});
   const [myPerms, setMyPerms] = useState<Record<string, Record<PermKey, boolean>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -70,7 +81,9 @@ export default function Permissions() {
       api.get('/modules'),
       api.get('/permissions/users'),
     ]).then(([modRes, usersRes]) => {
-      const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+      const all: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+      const mods = all.filter(m => !TEMP_HIDDEN_SLUGS.has(m.slug));
+      setHiddenModules(all.filter(m => TEMP_HIDDEN_SLUGS.has(m.slug)));
       setModules(mods);
       setUsers(usersRes.data);
       const pre = searchParams.get('user');
@@ -103,15 +116,18 @@ export default function Permissions() {
   }, []);
 
   const loadUserPermissions = (userId: string) => {
-    if (!userId || modules.length === 0) { setMatrix({}); return; }
+    if (!userId || modules.length === 0) { setMatrix({}); setHiddenMatrix({}); return; }
     setLoadingPerms(true);
     const freshMatrix: Record<number, PermRow> = {};
     modules.forEach(mod => { freshMatrix[mod.id] = emptyPerms(); });
+    const freshHidden: Record<number, PermRow> = {};
+    hiddenModules.forEach(mod => { freshHidden[mod.id] = emptyPerms(); });
 
     api.get(`/permissions/user/${userId}`).then(res => {
       (res.data.permissions || []).forEach((p: any) => {
-        if (freshMatrix[p.module_id]) {
-          freshMatrix[p.module_id] = {
+        const target = freshMatrix[p.module_id] ? freshMatrix : freshHidden[p.module_id] ? freshHidden : null;
+        if (target) {
+          target[p.module_id] = {
             can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
             can_delete: !!p.can_delete, can_export: !!p.can_export,
             can_import: !!p.can_import, can_approve: !!p.can_approve,
@@ -120,7 +136,8 @@ export default function Permissions() {
         }
       });
       setMatrix({ ...freshMatrix });
-    }).catch(() => setMatrix({ ...freshMatrix }))
+      setHiddenMatrix({ ...freshHidden });
+    }).catch(() => { setMatrix({ ...freshMatrix }); setHiddenMatrix({}); })
       .finally(() => setLoadingPerms(false));
   };
 
@@ -167,8 +184,11 @@ export default function Permissions() {
       // 422 even though their checkboxes are disabled in the UI. For client_admin
       // we mask each flag against `myPerms`; super_admin (myPerms === null)
       // sends the matrix as-is.
-      const raw = extractLeafPermissions(modules, matrix);
-      const moduleSlugById = new Map(modules.map(m => [m.id, m.slug]));
+      // A user save replaces all of the user's rows, so the temporarily hidden modules ride along
+      // with the values that were loaded (department saves only touch the modules sent — left as is).
+      const saveModules = isDept ? modules : [...modules, ...hiddenModules];
+      const raw = extractLeafPermissions(saveModules, isDept ? matrix : { ...hiddenMatrix, ...matrix });
+      const moduleSlugById = new Map(saveModules.map(m => [m.id, m.slug]));
       const permissions = myPerms === null
         ? raw
         : raw.map(p => {

@@ -17,6 +17,13 @@ import { ShimmerPermissions } from '../../components/ui/Shimmer';
 // modules that don't apply to a single employee.
 const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
+// Temporarily hidden from this page — the modules still exist and keep any permissions already
+// granted (they are carried through every save unchanged). To show one again, comment out its line.
+const TEMP_HIDDEN_SLUGS = new Set<string>([
+  'inventory',   // Inventory Management System
+  'dev-tools',   // Dev Tools
+]);
+
 // EmployeeRow is duplicated here so this page has zero hard dependency on the
 // HR module's internal types — keeps it usable from any caller.
 export interface EmployeePermsTarget {
@@ -49,6 +56,10 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
   const isSuperAdmin = authUser?.user_type === 'super_admin';
   const [modules, setModules] = useState<PermModule[]>([]);
   const [matrix, setMatrix] = useState<Record<number, PermRow>>({});
+  // TEMP_HIDDEN_SLUGS modules: not rendered or counted, but their loaded values are re-sent on save
+  // (a user save replaces all of that user's rows, so leaving them out would revoke them).
+  const [hiddenModules, setHiddenModules] = useState<PermModule[]>([]);
+  const [hiddenMatrix, setHiddenMatrix] = useState<Record<number, PermRow>>({});
   // Granter's own perms — used to disable checkboxes for flags they can't pass
   // down. Without this, the UI lets you toggle anything and the save call
   // surprises you with a 422 from PermissionController:208 ("you cannot grant
@@ -77,17 +88,22 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
     (async () => {
       try {
         const modRes = await api.get('/modules');
-        const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+        const all: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+        const mods = all.filter(mod => !TEMP_HIDDEN_SLUGS.has(mod.slug));
+        const hidMods = all.filter(mod => TEMP_HIDDEN_SLUGS.has(mod.slug));
         const m: Record<number, PermRow> = {};
         mods.forEach(mod => { m[mod.id] = emptyPerms(); });
+        const hm: Record<number, PermRow> = {};
+        hidMods.forEach(mod => { hm[mod.id] = emptyPerms(); });
 
         if (numericId > 0) {
           try {
             const permRes = await api.get(`/permissions/user/${numericId}`);
             const perms = permRes.data?.permissions || [];
             perms.forEach((p: any) => {
-              if (m[p.module_id]) {
-                m[p.module_id] = {
+              const target = m[p.module_id] ? m : hm[p.module_id] ? hm : null;
+              if (target) {
+                target[p.module_id] = {
                   can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
                   can_delete: !!p.can_delete, can_export: !!p.can_export,
                   can_import: !!p.can_import, can_approve: !!p.can_approve,
@@ -120,6 +136,8 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
         if (!cancelled) {
           setModules(mods);
           setMatrix(m);
+          setHiddenModules(hidMods);
+          setHiddenMatrix(hm);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -139,8 +157,10 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
       // on top of the disabled checkboxes in PermissionMatrix — without this,
       // legacy matrix state (e.g. a flag that USED to be grantable) would 422
       // on save. Same pattern as Permissions.tsx:114-137.
-      const raw = extractLeafPermissions(modules, matrix);
-      const moduleSlugById = new Map(modules.map(m => [m.id, m.slug]));
+      // A user save replaces all of the user's rows: the temporarily hidden modules ride along unchanged.
+      const saveModules = [...modules, ...hiddenModules];
+      const raw = extractLeafPermissions(saveModules, { ...hiddenMatrix, ...matrix });
+      const moduleSlugById = new Map(saveModules.map(m => [m.id, m.slug]));
       const permissions = myPerms === null
         ? raw
         : raw.map(p => {
