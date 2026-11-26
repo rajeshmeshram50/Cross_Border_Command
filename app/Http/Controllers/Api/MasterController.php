@@ -777,6 +777,19 @@ class MasterController extends Controller
         'trigger_point'      => [['hr_document_templates', 'trigger_point_id']],
     ];
 
+    /*
+    | Masters referenced by their VALUE (name/code string) instead of their id —
+    | e.g. the Sales customer & consignee forms store the picked master's name in
+    | a plain string column. slug => [[referencing_table, column, master_field], …]
+    | where master_field is the column on the master row whose value is stored.
+    | A missing table/column is skipped safely.
+    */
+    private const VALUE_USAGE_MAP = [
+        'customer_classifications' => [['customers', 'classification', 'name'], ['consignees', 'classification', 'name']],
+        'customer_types'           => [['customers', 'type', 'name'], ['consignees', 'type', 'name']],
+        'risk_levels'              => [['customers', 'risk_level', 'name'], ['consignees', 'risk_level', 'name']],
+    ];
+
     /**
      * Every place a master row is referenced, with a non-zero count.
      *
@@ -807,6 +820,16 @@ class MasterController extends Controller
             if ($srcTable === $table && $srcCol === $pk) continue;              // never the PK itself
             if (!Schema::hasTable($srcTable) || !Schema::hasColumn($srcTable, $srcCol)) continue;
             $n = DB::table($srcTable)->where($srcCol, $id)->count();
+            if ($n > 0) $hits[] = [$srcTable, $n];
+        }
+
+        // Value references — the master's name/code stored as a plain string
+        // (e.g. the Sales customer form keeps the classification/type by name).
+        foreach (self::VALUE_USAGE_MAP[$slug] ?? [] as [$srcTable, $srcCol, $field]) {
+            $value = $row->{$field} ?? null;
+            if ($value === null || $value === '') continue;
+            if (!Schema::hasTable($srcTable) || !Schema::hasColumn($srcTable, $srcCol)) continue;
+            $n = DB::table($srcTable)->whereRaw('lower(trim(' . $srcCol . ')) = ?', [mb_strtolower(trim((string) $value))])->count();
             if ($n > 0) $hits[] = [$srcTable, $n];
         }
 
