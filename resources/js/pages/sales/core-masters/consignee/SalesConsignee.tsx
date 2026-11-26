@@ -1067,25 +1067,15 @@ export default function SalesConsignee() {
               </div>
               <div className="smcg-mapped-toolbar-right">
                 <span className="smcg-mapped-count">{(mappedTarget.customers ?? []).length} {(mappedTarget.customers ?? []).length === 1 ? 'customer' : 'customers'}</span>
-                {canEdit && (() => {
-                  // A "Same as Customer" consignee mirrors exactly ONE customer,
-                  // so it can't be mapped to more — disable Map Customer and
-                  // explain why on click.
-                  const sac = !!mappedTarget.same_as_customer;
-                  return (
-                    <button
-                      type="button"
-                      aria-disabled={sac}
-                      onClick={() => {
-                        if (sac) { toast.warning('Same as Customer', 'This consignee is “Same as Customer”, so it can be linked to only one customer. Turn off Same as Customer to map more.'); return; }
-                        custMapOpen ? setCustMapOpen(false) : openCustMap();
-                      }}
-                      className="smcg-mapped-add"
-                    >
-                      <i className="ri-link" /> Map Customer
-                    </button>
-                  );
-                })()}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => { custMapOpen ? setCustMapOpen(false) : openCustMap(); }}
+                    className="smcg-mapped-add"
+                  >
+                    <i className="ri-link" /> Map Customer
+                  </button>
+                )}
               </div>
             </div>
             {/* Table — ~5 rows visible, the rest scroll (header ~44px + 5×~46px). */}
