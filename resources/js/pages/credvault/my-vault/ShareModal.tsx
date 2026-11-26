@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../../contexts/ToastContext';
+import { useBranchSwitcher } from '../../../contexts/BranchSwitcherContext';
 import { cvApi, CvApiError, type CredentialDetail, type CredentialRow, type Loose, type Perm } from '../cvApi';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { Shimmer } from '../../../components/ui/Shimmer';
@@ -82,6 +83,7 @@ function ShareShimmer() {
 
 export default function ShareModal({ credentialId, previewRow, previewRecipients, onClose, onShared, saveLock = false }: ShareModalProps) {
   const toast = useToast();
+  const { selectedBranchId } = useBranchSwitcher();
   const { meta, typeOf } = useCvMeta();
   const [cred, setCred] = useState<CredentialDetail | null>(null);
   const [people, setPeople] = useState<{ users: Loose[]; teams: Loose[] } | null>(null);
@@ -145,6 +147,8 @@ export default function ShareModal({ credentialId, previewRow, previewRecipients
     if (Object.keys(e).length) { toast.warning('Please complete the highlighted fields'); return; }
 
     const body: Loose = { recipient_type: type, recipient_id: +who, permission: perm, reason: reason.trim() || undefined };
+    // A team share emails only the members of the branch the popup counted them in.
+    if (type === 'team' && selectedBranchId) body.branch_id = selectedBranchId;
     if (dur.startsWith('date:')) body.expires_at = dur.slice(5);
     else if (dur !== '0') body.duration_days = +dur;
 

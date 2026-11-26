@@ -594,10 +594,7 @@ class CredVaultController extends Controller
             ->when($d['q'] ?? null, fn ($q, $t) => $this->applySearch($q, $t, ['name', 'email']))
             ->orderBy('name')->limit(200)->get(['id', 'name', 'email', 'user_type', 'designation']);
 
-        // Team member counts are per branch: the user's own branch, or for an admin the branch picked in the switcher.
-        $countBranch = $branch ?: ($request->integer('branch_id') ?: null);
-        if ($countBranch && !Branch::where('client_id', $u->client_id)->whereKey($countBranch)->exists()) $countBranch = null;
-        $counts = $this->memberCounts($u->client_id, $countBranch);
+        $counts = $this->memberCounts($u->client_id, $this->teamBranchFor($request, $u));
         $teams  = $this->clientDepartments($u)->filter(fn ($dep) => ($counts[$dep->id] ?? 0) > 0)
             ->when($d['q'] ?? null, fn ($c, $t) => $c->filter(fn ($dep) => Str::contains(Str::lower($dep->name), Str::lower($t))))
             ->map(fn ($dep) => ['id' => $dep->id, 'name' => $dep->name, 'members' => $counts[$dep->id] ?? 0])->values();
@@ -668,7 +665,7 @@ class CredVaultController extends Controller
             $dep = $this->clientDepartments($u)->firstWhere('id', $d['recipient_id'])
                 ?? $this->reject('That team does not exist.', 'recipient_id', 404);
             $toName  = $dep->name;
-            $all      = $this->teamMembers($u->client_id, $dep->id);
+            $all      = $this->teamMembers($u->client_id, $dep->id, $this->teamBranchFor($request, $u));
             $teamSize = $all->count();
             $members  = $all->where('id', '!=', $u->id)->values();
         }
@@ -720,13 +717,27 @@ class CredVaultController extends Controller
         ], $renewed ? 200 : 201);
     }
 
-    protected function teamMembers(int $clientId, int $deptId): Collection
+    /**
+     * The branch a team's members are counted and emailed in: the user's own
+     * branch, or for an admin the branch picked in the switcher (checked to be
+     * the client's). Null = the whole client.
+     */
+    protected function teamBranchFor(Request $request, User $u): ?int
+    {
+        $b = $this->shareBranchOf($u) ?: ($request->integer('branch_id') ?: null);
+
+        return $b && Branch::where('client_id', $u->client_id)->whereKey($b)->exists() ? $b : null;
+    }
+
+    protected function teamMembers(int $clientId, int $deptId, ?int $branchId = null): Collection
     {
         $emps = Employee::where('client_id', $clientId)->where('department_id', $deptId)->get(['user_id', 'emp_code']);
         $ids = $emps->pluck('user_id')->filter()->all();
-        $codes = $emps->pluck('emp_code')->filter()->all();
+        // Employee codes repeat across branches, so match by code only for HR rows not yet linked to a user.
+        $codes = $emps->whereNull('user_id')->pluck('emp_code')->filter()->all();
 
         return User::where('client_id', $clientId)->where('status', 'active')->where(fn ($q) => $this->onboardedOrAdmin($q))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->where(fn ($w) => $w->where('department_id', $deptId)
                 ->orWhere(fn ($x) => $x->whereNull('department_id')->where(fn ($y) => $y->whereIn('id', $ids)->orWhereIn('employee_code', $codes))))
             ->orderBy('name')->get(['id', 'name', 'email', 'designation']);
@@ -2784,7 +2795,7 @@ class CredVaultController extends Controller
 
         $ownerDept = $this->departmentsOfUsers($all->pluck('owner_id')->unique()->all());
         $deptOf    = fn ($c) => $c->department_id ?: ($ownerDept[$c->owner_id] ?? null);
-        $members   = $this->memberCounts($u->client_id);
+        $members   = $this->memberCounts($u->client_id, $this->teamBranchFor($request, $u));
         $departments = $this->clientDepartments($u)->filter(fn ($x) => ($members[$x->id] ?? 0) > 0)->map(function ($x) use ($all, $deptOf, $members) {
             $g = $all->filter(fn ($c) => $deptOf($c) === $x->id);
             return ['id' => $x->id, 'name' => $x->name, 'count' => $g->count(), 'critical' => $g->where('risk', 'critical')->count(), 'members' => $members[$x->id] ?? 0];
