@@ -1001,11 +1001,16 @@ class CredVaultController extends Controller
 
     protected function onboardedOrAdmin($q)
     {
+        $emp = fn ($e) => $e->select(DB::raw(1))->from('employees')
+            ->whereColumn('employees.client_id', 'users.client_id')->whereNull('employees.deleted_at');
+        $own = fn ($e) => $emp($e)->whereColumn('employees.user_id', 'users.id');
+
         return $q->whereIn('users.user_type', self::ADMIN_TYPES)
-            ->orWhereExists(fn ($e) => $e->select(DB::raw(1))->from('employees')
-                ->where(fn ($l) => $l->whereColumn('employees.user_id', 'users.id')->orWhereColumn('employees.emp_code', 'users.employee_code'))
-                ->whereColumn('employees.client_id', 'users.client_id')
-                ->whereNull('employees.deleted_at')->where('employees.onboarding_stage_completed', '>=', 6));
+            ->orWhereExists(fn ($e) => $own($e)->where('employees.onboarding_stage_completed', '>=', 6))
+            ->orWhere(fn ($w) => $w->whereNotExists($own)
+                ->whereExists(fn ($e) => $emp($e)->whereNull('employees.user_id')
+                    ->whereColumn('employees.emp_code', 'users.employee_code')
+                    ->where('employees.onboarding_stage_completed', '>=', 6)));
     }
 
     protected function teamShareDept(User $u): ?int
