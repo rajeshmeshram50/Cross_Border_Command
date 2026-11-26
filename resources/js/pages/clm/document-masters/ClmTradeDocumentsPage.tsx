@@ -12,7 +12,7 @@ import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
 const TD_NAMES_URL   = '/clm/trade-doc-names';
 const TD_LIBRARY_URL = '/clm/trade-doc-library';
 import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf, SimpleNameModal, TruncCell } from '../shared/clmCommon';
+import { ClmSkeletonRows, DeleteConf, SimpleNameModal, TruncCell, PopName } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 import { saveApiBlob } from '../../../utils/downloadFile';
@@ -578,11 +578,11 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: segOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: segOpen.maxH, overflowY: 'auto', overflowX: 'hidden', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
+                <span className="clm-badge clm-badge-teal"><PopName text={name} /></span>
               </div>
             ))}
           </div>
@@ -594,11 +594,11 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
       {partyOpen && createPortal(
         <>
           <div onClick={() => setPartyOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.flipUp ? undefined : partyOpen.y, bottom: partyOpen.flipUp ? (window.innerHeight - partyOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: partyOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.flipUp ? undefined : partyOpen.y, bottom: partyOpen.flipUp ? (window.innerHeight - partyOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: partyOpen.maxH, overflowY: 'auto', overflowX: 'hidden', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applicable Party ({partyOpen.names.length})</div>
             {partyOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
+                <span className="clm-badge clm-badge-teal"><PopName text={name} /></span>
               </div>
             ))}
           </div>

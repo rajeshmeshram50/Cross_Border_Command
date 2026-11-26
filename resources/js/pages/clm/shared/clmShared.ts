@@ -726,6 +726,8 @@ export const CLM_CSS = `
   color: #22d3ee; pointer-events: none; z-index: 2;
 }
 .clm-filter-ms .master-select-toggle { padding-left: 34px; }
+/* 40px like the Add button beside it - the toggle came out 38. */
+.clm-filter-ms .master-select-toggle { height: 40px !important; min-height: 40px !important; box-sizing: border-box; }
 [data-bs-theme="dark"] .clm-filter-ms .clm-filter-ico { color: #67e8f9; }
 
 /* .clm-rows-scroll is gone. It gave the rows their own scroll box inside a

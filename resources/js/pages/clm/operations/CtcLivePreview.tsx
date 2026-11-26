@@ -13,6 +13,11 @@ import Tooltip from '../../../components/ui/Tooltip';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
+/* Drafts longer than this get the two-step preview (opening pages first,
+   then the whole document). 60k characters is ~60 pages of plain text; short
+   drafts render in a second or two and go straight to the full document. */
+const QUICK_PREVIEW_CHARS = 60000;
+
 /* ── CTC live PDF preview ─────────────────────────────────────────────────────
  * Renders the CURRENT (unsaved) draft HTML through the SAME dompdf pipeline the
  * download uses, so what the author sees here is exactly what the generated PDF
@@ -77,6 +82,10 @@ export default function CtcLivePreview({
    * stale document, and someone reads three edited clauses off a render that
    * predates them. On a legal draft that is worse than being slow. */
   const [stale, setStale] = useState(false);
+  /* The opening pages of a long draft are on screen while the full document
+     is still rendering (see render); partialErr if that full render failed. */
+  const [partial, setPartial] = useState(false);
+  const [partialErr, setPartialErr] = useState('');
 
   const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<any> } | null>(null);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
@@ -111,28 +120,66 @@ export default function CtcLivePreview({
     // so anything typed WHILE the render is in flight is not in it and must
     // leave the panel marked stale again. Clearing on success would wipe that.
     setStale(false);
-    try {
-      const res = await api.post(
-        endpoint,
-        {
-          id: contractId ?? undefined,
-          content,
-          page_config: pageConfig ?? undefined,
-          header_config: headerConfig ?? undefined,
-          footer_config: footerConfig ?? undefined,
-        },
-        { responseType: 'blob', signal: ctrl.signal },
-      );
+    setPartial(false);
+    setPartialErr('');
+    const post = (quick: boolean) => api.post(
+      endpoint,
+      {
+        id: contractId ?? undefined,
+        content,
+        page_config: pageConfig ?? undefined,
+        header_config: headerConfig ?? undefined,
+        footer_config: footerConfig ?? undefined,
+        ...(quick ? { quick: true } : {}),
+      },
+      { responseType: 'blob', signal: ctrl.signal },
+    );
+    const show = async (res: { data: unknown }) => {
       const buf = await (res.data as Blob).arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      if (ctrl.signal.aborted) return;
       docRef.current = pdf as unknown as { numPages: number; getPage: (n: number) => Promise<any> };
       canvasRefs.current = new Array(pdf.numPages).fill(null);
       pageWrapRefs.current = new Array(pdf.numPages).fill(null);
       setNumPages(pdf.numPages);
       setActivePage(p => Math.min(Math.max(1, p), pdf.numPages));
       setDocVersion(v => v + 1);
+    };
+    /* Long drafts (an uploaded Word file can be 300 pages of tables, ~54s to
+       render) ask for the opening pages first - about a second - and show
+       them, then fetch the full document and swap it in. The server marks a
+       cut-down reply with X-Preview-Partial; an endpoint without the quick
+       path just returns the whole document, which is then final. */
+    let showingPartial = false;
+    try {
+      if ((content?.length ?? 0) > QUICK_PREVIEW_CHARS) {
+        const q = await post(true);
+        await show(q);
+        if (ctrl.signal.aborted) return;
+        if (String((q as { headers?: Record<string, string> }).headers?.['x-preview-partial'] ?? '') === '1') {
+          showingPartial = true;
+          setPartial(true);
+          setStatus('ready');
+          const full = await post(false);
+          await show(full);
+          if (ctrl.signal.aborted) return;
+          setPartial(false);
+          return;
+        }
+        setStatus('ready');
+        return;
+      }
+      const res = await post(false);
+      await show(res);
+      if (ctrl.signal.aborted) return;
       setStatus('ready');
     } catch (e: any) {
+      /* The opening pages are already on screen: keep them, and say the rest
+         did not load, rather than replacing a readable preview with an error. */
+      if (showingPartial && !(ctrl.signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError')) {
+        setPartialErr('Could not load the full document.');
+        return;
+      }
       /* An abort is this component superseding itself, not a failure: a newer
          render is already running and will set the status. Surfacing it would
          flash "Could not render the preview." on every keystroke. */
@@ -377,6 +424,23 @@ export default function CtcLivePreview({
         </div>
       </div>
 
+      {/* Opening pages of a long draft are showing; the full document is on its way. */}
+      {(partial || partialErr) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 12px', flexShrink: 0, fontSize: 10.5, fontWeight: 600, background: partialErr ? (dark ? 'rgba(239,68,68,.12)' : '#FEF2F2') : (dark ? 'rgba(124,58,237,.14)' : '#F5F3FF'), color: partialErr ? (dark ? '#fca5a5' : '#b91c1c') : (dark ? '#c4b5fd' : '#6D28D9'), borderBottom: `1px solid ${border}` }}>
+          {partialErr ? (
+            <>
+              {`Showing the first ${numPages} pages. ${partialErr}`}
+              <button type="button" onClick={() => void render()} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 7, border: `1.5px solid ${border}`, background: barBg, color: fg, fontWeight: 700, fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit' }}>Retry</button>
+            </>
+          ) : (
+            <>
+              <svg className="ctc-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              {`Showing the first ${numPages} pages — loading the full document…`}
+            </>
+          )}
+        </div>
+      )}
+
       {/* scrollable stack of pages (the "book")
           The stage is the positioning context for the loading veil, so the
           veil covers the pages but never the toolbar above them — Refresh and
@@ -400,6 +464,10 @@ export default function CtcLivePreview({
         {status !== 'error' && numPages === 0 && (
           <div style={{ margin: 'auto', textAlign: 'center', color: dark ? '#a78bfa' : '#A78BFA', fontSize: 11.5, fontWeight: 600 }}>
             {status === 'loading' ? 'Rendering preview…' : 'Preview will appear here.'}
+            {/* QA #115: say the wait is normal, as the approver's preview does. */}
+            {status === 'loading' && (
+              <div style={{ marginTop: 5, fontSize: 10.5, fontWeight: 500, color: dark ? '#94a3b8' : '#64748b' }}>It takes a few seconds to preview the document.</div>
+            )}
           </div>
         )}
         {Array.from({ length: numPages }).map((_, i) => (

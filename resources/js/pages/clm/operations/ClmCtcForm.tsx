@@ -1423,9 +1423,15 @@ function Stage1(p: {
 
             {/* ══ STEP 2 — Agreement Basic Details ══ */}
             {midStep === 2 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Agreement Basics */}
-                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
+              /* Grows to the panel's foot and lets the Agreement Details card
+                 stretch, so the workspace ends at the Back / Next bar instead
+                 of leaving a blank band above it. 1 0 auto: never shrinks below
+                 its content, so a short screen still scrolls as before. */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: '1 0 auto' }}>
+                {/* Agreement Basics - grows by the same share as Agreement Details
+                    below, so the spare height is split between the two cards
+                    instead of all landing in the second one. */}
+                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ padding: '11px 14px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE 0%,#F3F0FF 40%,#E8E2FF 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
@@ -1434,8 +1440,10 @@ function Stage1(p: {
                       beside it - same height, border, radius, fill and text size
                       (QA #76). Scoped to .ctc-agtype so no other MasterSelect moves. */}
                   <style>{`
-                    .ctc-agtype .master-select-toggle { height: 34px !important; min-height: 34px !important; padding-top: 0 !important; padding-bottom: 0 !important; border: 1.5px solid ${t.searchBorder} !important; border-radius: 9px !important; background: ${t.dark ? 'rgba(255,255,255,.04)' : '#fff'} !important; font-size: 11px !important; font-weight: 400 !important; color: ${t.text} !important; box-shadow: none !important; }
-                    .ctc-agtype .master-select-toggle * { font-size: 11px !important; }
+                    .ctc-agtype .master-select-toggle,
+                    .ctc-agdate .master-datepicker-toggle { height: 40px !important; min-height: 40px !important; padding-top: 0 !important; padding-bottom: 0 !important; border: 1.5px solid ${t.searchBorder} !important; border-radius: 9px !important; background: ${t.dark ? 'rgba(255,255,255,.04)' : '#fff'} !important; font-size: 12.5px !important; font-weight: 500 !important; color: ${t.text} !important; box-shadow: none !important; }
+                    .ctc-agtype .master-select-toggle *, .ctc-agdate .master-datepicker-toggle * { font-size: 12.5px !important; }
+                    .ctc-agdate .master-datepicker-toggle:disabled { background: ${t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC'} !important; }
                     .ctc-agtype .master-select-placeholder { color: ${t.textMuted} !important; }
                     .ctc-agtype .master-select-toggle:disabled, .ctc-agtype .master-select-toggle.disabled { background: ${t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC'} !important; opacity: 1 !important; }
                   `}</style>
@@ -1456,7 +1464,7 @@ function Stage1(p: {
                         }}>{p.agTitle.length}/{AG_TITLE_MAX}</span>
                       }
                       error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= AG_TITLE_MAX ? `Agreement title cannot exceed ${AG_TITLE_MAX} characters.` : undefined)}
-                    ><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, AG_TITLE_MAX))} maxLength={AG_TITLE_MAX} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
+                    ><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, AG_TITLE_MAX))} maxLength={AG_TITLE_MAX} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, height: 40, fontSize: 12.5, fontWeight: 500, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
                       <div className="ctc-agtype"><MasterSelect optionTipPosition="top" value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} /></div>
                     </Field>
@@ -1464,13 +1472,13 @@ function Stage1(p: {
                 </div>
 
                 {/* Agreement Details */}
-                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.3)' : '#BBF7D0'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
+                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.3)' : '#BBF7D0'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ padding: '11px 14px', background: t.dark ? 'rgba(16,185,129,.12)' : 'linear-gradient(110deg,#ECFDF5 0%,#F0FDF9 40%,#D1FAE5 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(16,185,129,.25)' : '#A7F3D0'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>Effective &amp; end dates</div></div>
                   </div>
-                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
+                  <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div className="ctc-agdate" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, alignItems: 'start' }}>
                       {/* minDate stops a past date being PICKED; effBeforeToday
                           still has to exist because an already-saved draft can
                           carry one from before this guard, and the picker alone
@@ -1688,6 +1696,7 @@ function Stage1(p: {
             tags: [
               ...(a.role ? [[String(a.role), '#7C3AED']] as [string, string][] : []),
               ...(a.status === 'rejected' ? [['Rejected', '#DC2626']] as [string, string][] : []),
+              ...(a.status === 'approved' ? [['Approved', '#059669']] as [string, string][] : []),
             ],
             locked: false,
           }))}
@@ -1869,14 +1878,17 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             </div>
             <span onClick={() => setVhOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.9)' }}>Download</span></span>
           </div>
-          <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px' }}>
+          {/* Column so the agreement sheet can grow to the panel's foot: a short
+              draft read as a half-finished page with a blank band below it. A
+              long one still grows past it and scrolls, as before. */}
+          <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px', display: 'flex', flexDirection: 'column' }}>
             {stage === 4 && signedUrl ? (
               /* Final repository → the fully-signed PDF rendered as page canvases
                  (pdf.js) so it flows inside this column's own scrollbar — no black
                  native-viewer chrome, no inner scrollbar. */
               <SignedPdfViewer t={t} signatureRequestId={Number(record?.signature_request_id) || null} signedUrl={signedUrl} />
             ) : (
-            <div style={{ width: '100%', maxWidth: 820, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 48px', position: 'relative' }}>
+            <div style={{ width: '100%', maxWidth: 820, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 48px', position: 'relative', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: stage === 4 ? 'linear-gradient(90deg,#047857,#059669,#10B981)' : 'linear-gradient(90deg,#4C1D95,#7C3AED,#A78BFA)', borderRadius: '6px 6px 0 0' }} />
               {/* Configured document header from Stage 1 — logo + title are
                   free-positioned via logo_pos / title_pos (% of the band, centre
@@ -1902,8 +1914,11 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               {draft
                 ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
                 : <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.7, textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }}>No agreement content drafted yet.</div>}
-              {/* Configured document footer (text + pagination) from Stage 1 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: bandBg(footer.background), color: bandFg(footer.text_color), fontSize: 9, fontWeight: 500 }}>
+              {/* Configured document footer (text + pagination) from Stage 1 -
+                  held at the bottom of the sheet like a real page footer; the
+                  spacer keeps the old 26px gap when the text fills the sheet. */}
+              <div style={{ height: 26, flexShrink: 0 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 'auto', paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: bandBg(footer.background), color: bandFg(footer.text_color), fontSize: 9, fontWeight: 500 }}>
                 {(['left', 'center', 'right'] as const).map(cell => {
                   const pn = footer.page_number_format === 'N' ? '1' : footer.page_number_format === 'Page N' ? 'Page 1' : footer.page_number_format === 'N / M' ? '1 / 1' : 'Page 1 of 1';
                   return (
@@ -2153,7 +2168,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                     : versions.map(v => {
                         const meta = ctcTimelineMeta(v.status);
                         const reason = (v as { reason?: string }).reason;
-                        return { tone: meta.tone, title: meta.title, badge: v.status || meta.title, sub: reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label, date: v.date, by: v.by };
+                        return { tone: meta.tone, title: meta.title, badge: meta.badge ?? (v.status || meta.title), sub: reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label, date: v.date, by: v.by };
                       });
                   // One "Requested" item per query + a "Answered" item when the
                   // sender has replied. The answer uses its own `response_date`
@@ -2554,14 +2569,18 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
 }
 
 /* Map a stored version status → a timeline title + dot colour tone. */
-function ctcTimelineMeta(status: string): { title: string; tone: 'done' | 'active' | 'bad' } {
+function ctcTimelineMeta(status: string): { title: string; tone: 'done' | 'active' | 'bad'; badge?: string } {
   switch ((status || '').toLowerCase()) {
     case 'approved':        return { title: 'Approved', tone: 'done' };
     case 'signed':          return { title: 'Signed', tone: 'done' };
     case 'rejected':        return { title: 'Rejected', tone: 'bad' };
     case 'declined':        return { title: 'Declined', tone: 'bad' };
     case 'sent for signing':return { title: 'Sent for Signing', tone: 'active' };
-    case 'approving':       return { title: 'Partial Approval', tone: 'active' };
+    /* One approver said yes: a green tick and an "Approved" badge, the mirror
+       of a rejection's red cross. It used to be the same plain violet dot as
+       "Submitted for Review", so a reject stood out and an approve did not.
+       The "(1 of 2) - awaiting remaining approvers" line still says it is partial. */
+    case 'approving':       return { title: 'Partial Approval', tone: 'done', badge: 'Approved' };
     case 'under review':    return { title: 'Submitted for Review', tone: 'active' };
     default:                return { title: status || 'Update', tone: 'active' };
   }
@@ -3093,7 +3112,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit, initial, mode = 
     setApprovers(list => { const have = new Set(list.map(a => a.email || a.name)); return [...list, ...picked.filter(p => !have.has(p.email || p.name))]; });
     setPickerOpen(false);
   };
-  const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
+  const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : c === '#059669' ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
   return (
     <div onClick={e => { if (!submitting && e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: 'var(--font-sans)', cursor: submitting ? 'wait' : 'auto' }}>
       <div style={{ width: '100%', maxWidth: 420, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>

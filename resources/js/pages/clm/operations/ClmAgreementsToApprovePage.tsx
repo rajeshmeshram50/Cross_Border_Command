@@ -16,6 +16,7 @@ import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
 import { clmBottomReserve } from '../shared/clmShared';
+import { PopName } from '../shared/clmCommon';
 import { useIsClipped } from '../../../components/ui/DataTable';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
@@ -637,13 +638,13 @@ function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
       {pop && createPortal(
         <>
           <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
-          <div style={{ position: 'fixed', left: pop.x, top: pop.up ? undefined : pop.y, bottom: pop.up ? window.innerHeight - pop.y : undefined, zIndex: 200001, width: 228, maxHeight: 260, overflowY: 'auto', background: t.dark ? '#111827' : '#fff', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.22)'}`, borderRadius: 12, padding: 8, boxShadow: t.dark ? '0 18px 50px rgba(0,0,0,.6)' : '0 18px 50px rgba(15,23,42,.22)', fontFamily: 'var(--font-sans)' }}>
+          <div style={{ position: 'fixed', left: pop.x, top: pop.up ? undefined : pop.y, bottom: pop.up ? window.innerHeight - pop.y : undefined, zIndex: 200001, width: 228, maxHeight: 260, overflowY: 'auto', overflowX: 'hidden', background: t.dark ? '#111827' : '#fff', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.22)'}`, borderRadius: 12, padding: 8, boxShadow: t.dark ? '0 18px 50px rgba(0,0,0,.6)' : '0 18px 50px rgba(15,23,42,.22)', fontFamily: 'var(--font-sans)' }}>
             {/* Only the approvers hidden behind "+N" - the first is already on the row. */}
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0e7490', padding: '2px 6px 7px' }}>More approvers · {extra}</div>
             {list.slice(1).map((a, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px', borderRadius: 8, background: i % 2 ? 'transparent' : (t.dark ? 'rgba(6,182,212,.06)' : '#F8FEFF') }}>
                 <Avatar name={a.name} />
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: t.text }}><PopName text={a.name} /></span>
               </div>
             ))}
           </div>

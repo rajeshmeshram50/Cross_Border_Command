@@ -1348,7 +1348,10 @@ class CtcContractController extends Controller
     public function previewLive(Request $request)
     {
         @ini_set('memory_limit', '1024M');
-        @set_time_limit(120);
+        /* 300, not 120: a 300-page table-heavy draft takes ~54s locally and
+           longer on a busier server, and at 120 the request was killed - the
+           panel then never showed the document at all. */
+        @set_time_limit(300);
 
         $user = $request->user();
         if (!$user) abort(401);
@@ -1359,6 +1362,11 @@ class CtcContractController extends Controller
             'page_config'   => 'nullable|array',
             'header_config' => 'nullable|array',
             'footer_config' => 'nullable|array',
+            /* quick=1: render only the opening of a long draft (~0.9s instead of
+               ~54s for 300 pages) so the panel shows something at once; the
+               editor then asks for the full render and swaps it in. The reply
+               says which it is in X-Preview-Partial. */
+            'quick'         => 'nullable|boolean',
         ]);
 
         $row = null;
@@ -1401,6 +1409,15 @@ class CtcContractController extends Controller
 
         $document = $row ?: new CtcContract(['title' => 'Agreement (draft preview)']);
 
+        $partial = false;
+        if (!empty($data['quick'])) {
+            $head = $this->previewHead($processedHtml, 45000);
+            if ($head !== null) {
+                $processedHtml = $head;
+                $partial = true;
+            }
+        }
+
         $cacheKey = 'clm:ctcpreview:' . sha1(implode('|', [
             (int) $user->client_id,
             (string) ($row->code ?? 'DRAFT'),
@@ -1409,11 +1426,13 @@ class CtcContractController extends Controller
             md5(json_encode($footerConfig)),
             md5(json_encode($pageConfig)),
             md5((string) $headerLogoBase64),
+            $partial ? 'head' : 'full',
             now()->format('Y-m-d'),
         ]));
         $headers = [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="ctc-preview.pdf"',
+            'X-Preview-Partial'   => $partial ? '1' : '0',
         ];
         try {
             if ($hit = \Illuminate\Support\Facades\Cache::get($cacheKey)) {
@@ -1441,12 +1460,42 @@ class CtcContractController extends Controller
         $bytes = $pdf->output();
         if (strlen($bytes) <= 5 * 1024 * 1024) {
             try {
-                \Illuminate\Support\Facades\Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(10));
+                // 60 min, was 10: reopening an unchanged draft within the hour
+                // skips the render entirely (same content = same key).
+                \Illuminate\Support\Facades\Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(60));
             } catch (\Throwable $e) {
             }
         }
 
         return response($bytes, 200, $headers);
+    }
+
+    /**
+     * The opening of a long draft for the quick preview: whole top-level blocks
+     * (paragraphs, headings, lists, tables) up to roughly $budget bytes, never a
+     * cut through the middle of a table or list. Returns null when the draft is
+     * short enough that a quick pass would not save anything.
+     */
+    private function previewHead(string $html, int $budget): ?string
+    {
+        if (strlen($html) <= (int) ($budget * 1.5)) return null;
+        try {
+            $doc = new \DOMDocument();
+            $prev = libxml_use_internal_errors(true);
+            $doc->loadHTML('<?xml encoding="UTF-8"><html><body>' . $html . '</body></html>', LIBXML_NOERROR | LIBXML_NOWARNING);
+            libxml_clear_errors();
+            libxml_use_internal_errors($prev);
+            $body = $doc->getElementsByTagName('body')->item(0);
+            if (!$body) return null;
+            $out = '';
+            foreach (iterator_to_array($body->childNodes) as $node) {
+                $out .= $doc->saveHTML($node);
+                if (strlen($out) >= $budget) break;
+            }
+            return trim($out) === '' ? null : $out;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     private function renderVersionDocx(string $html, string $title, string $baseName)
