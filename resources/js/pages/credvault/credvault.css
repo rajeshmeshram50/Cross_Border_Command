@@ -8655,6 +8655,20 @@
 [data-bs-theme="dark"] .cvx .rb-ret__note { color: #94a3b8; }
 [data-bs-theme="dark"] .cvx .rb-opt:hover { border-color: #22d3ee; }
 [data-bs-theme="dark"] .cvx .rb-opt:disabled:hover { border-color: rgba(148, 163, 184, .22); }
+/* Retention card's bin tile on the page: white-to-cyan gradient glared in dark mode. */
+[data-bs-theme="dark"] .cvx .rb-hero__ico {
+  color: #a5f3fc;
+  background: rgba(6, 38, 48, .55);
+  border: 1px solid rgba(165, 243, 252, .35);
+  box-shadow: 0 10px 20px -10px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+/* Retention period clock tile: the light cyan gradient glared on the dark popup. */
+[data-bs-theme="dark"] .cvx .rb-ret__ico {
+  color: #67e8f9 !important;
+  background: linear-gradient(135deg, rgba(34, 211, 238, .18), rgba(8, 145, 178, .10)) !important;
+  border: 1px solid rgba(34, 211, 238, .35);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+}
 [data-bs-theme="dark"] .cvx .rb-opt.is-on { background: linear-gradient(135deg, #0e7490, #22d3ee); border-color: transparent; }
 [data-bs-theme="dark"] .cvx .rb-opt.is-on b,
 [data-bs-theme="dark"] .cvx .rb-opt.is-on small { color: #fff; }
