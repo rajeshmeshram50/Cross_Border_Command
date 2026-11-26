@@ -5,9 +5,10 @@ import { useToast } from '../../../contexts/ToastContext';
 import { CV_ROUTES, type AccessRequestRow, type PageMeta } from '../cvApi';
 import { arData } from './arData';
 import {
-  CvBrief, CvCard, CvPage, CvPortal, CvStrip, CvTabsRow, EmptyRow, ShimRows, StripBtn, Svg,
+  CvBrief, CvPage, CvPortal, CvStrip, CvTabsRow, EmptyRow, ShimRows, StripBtn, Svg,
   errMsg, fmtDate, fmtTime, mmss, useCvMeta, useDebounced, useNow, type CvTab,
 } from '../shared';
+import { FitCard } from '../fitCard';
 import './requests.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -232,7 +233,7 @@ export default function AccessRequests() {
           { icon: I.timer, title: 'Time-limited Access', desc: 'Once both approve, the credential unlocks for the requested window and then locks again.' },
         ]}
       />
-      <CvCard pane>
+      <FitCard pane>
         <CvTabsRow tabs={cvTabs} active={tab} onTab={k => { setTab(k); setPage(1); }}
           search={q} onSearch={setQ} placeholder="Search by request ID, credential, requester, reason or window..." />
         <div id="arListWrap" className="tvc-list">
@@ -318,7 +319,7 @@ export default function AccessRequests() {
             total={meta.total} page={meta.current_page} pageSize={perPage}
             onPage={setPage} onPageSize={n => { setPerPage(n); setPage(1); }} />
         </div>
-      </CvCard>
+      </FitCard>
 
       {/* The prototype's arReject: the centred dl-modal, no reason box. Cancel and Lock now share it. */}
       {dialog && d && (

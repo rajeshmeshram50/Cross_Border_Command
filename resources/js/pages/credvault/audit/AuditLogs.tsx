@@ -4,7 +4,8 @@ import { useToast } from '../../../contexts/ToastContext';
 import { cvApi, CvApiError, type AuditEvent, type AuditGroup, type PageMeta } from '../cvApi';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import { CvCard, CvPage, CvStrip, StripBtn, CvTabsRow, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
+import { CvPage, CvStrip, StripBtn, CvTabsRow, Svg, IC, cap, errMsg, useCvMeta, useDebounced } from '../shared';
+import { FitCard } from '../fitCard';
 import './audit.css';
 
 const CAL = '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>';
@@ -255,9 +256,10 @@ export default function AuditLogs() {
         actions={<StripBtn icon={IC.download} onClick={exportLogs} disabled={exporting || loading}>{exporting ? 'Exporting…' : 'Export Logs'}</StripBtn>} />
 
 
-      {/* CvCard stretches the card to the bottom of the screen (min-height), so an empty or short
-          list keeps the pager pinned at the foot instead of floating mid-page. */}
-      <CvCard>
+      {/* FitCard: the card is exactly as tall as the screen allows (down to the footer) and the
+          timeline scrolls inside it, so the page itself never scrolls - a whole-page scroll here
+          lagged. audit.css makes the card a column with the pager pinned at its foot. */}
+      <FitCard>
         <CvTabsRow className="tvc-top al-top"
           tabs={TABS.map(([k, l, ico]) => ({ key: k, label: l, icon: ico, count: tabs[k] }))}
           active={tab} onTab={k => setTab(k as typeof tab)}
@@ -299,7 +301,7 @@ export default function AuditLogs() {
             total={pm?.total ?? 0} page={pm?.current_page ?? page} pageSize={perPage}
             onPage={setPage} onPageSize={n => setPerPage(n)} />
         )}
-      </CvCard>
+      </FitCard>
     </CvPage>
   );
 }

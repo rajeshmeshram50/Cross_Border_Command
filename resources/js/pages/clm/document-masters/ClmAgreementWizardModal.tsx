@@ -749,12 +749,21 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
             modal so no field, tab-switch or button stays interactive during the
             request. Shown for BOTH "Save & Next" (step 1) and the final
             "Submit & Save Agreement" (step 2). */}
-        {(saving || nexting) && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'rgba(236,253,255,.72)', backdropFilter: 'blur(3px)' }}>
-            <svg className="agw-spin" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ display: 'block' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#0e7490', letterSpacing: '.02em' }}>{saving ? 'Saving Agreement…' : 'Saving…'}</div>
+        {(saving || nexting) && (() => {
+          /* The Trade Document draft's saving state (QA #87): a light dark
+             tint over the popup and a small "Saving…" pill, instead of a 72%
+             white-cyan wash that bleached the whole dialog. The pill follows the
+             theme so it is not a white block in dark mode. */
+          const dk = typeof document !== 'undefined' && document.documentElement.getAttribute('data-bs-theme') === 'dark';
+          return (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.32)', backdropFilter: 'blur(1.5px)', cursor: 'wait' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, background: dk ? '#0f1b2a' : '#fff', border: dk ? '1px solid rgba(103,232,249,.3)' : 'none', borderRadius: 14, padding: '14px 22px', boxShadow: '0 18px 44px rgba(8,40,60,.28)' }}>
+              <svg className="agw-spin" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={dk ? '#67e8f9' : '#0891b2'} strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              <span style={{ fontSize: 14, fontWeight: 700, color: dk ? '#e2e8f0' : '#0c2c3a' }}>{saving ? 'Saving Agreement…' : 'Saving…'}</span>
+            </div>
           </div>
-        )}
+          );
+        })()}
         {/* Header */}
         <div className="agw-head">
           <div className="agw-head-left">

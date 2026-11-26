@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import type { CredentialRow, LockStep, PageMeta } from '../cvApi';
-import { ActBtn, CvBrief, CvCard, CvPage, CvStrip, CvTabsRow, IC, StripBtn, Svg, errMsg, mmss, useDebounced, useNow } from '../shared';
+import { ActBtn, CvBrief, CvPage, CvStrip, CvTabsRow, IC, StripBtn, Svg, errMsg, mmss, useDebounced, useNow } from '../shared';
+import { FitCard } from '../fitCard';
 import CredentialTable from '../my-vault/CredentialTable';
 import CredentialFormModal from '../form/CredentialFormModal';
 import ViewDrawer from '../my-vault/ViewDrawer';
@@ -198,7 +199,7 @@ export default function CriticalVault() {
         ]}
       />
 
-      <CvCard pane>
+      <FitCard pane>
         <CvTabsRow tabs={TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabs?.[t.api] ?? 0 }))}
           active={tab} onTab={k => setTab(k as TabKey)} search={q} onSearch={setQ}
           placeholder="Search by credential ID, name, category, username or owner..." />
@@ -224,7 +225,7 @@ export default function CriticalVault() {
             total={meta?.total ?? 0} page={meta?.current_page ?? page} pageSize={perPage}
             onPage={setPage} onPageSize={n => { setPerPage(n); setPage(1); }} />
         </div>
-      </CvCard>
+      </FitCard>
 
       {overlay?.kind === 'add' && (
         <CredentialFormModal critical onClose={close}
