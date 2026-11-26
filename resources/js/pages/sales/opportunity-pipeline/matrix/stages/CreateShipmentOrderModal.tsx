@@ -109,95 +109,12 @@ const IcoDl = () => (
   </svg>
 );
 
-/* Attachment chips, collapsed: first file inline + a "+N" badge that opens a
- * portalled popover for the rest. Same behaviour as the Procurement modal —
- * auto-flips above the badge when there's no room below, caps its height to the
- * space available, and a scroll INSIDE the list doesn't dismiss it. */
+/* Tooltip body for the attached file: its name, type and size. (The shipment
+ * carries one file, shown in the Attachment field itself.) */
 function fileTip(f: File) {
   const ext = (f.name.includes('.') ? f.name.split('.').pop() : '')?.toUpperCase() || 'File';
   const size = f.size >= 1024 * 1024 ? `${(f.size / (1024 * 1024)).toFixed(2)} MB` : `${Math.max(1, Math.round(f.size / 1024))} KB`;
   return <>{f.name}<br /><span style={{ opacity: .75, fontWeight: 500 }}>{ext} · {size}</span></>;
-}
-
-function ShpAttachChips({ files, onRemove }: { files: File[]; onRemove: (i: number) => void }) {
-  const moreRef = useRef<HTMLButtonElement | null>(null);
-  const popRef  = useRef<HTMLDivElement | null>(null);
-  const [popPos, setPopPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
-  const overflow = files.slice(1);
-
-  const openPop = () => {
-    const r = moreRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const GAP = 6, MARGIN = 12, CAP = 260;
-    const estH = Math.min(CAP, 30 + overflow.length * 30);
-    const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
-    const spaceAbove = r.top - GAP - MARGIN;
-    const flipUp = spaceBelow < estH && spaceAbove > spaceBelow;
-    const maxHeight = Math.max(120, Math.min(CAP, flipUp ? spaceAbove : spaceBelow));
-    const top = flipUp ? Math.max(MARGIN, r.top - GAP - maxHeight) : r.bottom + GAP;
-    setPopPos({ top, left: Math.min(r.left, window.innerWidth - 296), maxHeight });
-  };
-  const closePop = () => setPopPos(null);
-
-  useEffect(() => {
-    if (!popPos) return;
-    const onDoc = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (moreRef.current?.contains(t) || popRef.current?.contains(t)) return;
-      closePop();
-    };
-    // A scroll inside the popover's own list must NOT close it.
-    const onMove = (e: Event) => { if (e.target instanceof Node && popRef.current?.contains(e.target)) return; closePop(); };
-    const onEsc  = (e: KeyboardEvent) => { if (e.key === 'Escape') closePop(); };
-    document.addEventListener('mousedown', onDoc);
-    window.addEventListener('scroll', onMove, true);
-    window.addEventListener('resize', onMove);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      window.removeEventListener('scroll', onMove, true);
-      window.removeEventListener('resize', onMove);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [popPos]);
-
-  useEffect(() => { if (files.length <= 1) closePop(); }, [files.length]);
-
-  if (files.length === 0) return null;
-
-  const chip = (f: File, realIdx: number, block?: boolean) => (
-    <span className={`cso-att-chip${block ? ' cso-att-chip-block' : ''}`}>
-      <Tooltip label={fileTip(f)} position="top">
-        <span className="cso-att-name">{f.name}</span>
-      </Tooltip>
-      <button type="button" onClick={() => downloadFile(f)} className="cso-att-dl" title="Download"><IcoDl /></button>
-      <button type="button" onClick={() => onRemove(realIdx)} className="cso-att-x" title="Remove">×</button>
-    </span>
-  );
-
-  return (
-    <div className="cso-att-chips">
-      {chip(files[0], 0)}
-      {overflow.length > 0 && (
-        <button
-          type="button" ref={moreRef}
-          className={`cso-att-more ${popPos ? 'cso-att-more-on' : ''}`}
-          onClick={() => (popPos ? closePop() : openPop())}
-          title={`${overflow.length} more attachment${overflow.length === 1 ? '' : 's'}`}
-        >
-          +{overflow.length}
-        </button>
-      )}
-      {popPos && overflow.length > 0 && createPortal(
-        <div ref={popRef} className="cso-att-pop" style={{ top: popPos.top, left: popPos.left, maxHeight: popPos.maxHeight }}>
-          <div className="cso-att-pop-head">{overflow.length} more attachment{overflow.length === 1 ? '' : 's'}</div>
-          {/* realIdx = i + 1 — the overflow list starts at the second file. */}
-          {overflow.map((f, i) => <div key={i + 1}>{chip(f, i + 1, true)}</div>)}
-        </div>,
-        document.body,
-      )}
-    </div>
-  );
 }
 
 export default function CreateShipmentOrderModal({
@@ -673,13 +590,26 @@ export default function CreateShipmentOrderModal({
             {/* `attachments.*` rejections (type / 2 MB cap) land here — the
                 server key is dotted, so it is folded onto `attachments` above. */}
             <Field label="Attachment" error={errors.attachments}>
-              <div className="cso-att-row">
+              {/* One field: empty, it reads "Attach File"; with a file, the
+                  file's name sits at the left (click it to pick a different
+                  one) and Download / Remove at the right. */}
+              <div className={`cso-att-row${attachments[0] ? ' has-file' : ''}`}>
                 <button type="button" className="cso-att-btn" onClick={() => fileRef.current?.click()}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                   </svg>
-                  Attach File
+                  {attachments[0] ? (
+                    <Tooltip label={fileTip(attachments[0])} position="top">
+                      <span className="cso-att-name">{attachments[0].name}</span>
+                    </Tooltip>
+                  ) : 'Attach File'}
                 </button>
+                {attachments[0] && (
+                  <span className="cso-att-acts">
+                    <button type="button" onClick={() => downloadFile(attachments[0])} className="cso-att-dl" title="Download"><IcoDl /></button>
+                    <button type="button" onClick={() => setAttachments([])} className="cso-att-x" title="Remove">×</button>
+                  </span>
+                )}
                 {/* SINGLE file only (no `multiple`): a shipment carries one
                     attachment. Picking a new file REPLACES the current one. */}
                 <input type="file" hidden ref={fileRef}
@@ -704,10 +634,6 @@ export default function CreateShipmentOrderModal({
                     // typing clears a text field's error.
                     if (errors.attachments) setErrors(p => ({ ...p, attachments: '' }));
                   }} />
-                <ShpAttachChips
-                  files={attachments}
-                  onRemove={(i) => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
-                />
               </div>
             </Field>
           </div>
@@ -1101,70 +1027,47 @@ const SCOPED_CSS = `
 .cso-input-prefix-input { padding-left: 46px; }
 
 /* Attach */
-.cso-att-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; }
+/* One white field, like the inputs beside it. Attach File is the field itself
+   (no separate dashed button) — click anywhere in it to pick — and the picked
+   file's chip sits inside it at the right. */
+.cso-att-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+  height: 36px; padding: 0 6px 0 0; box-sizing: border-box; min-width: 0;
+  border: 1.5px solid #fde68a; border-radius: 8px; background: #fffef9;
+  transition: border-color .15s, box-shadow .15s;
+}
+.cso-att-row:hover { border-color: #f59e0b; }
+.cso-att-row:focus-within { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.16); }
+.cso-field-err .cso-att-row { border-color: #ef4444; }
 .cso-att-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px;
-  border: 1.5px dashed #d97706; border-radius: 8px;
-  background: #fffaf0; color: #b45309;
-  font-family: inherit; font-size: 11.5px; font-weight: 700;
-  cursor: pointer; transition: all .12s;
+  display: inline-flex; align-items: center; gap: 7px;
+  flex: 1 1 auto; min-width: 0; align-self: stretch;
+  padding: 0 0 0 12px; box-sizing: border-box;
+  border: none; outline: none; background: transparent; color: #b45309;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; text-align: left;
+  cursor: pointer;
 }
-.cso-att-btn:hover { background: #fef3c7; border-style: solid; }
-/* Single line now: first chip + the "+N" badge. The chip shrinks (ellipsis) so
-   the badge never wraps to a second row. */
-.cso-att-chips { display: inline-flex; gap: 5px; flex-wrap: nowrap; align-items: center; min-width: 0; }
-.cso-att-chip {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 3px 5px 3px 9px; border-radius: 999px;
-  background: #fef3c7; color: #92400e; border: 1px solid #fde68a;
-  font-size: 10.5px; font-weight: 600;
-  max-width: 160px;
-}
-.cso-att-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The button is only the field's clickable face: no fill of its own in any
+   state, so the field shows the same background as every other input. */
+.cso-att-row .cso-att-btn,
+.cso-att-row .cso-att-btn:hover,
+.cso-att-row .cso-att-btn:focus,
+.cso-att-row .cso-att-btn:active { background: transparent !important; box-shadow: none; }
+/* With a file: its name at the left in the input's text colour, Download /
+   Remove at the right. */
+.cso-att-row.has-file .cso-att-btn { color: #1e293b; font-weight: 500; }
+.cso-att-row.has-file .cso-att-btn svg { color: #b45309; flex-shrink: 0; }
+.cso-att-btn > :not(svg) { min-width: 0; overflow: hidden; }
+.cso-att-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cso-att-acts { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .cso-att-dl, .cso-att-x {
   background: transparent; border: none; cursor: pointer;
-  color: #92400e; padding: 1px 3px; line-height: 1;
-  display: inline-flex; align-items: center; border-radius: 4px;
+  color: #92400e; width: 24px; height: 24px; padding: 0; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
 }
 .cso-att-dl:hover { background: rgba(217,119,6,.18); }
-.cso-att-x { font-weight: 800; font-size: 12px; }
+.cso-att-x { font-weight: 800; font-size: 14px; }
 .cso-att-x:hover { background: rgba(239,68,68,.18); color: #dc2626; }
-
-/* "+N" overflow badge — folds the extra attachments into one pill so the row
-   stays a single line instead of a big wrapping grid. */
-.cso-att-more {
-  display: inline-flex; align-items: center; justify-content: center;
-  height: 22px; padding: 0 10px; border-radius: 999px; flex: 0 0 auto;
-  background: linear-gradient(135deg, #d97706, #b45309); color: #fff;
-  border: 1px solid #b45309; white-space: nowrap;
-  font-family: inherit; font-size: 10.5px; font-weight: 800;
-  cursor: pointer; transition: filter .12s;
-}
-.cso-att-more:hover, .cso-att-more-on { filter: brightness(1.08); }
-/* Overflow popover — fixed + portalled; position + max-height set inline from
-   the badge's rect (auto-flips above when there's no room below). */
-.cso-att-pop {
-  position: fixed; z-index: 1100;
-  width: 280px; overflow-y: auto; overscroll-behavior: contain;
-  background: #fffdf7; border: 1.5px solid #fde68a; border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(15,23,42,.22);
-  padding: 8px; display: flex; flex-direction: column; gap: 5px;
-  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
-}
-.cso-att-pop::-webkit-scrollbar { width: 8px; }
-.cso-att-pop::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
-.cso-att-pop-head {
-  font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-  color: #b45309; padding: 2px 4px 5px;
-  border-bottom: 1px solid #fef3c7; margin-bottom: 2px;
-}
-/* Block chip fills the popover row so download + remove sit at the right. */
-.cso-att-chip-block { display: flex; max-width: none; }
-.cso-att-chip-block .cso-att-name { flex: 1 1 auto; max-width: none; }
-[data-bs-theme="dark"] .cso-att-more { background: linear-gradient(135deg, #d97706, #b45309); border-color: rgba(217,119,6,.6); }
-[data-bs-theme="dark"] .cso-att-pop { background: #221803; border-color: rgba(217,119,6,.40); box-shadow: 0 12px 32px rgba(0,0,0,.5); }
-[data-bs-theme="dark"] .cso-att-pop-head { color: #fbbf24; border-bottom-color: rgba(217,119,6,.30); }
 
 /* Remarks (full-width) */
 .cso-remarks { margin-top: 16px; }
@@ -1271,13 +1174,14 @@ const SCOPED_CSS = `
   border-color: rgba(252,191,36,.5);
 }
 [data-bs-theme="dark"] .cso-input-prefix > span { color: #fbbf24; }
-[data-bs-theme="dark"] .cso-att-btn {
-  background: rgba(252,191,36,.10); color: #fde68a; border-color: rgba(252,191,36,.45);
+[data-bs-theme="dark"] .cso-att-row {
+  background: rgba(252,191,36,.06); border-color: rgba(252,191,36,.30);
 }
-[data-bs-theme="dark"] .cso-att-btn:hover { background: rgba(252,191,36,.20); }
-[data-bs-theme="dark"] .cso-att-chip {
-  background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.40);
-}
+[data-bs-theme="dark"] .cso-field-err .cso-att-row { border-color: #ef4444; }
+[data-bs-theme="dark"] .cso-att-row:hover { border-color: rgba(252,191,36,.55); }
+[data-bs-theme="dark"] .cso-att-btn { color: #fde68a; }
+[data-bs-theme="dark"] .cso-att-row.has-file .cso-att-btn { color: #ede9fe; }
+[data-bs-theme="dark"] .cso-att-row.has-file .cso-att-btn svg { color: #fbbf24; }
 [data-bs-theme="dark"] .cso-att-dl,
 [data-bs-theme="dark"] .cso-att-x { color: #fde68a; }
 [data-bs-theme="dark"] .cso-foot { background: #1a1538; border-top-color: rgba(252,191,36,.30); }
