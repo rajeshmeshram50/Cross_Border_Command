@@ -238,6 +238,7 @@ class CredVaultController extends Controller
         $reqs   = $this->openRequestsFor($u, $items->filter(fn ($c) => $c->isProtected())->pluck('id')->all());
         $shares = $this->liveShareCounts($items->pluck('id')->all());
         $pol    = Policy::for($u->client_id);
+        $this->primeSharedToMeBy($u, array_keys($access));
 
         return response()->json([
             'status' => true,
@@ -4527,6 +4528,29 @@ class CredVaultController extends Controller
         });
     }
 
+    /**
+     * Batch-load sharedToMeBy() for a whole page: one query instead of one per row.
+     * Seeds the same memo keys, so row() reads them without touching the DB.
+     */
+    protected function primeSharedToMeBy(User $u, array $ids): void
+    {
+        $ids = array_values(array_filter($ids, fn ($id) => !array_key_exists("sharedby:{$u->id}:{$id}", $this->memo)));
+        if (!$ids) return;
+        $dept = $this->teamShareDept($u);
+
+        $by = array_fill_keys($ids, []);
+        CredentialShare::live()->where('client_id', $u->client_id)->whereIn('credential_id', $ids)
+            ->where(function ($w) use ($u, $dept) {
+                $w->where(fn ($x) => $x->where('recipient_type', 'user')->where('recipient_user_id', $u->id));
+                if ($dept) $w->orWhere(fn ($x) => $x->where('recipient_type', 'team')->where('recipient_department_id', $dept));
+            })
+            ->whereNotNull('shared_by')->where('shared_by', '!=', $u->id)
+            ->with('sharer:id,name')->orderBy('id')->get(['id', 'credential_id', 'shared_by'])
+            ->each(function ($s) use (&$by) { $by[$s->credential_id][(int) $s->shared_by] = $s->sharer?->name ?? 'Someone'; });
+
+        foreach ($by as $id => $map) $this->memo["sharedby:{$u->id}:{$id}"] = $map;
+    }
+
     protected function sharedWithMeIds(User $u)
     {
         $dept = $this->teamShareDept($u);
@@ -4554,6 +4578,9 @@ class CredVaultController extends Controller
             ? User::whereIn('id', $creds->where('scope', 'team')->pluck('owner_id')->unique()->all())
                 ->get(['id', 'name', 'user_type', 'branch_id', 'designation', 'department_id', 'employee_code', 'client_id'])->keyBy('id')
             : collect();
+        // levelOfUser() below runs once per owner; warm userInfo for all of them in
+        // one batch (4 queries total) instead of 4 queries per owner.
+        if ($owners->isNotEmpty()) $this->userInfo($owners->keys()->map(fn ($i) => (int) $i)->all());
         $shareRank = [];
         CredentialShare::live()->whereIn('credential_id', $creds->pluck('id')->all())
             ->where(function ($w) use ($u, $dept) {
