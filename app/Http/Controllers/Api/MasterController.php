@@ -9,6 +9,8 @@ use App\Models\User;
 use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -728,11 +730,137 @@ class MasterController extends Controller
             ], 405);
         }
 
+        // Generic "in use" guard — a master value referenced anywhere cannot be
+        // deleted. Sources: declared DB foreign keys, config `ref` dropdown
+        // fields, and the explicit USAGE_MAP for plain (un-constrained) columns.
+        $usage = $this->masterUsage($slug, $row);
+        if ($usage) {
+            $total = array_sum(array_column($usage, 1));
+            $where = collect($usage)
+                ->sortByDesc(1)
+                ->take(4)
+                ->map(fn ($h) => $h[1] . ' in ' . $this->humanTable($h[0]))
+                ->implode(', ');
+            return response()->json([
+                'message' => 'This ' . $this->masterLabel($slug) . ' is in use by '
+                    . $total . ' record' . ($total === 1 ? '' : 's') . ' (' . $where . ')'
+                    . ' and cannot be deleted. Reassign or remove those records first, or set it to Inactive.',
+            ], 409);
+        }
+
         $row->delete();
 
         MasterBundleCache::bump();
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /*
+    | Explicit usage map for masters whose values are referenced by plain columns
+    | (no DB foreign key and no config `ref` field, so they can't be discovered
+    | automatically). slug => [[referencing_table, column], ...]. Built from a
+    | code audit; a column that does not exist is skipped safely.
+    */
+    private const USAGE_MAP = [
+        // Masters referenced by plain id columns (no DB FK, no config ref).
+        // `assets` and `expense_category` are intentionally omitted — their
+        // specific guards above already cover them (assets incl. the JSON
+        // `other_master_asset_ids` column, which a scalar check can't match).
+        'bank_accounts'      => [['quotations', 'bank_account_id'], ['proforma_invoices', 'bank_account_id']],
+        'hsn_codes'          => [['products', 'hsn_id'], ['p2p_services', 'hsn_id']],
+        'gst_percentage'     => [['products', 'gst_id'], ['p2p_services', 'gst_id'], ['p2p_service_suppliers', 'gst_id']],
+        'uom'                => [['products', 'uom_id'], ['p2p_services', 'uom_id']],
+        'packaging_material' => [['products', 'packaging_material_id'], ['p2p_services', 'packaging_id']],
+        'conditions'         => [['products', 'condition_id'], ['p2p_services', 'condition_id']],
+        'incoterms'          => [['shipment_orders', 'inco_term_id']],
+        'haz_class'          => [['products', 'haz_class_id'], ['p2p_services', 'haz_class_id']],
+        'trigger_point'      => [['hr_document_templates', 'trigger_point_id']],
+    ];
+
+    /**
+     * Every place a master row is referenced, with a non-zero count.
+     *
+     * Three sources, merged and de-duplicated: declared DB foreign keys,
+     * config `ref` dropdown fields, and the explicit USAGE_MAP. Counts across
+     * all tenants on purpose — a value used anywhere must not be deletable.
+     *
+     * @return array<int, array{0:string,1:int}>  [[table, count], ...]
+     */
+    private function masterUsage(string $slug, $row): array
+    {
+        $table = $row->getTable();
+        $id    = $row->getKey();
+        $pk    = $row->getKeyName();
+
+        $sources = array_merge(
+            $this->incomingForeignKeys($table),
+            $this->configReverseRefs($slug),
+            self::USAGE_MAP[$slug] ?? []
+        );
+
+        $seen = [];
+        $hits = [];
+        foreach ($sources as [$srcTable, $srcCol]) {
+            $key = $srcTable . '.' . $srcCol;
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            if ($srcTable === $table && $srcCol === $pk) continue;              // never the PK itself
+            if (!Schema::hasTable($srcTable) || !Schema::hasColumn($srcTable, $srcCol)) continue;
+            $n = DB::table($srcTable)->where($srcCol, $id)->count();
+            if ($n > 0) $hits[] = [$srcTable, $n];
+        }
+
+        return $hits;
+    }
+
+    /** Incoming DB foreign keys to $table: [[srcTable, srcCol], ...], cached per request. */
+    private function incomingForeignKeys(string $table): array
+    {
+        static $cache = [];
+        if (!array_key_exists($table, $cache)) {
+            $rows = DB::select(
+                "SELECT tc.table_name AS src_table, kcu.column_name AS src_col
+                   FROM information_schema.table_constraints tc
+                   JOIN information_schema.key_column_usage kcu
+                     ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+                   JOIN information_schema.constraint_column_usage ccu
+                     ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+                  WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = ?",
+                [$table]
+            );
+            $cache[$table] = array_map(fn ($r) => [$r->src_table, $r->src_col], $rows);
+        }
+
+        return $cache[$table];
+    }
+
+    /** Config `ref` dropdown fields that point at $slug: [[srcTable, srcCol], ...]. */
+    private function configReverseRefs(string $slug): array
+    {
+        $out = [];
+        foreach (self::SCHEMAS as $s => $cfg) {
+            $model = self::MODELS[$s] ?? null;
+            if (!$model) continue;
+            foreach (($cfg['fields'] ?? []) as $f) {
+                if (($f['ref'] ?? null) === $slug) {
+                    $out[] = [(new $model)->getTable(), $f['n']];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** "master_vendor_directory" => "Vendor Directory", "leave_requests" => "Leave Requests". */
+    private function humanTable(string $table): string
+    {
+        return ucwords(str_replace('_', ' ', preg_replace('/^master_/', '', $table)));
+    }
+
+    /** "payment_terms" => "Payment Terms". */
+    private function masterLabel(string $slug): string
+    {
+        return ucwords(str_replace('_', ' ', $slug));
     }
 
     private function authorizeMaster(Request $request, string $slug, string $perm): void
