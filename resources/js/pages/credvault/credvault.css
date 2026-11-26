@@ -18778,7 +18778,7 @@
   transform: none;
 }
 
-/* CS-1438 · My Vault form: the locked Auto fields (Credential ID, Category, Owner) are inert — no focus, border change or text cursor. */
+/* CS-1438 · My Vault + Critical Vault form: the locked Auto fields (Credential ID, Category, Owner) are inert — no focus, border change or text cursor. */
 .cvx .mapsup-inputwrap.is-frozen.is-inert {
   cursor: not-allowed;
 }
@@ -18881,57 +18881,58 @@
 
 /* Team Vault opens the same View drawer without `fieldLabels`, so it never gets `.vd--mv` and none
    of the dark rules above reached it: Share, Delete, Close and the header icon stayed white blocks.
-   The same values, scoped to the plain drawer AND to a page where Team Vault is open - My Vault
+   Critical Vault opens it the same way. The same values, scoped to the plain drawer AND to a page
+   where Team Vault or Critical Vault is open - My Vault
    (vd--mv) and every other screen are untouched. */
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-hd__ico {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-hd__ico {
   background: rgba(255, 255, 255, .08) !important;
   color: #67e8f9 !important;
   border: 1px solid rgba(103, 232, 249, .28);
   box-shadow: none !important;
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-btn {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn {
   color: #a5f3fc;
   background: rgba(255, 255, 255, .07);
   border: 1px solid rgba(103, 232, 249, .3);
   box-shadow: none;
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-btn:hover:not(:disabled) {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn:hover:not(:disabled) {
   color: #ecfeff;
   background: rgba(34, 211, 238, .16);
   border-color: rgba(103, 232, 249, .5);
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-btn--p {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn--p {
   color: #ecfeff;
   background: linear-gradient(135deg, #0e7490, #0891b2);
   border-color: transparent;
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-btn:disabled {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn:disabled {
   opacity: .45;
   cursor: not-allowed;
   transform: none;
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-btn--del {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn--del {
   color: #fda4af;
   background: rgba(244, 63, 94, .1);
   border-color: rgba(251, 113, 133, .35);
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-btn--del:hover {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn--del:hover {
   color: #fff;
   background: #e11d48;
   border-color: #e11d48;
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-x {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-x {
   color: #a5f3fc;
   background: rgba(255, 255, 255, .07);
   border: 1px solid rgba(103, 232, 249, .3);
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-ft .mapsup-footer__btn--ghost.vd-fb {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-ft .mapsup-footer__btn--ghost.vd-fb {
   color: #67e8f9 !important;
   background: rgba(34, 211, 238, .06) !important;
   border: 1.5px solid rgba(34, 211, 238, .35) !important;
   box-shadow: none !important;
 }
-[data-bs-theme="dark"] body:has(.cvx.tvx-page) .cvx .vd:not(.vd--mv) .vd-ft .mapsup-footer__btn--ghost.vd-fb:hover {
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-ft .mapsup-footer__btn--ghost.vd-fb:hover {
   color: #ecfeff !important;
   background: rgba(34, 211, 238, .14) !important;
 }
