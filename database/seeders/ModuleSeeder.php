@@ -27,7 +27,7 @@ class ModuleSeeder extends Seeder
             ['name' => 'Procure to Pay (P2P)',         'slug' => 'p2p',               'icon' => 'ShoppingBag', 'sort_order' => 16, 'is_default' => false, 'description' => 'Procure-to-pay summary & operations'],
             ['name' => 'Shipment 360',                 'slug' => 'developers',        'icon' => 'Truck',       'sort_order' => 17, 'is_default' => false, 'description' => 'End-to-end shipment journey — order, dispatch, customs, transit & delivery'],
             ['name' => 'GTS (E-Docs)',                 'slug' => 'gts',               'icon' => 'Globe',       'sort_order' => 18, 'is_default' => false, 'description' => 'Global trade services & electronic trade documents'],
-            ['name' => 'Inventory Management System',  'slug' => 'inventory',         'icon' => 'Boxes',       'sort_order' => 19, 'is_default' => false, 'description' => 'Stock, warehouse & movement tracking'],
+            ['name' => 'Inventory Management System',  'slug' => 'inventory',         'icon' => 'Boxes',       'sort_order' => 19, 'is_default' => false, 'is_active' => false, 'description' => 'Stock, warehouse & movement tracking'],
             ['name' => 'Dev Tools',                    'slug' => 'dev-tools',         'icon' => 'Wrench',      'sort_order' => 20, 'is_default' => false, 'description' => 'Read-only Zoho Books data inspector (items, vendors, POs, vendor credits, bills, payments)'],
         ];
 
