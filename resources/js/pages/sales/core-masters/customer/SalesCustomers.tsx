@@ -55,6 +55,13 @@ function SegChip({ name, status, split = false }: { name: string; status?: strin
   return clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip;
 }
 
+function TypePill({ value, style }: { value: string; style: React.CSSProperties }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const clipped = useIsClipped(ref, value);
+  const pill = <span ref={ref} className="smc-type-pill" style={style}>{value}</span>;
+  return clipped ? <Tooltip label={value}>{pill}</Tooltip> : pill;
+}
+
 type Customer = {
   id: string; db_id?: number;
   company: string; type: string; segment: string;
@@ -292,8 +299,11 @@ export default function SalesCustomers() {
   if (filters.whatsapp) filterChips.push({ label: `Whatsapp: ${filters.whatsapp}`, onRemove: () => setFilters(f => ({ ...f, whatsapp: undefined })) });
 
   useEffect(() => {
-    if (readCustomerMasterBundle()) return;
     const warm = () => {
+      // Fetch the form's code ahead of the first click so Add Customer opens
+      // straight into the form, not the loading shell (same module as the lazy import).
+      import('./AddCustomerModal').catch(() => {  });
+      if (readCustomerMasterBundle()) return;
       api.get('/customers/master-bundle')
         .then(res => writeCustomerMasterBundle(res.data))
         .catch(() => {  });
@@ -361,11 +371,7 @@ export default function SalesCustomers() {
         const v = info.getValue() as string | null;
         if (!v) return <span className="text-muted">—</span>;
         const t = TYPE_COLORS[v] || { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)' };
-        return (
-          <span className="smc-type-pill" style={{ background: t.bg, color: t.color, borderColor: t.border }}>
-            {v}
-          </span>
-        );
+        return <TypePill value={v} style={{ background: t.bg, color: t.color, borderColor: t.border }} />;
       },
     },
     {

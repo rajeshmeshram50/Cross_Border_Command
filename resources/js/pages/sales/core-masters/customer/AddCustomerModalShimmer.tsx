@@ -15,6 +15,7 @@ export const ACM_SHELL_CSS = `
   animation: acmFadeIn .25s ease;
 }
 @keyframes acmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.acm-root.acm-root--settled, .acm-root--settled .acm-card { animation: none; }
 .acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 .acm-card {
   width: 100%; max-width: 1224px;
@@ -225,7 +226,15 @@ export function Stage1FormShimmer() {
   );
 }
 /** Suspense fallback: the customer form's own loading state, shown until the form chunk arrives. */
+/**
+ * Set while this loading shell is on screen. The real modal reads it on mount
+ * and skips its open animation, so the shell turns into the form in place
+ * instead of a second popup sliding in on top (first open after a hard refresh).
+ */
+export const acmShell = { shown: false };
+
 export default function AddCustomerModalShimmer({ title }: { title: string }) {
+  acmShell.shown = true;
   return createPortal((
     <div className="acm-root">
       <style>{ACM_SHELL_CSS}</style>

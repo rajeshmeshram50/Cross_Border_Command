@@ -10,7 +10,7 @@ import '../../../../components/ui/DataTable.css';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
-import { ACM_SHELL_CSS, StepperShimmer, Stage1FormShimmer } from './AddCustomerModalShimmer';
+import { ACM_SHELL_CSS, StepperShimmer, Stage1FormShimmer, acmShell } from './AddCustomerModalShimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -874,6 +874,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   useScrollLock(open, '.acm-root');
 
+  // Replacing the loading shell: it already played the open animation.
+  const [settled] = useState(() => acmShell.shown);
+  useEffect(() => { acmShell.shown = false; }, []);
+
   const handleClose = () => {
     if (inFlightRef.current || saving) return;
     if (dirtySavedRef.current) {
@@ -1313,7 +1317,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const nextLocked = false;
 
   return createPortal((
-    <div className="acm-root">
+    <div className={`acm-root${settled ? ' acm-root--settled' : ''}`}>
       <style>{ACM_SHELL_CSS}</style>
       <style>{SCOPED_CSS}</style>
       <style>{CLM_CSS}</style>
