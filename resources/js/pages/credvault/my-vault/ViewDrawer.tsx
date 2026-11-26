@@ -84,6 +84,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const [acts, setActs] = useState<{ rows: AuditEvent[]; meta: PageMeta | null; loading: boolean }>({ rows: [], meta: null, loading: true });
   const [binAsk, setBinAsk] = useState(false);
   const [launchAsk, setLaunchAsk] = useState(false);
+  const [dlKey, setDlKey] = useState<string | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const viewed = useRef(false);
   const actSeq = useRef(0);
@@ -222,8 +223,13 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   };
   const launch = () => { if (launchRisky) setLaunchAsk(true); else openLaunch(); };
   const download = async (key: string) => {
+    if (dlKey) return;
+    setDlKey(key);
     try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not download the file', errMsg(e)); }
+    finally { setDlKey(null); }
   };
+  // Download icon, or a spinner while that file is downloading.
+  const dlIcon = (key: string) => (dlKey === key ? <span className="cp-spin cp-spin--sm vd-dl-spin" /> : <Svg icon={IC.download} size={13} />);
 
   const copyBtn = (fn: () => void, label?: string) => <button type="button" data-h40="skip" className="vd-ic" title={fieldLabels && label ? `Copy ${label}` : 'Copy'} onClick={fn}><Svg icon="copy" size={13} /></button>;
   const revealBtn = (key: string, allowed: boolean) => (
@@ -269,7 +275,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       return (
         <>
           <b>{v}</b>
-          {f.attachment_key && <button type="button" data-h40="skip" className="vd-ic" title="Download" onClick={() => download(f.attachment_key!)}><Svg icon={IC.download} size={13} /></button>}
+          {f.attachment_key && <button type="button" data-h40="skip" className="vd-ic" title={dlKey === f.attachment_key ? 'Downloading…' : 'Download'} disabled={!!dlKey} aria-busy={dlKey === f.attachment_key || undefined} onClick={() => download(f.attachment_key!)}>{dlIcon(f.attachment_key)}</button>}
         </>
       );
     }
@@ -430,7 +436,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
                     <div key={f.key} className={`crd-att__f crd-att__f--${k}`}>
                       <span className="crd-att__fi">{k.toUpperCase()}</span>
                       <div><b title={f.name}>{f.name}</b><small>{bytes(f.size)}{f.at ? ` · ${fmtDay(f.at)}` : ''}</small></div>
-                      <button type="button" data-h40="skip" className="crd-att__b" title="Download" aria-label={`Download ${f.name}`} onClick={() => download(f.key)}><Svg icon={IC.download} size={13} /></button>
+                      <button type="button" data-h40="skip" className="crd-att__b" title={dlKey === f.key ? 'Downloading…' : 'Download'} aria-label={`Download ${f.name}`} disabled={!!dlKey} aria-busy={dlKey === f.key || undefined} onClick={() => download(f.key)}>{dlIcon(f.key)}</button>
                     </div>
                   );
                 }) : <i className="vd-dash">No files attached — edit the credential to add proof</i>}

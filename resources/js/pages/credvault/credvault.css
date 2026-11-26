@@ -17504,6 +17504,14 @@
   border-bottom-color: rgba(34, 211, 238, .12);
 }
 
+/* View drawer download buttons: spinner while the file downloads; the others wait. */
+.cvx .vd .cp-spin.vd-dl-spin { width: 13px; height: 13px; border-width: 2px; border-color: #a5f3fc; border-top-color: #0891b2; }
+.cvx .vd .crd-att__b:disabled,
+.cvx .vd .vd-ic:disabled[aria-busy],
+.cvx .vd .crd-att__b[aria-busy] { cursor: progress; }
+.cvx .vd .crd-att__b:disabled:not([aria-busy]) { opacity: .55; cursor: not-allowed; }
+[data-bs-theme="dark"] .cvx .vd .cp-spin.vd-dl-spin { border-color: rgba(103, 232, 249, .3); border-top-color: #67e8f9; }
+
 /* View drawer attachments: the file card was solid white in dark mode (the form's dark
    rules only reach #crd-host .crd-box). Same look as the form's attachment cards. */
 [data-bs-theme="dark"] .cvx .vd .crd-att__f {
