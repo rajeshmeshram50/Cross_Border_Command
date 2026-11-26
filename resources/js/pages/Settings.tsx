@@ -132,15 +132,19 @@ function SectionHeader({ icon, title, desc, color, onSave, saving, canSave }: {
             type="button"
             disabled={saving || !canSave}
             onClick={onSave}
-            className="btn rounded-pill fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0"
+            className="btn rounded-pill fw-semibold d-inline-flex align-items-center justify-content-center gap-1 flex-shrink-0"
             style={{
-              padding: '5px 12px', fontSize: 11.5,
-              background: canSave ? `linear-gradient(135deg, ${color}, ${color}dd)` : 'var(--vz-secondary-bg)',
+              height: 40, padding: '0 18px', fontSize: 12.5, lineHeight: 1,
+              /* Dark version of the tab accent — the accent blended toward black
+                 so the button reads as a deep, solid tab-coloured action. */
+              background: canSave
+                ? `linear-gradient(135deg, color-mix(in srgb, ${color} 82%, #000) 0%, color-mix(in srgb, ${color} 60%, #000) 100%)`
+                : 'var(--vz-secondary-bg)',
               color: canSave ? '#fff' : 'var(--vz-secondary-color)',
               border: 'none',
-              opacity: saving ? 0.6 : 1,
+              opacity: saving ? 0.7 : 1,
               cursor: !canSave || saving ? 'not-allowed' : 'pointer',
-              boxShadow: canSave ? `0 4px 12px ${color}4a, inset 0 1px 0 rgba(255,255,255,0.22)` : 'none',
+              boxShadow: canSave ? `0 4px 12px ${color}40, inset 0 1px 0 rgba(255,255,255,0.18)` : 'none',
               transition: 'all .18s ease',
             }}
             title={!canSave ? 'Only super admin can save platform settings' : undefined}
@@ -157,8 +161,8 @@ function SubSection({ icon, title, desc, color, children, first = false }: { ico
   return (
     <div className={first ? 'mb-3' : 'mt-4 mb-3'}>
       <div className="d-flex align-items-center gap-2 mb-2">
-        <i className={icon} style={{ color, fontSize: 15, flexShrink: 0 }} />
-        <span className="fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{title}</span>
+        <i className={icon} style={{ color, fontSize: 16, flexShrink: 0 }} />
+        <span className="fw-bold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{title}</span>
         {desc && (<><span style={{ color: 'var(--vz-secondary-color)', fontSize: 10, fontWeight: 400 }}>·</span><span style={{ color: 'var(--vz-secondary-color)', fontSize: 10.5 }}>{desc}</span></>)}
       </div>
       <div style={{ height: 1, background: `linear-gradient(90deg, ${color}55 0%, var(--vz-border-color) 35%, transparent 100%)`, marginBottom: 10 }} />
@@ -359,17 +363,26 @@ export default function Settings() {
           border-color: #6366f1 !important;
           box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important;
         }
-        /* Form labels — tighter, weighted to match ClientForm's .cf-label. */
+        /* Form labels — match the Add Employee form's .emp-label: 10.5px, 700,
+           violet, 0.06em uppercase. */
         .settings-form .form-label,
         .settings-form label.col-form-label {
-          font-size: 11.5px;
-          font-weight: 600;
-          color: var(--vz-secondary-color);
+          /* !important beats the per-label inline fontSize:12 so the whole form
+             reads at the Add-Employee label size without editing each label. */
+          font-size: 10.5px !important;
+          font-weight: 700;
+          color: #5a3fd1;
           text-transform: uppercase;
-          letter-spacing: 0.04em;
-          margin-bottom: 6px;
+          letter-spacing: 0.06em;
+          margin-bottom: 5px;
         }
-        @media (max-width: 1399.98px) {
+        [data-bs-theme="dark"] .settings-form .form-label,
+        [data-bs-theme="dark"] .settings-form label.col-form-label { color: #c4b5fd; }
+        /* Icon-rail only BELOW xl (<1200). The left Col is a fixed col-xl-3 at
+           ≥1200, so hiding labels until 1400 left a wide card with tiny centred
+           icons between 1200–1400. Below xl the Col is auto-width, so the rail
+           sits tight. */
+        @media (max-width: 1199.98px) {
           .settings-sidebar-label, .settings-sidebar-header-text, .settings-sidebar-active-arrow { display: none !important; }
           .settings-tab-btn { justify-content: center; padding: 8px; }
           .settings-sidebar-header { justify-content: center !important; }
@@ -378,8 +391,29 @@ export default function Settings() {
           .settings-tab-list { flex-direction: row !important; overflow-x: auto; gap: 6px !important; }
           .settings-tab-list .settings-tab-btn { flex: 0 0 auto; width: auto; padding: 8px 10px; }
         }
+        /* Sidebar column width: a tight icon rail below xl (auto), a fixed
+           quarter with labels at xl+. Flex gap on the parent gives the exact
+           8px between the two cards — no Bootstrap gutter in play. */
+        .settings-side-col { width: auto; }
+        @media (min-width: 1200px) { .settings-side-col { width: 25%; } }
+
+        /* Fill the scroll area so the app's pinned footer sits just beneath the
+           Settings content instead of leaving a stretch gap. A pure-flex chain
+           from .main-content down, scoped via :has(.settings-fill) so ONLY the
+           Settings page's layout is affected. The cards then stretch to reach
+           the footer. */
+        /* flex: 1 0 auto — grow to fill the scroll area when the content is
+           short (footer hugs), but NEVER shrink below the content's own height,
+           so when the page is zoomed/taller than the viewport it keeps full
+           height and .main-content (overflow:auto) scrolls instead of clipping. */
+        .main-content:has(.settings-fill) { display: flex; flex-direction: column; }
+        .main-content:has(.settings-fill) > .page-content { flex: 1 0 auto; display: flex; flex-direction: column; }
+        .page-content:has(.settings-fill) > .container-fluid { flex: 1 0 auto; display: flex; flex-direction: column; }
+        .settings-fill { flex: 1 0 auto; display: flex; flex-direction: column; }
+        .settings-fill > .settings-grid { flex: 1 0 auto; }
       `}</style>
 
+      <div className="settings-fill">
       {/* Header strip — same shape as the Clients / Branches module headers. */}
       <div className="frm-cstrip mb-3">
         <span className="frm-cstrip-accent" />
@@ -392,10 +426,14 @@ export default function Settings() {
         </div>
       </div>
 
-      <Row className="g-3 align-items-start pb-3">
+      {/* Flexbox, not a Bootstrap Row — `gap: 8` is an exact 8px between the two
+          cards that the theme's gutter overrides can't touch. Stretch stacked so
+          the cards go full-width; start side-by-side so the shorter card keeps its
+          natural height (no empty filler). */}
+      <div className="settings-grid d-flex flex-column flex-md-row align-items-stretch pb-2" style={{ gap: 8 }}>
         {/* Sidebar */}
-        <Col xxl={3} xl={3} lg="auto" md="auto" xs={12}>
-          <Card className="mb-0" style={{ borderRadius: 14 }}>
+        <div className="settings-side-col">
+          <Card className="mb-0 h-100" style={{ borderRadius: 14 }}>
             <CardBody className="p-2">
               <div className="settings-sidebar-header px-2 py-2 mb-1 d-flex align-items-center gap-2">
                 <div className="d-inline-flex align-items-center justify-content-center rounded-1" style={{ width: 26, height: 26, background: '#7c5cfc18', border: '1px solid #7c5cfc28' }}>
@@ -427,12 +465,12 @@ export default function Settings() {
               </div>
             </CardBody>
           </Card>
-        </Col>
+        </div>
 
         {/* Content */}
-        <Col xxl={9} xl={9} lg={true} md={true} xs={12}>
-          <Card className="mb-0" style={{ borderRadius: 14 }}>
-            <CardBody className="p-3">
+        <div className="flex-grow-1 min-w-0">
+          <Card className="mb-0 h-100" style={{ borderRadius: 14 }}>
+            <CardBody className="p-2">
               <TabContent activeTab={tab} className="settings-form">
 
                 {/* GENERAL */}
@@ -761,8 +799,9 @@ export default function Settings() {
               </TabContent>
             </CardBody>
           </Card>
-        </Col>
-      </Row>
+        </div>
+      </div>
+      </div>
     </>
   );
 }

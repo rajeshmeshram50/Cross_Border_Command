@@ -562,6 +562,7 @@ export default function MyTeam() {
                 fitToViewport
                 autoFitRows
                 minAutoRows={8}
+                fillToFooter
                 tabs={TEAM_TABS(employees.length, approvalCounts.total)}
                 activeTab="employees"
                 onTabChange={(k) => setTab(k as 'employees' | 'approvals')}
@@ -581,6 +582,7 @@ export default function MyTeam() {
                 fitToViewport
                 autoFitRows
                 minAutoRows={8}
+                fillToFooter
                 tabs={TEAM_TABS(employees.length, approvalCounts.total)}
                 activeTab="approvals"
                 onTabChange={(k) => setTab(k as 'employees' | 'approvals')}
