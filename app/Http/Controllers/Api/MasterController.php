@@ -582,12 +582,48 @@ class MasterController extends Controller
 
         $data = $this->absorbUploads($request, $modelClass, $slug, $data, $row);
 
-        $row->update($data);
+        // When a master is stored BY VALUE (e.g. customers keep the customer type
+        // by name), renaming it must carry the new value onto the records already
+        // using the old one — otherwise the form shows both the old (stale) and
+        // new value as two entries. Cascade first, then save, in one transaction.
+        DB::transaction(function () use ($slug, $row, $data) {
+            $this->cascadeValueRename($slug, $row, $data);
+            $row->update($data);
+        });
 
         MasterBundleCache::bump();
 
         $row->load(self::OWNERSHIP_WITH);
         return response()->json($this->withOwnership($row));
+    }
+
+    /**
+     * Propagate a renamed master value to the records that store it by value.
+     *
+     * Only the 'exact' value references are cascaded (the stored string equals
+     * the master field). Composite / csv references are left alone — their
+     * format isn't a plain value swap. Scoped to the master's own client so one
+     * tenant's rename never rewrites another tenant's records.
+     */
+    private function cascadeValueRename(string $slug, $row, array $data): void
+    {
+        $clientId = $row->client_id ?? null;
+        foreach (self::VALUE_USAGE_MAP[$slug] ?? [] as $entry) {
+            [$srcTable, $srcCol, $field] = $entry;
+            if (($entry[3] ?? 'exact') !== 'exact') continue;
+            if (!array_key_exists($field, $data)) continue;
+
+            $old = $row->{$field};
+            $new = $data[$field];
+            if ($old === null || $old === '' || (string) $old === (string) $new) continue;
+            if (!Schema::hasTable($srcTable) || !Schema::hasColumn($srcTable, $srcCol)) continue;
+
+            $q = DB::table($srcTable)->whereRaw('lower(trim(' . $srcCol . ')) = ?', [mb_strtolower(trim((string) $old))]);
+            if ($clientId !== null && Schema::hasColumn($srcTable, 'client_id')) {
+                $q->where('client_id', $clientId);
+            }
+            $q->update([$srcCol => $new]);
+        }
     }
 
     private const AUTO_CODES = [
