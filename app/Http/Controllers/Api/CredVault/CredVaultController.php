@@ -594,7 +594,10 @@ class CredVaultController extends Controller
             ->when($d['q'] ?? null, fn ($q, $t) => $this->applySearch($q, $t, ['name', 'email']))
             ->orderBy('name')->limit(200)->get(['id', 'name', 'email', 'user_type', 'designation']);
 
-        $counts = $this->memberCounts($u->client_id);
+        // Team member counts are per branch: the user's own branch, or for an admin the branch picked in the switcher.
+        $countBranch = $branch ?: ($request->integer('branch_id') ?: null);
+        if ($countBranch && !Branch::where('client_id', $u->client_id)->whereKey($countBranch)->exists()) $countBranch = null;
+        $counts = $this->memberCounts($u->client_id, $countBranch);
         $teams  = $this->clientDepartments($u)->filter(fn ($dep) => ($counts[$dep->id] ?? 0) > 0)
             ->when($d['q'] ?? null, fn ($c, $t) => $c->filter(fn ($dep) => Str::contains(Str::lower($dep->name), Str::lower($t))))
             ->map(fn ($dep) => ['id' => $dep->id, 'name' => $dep->name, 'members' => $counts[$dep->id] ?? 0])->values();
@@ -4798,9 +4801,10 @@ class CredVaultController extends Controller
             ->orderBy('name')->get(['id', 'client_id', 'name', 'head']));
     }
 
-    protected function memberCounts(int $clientId): array
+    protected function memberCounts(int $clientId, ?int $branchId = null): array
     {
-        return $this->memo("members:{$clientId}", fn () => Employee::where('client_id', $clientId)->where('status', 'Active')->whereNotNull('department_id')->where('onboarding_stage_completed', '>=', 6)
+        return $this->memo("members:{$clientId}:" . ($branchId ?? 'all'), fn () => Employee::where('client_id', $clientId)->where('status', 'Active')->whereNotNull('department_id')->where('onboarding_stage_completed', '>=', 6)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->selectRaw('department_id, count(*) as n')->groupBy('department_id')->pluck('n', 'department_id')
             ->map(fn ($n) => (int) $n)->all());
     }
