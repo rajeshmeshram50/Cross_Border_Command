@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import type { CredentialRow, LockStep, PageMeta } from '../cvApi';
+import type { CredentialDetail, CredentialRow, LockStep, PageMeta } from '../cvApi';
 import { ActBtn, CvBrief, CvPage, CvStrip, CvTabsRow, IC, StripBtn, Svg, errMsg, mmss, useDebounced, useNow } from '../shared';
 import { FitCard } from '../fitCard';
 import CredentialTable from '../my-vault/CredentialTable';
@@ -28,7 +28,7 @@ const TABS: { key: TabKey; api: string; label: string; icon: string }[] = [
 
 type Overlay =
   | { kind: 'add' }
-  | { kind: 'edit'; id: number }
+  | { kind: 'edit'; id: number; detail?: CredentialDetail }
   | { kind: 'view'; id: number }
   | { kind: 'share'; id: number }
   | { kind: 'unlock'; id: number }
@@ -232,12 +232,12 @@ export default function CriticalVault() {
           onSaved={() => { close(); refresh(); }} />
       )}
       {overlay?.kind === 'edit' && (
-        <CredentialFormModal credentialId={overlay.id} critical onClose={close} onSaved={() => { close(); refresh(); }}
+        <CredentialFormModal credentialId={overlay.id} initialDetail={overlay.detail} critical onClose={close} onSaved={() => { close(); refresh(); }}
           previewRow={CV_DUMMY ? rows.find(r => r.id === overlay.id) : undefined} />
       )}
       {overlay?.kind === 'view' && (
         <ViewDrawer key={overlay.id} credentialId={overlay.id} onClose={close} onChanged={refresh} source={viewSource}
-          onEdit={id => setOverlay({ kind: 'edit', id })} onShare={id => setOverlay({ kind: 'share', id })} />
+          onEdit={(id, detail) => setOverlay({ kind: 'edit', id, detail })} onShare={id => setOverlay({ kind: 'share', id })} />
       )}
       {overlay?.kind === 'share' && (
         <ShareModal credentialId={overlay.id} onClose={close} onShared={refresh} />

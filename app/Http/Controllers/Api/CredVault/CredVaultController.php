@@ -3108,11 +3108,19 @@ class CredVaultController extends Controller
         if ($creating && $this->importBatch) {
             return response()->json(['status' => true, 'data' => ['id' => $c->id, 'code' => $c->code]], 201);
         }
-        $fresh = $c->fresh(['owner:id,name', 'department:id,name']);
-        $acc   = $fresh->owner_id === $u->id
-            ? [self::RANK_FULL, 'owner']
-            : ($this->accessMap(collect([$fresh]), $u)[$fresh->id] ?? [self::RANK_FULL, 'admin']);
-        $body  = $this->detail($fresh, $u, $acc);
+        // ?light=1 (sent by the credential form): the caller reloads its list right after, and only
+        // reads code / name / health — so skip re-reading the row and rebuilding the full detail view
+        // (≈11–18 queries). Without it the response is the full detail, as before.
+        if ($request->boolean('light')) {
+            $body = ['id' => $c->id, 'code' => $c->code, 'critical_code' => $c->criticalCode(), 'vault' => $c->vault, 'type' => $c->type,
+                'name' => $c->name, 'scope' => $c->scope, 'risk' => $c->risk, 'updated_at' => $c->updated_at?->toIso8601String()];
+        } else {
+            $fresh = $c->fresh(['owner:id,name', 'department:id,name']);
+            $acc   = $fresh->owner_id === $u->id
+                ? [self::RANK_FULL, 'owner']
+                : ($this->accessMap(collect([$fresh]), $u)[$fresh->id] ?? [self::RANK_FULL, 'admin']);
+            $body  = $this->detail($fresh, $u, $acc);
+        }
         if (!$creating) {
             $body['health'] = [
                 'resolved'   => array_map(fn ($i) => collect($i)->only(['type', 'severity', 'issue'])->all(), $resolved),

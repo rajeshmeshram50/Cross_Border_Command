@@ -11,13 +11,31 @@ export interface ViewDrawerProps {
   credentialId: number;
   onClose: () => void;
   onChanged?: () => void;
-  onEdit?: (id: number) => void;
+  /** `detail` is the drawer's own copy (same GET, still fresh) so the edit form can skip fetching it again. */
+  onEdit?: (id: number, detail?: CredentialDetail) => void;
   onShare?: (id: number) => void;
   source?: ViewSource;
   fieldLabels?: boolean;
 }
 
 type Tab = 'overview' | 'details' | 'access' | 'activity';
+
+/** How long the drawer's loaded detail may be handed to the edit form instead of a second GET. */
+const REUSE_MS = 120_000;
+
+/**
+ * Only hand the drawer's copy to the edit form when the server would still give the same answer:
+ * loaded recently, and — for a protected (Critical) credential — its unlock window has not ended
+ * (or it opens directly, with no expiry). Otherwise the form fetches it fresh, exactly as before.
+ */
+function reusable(d: CredentialDetail, loadedAt: number): boolean {
+  if (Date.now() - loadedAt >= REUSE_MS) return false;
+  if (d.locked) return false;
+  if (!d.protected) return true;
+  const u = d.unlock;
+  if (u?.state !== 'open') return false;
+  return !u.expires_at || new Date(u.expires_at).getTime() - Date.now() > 30_000;
+}
 
 const I = {
   launch: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3',
@@ -70,6 +88,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const viewed = useRef(false);
   const actSeq = useRef(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const loadedAt = useRef(0);
 
   const loadActivity = useCallback(async (page = 1) => {
     const seq = ++actSeq.current;
@@ -86,6 +105,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const load = useCallback(async () => {
     try {
       const c = await api.show(credentialId);
+      loadedAt.current = Date.now();
       setD(c);
       setFailed(null);
       if (!c.locked) {
@@ -504,7 +524,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
                 <div className="vd-ft__a">
                   <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost vd-fb" data-h40="skip" onClick={close}>Close</button>
                   {can?.edit && onEdit && (
-                    <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary vd-fb" data-h40="skip" onClick={() => onEdit(d.id)}>
+                    <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary vd-fb" data-h40="skip" onClick={() => onEdit(d.id, reusable(d, loadedAt.current) ? d : undefined)}>
                       <Svg icon={I.edit} size={13} />Edit Credential
                     </button>
                   )}

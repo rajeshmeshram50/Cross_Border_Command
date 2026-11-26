@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import { cvApi, CvApiError, type CredentialRow, type PageMeta, type ShareRow } from '../cvApi';
+import { cvApi, CvApiError, type CredentialDetail, type CredentialRow, type PageMeta, type ShareRow } from '../cvApi';
 import UnlockModal from '../critical/UnlockModal';
 import CredentialFormModal from '../form/CredentialFormModal';
 import {
@@ -74,7 +74,7 @@ export default function MyVault() {
   // and otherwise keep the set we already have.
   const countsKey = useRef('');
 
-  const [form, setForm] = useState<{ credentialId?: number; prefillPassword?: string } | null>(null);
+  const [form, setForm] = useState<{ credentialId?: number; prefillPassword?: string; detail?: CredentialDetail } | null>(null);
   const [gen, setGen] = useState(false);
   const [viewId, setViewId] = useState<number | null>(null);
   const [shareId, setShareId] = useState<number | null>(null);
@@ -257,13 +257,13 @@ export default function MyVault() {
       </CvCard>
 
       {form && (
-        <CredentialFormModal credentialId={form.credentialId} prefillPassword={form.prefillPassword}
+        <CredentialFormModal credentialId={form.credentialId} prefillPassword={form.prefillPassword} initialDetail={form.detail}
           onClose={() => setForm(null)} onSaved={() => { setForm(null); reload(); }} />
       )}
       {gen && <GeneratorModal onClose={() => setGen(false)} onUse={pw => { setGen(false); setForm({ prefillPassword: pw }); }} />}
       {viewId != null && (
         <ViewDrawer fieldLabels key={viewId} credentialId={viewId} onClose={() => setViewId(null)} onChanged={reload}
-          onEdit={id => { setViewId(null); setForm({ credentialId: id }); }}
+          onEdit={(id, detail) => { setViewId(null); setForm({ credentialId: id, detail }); }}
           onShare={id => { setViewId(null); setShareId(id); }} />
       )}
       {shareId != null && <ShareModal saveLock credentialId={shareId} onClose={() => setShareId(null)} onShared={reload} />}

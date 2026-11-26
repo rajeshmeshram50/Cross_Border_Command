@@ -959,7 +959,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
     setSaving(true);
     try {
-      const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical);
+      // light: every onSaved() caller reloads its own list, and only code / name / health are read here.
+      const r = editing ? await cvApi.update(detail!.id, payload, inCritical, true) : await cvApi.create(payload, inCritical, true);
       toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`, r.message);
       onSaved(r.data);
     } catch (e) {
