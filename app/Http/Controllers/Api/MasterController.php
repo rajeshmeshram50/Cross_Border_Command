@@ -785,9 +785,33 @@ class MasterController extends Controller
     | A missing table/column is skipped safely.
     */
     private const VALUE_USAGE_MAP = [
+        // slug => [[table, column, master_field, mode?], ...]
+        //   mode: 'exact' (default) — column == master field value
+        //         'prefix'          — column == code  OR  starts with "code – " (sales composite "CODE – Name")
+        //         'csv'             — ", "-separated list that contains the value (e.g. customers.segment)
         'customer_classifications' => [['customers', 'classification', 'name'], ['consignees', 'classification', 'name']],
         'customer_types'           => [['customers', 'type', 'name'], ['consignees', 'type', 'name']],
         'risk_levels'              => [['customers', 'risk_level', 'name'], ['consignees', 'risk_level', 'name']],
+        'organization_types'       => [['clients', 'org_type', 'name']],
+        'address_types'            => [['customer_addresses', 'type', 'name'], ['consignee_addresses', 'type', 'name'], ['vendor_addresses', 'address_type', 'name']],
+        'currencies'               => [
+            ['quotations', 'currency', 'code', 'prefix'], ['proforma_invoices', 'currency', 'code', 'prefix'],
+            ['lead_products', 'currency', 'code', 'prefix'], ['expense_claims', 'currency', 'code', 'prefix'],
+            ['vendor_currency_locks', 'currency_code', 'code', 'prefix'], ['p2p_purchase_orders', 'currency_code', 'code', 'prefix'],
+            ['p2p_supplier_invoices', 'currency_code', 'code', 'prefix'], ['master_exchange_rate_log', 'currency_code', 'code', 'prefix'],
+            ['p2p_service_suppliers', 'currency_code', 'code', 'prefix'], ['vendor_product_mappings', 'currency_code', 'code', 'prefix'],
+        ],
+        'incoterms'                => [
+            ['quotations', 'inco_term', 'code', 'prefix'], ['proforma_invoices', 'inco_term', 'code', 'prefix'],
+            ['shipment_orders', 'inco_term', 'code', 'prefix'], ['p2p_purchase_orders', 'inco_term', 'code', 'prefix'],
+        ],
+        'port_of_loading'          => [['quotations', 'port_of_loading', 'code', 'prefix'], ['proforma_invoices', 'port_of_loading', 'code', 'prefix'], ['shipment_orders', 'port_of_loading', 'code', 'prefix']],
+        'port_of_discharge'        => [['quotations', 'port_of_discharge', 'code', 'prefix'], ['proforma_invoices', 'port_of_discharge', 'code', 'prefix']],
+        'segments'                 => [
+            ['customers', 'segment', 'name', 'csv'], ['consignees', 'segment', 'name', 'csv'],
+            ['clm_tnc_library', 'segment', 'name', 'csv'], ['clm_agreement_library', 'segment', 'name', 'csv'],
+            ['clm_trade_doc_library', 'segment', 'name', 'csv'],
+        ],
     ];
 
     /**
@@ -824,12 +848,39 @@ class MasterController extends Controller
         }
 
         // Value references — the master's name/code stored as a plain string
-        // (e.g. the Sales customer form keeps the classification/type by name).
-        foreach (self::VALUE_USAGE_MAP[$slug] ?? [] as [$srcTable, $srcCol, $field]) {
+        // (e.g. the Sales customer form keeps the classification/type by name,
+        // and sales trade forms keep "CODE – Name" composite labels).
+        $clientId = $row->client_id ?? null;
+        foreach (self::VALUE_USAGE_MAP[$slug] ?? [] as $entry) {
+            [$srcTable, $srcCol, $field] = $entry;
+            $mode  = $entry[3] ?? 'exact';
             $value = $row->{$field} ?? null;
             if ($value === null || $value === '') continue;
             if (!Schema::hasTable($srcTable) || !Schema::hasColumn($srcTable, $srcCol)) continue;
-            $n = DB::table($srcTable)->whereRaw('lower(trim(' . $srcCol . ')) = ?', [mb_strtolower(trim((string) $value))])->count();
+
+            $v   = mb_strtolower(trim((string) $value));
+            $col = 'lower(trim(' . $srcCol . '))';
+            $q   = DB::table($srcTable);
+
+            // A name/code repeats across tenants, so scope value matches to the
+            // master's own client when both sides are tenant-aware (ids never
+            // collide this way, so id matches above need no scoping).
+            if ($clientId !== null && Schema::hasColumn($srcTable, 'client_id')) {
+                $q->where('client_id', $clientId);
+            }
+
+            if ($mode === 'prefix') {
+                $q->where(function ($w) use ($col, $v) {
+                    $w->whereRaw("$col = ?", [$v])
+                      ->orWhereRaw("position(? in $col) = 1", [$v . " \u{2013} "]);   // "code – ..."
+                });
+            } elseif ($mode === 'csv') {
+                $q->whereRaw("position(? in (',' || replace($col, ', ', ',') || ',')) > 0", [',' . $v . ',']);
+            } else {
+                $q->whereRaw("$col = ?", [$v]);
+            }
+
+            $n = $q->count();
             if ($n > 0) $hits[] = [$srcTable, $n];
         }
 

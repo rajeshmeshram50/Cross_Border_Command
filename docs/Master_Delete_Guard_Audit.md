@@ -119,7 +119,32 @@ consumed by any table. Only these needed an explicit map (`USAGE_MAP`):
 | `trigger_point` | `hr_document_templates.trigger_point_id` |
 
 `assets` and `expense_category` keep their existing specific guards (assets' `other_master_asset_ids` is a
-JSON array, handled there). Verified against real data: all 59 masters run without error, referenced rows are
-blocked, free rows delete — and no master row was deleted during verification (read-only checks only).
+JSON array, handled there).
+
+### Value references (master stored by NAME / CODE, not id)
+
+Several forms store the chosen master as a plain string, so an id check alone missed them (this was the
+cause of QA #98 / #99). The guard now also matches by value, with three match modes and tenant scoping:
+
+| Master | Stored as value in | Match |
+|---|---|---|
+| `customer_classifications` | `customers.classification`, `consignees.classification` | name |
+| `customer_types` | `customers.type`, `consignees.type` | name |
+| `risk_levels` | `customers.risk_level`, `consignees.risk_level` | name |
+| `organization_types` | `clients.org_type` | name |
+| `address_types` | `customer_addresses.type`, `consignee_addresses.type`, `vendor_addresses.address_type` | name |
+| `currencies` | `quotations`, `proforma_invoices`, `lead_products`, `expense_claims`, `vendor_currency_locks`, `p2p_purchase_orders`, `p2p_supplier_invoices`, `master_exchange_rate_log`, … (`.currency` / `.currency_code`) | code / "CODE – Name" |
+| `incoterms` | `quotations`, `proforma_invoices`, `shipment_orders`, `p2p_purchase_orders` (`.inco_term`) | code / "CODE – Name" |
+| `port_of_loading` | `quotations`, `proforma_invoices`, `shipment_orders` (`.port_of_loading`) | "CODE – Name" |
+| `port_of_discharge` | `quotations`, `proforma_invoices` (`.port_of_discharge`) | "CODE – Name" |
+| `segments` | `customers.segment`, `consignees.segment`, `clm_tnc_library`, `clm_agreement_library`, `clm_trade_doc_library` | name (", "-list) |
+
+**Deliberately NOT value-guarded** (verified unrelated or unverifiable, to avoid false blocks): `uom` (form has no
+unit field — column always null), `hsn_codes` (sourced indirectly from the product master, no data to confirm),
+`supplier_category` (vendors use a fixed enum star/general/…, not the master), `document_type` (the `doc_type`
+columns store Trade Type International/Domestic, not this master), `p2p_purchase_orders` ports (live data is junk).
+
+Verified against real data: all 59 masters run without error, referenced rows (by id OR by value) are blocked,
+free rows delete — and no master row was deleted during verification (read-only checks only).
 
 *Audit sheet + implementation note. The guard lives in [MasterController.php](../app/Http/Controllers/Api/MasterController.php).*
