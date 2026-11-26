@@ -5610,6 +5610,30 @@
 [data-bs-theme="dark"] .cvx .ir-cat-smp { color: #67e8f9; background: rgba(34, 211, 238, .06); border-color: var(--tvd-line, rgba(34, 211, 238, .16)); }
 [data-bs-theme="dark"] .cvx .ir-cat-smp .ix-smp button { color: #67e8f9; background: rgba(255, 255, 255, .04); border-color: rgba(34, 211, 238, .3); }
 
+/* Import data guide: the Excel / CSV sample buttons and step numbers were solid white in dark mode. */
+[data-bs-theme="dark"] .cvx .ix-guide .ix-smp button {
+  color: #e0fbff;
+  background: rgba(6, 38, 48, .55);
+  border: 1px solid rgba(165, 243, 252, .35);
+  box-shadow: 0 6px 14px -8px rgba(0, 0, 0, .6);
+}
+[data-bs-theme="dark"] .cvx .ix-guide .ix-smp button:hover {
+  background: rgba(6, 38, 48, .78);
+  border-color: rgba(165, 243, 252, .6);
+}
+[data-bs-theme="dark"] .cvx .ix-guide .ix-smp button svg:last-child { color: #67e8f9; }
+[data-bs-theme="dark"] .cvx .ix-guide .ix-g__n {
+  color: #a5f3fc;
+  background: rgba(6, 38, 48, .6);
+  border: 1px solid rgba(165, 243, 252, .35);
+}
+/* Required column chips (name, password) match the other chips in dark mode instead of light cyan. */
+[data-bs-theme="dark"] .cvx .ix-guide .ix-cols code.is-req {
+  color: #e0fbff;
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .22);
+}
+
 /* Review popup: Accepted / Discarded records tabs, then Save. */
 .cvx #crd-host .mapsup-box.crd-box.gp-box.ir-rev-box {
   width: min(1080px, calc(100vw - 32px)) !important;
