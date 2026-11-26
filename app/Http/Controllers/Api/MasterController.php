@@ -811,6 +811,22 @@ class MasterController extends Controller
         'incoterms'          => [['shipment_orders', 'inco_term_id']],
         'haz_class'          => [['products', 'haz_class_id'], ['p2p_services', 'haz_class_id']],
         'trigger_point'      => [['hr_document_templates', 'trigger_point_id']],
+        // HR masters are also referenced by HRMS records (employees, recruitment,
+        // users, …) via plain id columns — the config `ref` above only covered
+        // master-to-master links (roles/designations), not these.
+        'departments'        => [
+            ['employees', 'department_id'], ['users', 'department_id'],
+            ['employee_onboarding_invites', 'department_id'], ['hiring_requests', 'department_id'],
+            ['recruitments', 'department_id'], ['p2p_services', 'department_id'],
+            ['credvault_credentials', 'department_id'], ['credvault_credential_shares', 'recipient_department_id'],
+            ['department_permissions', 'department_id'],
+        ],
+        'roles'              => [
+            ['employees', 'primary_role_id'], ['employees', 'ancillary_role_id'], ['recruitments', 'primary_role_id'],
+        ],
+        'designations'       => [
+            ['employees', 'designation_id'], ['recruitments', 'designation_id'],
+        ],
     ];
 
     /*
