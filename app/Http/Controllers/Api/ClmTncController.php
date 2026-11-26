@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClmSegment;
 use App\Models\ClmTncCategory;
 use App\Models\ClmTncLibrary;
+use App\Models\Product;
 use App\Support\MasterVisibility;
+use App\Support\SegmentGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -231,8 +234,54 @@ class ClmTncController extends Controller
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
+
+        // A segment-wise T&C is applied to a Quotation / PI whenever that document
+        // has a line-item product in the T&C's segment (same match the PDF uses).
+        // If any such document exists, the entry is in use and must not be deleted.
+        $used = $this->tncInUse($row);
+        if (($used['pi'] + $used['quote']) > 0) {
+            $parts = [];
+            if ($used['pi'])    $parts[] = $used['pi'] . ' Proforma Invoice' . ($used['pi'] === 1 ? '' : 's');
+            if ($used['quote']) $parts[] = $used['quote'] . ' Quotation' . ($used['quote'] === 1 ? '' : 's');
+            return response()->json([
+                'status'  => false,
+                'message' => 'These Terms & Conditions are in use by ' . implode(' and ', $parts)
+                    . ' (a product in this segment is on those documents) and cannot be deleted. Set it to Inactive instead.',
+            ], 409);
+        }
+
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
+    }
+
+    /**
+     * How many Quotations / Proforma Invoices a segment-wise T&C is used on.
+     *
+     * There is no stored link — the T&C renders onto a document when the
+     * document has a line-item whose product sits in the T&C's segment, so the
+     * usage is derived through: T&C segment(s) → products → document items.
+     * Reuses SegmentGuard::tncMatches so this matches exactly what the PDF does.
+     * Global / unscoped entries resolve to no segment and are left deletable.
+     */
+    private function tncInUse(ClmTncLibrary $row): array
+    {
+        $segIds = SegmentGuard::ids($row->segment_ids ?? []);
+        if (!$segIds) {
+            $segIds = ClmSegment::where('client_id', $row->client_id)
+                ->get(['id', 'name', 'regulatory_status'])
+                ->filter(fn ($s) => SegmentGuard::tncMatches($row, $s))
+                ->pluck('id')->map(fn ($i) => (int) $i)->all();
+        }
+        if (!$segIds) return ['pi' => 0, 'quote' => 0];
+
+        $productIds = Product::where('client_id', $row->client_id)
+            ->whereIn('segment_id', $segIds)->pluck('id');
+        if ($productIds->isEmpty()) return ['pi' => 0, 'quote' => 0];
+
+        return [
+            'pi'    => (int) DB::table('proforma_invoice_items')->whereIn('product_id', $productIds)->distinct()->count('proforma_invoice_id'),
+            'quote' => (int) DB::table('quotation_items')->whereIn('product_id', $productIds)->distinct()->count('quotation_id'),
+        ];
     }
 
     public function globalIndex(Request $request)
