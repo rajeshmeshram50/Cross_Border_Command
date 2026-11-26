@@ -4269,6 +4269,13 @@
   border-color: rgba(34, 211, 238, .55) !important;
 }
 
+/* Individual / Team and duration toggles: the light theme's white wash read as a grey block on dark. */
+[data-bs-theme="dark"] .cvx #crd-host .sh-box .gp-seg button:hover:not(.is-on):not(:disabled) {
+  background: rgba(34, 211, 238, .12) !important;
+  color: #a5f3fc !important;
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .28);
+}
+
 .cvx #crd-host .sh-box .sh-exp {
   margin-top: auto !important;
   padding: 10px 12px !important;
