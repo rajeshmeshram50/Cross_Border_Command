@@ -722,12 +722,12 @@ function HeaderEditor({
   const guardedClose = () => { if (!uploading) onClose(); };
   return (
     <PopoverFrame onClose={guardedClose}>
-      <PopoverHeader title="Header Settings" onClose={guardedClose} />
-      <div className="row g-3" style={{ padding: 14, ...(uploading ? { pointerEvents: 'none', opacity: 0.55 } : null) }}>
+      <PopoverHeader title="Header Settings" subtitle="Logo, title, alignment & colours" icon="ri-layout-top-2-line" onClose={guardedClose} />
+      <div className="row g-3" style={{ padding: 16, ...(uploading ? { pointerEvents: 'none', opacity: 0.55 } : null) }}>
         <div className="col-md-6">
           <div className="d-flex align-items-center justify-content-between mb-1">
             <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Title <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
-            <span className="tpl-popover-hint" style={{ fontSize: 11, color: (header.title || '').length >= HEADER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
+            <span className="tpl-popover-hint" style={{ fontSize: 10.5, color: (header.title || '').length >= HEADER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
               {(header.title || '').length}/{HEADER_TEXT_MAX}
             </span>
           </div>
@@ -740,7 +740,7 @@ function HeaderEditor({
         <div className="col-md-6">
           <div className="d-flex align-items-center justify-content-between mb-1">
             <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Subtitle <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
-            <span className="tpl-popover-hint" style={{ fontSize: 11, color: (header.subtitle || '').length >= HEADER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
+            <span className="tpl-popover-hint" style={{ fontSize: 10.5, color: (header.subtitle || '').length >= HEADER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
               {(header.subtitle || '').length}/{HEADER_TEXT_MAX}
             </span>
           </div>
@@ -756,7 +756,7 @@ function HeaderEditor({
           <div className="d-flex align-items-center gap-2">
             <button type="button" onClick={onChooseLogo} disabled={uploading}
               className="tpl-logo-upload"
-              style={{ padding: '7px 12px', background: '#6366f1', color: '#fff', border: 0, borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? 0.7 : 1 }}>
+              style={{ padding: '9px 14px', background: '#6366f1', color: '#fff', border: 0, borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? 0.7 : 1 }}>
               {uploading
                 ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />Uploading…</>
                 : <><i className="ri-upload-2-line me-1" />{header.logo_url ? 'Replace Logo' : 'Upload Logo'}</>}
@@ -764,19 +764,19 @@ function HeaderEditor({
             {header.logo_url && (
               <button type="button" onClick={() => setHeader({ ...header, logo_path: null, logo_url: null })}
                 className="tpl-logo-remove"
-                style={{ padding: '7px 10px', background: '#fee2e2', color: '#b91c1c', border: 0, borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                style={{ padding: '9px 14px', background: '#fee2e2', color: '#b91c1c', border: 0, borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                 Remove
               </button>
             )}
           </div>
-          <div className="tpl-popover-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>PNG / JPG / SVG up to 5MB.</div>
+          <div className="tpl-popover-hint" style={{ fontSize: 10.5, color: '#9ca3af', marginTop: 4 }}>PNG / JPG / SVG up to 5MB.</div>
 
           {/* Logo size slider — visible once a logo is uploaded so the user
               can scale it up/down without re-cropping the source image. */}
           <div className="mt-2">
             <div className="d-flex align-items-center justify-content-between mb-1">
               <span className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Logo Size</span>
-              <span className="tpl-popover-hint" style={{ fontSize: 11, color: '#6b7280', fontWeight: 700 }}>
+              <span className="tpl-popover-hint" style={{ fontSize: 10.5, color: '#6b7280', fontWeight: 700 }}>
                 {clamp(header.logo_height ?? LOGO_HEIGHT_DEFAULT, LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX)} px
               </span>
             </div>
@@ -860,12 +860,12 @@ function FooterEditor({
 }) {
   return (
     <PopoverFrame onClose={onClose}>
-      <PopoverHeader title="Footer Settings" onClose={onClose} />
-      <div className="row g-3" style={{ padding: 14 }}>
+      <PopoverHeader title="Footer Settings" subtitle="Text, page numbers & colours" icon="ri-layout-bottom-2-line" onClose={onClose} />
+      <div className="row g-3" style={{ padding: 16 }}>
         <div className="col-md-8">
           <div className="d-flex align-items-center justify-content-between mb-1">
             <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Footer Text</label>
-            <span className="tpl-popover-hint" style={{ fontSize: 11, color: (footer.text || '').length >= FOOTER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
+            <span className="tpl-popover-hint" style={{ fontSize: 10.5, color: (footer.text || '').length >= FOOTER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
               {(footer.text || '').length}/{FOOTER_TEXT_MAX}
             </span>
           </div>
@@ -898,7 +898,7 @@ function FooterEditor({
           <div className="d-flex align-items-center justify-content-between">
             <div>
               <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 2 }}>Page Number</label>
-              <div className="tpl-popover-hint" style={{ fontSize: 11, color: '#9ca3af' }}>Renders as a live Word field in the exported DOCX.</div>
+              <div className="tpl-popover-hint" style={{ fontSize: 10.5, color: '#9ca3af' }}>Renders as a live Word field in the exported DOCX.</div>
             </div>
             <ToggleChip on={footer.show_page_number} setOn={(v) => setFooter({ ...footer, show_page_number: v })} label={footer.show_page_number ? 'Enabled' : 'Disabled'} />
           </div>
@@ -1045,12 +1045,20 @@ function EditableText({
   );
 }
 
-function PopoverHeader({ title, onClose }: { title: string; onClose: () => void }) {
+function PopoverHeader({ title, subtitle, icon = 'ri-layout-top-2-line', onClose }: { title: string; subtitle?: string; icon?: string; onClose: () => void }) {
   return (
-    <div style={{ padding: '10px 14px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <strong style={{ fontSize: 13 }}>{title}</strong>
+    <div style={{ padding: '16px 20px', background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        <span style={{ width: 40, height: 40, flex: '0 0 40px', borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
+          <i className={icon} />
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <strong style={{ fontSize: 17, fontWeight: 700, display: 'block', lineHeight: 1.2, letterSpacing: '-0.01em' }}>{title}</strong>
+          {subtitle && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.82)' }}>{subtitle}</span>}
+        </div>
+      </div>
       <button type="button" onClick={onClose} title="Close"
-        style={{ width: 26, height: 26, borderRadius: 6, border: 0, background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer' }}>
+        style={{ width: 32, height: 32, flex: '0 0 32px', borderRadius: 8, border: 0, background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer', fontSize: 17, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
         <i className="ri-close-line" />
       </button>
     </div>
@@ -1074,8 +1082,8 @@ function ToggleChip({ on, setOn, label }: { on: boolean; setOn: (v: boolean) => 
   return (
     <button type="button" onClick={() => setOn(!on)}
       className={`tpl-toggle-chip${on ? ' is-on' : ''}`}
-      style={{ padding: '6px 10px', borderRadius: 999, border: '1px solid ' + (on ? '#6366f1' : '#e5e7eb'),
-        background: on ? '#6366f1' : '#fff', color: on ? '#fff' : '#374151', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+      style={{ padding: '7px 12px', borderRadius: 999, border: '1px solid ' + (on ? '#6366f1' : '#e5e7eb'),
+        background: on ? '#6366f1' : '#fff', color: on ? '#fff' : '#374151', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
       {on ? <i className="ri-check-line me-1" /> : <i className="ri-eye-off-line me-1" />}{label}
     </button>
   );
@@ -1121,13 +1129,13 @@ function PopoverFrame({ onClose, children }: { onClose: () => void; children: Re
     document.body,
   );
 }
-const labelStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4, display: 'block' };
-const inputStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13, background: '#fff' };
+const labelStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 5, display: 'block' };
+const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid #e5e7eb', fontSize: 13, background: '#fff' };
 function chipStyle(active: boolean): React.CSSProperties {
   return {
-    padding: '6px 10px', borderRadius: 8, border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
+    padding: '7px 12px', borderRadius: 9, border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
     background: active ? '#6366f1' : '#fff', color: active ? '#fff' : '#374151',
-    fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
+    fontSize: 12.5, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
   };
 }
 
@@ -1251,31 +1259,39 @@ function HfpDarkStyles() {
         display: flex; align-items: center; justify-content: center; padding: 20px;
       }
       .tpl-popover.tpl-popover-modal {
-        width: 100%; max-width: 660px; max-height: 86vh; 
-        border-radius: 14px; box-shadow: 0 24px 64px rgba(8,15,40,0.45);
+        width: 100%; max-width: 660px; max-height: 86vh;
+        /* overflow:hidden clips the header's top corners to the modal radius
+           (they were square against the rounded card); the flex column keeps the
+           body scrollable between the fixed header and footer. */
+        border-radius: 14px; overflow: hidden;
+        display: flex; flex-direction: column;
+        box-shadow: 0 24px 64px rgba(8,15,40,0.45);
         animation: tpl-pop-in .16s ease-out both;
       }
+      .tpl-popover.tpl-popover-modal > .row { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
       @keyframes tpl-pop-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: none; } }
       /* Sticky action footer with the Update (apply + close) button. Changes
          already reflect live in the preview; Update simply confirms + closes. */
       .tpl-popover-foot {
         position: sticky; bottom: 0;
         display: flex; justify-content: flex-end;
-        gap: 8px; padding: 12px 14px;
+        gap: 8px; padding: 13px 16px;
         background: #fafaff; border-top: 1px solid #e5e7eb;
       }
       .tpl-popover-update {
         display: inline-flex; align-items: center;
-        padding: 8px 20px; border: none; border-radius: 9px;
+        padding: 9px 22px; border: none; border-radius: 10px;
         background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff;
-        font-size: 12.5px; font-weight: 700; cursor: pointer;
+        font-size: 13px; font-weight: 700; cursor: pointer;
         box-shadow: 0 3px 10px rgba(99,102,241,0.35); transition: all .15s;
       }
       .tpl-popover-update:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 6px 16px rgba(99,102,241,0.45); }
-      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-foot { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
+      /* Footer matches the body (both #1e293b) instead of a darker #111827, and
+         the accent bottom border is dropped in dark mode. */
+      :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-foot { background: #1e293b !important; border-top-color: rgba(255,255,255,0.08) !important; }
       :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover {
         background: #1e293b !important;
-        border-bottom-color: #8b5cf6 !important;
+        border-bottom: none !important;
       }
       :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .tpl-popover-label {
         color: #94a3b8 !important;
