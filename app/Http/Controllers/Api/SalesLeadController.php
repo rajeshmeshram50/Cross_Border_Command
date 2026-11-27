@@ -12,9 +12,7 @@ use App\Models\LeadAcknowledgement;
 use App\Models\LeadProduct;
 use App\Models\LeadProductSharedPrice;
 use App\Models\LeadTaskManager;
-use App\Models\Procurement;
 use App\Models\ProcurementProduct;
-use App\Models\Product;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
@@ -22,17 +20,11 @@ use App\Support\PostalCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule;
-
 
 class SalesLeadController extends Controller
 {
     use EnforcesSegmentBuyerConsignee;
 
-    /* ISO 3166-1 alpha-2 → human-readable name. Used as a fallback in
-     * filterOptions() when a lead row has an ISO code but no persisted
-     * sender_country_name. Kept narrow to the countries we actually see
-     * in customer data; unknown ISOs fall through to the raw code. */
     private const ISO_COUNTRY_NAMES = [
         'IN' => 'India',         'US' => 'United States', 'GB' => 'United Kingdom',
         'AU' => 'Australia',     'CA' => 'Canada',        'IT' => 'Italy',
@@ -51,42 +43,24 @@ class SalesLeadController extends Controller
         'IR' => 'Iran',          'AF' => 'Afghanistan',   'NZ' => 'New Zealand',
     ];
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LIST — GET /sales/leads
-     * ───────────────────────────────────────────────────────────────── */
     public function index(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // ── Build the LIST query: scope + status tab + active filters + search.
-        // `withTrashed()` on customer/consignee/salesperson so soft-deleted
-        // mapped rows still surface (with their saved labels) instead of
-        // turning into blank/null entries on the worksheet. Source of B2.
         $q = Lead::query()
             ->select('leads.*')
-            // Lead currency lives on its PRODUCTS (lead_products enforces a
-            // single currency per lead). Expose the first non-null product
-            // currency so the QPI "Create PI" form can auto-fill its
-            // read-only Currency from the chosen opportunity.
             ->addSelect(['currency' => \Illuminate\Support\Facades\DB::table('lead_products')
                 ->select('currency')
                 ->whereColumn('lead_products.lead_id', 'leads.id')
                 ->whereNotNull('currency')
                 ->limit(1)])
-            // PI Number for the lead — the latest non-cancelled Proforma
-            // Invoice on this opportunity. Surfaced so the Leads Details /
-            // Total-Leads tables can show it instead of "N/A" once a PI exists.
             ->addSelect(['pi_number' => \Illuminate\Support\Facades\DB::table('proforma_invoices')
                 ->select('code')
                 ->whereColumn('proforma_invoices.opp_id', 'leads.id')
                 ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
                 ->orderByDesc('id')
                 ->limit(1)])
-            // Shipment ID = the Shipment Order's SHP-NNN code (shipment_orders
-            // are keyed on lead_id). The column previously aliased the PI's
-            // legacy bt_id ("BT-NNNN" batch code) here, which surfaced BT- codes
-            // under the "Shipment ID" column instead of the real SHP- code.
             ->addSelect(['shipment_id' => \Illuminate\Support\Facades\DB::table('shipment_orders')
                 ->select('shipment_code')
                 ->whereColumn('shipment_orders.lead_id', 'leads.id')
@@ -95,21 +69,13 @@ class SalesLeadController extends Controller
                 ->limit(1)])
             ->with([
                 'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
-                // Include the customer's PRIMARY CONTACT PERSON (cp_name / cp_email /
-                // cp_contact) so the Add-Meeting picker can auto-fill the meeting's
-                // Person Name / Email / Contact from the real contact person, not
-                // the company or the lead's raw sender.
                 'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code', 'primary_email')
                     ->withTrashed()
-                    // country/state/city so the Sales-Matrix header COUNTRY shows
-                    // the mapped customer's OWN country (not the hardcoded 'IN').
                     ->with(['primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_name', 'cp_email', 'cp_contact', 'country', 'state', 'city')]),
                 'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');
 
-        // Include former-owned leads (read-only) so a transferred lead doesn't
-        // vanish from the previous owner's list (QA #63).
         $this->applyScope($q, $user, $request->integer('branch_id') ?: null, true);
 
         $status = $request->query('status');
@@ -118,10 +84,6 @@ class SalesLeadController extends Controller
         } elseif ($status === 'disqualified') {
             $q->where('disqualified', true);
         } elseif ($status === 'key_opportunity') {
-            // Key Opportunity Leads tab — flagged high-priority leads. The
-            // optional `deal_state` sub-tab splits them into pipeline
-            // ("in_progress", won_at still null) vs closed ("won", won_at set
-            // the first time the lead reached Victory / Stage 6).
             $q->where('key_opportunity', true);
             $dealState = $request->query('deal_state');
             if ($dealState === 'in_progress') {
@@ -130,29 +92,10 @@ class SalesLeadController extends Controller
                 $q->whereNotNull('won_at');
             }
         }
-        // 'all' or anything else → no status filter
 
         $this->applyListFilters($q, $request);
 
-        // Opportunity picker (Create Quotation / PI form): only surface leads
-        // whose Stage 2 (Lead Acknowledgement) is COMPLETE — i.e. the lead's
-        // latest acknowledgement left it QUALIFIED (qualified = true,
-        // disqualified = false). A lead that hasn't cleared Stage 2 is excluded
-        // regardless of any later progress (price shared, etc.). The same gate
-        // applies when the picker is narrowed by a selected customer (the
-        // customer_id facet stacks on top of this condition).
-        // (`price_shared_complete` kept as a back-compat alias for the param.)
-        //
-        // NOTE: `qualified` defaults to TRUE on lead creation (see store()), so
-        // it is NOT a reliable "Stage 2 done" signal on its own. Stage 2 is only
-        // truly complete once an acknowledgement has been LOGGED and its latest
-        // bucket is Qualified — which is exactly: qualified = true AND at least
-        // one lead_acknowledgements row exists. A lead sitting on Stage 2 with no
-        // activity (default-qualified) is therefore excluded.
         if ($request->boolean('lead_ack_complete') || $request->boolean('price_shared_complete')) {
-            // (a) Stage 2 — Lead Acknowledgement completed: latest bucket is
-            //     Qualified AND an acknowledgement was actually logged (qualified
-            //     defaults to true on creation, so the row check is required).
             $q->where('leads.qualified', true)
               ->where('leads.disqualified', false)
               ->whereExists(function ($sub) {
@@ -160,10 +103,6 @@ class SalesLeadController extends Controller
                       ->from('lead_acknowledgements')
                       ->whereColumn('lead_acknowledgements.lead_id', 'leads.id');
               })
-            // (b) Stage 4 — Price Shared completed: the lead has at least one
-            //     product in its directory AND every one of those products has a
-            //     shared price recorded. Any product without a shared price
-            //     (or no products at all) excludes the opportunity.
               ->whereExists(function ($sub) {
                   $sub->select(\Illuminate\Support\Facades\DB::raw(1))
                       ->from('lead_products')
@@ -181,9 +120,6 @@ class SalesLeadController extends Controller
               });
         }
 
-        // Create-QUOTATION opportunity picker: once a (non-cancelled) Proforma
-        // Invoice exists for an opportunity, a new quotation can no longer be
-        // created against it — so hide such opps from the picker.
         if ($request->boolean('exclude_with_pi')) {
             $q->whereNotExists(function ($sub) {
                 $sub->select(\Illuminate\Support\Facades\DB::raw(1))
@@ -193,30 +129,6 @@ class SalesLeadController extends Controller
             });
         }
 
-        /* Quotation / PI opportunity picker: narrow to the opportunities that
-         * suit the chosen DOCUMENT TYPE (?doc_scope=Domestic|International).
-         *
-         * Scope comes from the mapped CUSTOMER's primary-address country, not
-         * from the lead's own sender country. That is deliberate: the wizard's
-         * `forcedDocType` derives Document Type from the customer's country and
-         * then locks the field, so filtering on anything else would offer an
-         * opportunity that silently flips the type the moment it is picked.
-         * The two genuinely disagree in real data (a Bulgarian enquiry mapped
-         * to an Indian customer, an Indian enquiry mapped to a Pakistani one).
-         *
-         * India -> Domestic, any other country -> International. LOWER()+TRIM
-         * on both sides because the country is stored as free text and casing
-         * drifts between seeded and hand-entered rows.
-         *
-         * Leads whose scope cannot be resolved -- no customer mapped yet, or a
-         * customer with no primary address / a blank country -- stay visible
-         * under BOTH types. They force no Document Type either, so hiding them
-         * would strand opportunities that are legitimately quotable.
-         *
-         * Soft-deleted customers are NOT excluded: the list eager-loads the
-         * customer withTrashed, so a lead mapped to an archived customer still
-         * shows, and it must keep resolving to the same scope.
-         */
         $docScope = $request->query('doc_scope');
         if (in_array($docScope, ['Domestic', 'International'], true)) {
             $knownCountry = function ($sub) {
@@ -248,9 +160,6 @@ class SalesLeadController extends Controller
 
         $paginator = $q->paginate($perPage, ['*'], 'page', $page);
 
-        // Flag leads the user can only VIEW (transferred away from them) so the
-        // worksheet renders them read-only instead of offering edit/assign
-        // actions (QA #63). Owner-editable leads get read_only = false.
         foreach ($paginator->items() as $lead) {
             $lead->setAttribute('read_only', \App\Support\SalesVisibility::isReadOnlyLead(
                 $user,
@@ -258,14 +167,6 @@ class SalesLeadController extends Controller
             ));
         }
 
-        /* Effective country for the worksheet's COUNTRY column. Once a customer
-         * is MAPPED, the row already shows that customer's name / email /
-         * company — but the country kept coming from the raw enquiry, so a lead
-         * mapped to a Pakistani customer still showed the sender's DZ and
-         * disagreed with the Sales-Matrix header (which resolves the customer's
-         * own country). Resolve the customer's address country to its ISO-2 via
-         * master_countries in ONE query, and fall back to the lead's own ISO
-         * when there's no customer / no match. */
         $addrCountries = collect($paginator->items())
             ->map(fn ($l) => $l->customer?->primaryAddress?->country)
             ->filter(fn ($c) => is_string($c) && trim($c) !== '')
@@ -288,24 +189,12 @@ class SalesLeadController extends Controller
             );
         }
 
-        // ── Tab counters — single round-trip via conditional aggregation.
-        // Active filters (platform / type / country / date / search) DO
-        // apply here so each pill shows the filtered total; only the
-        // status tab itself is dropped (else each pill would mirror the
-        // current tab's count). Frontend opts out on pure pagination via
-        // with_counts=0.
         $counts = null;
         if ((int) $request->query('with_counts', 1) === 1) {
             $countsQ = Lead::query();
-            // Same BranchSwitcher narrowing as the list above, so the tab
-            // pill counts match the rows actually shown — including former-owned
-            // (read-only) leads so a transferred lead is still counted (QA #63).
             $this->applyScope($countsQ, $user, $request->integer('branch_id') ?: null, true);
             $this->applyListFilters($countsQ, $request);
 
-            // NOTE: comparing booleans with `= 1`/`= 0` works on MySQL but
-            // Postgres rejects it (SQLSTATE 42883). Use true/false literals
-            // — both engines accept them.
             $row = $countsQ->selectRaw(
                 "COUNT(*) AS c_all,
                  SUM(CASE WHEN qualified = true AND disqualified = false THEN 1 ELSE 0 END) AS c_qual,
@@ -334,9 +223,6 @@ class SalesLeadController extends Controller
                 'per_page'     => $paginator->perPage(),
                 'total'        => $paginator->total(),
             ],
-            // Lets the My Workplace UI hide the Assign / Lead Distribution
-            // actions for Sales Employees / Interns (only managers + admins
-            // can distribute). The backend also enforces this server-side.
             'can_distribute' => \App\Support\SalesVisibility::canDistribute($user),
         ];
         if ($counts !== null) $response['counts'] = $counts;
@@ -344,17 +230,8 @@ class SalesLeadController extends Controller
         return response()->json($response);
     }
 
-    /**
-     * Shared list-filter application — runs over the listing query and
-     * the counts query so the two stay in sync. Skips the status filter
-     * on purpose (counts need to surface every bucket).
-     */
     private function applyListFilters($q, Request $request): void
     {
-        // Facet filters accept either a single value (?platform=X) or a
-        // multi-select array (?platform[]=X&platform[]=Y) from the Lead
-        // Filter modal's checkbox UI — arrays become whereIn, scalars stay
-        // whereEquals. Empty values are ignored either way.
         $applyFacet = function (string $column, string $param) use ($q, $request) {
             $v = $request->query($param);
             if (is_array($v)) {
@@ -368,22 +245,11 @@ class SalesLeadController extends Controller
         $applyFacet('query_type',         'query_type');
         $applyFacet('salesperson_id',     'salesperson_id');
 
-        // Assignment filter — powers the Lead Distribution KPI popups
-        // ("Assigned Leads" / "Unassigned Leads"). assigned=1 → has a
-        // salesperson; assigned=0 → no salesperson yet. Absent = no filter.
         if ($request->filled('assigned')) {
             $assigned = filter_var($request->query('assigned'), FILTER_VALIDATE_BOOLEAN);
             if ($assigned) $q->whereNotNull('salesperson_id');
             else           $q->whereNull('salesperson_id');
         }
-        // Stage facet — most stages map straight to lead_stage_id, but the two
-        // PI-onwards stages are SIGNAL-based per product rules (and their wire
-        // values 6/8 don't line up with the saved lead_stage_id anyway):
-        //   • Quotation vs PI (6) → opportunities whose PI has been SENT
-        //     (a PI signature request exists, or a non-cancelled PI was
-        //      emailed to the customer).
-        //   • Victory (8) → opportunities that have a CREATED shipment id
-        //     (a shipment_orders row — SHP-NNN — exists for the opportunity).
         $stageParam = $request->query('lead_stage_id');
         $stageVals  = is_array($stageParam)
             ? array_values(array_filter($stageParam, fn ($x) => $x !== null && $x !== ''))
@@ -399,7 +265,6 @@ class SalesLeadController extends Controller
                 }
                 if ($wantPiSent) {
                     $outer->orWhere(function ($w) {
-                        // PI sent (signature request OR emailed PI) …
                         $w->where(function ($p) {
                             $p->whereExists(function ($s) {
                                 $s->selectRaw('1')->from('clm_signature_requests')
@@ -412,8 +277,6 @@ class SalesLeadController extends Controller
                                   ->whereNotNull('proforma_invoices.emailed_at');
                             });
                         })
-                        // … but NOT yet shipped — a created shipment moves the
-                        // opportunity on to the Victory stage, so exclude it here.
                         ->whereNotExists(function ($s) {
                             $s->selectRaw('1')->from('shipment_orders')
                               ->whereColumn('shipment_orders.lead_id', 'leads.id');
@@ -439,31 +302,7 @@ class SalesLeadController extends Controller
         }
 
         if ($search = trim((string) $request->query('search', ''))) {
-            // Case-INSENSITIVE, global search. We LOWER() both the column and
-            // the term so it behaves identically on MySQL (collation-dependent)
-            // and PostgreSQL (whose plain LIKE is case-SENSITIVE — "rice" would
-            // otherwise not match "RICE"). The column list is a fixed
-            // whitelist, never user input, so whereRaw is injection-safe; only
-            // the lowered term is bound as a parameter.
             $like = '%' . mb_strtolower($search) . '%';
-            /* Full-table search — every column the My Workplace table
-             * shows is searchable from the single header search box.
-             * Coverage:
-             *   • Opportunity Id   → opp_code, unique_query_id
-             *   • Lead Type        → query_type ("W" / "B" / "BIZ")
-             *   • Lead Source      → platform ("Vortex" / "Purvee" …)
-             *   • Customer Name    → sender_name + customer.company_name
-             *   • Customer Id      → customer.customer_code
-             *   • Customer Number  → sender_mobile + sender_mobile_alt
-             *   • Customer Email   → sender_email + sender_email_alt
-             *   • Company          → sender_company + sender_address /
-             *                        sender_city / sender_state
-             *   • Product Name     → query_product_name + query_mcat_name
-             *   • Country          → sender_country_iso / sender_country_name
-             *   • Remark / message → remark + query_message
-             *   • Assigned To      → salesperson.name (relation lookup)
-             * The relation-based searches use whereHas so they stay
-             * indexed and don't pull every related row into PHP. */
             $cols = [
                 'opp_code', 'unique_query_id', 'query_type', 'platform',
                 'source_account', 'sender_name', 'sender_mobile',
@@ -477,26 +316,38 @@ class SalesLeadController extends Controller
                 foreach ($cols as $col) {
                     $w->orWhereRaw('LOWER(' . $col . ') LIKE ?', [$like]);
                 }
-                // Related lookups — salesperson and customer names.
                 $w->orWhereHas('salesperson', function ($s) use ($like) {
                     $s->whereRaw('LOWER(name) LIKE ?', [$like])
                       ->orWhereRaw('LOWER(email) LIKE ?', [$like]);
                 })
                 ->orWhereHas('customer', function ($c) use ($like) {
-                    // customers table uses company_name / legal_name —
-                    // the earlier `org_name` reference was inherited
-                    // from the clients table and crashed with "column
-                    // org_name does not exist" on Postgres.
                     $c->whereRaw('LOWER(company_name) LIKE ?', [$like])
                       ->orWhereRaw('LOWER(legal_name) LIKE ?', [$like])
                       ->orWhereRaw('LOWER(customer_code) LIKE ?', [$like])
                       ->orWhereRaw('LOWER(primary_email) LIKE ?', [$like]);
-                });
+                })
+                ->orWhereHas('customer.primaryAddress', fn ($a) => $a->whereRaw('LOWER(country) LIKE ?', [$like]))
+                ->orWhereExists(fn ($e) => $e->selectRaw('1')->from('proforma_invoices')
+                    ->whereColumn('proforma_invoices.opp_id', 'leads.id')
+                    ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+                    ->whereRaw('LOWER(proforma_invoices.code) LIKE ?', [$like]))
+                ->orWhereExists(fn ($e) => $e->selectRaw('1')->from('shipment_orders')
+                    ->whereColumn('shipment_orders.lead_id', 'leads.id')
+                    ->whereRaw('LOWER(shipment_orders.shipment_code) LIKE ?', [$like]));
 
-                // Numeric columns get a strict-equals branch when the
-                // term looks like an integer so a search for the bare
-                // price "50000" still matches without forcing the user
-                // to remember the exact formatting.
+                $dateExpr = 'COALESCE(leads.query_time, leads.created_at)';
+                $driver = $w->getConnection()->getDriverName();
+                [$display, $iso] = match ($driver) {
+                    'pgsql'  => ["LOWER(TO_CHAR($dateExpr, 'DD-Mon-YYYY'))", "TO_CHAR($dateExpr, 'YYYY-MM-DD')"],
+                    'mysql', 'mariadb' => ["LOWER(DATE_FORMAT($dateExpr, '%d-%b-%Y'))", "DATE_FORMAT($dateExpr, '%Y-%m-%d')"],
+                    default  => [null, "strftime('%Y-%m-%d', $dateExpr)"],
+                };
+                if ($display) $w->orWhereRaw("$display LIKE ?", [$like]);
+                $isoNeedle = preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$#', $search, $m)
+                    ? sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1])
+                    : (preg_match('#^\d{4}-\d{2}(-\d{2})?$#', $search) ? $search : null);
+                if ($isoNeedle) $w->orWhereRaw("$iso LIKE ?", [$isoNeedle . '%']);
+
                 if (ctype_digit($search)) {
                     $w->orWhere('product_quantity', (int) $search);
                 }
@@ -504,9 +355,6 @@ class SalesLeadController extends Controller
         }
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  MANUAL CREATE — POST /sales/leads
-     * ───────────────────────────────────────────────────────────────── */
     public function store(Request $request)
     {
         $user = $request->user();
@@ -525,32 +373,18 @@ class SalesLeadController extends Controller
             'sender_state'        => 'nullable|string|max:128',
             'sender_country_iso'  => 'nullable|string|max:8',
             'sender_country_name' => 'nullable|string|max:128',
-            /* Country decides the rule — India → exactly 6 digits, elsewhere →
-             * letters/digits/spaces/hyphens up to 12. Same App\Support\PostalCode
-             * helper the customer, consignee and shipment forms use. The country
-             * arrives as a NAME here (the ISO is resolved further down), so the
-             * resolver reads sender_country_name. */
             'sender_pincode'      => [
                 'nullable', 'string', 'max:32',
                 PostalCode::rule(fn () => $request->input('sender_country_name')),
             ],
             'customer_id'         => 'nullable|integer|exists:customers,id',
             'consignee_id'        => 'nullable|integer|exists:consignees,id',
-            // B9: cap query_message at 10k chars — Postgres TEXT happily
-            // stores gigabytes, but accepting them lets a single payload
-            // wreck the worksheet list response shape + memory.
             'query_message'       => 'nullable|string|max:10000',
             'product_quantity'    => 'nullable|string|max:64',
             'query_product_name'  => 'nullable|string|max:255',
         ]);
+        if (!empty($data['sender_email'])) $data['sender_email'] = mb_strtolower(trim($data['sender_email']));
 
-        /* Auto-fill sender_country_iso from the master_countries table
-         * when the client sends sender_country_name but no iso. The
-         * Add-New-Lead frontend only collects a country name; the
-         * leads table column renders the ISO code (e.g. "IN", "DE"),
-         * so without this lookup every manually-created lead showed
-         * "—" in the Country column. Lookup is case-insensitive so
-         * "India" / "INDIA" / "india" all resolve. */
         if (empty($data['sender_country_iso']) && !empty($data['sender_country_name'])) {
             $iso = \App\Models\Masters\Countries::query()
                 ->whereRaw('LOWER(name) = ?', [strtolower(trim($data['sender_country_name']))])
@@ -561,11 +395,6 @@ class SalesLeadController extends Controller
         }
 
         $lead = DB::transaction(function () use ($data, $user) {
-            // Raising an opportunity against an existing customer freezes that
-            // customer's country (the lead snapshots it into sender_country_*
-            // and the quotation/PI chain reads the snapshot, never the
-            // customer). Flag it inside the same transaction as the insert so
-            // the two can't drift apart.
             \App\Models\Customer::markMappedToLead(
                 isset($data['customer_id']) ? (int) $data['customer_id'] : null,
             );
@@ -573,22 +402,6 @@ class SalesLeadController extends Controller
             return Lead::create(array_merge($data, [
                 'client_id'       => $user->client_id,
                 'branch_id'       => $user->branch_id,
-                /* Auto-assign the lead to WHOEVER CREATED IT so it shows in
-                 * their own Lead Worksheet by default (QA #71).
-                 *
-                 * This used to fire only for user_type = employee; a branch
-                 * admin (or client admin / client user) who captured a lead by
-                 * hand got an ownerless row, so the worksheet showed
-                 * "Unassigned" next to a lead the creator had just typed in and
-                 * the distribution page counted it as work nobody had picked up.
-                 * Capturing a lead IS taking it, so the creator now owns it and
-                 * hands it on through Assign like any other owner.
-                 *
-                 * Super Admin is the one exception: it is a cross-tenant
-                 * operator account, not a salesperson, and it is deliberately
-                 * absent from the distribution roster (salespersonSummary) —
-                 * leads parked on it would count as assigned with no row to
-                 * redistribute them from. Those stay unassigned. */
                 'salesperson_id'  => (($user->user_type ?? null) === 'super_admin') ? null : $user->id,
                 'opp_code'        => $this->nextOppCode($user->client_id, $user->branch_id),
                 'unique_query_id' => (string) mt_rand(100000000, 999999999),
@@ -607,16 +420,12 @@ class SalesLeadController extends Controller
 
         $lead->load(['salesperson:id,name', 'customer:id,company_name,customer_code']);
 
-        // Activity tracker — record the lead's birth (manual capture).
         \App\Support\LeadActivity::log(
             $user,
             $lead,
             \App\Support\LeadActivity::ACTION_GENERATED,
             'Lead generated (' . ($lead->query_type ?: 'Manual') . ' · ' . ($lead->platform ?: 'Offline') . ')',
             null,
-            /* The lead is born with an owner (the creator, above), so the
-             * timeline's first card names them instead of opening on a
-             * blank owner that a later 'assigned' row had to explain. */
             [
                 'opp_code'         => $lead->opp_code,
                 'salesperson_id'   => $lead->salesperson_id ? (int) $lead->salesperson_id : null,
@@ -627,9 +436,6 @@ class SalesLeadController extends Controller
         return response()->json(['status' => true, 'data' => $lead], 201);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  SHOW / UPDATE / DELETE
-     * ───────────────────────────────────────────────────────────────── */
     public function show(Request $request, $id)
     {
         $user = $request->user();
@@ -637,73 +443,30 @@ class SalesLeadController extends Controller
 
         $q = Lead::with([
             'salesperson' => fn ($r) => $r->withTrashed(),
-            // Full customer + consignee rows — the matrix-detail toolbar
-            // reads these to decide whether to open the Edit form or the
-            // Picker for each button. withTrashed() so a soft-deleted but
-            // still-mapped customer / consignee surfaces (showing its
-            // legacy company_name) instead of returning a NULL relation
-            // that breaks the toolbar + CLM panel display.
             'customer'  => fn ($r) => $r->withTrashed()->with([
-                // Primary address carries the contact person's phone
-                // (cp_contact) — surfaced as customer.primary_address.cp_contact
-                // so the Add Meeting form can auto-fill the customer's primary
-                // contact number alongside its name + email.
-                // `country` drives the Domestic/Export currency gate: an Indian
-                // customer restricts the Product Directory to INR, a foreign one
-                // excludes INR.
                 'primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_contact', 'country'),
             ]),
             'consignee' => fn ($r) => $r->withTrashed(),
             'ackReason',
-            // Stage 1 form pre-populates from this. One-to-one row created
-            // / updated by POST /sales/leads/{lead}/task-manager.
             'taskManager',
-            // Stage 2 activity log — already ordered latest-first via the
-            // hasMany scope on the relation.
             'acknowledgements',
         ]);
-        // Read-only detail access for a former owner too (QA #63) — they can
-        // open a transferred lead to track its history, but edits stay blocked
-        // (update/destroy/reassign keep the owner-only scope).
         $this->applyScope($q, $user, null, true);
         $lead = $q->findOrFail($id);
 
-        // Flag whether THIS user may only view the lead (transferred away) so the
-        // detail page renders read-only (QA #63).
         $lead->setAttribute('read_only', \App\Support\SalesVisibility::isReadOnlyLead(
             $user,
             $lead->salesperson_id ? (int) $lead->salesperson_id : null,
         ));
 
-        // Resolve the WhatsApp proof screenshot to a real public URL using the
-        // SAME helper as product/QC attachments. Previously only the raw disk
-        // path was returned and the frontend built its own URL from the
-        // browser origin — when that didn't match the server's configured
-        // storage host the link 404'd and the SPA catch-all rendered the
-        // dashboard instead of the file. file_url() also returns null for
-        // malformed/legacy paths so we don't surface a broken "View" link.
         $lead->setAttribute('whatsapp_screenshot_url', file_url($lead->whatsapp_screenshot));
 
-        /* What Stage 3 onwards is holding. Stage 2 reads this to refuse an
-         * un-qualifying verdict BEFORE it optimistically shows the row as
-         * saved; the same list is what the write paths enforce. */
         $lead->setAttribute('downstream_work', $this->downstreamWork($lead));
 
-        // Task-manager attachment — same treatment as the WhatsApp screenshot
-        // above. The Deal Execution "View" button used to rebuild the URL from
-        // the bare disk path on the client, which resolved against the SPA origin
-        // and bounced the user to the dashboard via the router catch-all (QA #55).
-        // file_url() returns an absolute, storage-host-correct URL (null for
-        // missing/legacy paths so we never surface a broken link).
         if ($lead->taskManager) {
             $lead->taskManager->setAttribute('attachment_url', file_url($lead->taskManager->attachment));
         }
 
-        // When the opportunity's Proforma Invoice has been e-signed (a completed
-        // signature request), the deal is locked: the matrix detail becomes
-        // read-only except CLM tracking + Create Shipment. Expose the signed
-        // timestamp so the frontend can lock the UI and compute the
-        // "lead → PI signed" duration. Null = not signed yet.
         $piSignedAt = \App\Models\ClmSignatureRequest::query()
             ->where('lead_id', $lead->id)
             ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
@@ -712,23 +475,6 @@ class SalesLeadController extends Controller
             ->value('completed_at');
         $lead->setAttribute('pi_signed_at', $piSignedAt ? \Illuminate\Support\Carbon::parse($piSignedAt)->toIso8601String() : null);
 
-        /* When the PI first went OUT for signature. Earlier than pi_signed_at:
-         * the counterparty has the document from this moment, so the lead's
-         * owner is the person they are dealing with and must stop changing
-         * underneath them (QA #83).
-         *
-         * 'inprogress' and 'completed' only. recalled and superseded are the
-         * explicit undo — the sender pulled it back or replaced it, so nothing
-         * is outstanding and the owner can still move. declined and expired
-         * likewise end the send; a new owner has to be able to re-issue. */
-        /* Read the ROW, not just its created_at. The reassign guard in update()
-         * asks only whether such a row EXISTS, and this attribute is what locks
-         * the Change Owner button — so the two have to answer the same
-         * question. Pulling created_at on its own did not: a row carrying no
-         * created_at came back null, the toolbar left Change Owner enabled, and
-         * the user only learned the owner was fixed when the PUT came back 422.
-         * Fall back to whatever timestamp the row does have — the instant is
-         * for display, it is the row's presence that sets the lock. */
         $piSentRow = \App\Models\ClmSignatureRequest::query()
             ->where('lead_id', $lead->id)
             ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
@@ -740,19 +486,9 @@ class SalesLeadController extends Controller
             : null;
         $lead->setAttribute('pi_sent_for_signature_at', $piSentAt ? \Illuminate\Support\Carbon::parse($piSentAt)->toIso8601String() : null);
 
-        // Opportunity date = the SAME source the lead list/header show as
-        // "Opportunity Date" (inbound query_time, else the lead's created_at).
-        // Exposed as ISO so the Victory-stage day count parses it reliably and
-        // matches the displayed date (the dd/mm/yyyy header string mis-parses).
         $oppDate = $lead->query_time ?? $lead->created_at;
         $lead->setAttribute('opportunity_date_iso', $oppDate ? \Illuminate\Support\Carbon::parse($oppDate)->toIso8601String() : null);
 
-        // Date the PI was sent (the duration end-date until the PI is signed).
-        // Preference order:
-        //   1. signature request created_at (sent for e-signature), else
-        //   2. the PI's emailed_at (sent to the customer), else
-        //   3. the PI's created_at (PI raised) — so a PI that exists but was
-        //      never sent for signature still yields a day count instead of "—".
         $piSentAt = \App\Models\ClmSignatureRequest::query()
             ->where('lead_id', $lead->id)
             ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
@@ -768,12 +504,6 @@ class SalesLeadController extends Controller
         }
         $lead->setAttribute('pi_sent_at', $piSentAt ? \Illuminate\Support\Carbon::parse($piSentAt)->toIso8601String() : null);
 
-        /* The lead's locked currency = the currency its products already share
-         * (single-currency-per-lead rule in storeProduct). Surfaced here so the
-         * Customer picker can filter by it: an INR opportunity may only be
-         * mapped to an Indian customer, a non-INR one only to a foreign
-         * customer. Null when no product is mapped yet — then the customer is
-         * free and it's the customer that drives the currency instead. */
         $lead->setAttribute('locked_currency', LeadProduct::where('lead_id', $lead->id)
             ->whereNotNull('currency')
             ->value('currency'));
@@ -781,16 +511,6 @@ class SalesLeadController extends Controller
         return response()->json(['status' => true, 'data' => $lead]);
     }
 
-    /**
-     * Currency ↔ customer trade-type guard. A lead's products share one currency
-     * (single-currency-per-lead); INR ⇒ a DOMESTIC sale, so only an Indian
-     * customer may be mapped, and any other currency ⇒ an EXPORT sale, so only a
-     * foreign customer may be mapped. Enforced in BOTH directions — at
-     * customer-mapping (update) and product-mapping (storeLeadProduct) time.
-     *
-     * Returns a 422 JsonResponse describing the mismatch, or null when it's fine
-     * (no product currency yet, no customer, or the two agree).
-     */
     private function currencyCustomerMismatchResponse(int $clientId, ?string $currency, ?int $customerId): ?\Illuminate\Http\JsonResponse
     {
         if (!$currency || !$customerId) return null;
@@ -798,7 +518,6 @@ class SalesLeadController extends Controller
             ->with('primaryAddress:id,customer_id,country')
             ->find($customerId);
         if (!$customer) return null;
-        // Accept the country NAME or its ISO code, mirroring ProductDirectoryModal's isIndia().
         $country = mb_strtolower(trim((string) optional($customer->primaryAddress)->country));
         $isIndia = in_array($country, ['india', 'in', 'ind'], true);
         $isInr   = strtoupper(trim($currency)) === 'INR';
@@ -832,7 +551,6 @@ class SalesLeadController extends Controller
             'sender_address'     => 'nullable|string|max:1000',
             'sender_city'        => 'nullable|string|max:128',
             'sender_state'       => 'nullable|string|max:128',
-            // Same country-aware rule as store() — see the note there.
             'sender_pincode'     => [
                 'nullable', 'string', 'max:32',
                 PostalCode::rule(fn () => $request->input('sender_country_name')),
@@ -840,32 +558,20 @@ class SalesLeadController extends Controller
             'sender_country_iso' => 'nullable|string|max:8',
             'qualified'          => 'nullable|boolean',
             'disqualified'       => 'nullable|boolean',
-            // B5: stage range is 1–6 (Inquiry → Victory). Earlier `between:1,8`
-            // allowed nonexistent stages 7/8 in via direct API hits.
             'lead_stage_id'      => 'nullable|integer|between:1,6',
-            // B4: must point at a salesperson that is NOT soft-deleted.
             'salesperson_id'     => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereNull('deleted_at')],
             'key_opportunity'    => 'nullable|boolean',
-            // B8: cap remark at 5000 chars — the worksheet renders it
-            // inline and a 10MB note breaks the list render + indexing.
             'remark'             => 'nullable|string|max:5000',
             'price'              => 'nullable|string|max:64',
-            // B3: lead_ack_reason must be active. The reasons table has no
-            // soft-delete column (admin removes reasons by flipping status
-            // to 'inactive'), so the where() filter is the gate.
             'lead_ack_reason_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('lead_ack_reasons', 'id')->where(fn ($w) => $w->where('status', 'active'))],
             'customer_id'        => 'nullable|integer|exists:customers,id',
             'consignee_id'       => 'nullable|integer|exists:consignees,id',
-            // WhatsApp text-only updates ride along on the same endpoint;
-            // attach-screenshot uploads use the dedicated multipart route.
             'has_whatsapp'       => 'nullable|boolean',
             'whatsapp_status'    => 'nullable|string|in:connected,pending,not_connected,opted_out',
             'whatsapp_reason'    => 'nullable|string|max:1000',
         ]);
+        if (!empty($data['sender_email'])) $data['sender_email'] = mb_strtolower(trim($data['sender_email']));
 
-        // B6: qualified + disqualified must be mutually exclusive. If the
-        // payload sets both true the lead drops off BOTH tabs (each tab
-        // filters by one of the flags). Reject explicitly.
         if (!empty($data['qualified']) && !empty($data['disqualified'])) {
             return response()->json([
                 'status'  => false,
@@ -873,11 +579,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        /* The verdict is also settable straight through this endpoint, so it
-         * carries the same downstream-work gate as Stage 2's acknowledgement
-         * save — otherwise the rule is one PUT away from being bypassed.
-         * Only a change that REMOVES the qualification is gated; re-saving a
-         * lead that is already disqualified must stay possible. */
         $losesQualification = (array_key_exists('disqualified', $data) && !empty($data['disqualified']) && !$lead->disqualified)
             || (array_key_exists('qualified', $data) && empty($data['qualified']) && $lead->qualified);
         if ($losesQualification) {
@@ -888,12 +589,6 @@ class SalesLeadController extends Controller
             if ($blocked) return $blocked;
         }
 
-        // Gate the move to Stage 6 (Victory): the opportunity must have a
-        // Proforma Invoice that has at least been SENT for signature. Once
-        // the PI is out for the customer's e-signature the deal may advance
-        // (we no longer wait for the signing to complete). Only enforced on
-        // the forward transition (currently below Stage 6) so re-saves /
-        // regressions back to 6 aren't blocked.
         if (isset($data['lead_stage_id'])
             && (int) $data['lead_stage_id'] === 6
             && (int) ($lead->lead_stage_id ?? 0) < 6
@@ -921,27 +616,13 @@ class SalesLeadController extends Controller
             }
         }
 
-        // Auto-mark the deal as won the FIRST time it lands on Stage 6
-        // (Victory). Keeping this server-side means we don't trust the
-        // client to send a timestamp, and the column is set exactly once
-        // — re-advancing to Stage 6 after a regression won't overwrite
-        // the original win date.
         if (isset($data['lead_stage_id']) && (int) $data['lead_stage_id'] === 6 && $lead->won_at === null) {
             $data['won_at'] = now();
         }
-        // B7: regressing OUT of Stage 6 must clear won_at — otherwise the
-        // lead reads as "won" while it's actually back in the pipeline,
-        // and reports filter on won_at IS NOT NULL.
         if (isset($data['lead_stage_id']) && (int) $data['lead_stage_id'] < 6 && $lead->won_at !== null) {
             $data['won_at'] = null;
         }
 
-        // Segment "Buyer ≠ Consignee" guard at CONSIGNEE-MAPPING time.
-        // When products were added to the directory with no consignee (so the
-        // mapping-time product guard passed), then a DISTINCT consignee is
-        // mapped here, re-run the rule against the lead's existing products so
-        // the user is blocked NOW — not later, only when creating the
-        // quotation/PI. Only checked when a consignee is actually being set.
         if (array_key_exists('consignee_id', $data) && $data['consignee_id']) {
             $leadProductIds = LeadProduct::where('lead_id', $lead->id)
                 ->pluck('product_id')
@@ -955,12 +636,6 @@ class SalesLeadController extends Controller
             }
         }
 
-        // Customer ↔ Product segment-match guard at CUSTOMER-MAPPING time.
-        // When products were mapped first and a customer is now being set (or
-        // swapped), every mapped product's segment must match one of the new
-        // customer's segments — block the mismatch with a 422 the worksheet
-        // toasts. (The reverse order — product mapped after customer — is
-        // guarded in storeLeadProduct().)
         if (array_key_exists('customer_id', $data) && $data['customer_id']) {
             $leadProductIds = LeadProduct::where('lead_id', $lead->id)
                 ->pluck('product_id')
@@ -972,8 +647,6 @@ class SalesLeadController extends Controller
             )) {
                 return $block;
             }
-            // Currency ↔ trade-type: INR products ⇒ only a domestic (Indian)
-            // customer, foreign-currency products ⇒ only an international one.
             $leadCurrency = LeadProduct::where('lead_id', $lead->id)
                 ->whereNotNull('currency')
                 ->value('currency');
@@ -986,20 +659,8 @@ class SalesLeadController extends Controller
             }
         }
 
-        // Snapshot the owner BEFORE saving so we can log an ownership change
-        // when this edit (re)assigns the lead via the salesperson_id field.
         $prevSalesId = $lead->salesperson_id ? (int) $lead->salesperson_id : null;
 
-        /* Ownership is frozen once the PI is out for signature (QA #83).
-         *
-         * Enforced HERE and not only on the toolbar button: the button is a
-         * courtesy, this is the rule. The counterparty is holding a document
-         * that names an owner, and moving the lead underneath them would leave
-         * the signature request pointing at one person and the opportunity at
-         * another.
-         *
-         * Only a real change is refused — re-sending the same id is a no-op
-         * and must not fail an otherwise valid edit of other fields. */
         if (array_key_exists('salesperson_id', $data)) {
             $incomingSalesId = $data['salesperson_id'] ? (int) $data['salesperson_id'] : null;
             if ($incomingSalesId !== $prevSalesId) {
@@ -1019,13 +680,10 @@ class SalesLeadController extends Controller
 
         $lead->update($data);
 
-        // Mapping a customer onto an existing lead counts the same as creating
-        // the lead against it — freeze that customer's country too.
         if (!empty($data['customer_id'])) {
             \App\Models\Customer::markMappedToLead((int) $data['customer_id']);
         }
 
-        // Activity tracker — log when the edit changed the lead's owner.
         if (array_key_exists('salesperson_id', $data)) {
             $newSalesId = $data['salesperson_id'] ? (int) $data['salesperson_id'] : null;
             if ($newSalesId !== $prevSalesId && $newSalesId !== null) {
@@ -1060,18 +718,11 @@ class SalesLeadController extends Controller
         return response()->json(['status' => true, 'message' => 'Lead deleted']);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  SYNC FROM 3rd-PARTY CRM — POST /sales/leads/sync
-     * ───────────────────────────────────────────────────────────────── */
     public function syncFromCrm(Request $request, IndiaMartLeadSyncService $service)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Tenant gate — see config/lead_sync.php. Super-admin bypasses
-        // (they can fire sync against any client to test setup), but for
-        // everyone else the caller's (client_id, branch_id) must match
-        // the env-configured pair.
         $gateError = $this->checkSyncTenantGate($user);
         if ($gateError) {
             return response()->json(['status' => false, 'message' => $gateError], 403);
@@ -1090,10 +741,6 @@ class SalesLeadController extends Controller
         return response()->json(array_merge(['status' => true], $result));
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  SYNC CONFIG (used by the frontend to decide whether to render
-     *  the "Sync from IndiaMart" banner button) — GET /sales/leads/sync/config
-     * ───────────────────────────────────────────────────────────────── */
     public function syncConfig(Request $request)
     {
         $user = $request->user();
@@ -1108,15 +755,6 @@ class SalesLeadController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  ASSIGN — POST /sales/leads/assign
-     *
-     *  Assigns one or many leads to a single salesperson. Powers both
-     *  the row-level Assign action and the bulk "Assign Leads" modal in
-     *  the worksheet. Mirrors the legacy IDIMS assignMultipleLeads flow
-     *  but tenant-scoped via applyScope() so a hostile lead_id from
-     *  another tenant cannot be touched.
-     * ───────────────────────────────────────────────────────────────── */
     public function assign(Request $request)
     {
         $user = $request->user();
@@ -1128,10 +766,6 @@ class SalesLeadController extends Controller
             'salesperson_id'  => 'required|integer|exists:users,id',
         ]);
 
-        // Hierarchy guard: a sales user can (re)assign a lead only WITHIN their
-        // reporting chain — to themselves, their manager (up), or their direct
-        // reports (down). Admin tiers (assignableUserIds === null) may assign
-        // to anyone in scope.
         $assignable = \App\Support\SalesVisibility::assignableUserIds($user);
         if ($assignable !== null && !in_array((int) $data['salesperson_id'], $assignable, true)) {
             return response()->json([
@@ -1140,9 +774,6 @@ class SalesLeadController extends Controller
             ], 403);
         }
 
-        // Department gate — the target must be a SALES-department member in the
-        // SAME branch; a lead can never be handed to another department or
-        // another branch. Enforced whenever a Sales department exists.
         if (!empty(\App\Support\SalesVisibility::salesDepartmentIds())) {
             $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user, $user->branch_id ?: null);
             if (!in_array((int) $data['salesperson_id'], $salesUserIds, true)) {
@@ -1153,30 +784,10 @@ class SalesLeadController extends Controller
             }
         }
 
-        /* includeFormerOwned matches the READ paths (list + detail).
-         *
-         * A Team Leader's scope is their OWN leads only, so the moment they
-         * hand one to an executive it leaves that scope. The list still showed
-         * it - reads already include former-owned - but this query dropped it,
-         * so a second reassignment silently matched nothing and the lead could
-         * never be moved again.
-         *
-         * Widening it here only re-admits leads this user genuinely owned
-         * before (lead_assignment_histories.previous_user_id). The target is
-         * still gated by the hierarchy and Sales-department checks above, so
-         * nobody gains a recipient they could not already assign to. */
         $q = Lead::query()->whereIn('id', $data['lead_ids']);
         $this->applyScope($q, $user, null, true);
         $leads = $q->get(['id', 'client_id', 'branch_id', 'salesperson_id']);
 
-        /* A lead that has reached a shipment is closed to reassignment.
-         *
-         * Once the shipment order exists the deal has left the sales desk -
-         * procurement, documents and the CLM trail are all keyed to the owner
-         * recorded at that point, so moving it afterwards leaves those records
-         * pointing at someone who is no longer responsible. The whole request
-         * is refused rather than partially applied, and the message names the
-         * leads so a bulk assign can be retried without them. */
         $shipped = \App\Models\ShipmentOrder::query()
             ->whereIn('lead_id', $leads->pluck('id'))
             ->pluck('lead_id')
@@ -1196,8 +807,6 @@ class SalesLeadController extends Controller
         $targetId   = (int) $data['salesperson_id'];
         $targetName = \App\Models\User::query()->whereKey($targetId)->value('name') ?: ('User #' . $targetId);
 
-        // Resolve previous-owner names in one query so reassignment rows can
-        // read "Reassigned from X to Y" without N round-trips.
         $prevIds   = $leads->pluck('salesperson_id')->filter()->map(fn ($v) => (int) $v)->unique()->all();
         $prevNames = !empty($prevIds)
             ? \App\Models\User::query()->whereIn('id', $prevIds)->pluck('name', 'id')->all()
@@ -1207,13 +816,12 @@ class SalesLeadController extends Controller
         $reassignCount  = 0;
         $skippedCount   = count($data['lead_ids']) - $leads->count();
         $touchedIds     = [];
-        $activity       = [];   // [lead, action, prevId]
+        $activity       = [];
 
         foreach ($leads as $lead) {
             $prevId = $lead->salesperson_id ? (int) $lead->salesperson_id : null;
 
             if ($prevId === $targetId) {
-                // Already owned by the target — no-op, don't log noise.
                 continue;
             }
 
@@ -1232,7 +840,6 @@ class SalesLeadController extends Controller
                 'salesperson_id' => $targetId,
             ]);
 
-            // Activity tracker — one row per ownership change.
             foreach ($activity as [$lead, $action, $prevId]) {
                 $prevName = $prevId ? ($prevNames[$prevId] ?? ('User #' . $prevId)) : null;
                 $desc = $prevId
@@ -1259,40 +866,16 @@ class SalesLeadController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  ACTIVITY FEED — GET /sales/leads/{id}/activity
-     *
-     *  Per-lead timeline for the worksheet's Activity tracker: when the
-     *  lead was generated, and every ownership change (assigned /
-     *  reassigned) with the actor and from→to salesperson. Tenant-scoped:
-     *  a lead outside the caller's visibility 404s before any rows leak.
-     * ───────────────────────────────────────────────────────────────── */
     public function activity(Request $request, $id)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        /* READ path — former owners included.
-         *
-         * This is the one read endpoint that was left owner-scoped. The list
-         * and detail both pass includeFormerOwned = true, so after a lead was
-         * reassigned the old owner still saw it (with the View only badge) and
-         * could open it — but the moment they opened Activity Tracker this
-         * query found nothing, firstOrFail threw a 404, and the modal rendered
-         * its empty state: "No activity yet", alongside a "Load failed" toast.
-         *
-         * The history itself was never missing — lead_assignment_histories had
-         * every row. The person who most needs to read it, the one the lead was
-         * taken from, was simply not allowed to ask.
-         *
-         * Read-only by nature: it returns the assignment trail and writes
-         * nothing, so widening it grants no new power. */
         $q = Lead::query()->whereKey($id);
         $this->applyScope($q, $user, null, true);
         $lead = $q->first(['id', 'opp_code']);
 
         if (!$lead) {
-            // Plain message instead of a bare 404 page — the modal shows this.
             return response()->json([
                 'status'  => false,
                 'message' => 'Opportunity not found, or it is outside your access.',
@@ -1306,14 +889,6 @@ class SalesLeadController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  CONVERT TO QUALIFIED — POST /sales/leads/convert-to-qualified
-     *
-     *  Flips one or many disqualified leads back into the qualified
-     *  bucket. Powers the row-level CTQ pill and the bulk-CTQ button
-     *  in the floating selection bar. Tenant-scoped — a hostile id from
-     *  outside the caller's tenant is silently skipped.
-     * ───────────────────────────────────────────────────────────────── */
     public function convertToQualified(Request $request)
     {
         $user = $request->user();
@@ -1330,8 +905,6 @@ class SalesLeadController extends Controller
         $touched = $q->update([
             'qualified'    => true,
             'disqualified' => false,
-            // Clear the disqualification reason if any — the lead is back
-            // in play, the old reason no longer applies.
             'lead_ack_reason_id' => null,
         ]);
 
@@ -1342,22 +915,6 @@ class SalesLeadController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  TASK MANAGER UPSERT — POST /sales/leads/{lead}/task-manager
-     *
-     *  Stage 1 (Inquiry Received) save target. Accepts multipart so the
-     *  optional supporting document rides along on the same request.
-     *  Idempotent: one row per (client, lead) — re-saves overwrite the
-     *  prior file on disk to avoid orphaned blobs.
-     *
-     *  Body shape (FormData):
-     *    name             string  required, max 255
-     *    mobile_no        string  required, 6–15 digits
-     *    email            string  required, valid email
-     *    order_value      number  optional, ≥ 0
-     *    buying_plan      Y-m-d   optional date
-     *    attachment       File    optional (jpg/png/pdf, ≤ 5 MB)
-     * ───────────────────────────────────────────────────────────────── */
     public function storeTaskManager(Request $request, int $leadId)
     {
         $user = $request->user();
@@ -1366,23 +923,8 @@ class SalesLeadController extends Controller
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
 
-        // Tenant-scoped lookup — a hostile id from another tenant 404s
-        // instead of leaking the record's existence.
         $lead = $this->findLeadForWrite($user, $leadId, 'add tasks to it');
 
-        /* Purchase-decision-maker details are a CONTACT, so they are held to
-         * the same shape the customer / consignee / candidate forms use.
-         *
-         *  name  – `string` alone took "Rahul 123" and worse. Letters, spaces,
-         *          dots, hyphens and apostrophes only, starting on a letter –
-         *          the same person-name rule CandidateController applies.
-         *  email – `email` alone is RFC validation, and `#&^%^%&@mailinator.com`
-         *          is a legal RFC address (those characters are all permitted in
-         *          a local part), so it saved without a murmur. The regex holds
-         *          both sides of the @ to the label shape a working contact
-         *          address actually has, and is kept identical to EMAIL_RE in
-         *          TaskManagerPanel.tsx so the form and the API refuse the same
-         *          strings. */
         $data = $request->validate([
             'name'        => ['required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\-]*$/"],
             'mobile_no'   => ['required', 'string', 'regex:/^\d{6,15}$/'],
@@ -1407,9 +949,6 @@ class SalesLeadController extends Controller
             ->where('lead_id', $lead->id)
             ->first();
 
-        // Replace prior attachment on disk if a new file came in. We
-        // unlink before write so a half-written upload never leaves two
-        // files lingering for the same task-manager row.
         $attachmentPath = $existing?->attachment;
         $attachmentName = $existing?->attachment_original;
         if ($request->hasFile('attachment')) {
@@ -1442,9 +981,6 @@ class SalesLeadController extends Controller
             : LeadTaskManager::create($payload);
 
         $fresh = $row->fresh();
-        // Absolute URL for the "View" button (mirrors the lead-detail response) —
-        // a bare disk path resolves against the SPA origin and bounces to the
-        // dashboard via the router catch-all (QA #55).
         $fresh->setAttribute('attachment_url', file_url($fresh->attachment));
 
         return response()->json([
@@ -1454,16 +990,6 @@ class SalesLeadController extends Controller
         ], $existing ? 200 : 201);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  WHATSAPP STATUS — POST /sales/leads/{lead}/whatsapp
-     *
-     *  Multipart endpoint. Body: { whatsapp_status, whatsapp_reason?,
-     *  screenshot? (file) }. Updates the lead row in place. When a new
-     *  screenshot comes in, the prior file is unlinked from disk before
-     *  the new path is written so we never leave orphans.
-     *
-     *  has_whatsapp is auto-derived: true iff status is "connected".
-     * ───────────────────────────────────────────────────────────────── */
     public function updateWhatsApp(Request $request, int $leadId)
     {
         $user = $request->user();
@@ -1476,9 +1002,6 @@ class SalesLeadController extends Controller
 
         $data = $request->validate([
             'whatsapp_status' => 'required|string|in:connected,pending,not_connected,opted_out',
-            // Reason is optional (only the "not connected" branch sends it), but
-            // when present it must sit within the same 5–250 char bounds the
-            // modal enforces so a stray keypress or pasted essay can't slip in.
             'whatsapp_reason' => 'nullable|string|min:5|max:250',
             'screenshot'      => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
         ]);
@@ -1510,24 +1033,12 @@ class SalesLeadController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTS — GET /sales/leads/{lead}/products
-     *
-     *  Returns rows from lead_products joined with the product master
-     *  for display. Shape kept lean so the modal can render directly.
-     * ───────────────────────────────────────────────────────────────── */
     public function listLeadProducts(Request $request, int $leadId)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        /* Read path: widened like the list and detail endpoints.
-           A lead transferred away is still VISIBLE to its former owner, so
-           the page opens -- but this query used the owner-only filter and
-           findOrFail then 404'd, which surfaced as "Could not load ..." on a
-           page the user was allowed to read. Widening only affects what is
-           SEEN; every write path below keeps the strict filter. */
         $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
@@ -1539,8 +1050,6 @@ class SalesLeadController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        // Latest procurement_id per lead_product (Stage 3 Required tab uses
-        // this to swap the row between "select to procure" and "Mark Sourced").
         $procByLeadProduct = ProcurementProduct::query()
             ->whereIn('lead_product_id', $rows->pluck('id'))
             ->orderByDesc('id')
@@ -1548,25 +1057,17 @@ class SalesLeadController extends Controller
             ->groupBy('lead_product_id')
             ->map(fn ($g) => $g->first()->procurement_id);
 
-        // Vendor count per product (product_vendor_maps) — Stage 3's
-        // "Vendor Count" column shows this; clicking it opens the mappings.
         $vendorCountByProduct = \App\Models\ProductVendorMap::query()
             ->whereIn('product_id', $rows->pluck('product_id')->filter()->unique()->values())
             ->selectRaw('product_id, COUNT(*) as c')
             ->groupBy('product_id')
             ->pluck('c', 'product_id');
 
-        // Quotation / PI codes still quoting each product — drives the Product
-        // Directory's unmap lock (a quoted product can't be unmapped until it's
-        // removed from those documents). Batched for all rows at once.
         $docsByProduct = $this->documentCodesByProduct(
             $lead->id,
             $rows->pluck('product_id')->filter()->unique()->values()->all(),
         );
 
-        // Lead-product ids that already have a SHARED PRICE (Stage 4). A shared
-        // price means the customer was quoted — the mapping is locked from
-        // unmapping just like a sourcing decision. Batched into one query.
         $sharedPriceIds = LeadProductSharedPrice::query()
             ->whereIn('lead_product_id', $rows->pluck('id'))
             ->distinct()
@@ -1576,14 +1077,10 @@ class SalesLeadController extends Controller
         $mapped = $rows->map(fn ($r) => [
             'id'               => $r->id,
             'product_id'       => $r->product_id,
-            // Non-empty ⇒ unmap is blocked; the codes explain why in the UI.
             'used_in_documents' => array_values($docsByProduct[$r->product_id] ?? []),
             'product_code'     => $r->product?->product_code,
             'product_name'     => $r->product?->name,
             'product_status'   => $r->product?->status,
-            // Segment name surfaced as the row's category — used by the
-            // directory modal to render the small badge under the
-            // product name (matches the prototype design).
             'product_category' => $r->product?->segment?->name,
             'currency'         => $r->currency,
             'quantity'         => $r->quantity,
@@ -1593,7 +1090,6 @@ class SalesLeadController extends Controller
             'procurement_done' => (bool) $r->procurement_done,
             'procurement_id'   => $procByLeadProduct[$r->id] ?? null,
             'vendor_count'     => (int) ($vendorCountByProduct[$r->product_id] ?? 0),
-            // True ⇒ a price was already shared for this product → unmap blocked.
             'has_shared_price' => $sharedPriceIds->has($r->id),
             'created_at'       => $r->created_at,
         ]);
@@ -1601,15 +1097,6 @@ class SalesLeadController extends Controller
         return response()->json(['status' => true, 'data' => $mapped]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTS — PATCH /sales/leads/{lead}/products/{mapping}/sourcing-status
-     *
-     *  Stage 3 sub-flow. Salesperson labels each mapped product as
-     *  `required` (needs procurement) or `not_required`. The business
-     *  rule mirrors IDIMS: inactive / draft product masters cannot be
-     *  marked not_required — they have no current selling price so they
-     *  always need procurement before they can be quoted.
-     * ───────────────────────────────────────────────────────────────── */
     public function updateLeadProductSourcingStatus(Request $request, int $leadId, int $mappingId)
     {
         $user = $request->user();
@@ -1617,7 +1104,6 @@ class SalesLeadController extends Controller
 
         $lead = $this->findLeadForWrite($user, $leadId, 'change its sourcing status');
 
-        // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
         if ($blocked) return $blocked;
 
@@ -1641,8 +1127,6 @@ class SalesLeadController extends Controller
 
         $row->update([
             'sourcing_status'  => $data['sourcing_status'],
-            // Flipping to "not required" wipes any prior mark-sourced state
-            // so the row can't sneak past Stage 4 gating later.
             'procurement_done' => $data['sourcing_status'] === 'required'
                 ? $row->procurement_done
                 : false,
@@ -1655,15 +1139,6 @@ class SalesLeadController extends Controller
         ]]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTS — PATCH /sales/leads/{lead}/products/{mapping}/mark-sourced
-     *
-     *  Equivalent to IDIMS's "Mark as Done" on product_directories. Only
-     *  meaningful on rows already labelled sourcing_status = required. We
-     *  don't yet have a procurement-orders module in CBC, so the action
-     *  collapses to a single boolean flip — the IDIMS gate on vendor
-     *  mapping has no analogue here and is deliberately omitted.
-     * ───────────────────────────────────────────────────────────────── */
     public function markLeadProductSourced(Request $request, int $leadId, int $mappingId)
     {
         $user = $request->user();
@@ -1671,7 +1146,6 @@ class SalesLeadController extends Controller
 
         $lead = $this->findLeadForWrite($user, $leadId, 'mark its products sourced');
 
-        // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
         if ($blocked) return $blocked;
 
@@ -1684,10 +1158,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        // B24: idempotency gate. Calling this endpoint twice in a row
-        // used to silently succeed both times, masking double-submits
-        // (which often signal a UI bug worth surfacing). Return 409 on
-        // the second call so the client can detect and stop retrying.
         if ($row->procurement_done) {
             return response()->json([
                 'status'  => false,
@@ -1700,8 +1170,6 @@ class SalesLeadController extends Controller
             ], 409);
         }
 
-        // Mirror IDIMS: cannot mark sourced unless a procurement has been
-        // created for this row (Sourcing Required + procurement linked).
         $hasProcurement = ProcurementProduct::where('lead_product_id', $row->id)->exists();
         if (!$hasProcurement) {
             return response()->json([
@@ -1719,19 +1187,6 @@ class SalesLeadController extends Controller
         ]]);
     }
 
-    /* ═════════════════════════════════════════════════════════════════
-     *  STAGE 4 — PRICE SHARED
-     *
-     *  POST   /sales/leads/{lead}/products/{mapping}/shared-prices
-     *           record a quoted price entry (append-only history)
-     *  GET    /sales/leads/{lead}/shared-prices
-     *           flat history list across all products on this lead
-     *  GET    /sales/leads/{lead}/products/{mapping}/shared-prices
-     *           history scoped to a single product mapping
-     *  GET    /sales/shared-prices/{id}/pdf
-     *           generate the quotation PDF (dompdf)
-     * ═════════════════════════════════════════════════════════════════ */
-
     public function storeSharedPrice(Request $request, int $leadId, int $mappingId)
     {
         $user = $request->user();
@@ -1742,7 +1197,6 @@ class SalesLeadController extends Controller
 
         $lead = $this->findLeadForWrite($user, $leadId, 'share prices on it');
 
-        // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
         if ($blocked) return $blocked;
 
@@ -1750,9 +1204,6 @@ class SalesLeadController extends Controller
             ->where('lead_id', $lead->id)
             ->findOrFail($mappingId);
 
-        // Mirror IDIMS: incomplete product masters (draft / inactive) can't
-        // have a shared price recorded. The frontend disables the input but
-        // we double-check server-side so direct API hits don't slip past.
         $productStatus = strtolower((string) ($row->product?->status ?? ''));
         if (in_array($productStatus, ['draft', 'inactive', 'pending'], true)) {
             return response()->json([
@@ -1761,9 +1212,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        // A product must have a sourcing decision (Sourcing Required / Not
-        // Required) before a price can be shared for it — products still
-        // "not set" in Product Sourcing are not yet eligible for pricing.
         if (empty($row->sourcing_status)) {
             return response()->json([
                 'status'  => false,
@@ -1772,9 +1220,6 @@ class SalesLeadController extends Controller
         }
 
         $data = $request->validate([
-            // B12: zero quoted price would render "₹ 0.00" to the customer.
-            // gt:0 forces a real number; if a free sample is intended, that
-            // belongs in a separate "complimentary" flag, not the price.
             'quoted_price' => 'required|numeric|gt:0',
         ]);
 
@@ -1799,12 +1244,6 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        /* Read path: widened like the list and detail endpoints.
-           A lead transferred away is still VISIBLE to its former owner, so
-           the page opens -- but this query used the owner-only filter and
-           findOrFail then 404'd, which surfaced as "Could not load ..." on a
-           page the user was allowed to read. Widening only affects what is
-           SEEN; every write path below keeps the strict filter. */
         $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
@@ -1814,10 +1253,6 @@ class SalesLeadController extends Controller
             'leadProduct.product.segment:id,name,regulatory_status',
         ])
             ->where('lead_id', $lead->id)
-            // Defense-in-depth: the lead-scope check above already rejects
-            // cross-tenant leadIds, but if a shared-price row ever drifted
-            // to the wrong client_id (data corruption / bad backfill), the
-            // extra filter here keeps it from leaking out.
             ->when($user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
             ->orderByDesc('shared_at')
             ->get()
@@ -1845,12 +1280,6 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        /* Read path: widened like the list and detail endpoints.
-           A lead transferred away is still VISIBLE to its former owner, so
-           the page opens -- but this query used the owner-only filter and
-           findOrFail then 404'd, which surfaced as "Could not load ..." on a
-           page the user was allowed to read. Widening only affects what is
-           SEEN; every write path below keeps the strict filter. */
         $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
@@ -1858,7 +1287,6 @@ class SalesLeadController extends Controller
 
         $rows = LeadProductSharedPrice::where('lead_id', $lead->id)
             ->where('lead_product_id', $product->id)
-            // Defense-in-depth tenant filter — see listSharedPrices comment.
             ->when($user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
             ->orderByDesc('shared_at')
             ->get()
@@ -1895,20 +1323,15 @@ class SalesLeadController extends Controller
             ->where('client_id', $user->client_id)
             ->findOrFail($id);
 
-        // Tenant branding — every PDF is stamped with the caller's client
-        // org details (logo, address, GST/PAN/CIN, website) so each tenant
-        // gets a branded quotation document.
         $client = \App\Models\Client::find($entry->client_id);
 
-        // Code-128 barcode encoding the quotation code (Q-#####). milon/barcode
-        // returns an HTML string we can embed inline in the Blade.
         $quoteCode = 'Q-' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT);
         $barcodeHtml = '';
         try {
             $generator = new \Milon\Barcode\DNS1D();
             $barcodeHtml = $generator->getBarcodeHTML($quoteCode, 'C128', 1.4, 30);
         } catch (\Throwable $e) {
-            $barcodeHtml = ''; // PDF still renders without the barcode
+            $barcodeHtml = '';
         }
 
         $pdf = Pdf::loadView('pdf.shared_price_quotation', [
@@ -1926,13 +1349,6 @@ class SalesLeadController extends Controller
             : $pdf->download($filename);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTcheS — POST /sales/leads/{lead}/products
-     *
-     *  Map a product master to this lead. The composite unique on
-     *  (lead_id, product_id) prevents duplicates; the controller pre-
-     *  checks so the user gets a friendly 422 rather than a 500.
-     * ───────────────────────────────────────────────────────────────── */
     public function storeLeadProduct(Request $request, int $leadId)
     {
         $user = $request->user();
@@ -1941,22 +1357,13 @@ class SalesLeadController extends Controller
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
 
-        /* Owner-scoped, deliberately: a former owner may READ this lead but not
-           write to it. The helper draws that distinction in the MESSAGE too —
-           this endpoint was the only one that did, and every sibling write
-           path was still leaking the raw ModelNotFound string (QA #242). */
         $lead = $this->findLeadForWrite($user, $leadId, 'add products to it');
 
-        // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
         if ($blocked) return $blocked;
 
         $data = $request->validate([
             'product_id'   => 'required|integer|exists:products,id',
-            // Currency stored as free-form code (USD, INR, EUR …). No
-            // length cap because the lock-banner pre-fills the value
-            // from existing rows and a longer string shouldn't fail
-            // the save — the column itself takes whatever fits.
             'currency'     => 'nullable|string',
             'quantity'     => 'nullable|numeric|min:0',
             'target_price' => 'nullable|numeric|min:0',
@@ -1973,9 +1380,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        // Segment "Buyer ≠ Consignee" guard at mapping time: a product whose
-        // segment is flagged not-allowed can't be mapped while this lead has a
-        // distinct consignee (one that isn't Same-as-Customer).
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
             [$data['product_id']],
@@ -1984,11 +1388,6 @@ class SalesLeadController extends Controller
             return $block;
         }
 
-        // Customer ↔ Product segment-match guard. If the lead already has a
-        // customer mapped, the product being added must belong to one of that
-        // customer's segments — block the mismatch with a 422 the worksheet
-        // toasts. (The reverse order — customer mapped after products — is
-        // guarded in update().)
         if ($block = $this->segmentCustomerProductMismatchResponse(
             (int) $user->client_id,
             [$data['product_id']],
@@ -1997,12 +1396,6 @@ class SalesLeadController extends Controller
             return $block;
         }
 
-        /* Single-currency-per-lead rule. Every LeadProduct row on the
-         * same lead must share one currency — mixing INR + USD on the
-         * same opportunity breaks every downstream total (shared price
-         * PDF, quotation, PI, shipment) because we have no FX rate to
-         * collapse them. The first product mapped sets the currency;
-         * later additions are pinned to it. */
         $lockedCurrency = LeadProduct::where('lead_id', $lead->id)
             ->whereNotNull('currency')
             ->value('currency');
@@ -2014,14 +1407,8 @@ class SalesLeadController extends Controller
                 'locked_currency' => $lockedCurrency,
             ], 422);
         }
-        /* Default to the locked currency when the client didn't send one,
-         * otherwise fall back to USD (the pre-existing default). */
         $effectiveCurrency = $picked ?? $lockedCurrency ?? 'USD';
 
-        // Currency ↔ mapped-customer trade type (mirror of the customer-mapping
-        // guard in update()): when a customer is already mapped, a domestic
-        // (Indian) customer may only carry INR products and a foreign customer
-        // only non-INR — block the mismatch with a 422 the worksheet toasts.
         if ($lead->customer_id && $block = $this->currencyCustomerMismatchResponse(
             (int) $user->client_id,
             $effectiveCurrency,
@@ -2041,22 +1428,12 @@ class SalesLeadController extends Controller
             'created_by'   => $user->id,
         ]);
 
-        // Eager-load segment + status alongside product so the frontend can
-        // populate the optimistic row (category badge + status pill) without
-        // a follow-up GET.
         return response()->json(['status' => true, 'data' => $row->fresh([
             'product:id,product_code,name,status,segment_id',
             'product.segment:id,name,regulatory_status',
         ])], 201);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTS — PUT /sales/leads/{lead}/products/{mapping}
-     *
-     *  Update the quantity / target price / currency / notes for a
-     *  mapping. The product itself is immutable — to swap products
-     *  the user removes this row and adds a new one.
-     * ───────────────────────────────────────────────────────────────── */
     public function updateLeadProduct(Request $request, int $leadId, int $mappingId)
     {
         $user = $request->user();
@@ -2064,40 +1441,21 @@ class SalesLeadController extends Controller
 
         $lead = $this->findLeadForWrite($user, $leadId, 'change its products');
 
-        // Stage 3+ write — needs a live Qualified verdict (see helper).
         $blocked = $this->blockSourcingUnlessQualified($lead);
         if ($blocked) return $blocked;
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
         $data = $request->validate([
-            // No max length on currency — see storeLeadProduct above.
             'currency'     => 'nullable|string',
             'quantity'     => 'nullable|numeric|min:0',
             'target_price' => 'nullable|numeric|min:0',
             'notes'        => 'nullable|string|max:1000',
-            /* Opt-in: apply a currency change to EVERY product on this lead
-             * instead of rejecting it. The single-currency rule still holds —
-             * this just re-denominates the whole lead in one go rather than
-             * forcing the user to delete and re-map every row. The client must
-             * confirm first (see ProductDirectoryModal), because the AMOUNTS
-             * ARE NOT CONVERTED — there is no FX rate here, so 223432 CNY
-             * becomes 223432 INR. Already-shared prices inherit their currency
-             * from their lead_product (lead_product_shared_prices has no
-             * currency column), so they re-denominate with it. */
             'cascade_currency' => 'sometimes|boolean',
         ]);
         $cascade = (bool) ($data['cascade_currency'] ?? false);
         unset($data['cascade_currency']);
 
-        /* Same single-currency-per-lead rule as storeLeadProduct, but
-         * on edit. Allowed transitions:
-         *   • This is the ONLY mapping on the lead → free to change.
-         *   • Otherwise the picked currency must match every OTHER
-         *     mapping's currency on the same lead …
-         *   • … UNLESS cascade_currency was sent, which re-denominates every
-         *     row to the picked currency instead of erroring.
-         * Set the field to null/empty to leave currency unchanged. */
         $cascadeTo = null;
         if (array_key_exists('currency', $data) && $data['currency'] !== null && $data['currency'] !== '') {
             $picked = strtoupper($data['currency']);
@@ -2114,7 +1472,6 @@ class SalesLeadController extends Controller
                         'status'  => false,
                         'message' => "This opportunity already uses {$others->first()}. All products on a lead must share one currency — confirm the switch to re-price every product in {$picked}.",
                         'locked_currency' => $others->first(),
-                        // Tells the client a cascade would resolve this.
                         'cascade_available' => true,
                     ], 422);
                 }
@@ -2136,14 +1493,10 @@ class SalesLeadController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $row->fresh(['product:id,product_code,name']),
-            // How many OTHER products were re-denominated, so the UI can say so.
             'cascaded_count' => $cascaded,
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTS — DELETE /sales/leads/{lead}/products/{mapping}
-     * ───────────────────────────────────────────────────────────────── */
     public function destroyLeadProduct(Request $request, int $leadId, int $mappingId)
     {
         $user = $request->user();
@@ -2153,17 +1506,6 @@ class SalesLeadController extends Controller
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
-        /* Unmap is blocked while the product is still QUOTED — i.e. it appears
-         * as a line item on a live (non-cancelled) Quotation or Proforma
-         * Invoice for this opportunity. Removing it there would leave the
-         * document referencing a product the opportunity no longer carries.
-         *
-         * The block is REVERSIBLE by design: edit the quotation / PI, drop the
-         * line, and the product becomes unmappable again. (This replaced an
-         * older guard that keyed off `sourcing_status` — that one latched as
-         * soon as a Stage-3 sourcing decision was made and could not be undone
-         * by editing the documents, so a product that was never actually
-         * quoted stayed locked forever.) */
         $usedIn = $this->documentCodesByProduct($lead->id, [$row->product_id])[$row->product_id] ?? [];
         if (!empty($usedIn)) {
             return response()->json([
@@ -2175,10 +1517,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        /* Also block once a sourcing decision has been made. A product may be
-         * unmapped only while it is still "not set" in Product Sourcing; once
-         * it is marked Sourcing Required or Sourcing Not Required it has entered
-         * the procurement flow and its directory mapping must stay put. */
         if (!empty($row->sourcing_status)) {
             return response()->json([
                 'status'  => false,
@@ -2187,8 +1525,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        /* Block once a price has been shared with the customer (Stage 4). The
-         * shared price references this mapping, so it must stay put. */
         if (LeadProductSharedPrice::where('lead_product_id', $row->id)->exists()) {
             return response()->json([
                 'status'  => false,
@@ -2196,14 +1532,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        // Remove dependent rows explicitly so the unmap succeeds even after the
-        // product has been through sourcing — by then it can own shared-price
-        // rows and be referenced by procurement product lines. The migrations
-        // declare cascade/null FKs, but we don't rely on the DB-level rule
-        // being present (it varies by environment); doing it here makes the
-        // unmap deterministic. Shared prices are owned by the mapping and go
-        // with it; procurement product lines just drop their lead-product link
-        // (the procurement itself is left intact).
         DB::transaction(function () use ($row) {
             LeadProductSharedPrice::where('lead_product_id', $row->id)->delete();
             ProcurementProduct::where('lead_product_id', $row->id)->update(['lead_product_id' => null]);
@@ -2213,17 +1541,6 @@ class SalesLeadController extends Controller
         return response()->json(['status' => true, 'message' => 'Product unmapped']);
     }
 
-    /**
-     * Which live Quotation / Proforma Invoice documents on this opportunity
-     * still quote each of the given products?
-     *
-     * Returns [product_id => ['QT/25-26/0007', 'PI/25-26/0002', …]], omitting
-     * products that aren't on any document. Cancelled documents are ignored —
-     * they no longer hold the product, so they must not block an unmap.
-     *
-     * Batched (one query per document type, not per row) so the Product
-     * Directory listing can flag every row without an N+1.
-     */
     private function documentCodesByProduct(int $leadId, array $productIds): array
     {
         $ids = array_values(array_filter($productIds, fn ($v) => !empty($v)));
@@ -2257,25 +1574,12 @@ class SalesLeadController extends Controller
         return $out;
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  ACKNOWLEDGEMENTS — GET /sales/leads/{lead}/acknowledgements
-     *
-     *  Activity log feed for the Stage 2 Activity Report card. Rows
-     *  come back newest-first thanks to the hasMany scope on the Lead
-     *  model. Tenant-scoped via applyScope().
-     * ───────────────────────────────────────────────────────────────── */
     public function listAcknowledgements(Request $request, int $leadId)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
         $leadQ = Lead::query();
-        /* Read path: widened like the list and detail endpoints.
-           A lead transferred away is still VISIBLE to its former owner, so
-           the page opens -- but this query used the owner-only filter and
-           findOrFail then 404'd, which surfaced as "Could not load ..." on a
-           page the user was allowed to read. Widening only affects what is
-           SEEN; every write path below keeps the strict filter. */
         $this->applyScope($leadQ, $user, null, true);
         $lead = $leadQ->findOrFail($leadId);
 
@@ -2286,20 +1590,6 @@ class SalesLeadController extends Controller
         return response()->json(['status' => true, 'data' => $rows]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  ACKNOWLEDGEMENTS — POST /sales/leads/{lead}/acknowledgements
-     *
-     *  Bulk-creates Stage 2 activity rows for the picked master reasons.
-     *  Body: { reason_ids: int[] }. All ids must share the same
-     *  opportunity_type (qualified / disqualified / clarity_pending) —
-     *  the Stage 2 modal opens one type at a time so this matches the UX.
-     *
-     *  Side effect: the lead's `qualified` / `disqualified` flags are
-     *  flipped to mirror the submitted bucket so the worksheet's
-     *  Qualified / Disqualified tabs stay in sync without a separate
-     *  call. lead_stage_id is left alone — advancing to Stage 3 is the
-     *  caller's job via PUT /sales/leads/{id}.
-     * ───────────────────────────────────────────────────────────────── */
     public function storeAcknowledgements(Request $request, int $leadId)
     {
         $user = $request->user();
@@ -2326,8 +1616,6 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
-        // All picked reasons must belong to the same opportunity bucket.
-        // The frontend modal enforces this; the backend gates it again.
         $types = $reasons->pluck('opportunity_type')->unique();
         if ($types->count() !== 1) {
             return response()->json([
@@ -2337,8 +1625,6 @@ class SalesLeadController extends Controller
         }
         $type = $types->first();
 
-        /* A lead with sourced work behind it cannot be un-decided here.
-         * See blockUnqualifyWithWork() for why this is a server-side gate. */
         if ($type !== LeadAckReason::TYPE_QUALIFIED) {
             $blocked = $this->blockUnqualifyWithWork(
                 $lead,
@@ -2361,8 +1647,6 @@ class SalesLeadController extends Controller
                 ]);
             }
 
-            // Mirror the latest bucket onto the lead so the worksheet
-            // tabs and counts reflect the new state immediately.
             $lead->update([
                 'qualified'          => $type === LeadAckReason::TYPE_QUALIFIED,
                 'disqualified'       => $type === LeadAckReason::TYPE_DISQUALIFIED,
@@ -2381,30 +1665,13 @@ class SalesLeadController extends Controller
         ], 201);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  SALESPERSON SUMMARY — GET /sales/leads/salesperson-summary
-     *
-     *  Powers the Lead-Distribution table inside the "Assigned Leads"
-     *  modal. Returns:
-     *    - summary    : { total_sales_persons, total_leads, assigned, unassigned }
-     *    - platforms  : distinct platforms seen across this tenant's leads
-     *    - data       : one row per salesperson, with employee-record
-     *                   enrichment (department / designation / primary
-     *                   & ancillary role / reporting manager) so the
-     *                   table can render the chip-driven layout
-     *
-     *  Tenant-scoped via applyScope().
-     * ───────────────────────────────────────────────────────────────── */
     public function salespersonSummary(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Honour the BranchSwitcher so this summary reflects the branch the
-        // user is currently viewing "as" (consistent with the leads list).
         $branchFilter = $request->integer('branch_id') ?: null;
 
-        // ── 1) Lead counts pivoted per (salesperson, platform).
         $countsQ = Lead::query()
             ->whereNotNull('salesperson_id')
             ->selectRaw('salesperson_id, platform, COUNT(*) AS cnt')
@@ -2414,7 +1681,7 @@ class SalesLeadController extends Controller
 
         $platforms = $countRows->pluck('platform')->filter()->unique()->sort()->values()->all();
 
-        $perUser = [];   // salesperson_id => ['platform_counts' => [...], 'total' => N]
+        $perUser = [];
         foreach ($countRows as $r) {
             $uid = (int) $r->salesperson_id;
             if (!isset($perUser[$uid])) {
@@ -2425,7 +1692,6 @@ class SalesLeadController extends Controller
             $perUser[$uid]['total']                     += (int) $r->cnt;
         }
 
-        // ── 2) Aggregate stats for the 4 header cards.
         $totalsQ = Lead::query();
         $this->applyScope($totalsQ, $user, $branchFilter);
         $totalsRow = $totalsQ->selectRaw(
@@ -2434,26 +1700,6 @@ class SalesLeadController extends Controller
              SUM(CASE WHEN salesperson_id IS NULL THEN 1 ELSE 0 END) AS total_unassigned"
         )->first();
 
-        // ── 3) Salespeople roster — every user the tenant can assign
-        // leads to (mirrors GET /sales/leads/salespeople scope), enriched
-        // with the corresponding employee profile when one exists. The
-        // table shows zero-lead salespeople too so the user can see the
-        // whole team at a glance.
-        /* Anyone who HOLDS leads belongs on this page, active or not.
-         *
-         * The roster only ever admitted active users, so leads sitting with a
-         * deactivated employee vanished from the one screen that redistributes
-         * them. They were not released either — the rows still carry that
-         * salesperson_id — so the header card counted them under "Assigned"
-         * while no row below accounted for them: 14 assigned over rows summing
-         * to 11, and no way to hand those three leads to anyone else.
-         *
-         * Holding leads is therefore its own ticket in, independent of status.
-         * It cannot widen who may RECEIVE work: the assignment picker is a
-         * different endpoint (salespeople(), below) which keeps its own
-         * status = active filter. This page only reports and redistributes.
-         * Rows carry is_active so a deactivated holder is visibly flagged
-         * rather than passing as a serving member of the team. */
         $holdsLeads = array_keys($perUser);
 
         $usersQ = User::query()
@@ -2466,9 +1712,6 @@ class SalesLeadController extends Controller
         if ($user->user_type !== 'super_admin') {
             $usersQ->where('client_id', $user->client_id);
             if (\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
-                // Every branch is an isolated peer — lock branch-pinned
-                // accounts (branch admin + employee) to their own branch, so
-                // the roster can't name another branch's people.
                 $usersQ->where(function ($w) use ($user) {
                     $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
                 });
@@ -2477,9 +1720,6 @@ class SalesLeadController extends Controller
 
         $users = $usersQ->orderBy('name')->get(['id', 'name', 'designation', 'user_type', 'email', 'status']);
 
-        // Pull employee profiles for those users in one query (linked via
-        // employees.user_id). Eager-load the four relations we need so the
-        // shape stays predictable even when a relation is missing.
         $userIds = $users->pluck('id')->all();
         $employees = Employee::whereIn('user_id', $userIds)
             ->with([
@@ -2515,43 +1755,18 @@ class SalesLeadController extends Controller
                 'ancillary_role'        => $emp?->ancillaryRole?->name,
                 'reporting_manager'     => $mgrName,
                 'email'                 => $u->email,
-                // False only for a deactivated user still holding leads.
                 'is_active'             => $u->status === 'active',
                 'platform_counts'       => $counts,
                 'total_assigned_leads'  => $total,
             ];
         }
 
-        /* Narrow the roster to the people this page is actually about (QA #10).
-         *
-         * It listed every active user in the tenant — IT, Legal, Accounts,
-         * Warehouse, and users with no employee profile at all — so a page
-         * headed "Sales Members" was mostly people who will never touch a
-         * lead. Two groups belong here:
-         *
-         *   · anyone in the Sales department, whether or not they hold leads
-         *     yet — they are who you distribute TO; and
-         *   · anyone who already holds leads, whatever their department.
-         *
-         * The second is not a nicety. Leads are assigned today to people
-         * outside Sales and to users with no department recorded; dropping
-         * them would hide their leads from the only screen that redistributes
-         * them, and the assigned/unassigned totals above would stop adding up
-         * against the rows below.
-         *
-         * Matched on the department NAME, case-insensitively, and by
-         * substring so "Sales", "Sales & Marketing" and "Inside Sales" all
-         * count. The code column cannot be used: master_departments seeds
-         * DEPT-001 globally for Sales while a client's own first department
-         * is also written DEPT-001, so codes collide across tenants. */
         $data = array_values(array_filter($data, function ($r) {
             if (($r['total_assigned_leads'] ?? 0) > 0) return true;
             $dept = $r['department'] ?? null;
             return $dept !== null && str_contains(mb_strtolower($dept), 'sales');
         }));
 
-        // Stable order: most loaded first, then by name. Keeps the
-        // top-performers visible above the fold.
         usort($data, function ($a, $b) {
             $diff = $b['total_assigned_leads'] - $a['total_assigned_leads'];
             return $diff !== 0 ? $diff : strcmp($a['salesperson_name'], $b['salesperson_name']);
@@ -2560,7 +1775,6 @@ class SalesLeadController extends Controller
         return response()->json([
             'status'    => true,
             'summary'   => [
-                // Counts the rows actually returned, not every user considered.
                 'total_sales_persons' => count($data),
                 'total_leads'         => (int) ($totalsRow->total_all        ?? 0),
                 'assigned_leads'      => (int) ($totalsRow->total_assigned   ?? 0),
@@ -2571,33 +1785,17 @@ class SalesLeadController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  SALESPEOPLE — GET /sales/leads/salespeople
-     *
-     *  Returns the users in the caller's tenant that can own a lead.
-     *  Mirrors the EmployeeController managers() shape: the login_users
-     *  collection scoped to the tenant. Used by the Assign + Distribute
-     *  modals as their dropdown source.
-     * ───────────────────────────────────────────────────────────────── */
     public function salespeople(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Assignment picker — the people a distributor (HOD / Branch Admin /
-        // admin) may hand a lead to. We surface active employees in the
-        // caller's branch/client scope, labelled with their designation +
-        // department so the HOD can tell who's who. (Designation drives
-        // visibility; department is shown for context, not enforced here.)
         $emps = \App\Models\Employee::query()
             ->whereNotNull('user_id')
             ->with(['designation:id,name', 'department:id,name'])
             ->get(['id', 'user_id', 'emp_code', 'designation_id', 'department_id'])
             ->keyBy('user_id');
 
-        // Active branch — prefer the switcher's branch_id (Axios injects it on
-        // GETs), else the caller's own branch. The picker is scoped to ONE
-        // branch so other branches' people never leak in.
         $branchId = (int) ($request->query('branch_id') ?: $user->branch_id ?: 0);
 
         $q = User::query()
@@ -2606,32 +1804,20 @@ class SalesLeadController extends Controller
         if ($user->user_type !== 'super_admin') {
             $q->where('client_id', $user->client_id);
         }
-        // Strict branch scope (everyone except super-admin without a branch).
         if ($branchId) {
             $q->where('branch_id', $branchId);
         }
 
-        // Per-user assignable narrowing (null = no narrowing — assignment is flat).
         $assignable = \App\Support\SalesVisibility::assignableUserIds($user);
         if ($assignable !== null) {
             $q->whereIn('id', $assignable ?: [-1]);
         }
 
-        // Department gate — a lead may ONLY be assigned to a SALES-department
-        // member. If a Sales department exists, always restrict to its people
-        // (scoped to the active branch); an empty result shows nobody rather
-        // than falling back to every department.
         if (!empty(\App\Support\SalesVisibility::salesDepartmentIds())) {
             $salesUserIds = \App\Support\SalesVisibility::salesDepartmentUserIds($user, $branchId ?: null);
             $q->whereIn('id', $salesUserIds ?: [-1]);
         }
 
-        // Onboarding gate — a half-onboarded / resigned / archived EMPLOYEE must
-        // not appear as an assignable lead owner. Mirrors the 'onboarded_only'
-        // gate EmployeeController::managers() uses (Active + onboarding_stage_
-        // completed >= 6 + not soft-deleted). We EXCLUDE the failing employee
-        // user-ids rather than requiring an employee record, so non-employee
-        // users (e.g. client/branch admins) are unaffected.
         $blockedUserIds = \App\Models\Employee::withTrashed()
             ->whereNotNull('user_id')
             ->where(function ($w) {
@@ -2654,41 +1840,24 @@ class SalesLeadController extends Controller
             'status' => true,
             'data'   => $rows->map(function ($u) use ($emps) {
                 $emp  = $emps->get($u->id);
-                $desg = $emp?->designation?->name;          // their designation, if set
-                $dept = $emp?->department?->name;           // their department, if set
+                $desg = $emp?->designation?->name;
+                $dept = $emp?->department?->name;
                 return [
                     'id'        => $u->id,
                     'name'      => $u->name,
-                    // Use the employee's REAL code (EMP-009) from the employees
-                    // table — not one synthesised from the user id (which gave a
-                    // mismatched "EMP-016"). Falls back to the id-based code only
-                    // when the user has no employee record.
                     'code'      => $emp?->emp_code ?: ('EMP-' . str_pad((string) $u->id, 3, '0', STR_PAD_LEFT)),
                     'role'      => $desg ?: $u->user_type,
-                    // Shown next to the name in the picker: designation · department.
                     'subtitle'  => trim(implode(' · ', array_filter([$desg, $dept]))) ?: ucfirst(str_replace('_', ' ', (string) $u->user_type)),
                 ];
             })->values(),
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  FILTER OPTIONS — GET /sales/leads/filter-options
-     *
-     *  One round-trip that feeds the Filter modal: distinct platforms /
-     *  query_types / countries seen in this tenant's leads + the live
-     *  customer list. Saves the modal from firing 4 separate calls.
-     * ───────────────────────────────────────────────────────────────── */
     public function filterOptions(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        /* Pass the BranchSwitcher's branch through. Without it the modal
-         * offered platforms / query types / countries drawn from EVERY branch,
-         * so a client admin viewing one branch got filter values that match no
-         * row in front of them — and that list is itself a readout of what the
-         * other branches are working on. */
         $base = Lead::query();
         $this->applyScope($base, $user, $request->integer('branch_id') ?: null);
 
@@ -2700,11 +1869,6 @@ class SalesLeadController extends Controller
             ->select('query_type')->whereNotNull('query_type')
             ->distinct()->orderBy('query_type')->pluck('query_type')->values();
 
-        /* P1: previously this loop fired one extra SELECT per distinct
-         * ISO code to resolve the human-readable country name. A tenant
-         * with 20 countries paid 20 round-trips just to render the
-         * Filter modal. Bulk-resolve the ISO→name map in a single
-         * grouped query, then lookup in PHP. */
         $isoCodes = (clone $base)
             ->select('sender_country_iso')
             ->whereNotNull('sender_country_iso')
@@ -2728,13 +1892,6 @@ class SalesLeadController extends Controller
             ->sortBy('label')
             ->values();
 
-        // Customer dropdown — SAME branch-aware scope as the main Customer
-        // listing (CustomerController::index). forUser() applies tenant +
-        // branch visibility (branch users see only their branch; client admins
-        // honour the BranchSwitcher's branch_id), so the filter no longer leaks
-        // other branches' customers the way a client_id-only scope did.
-        // We cap at 500 so the modal stays light; the search box on the
-        // right pane is client-side so this is plenty for typical usage.
         $cq = Customer::query()->forUser($user, $request->integer('branch_id') ?: null);
         $customers = $cq->select(['id', 'company_name', 'customer_code'])
                         ->orderBy('company_name')
@@ -2753,10 +1910,6 @@ class SalesLeadController extends Controller
             'query_types' => $queryTypes,
             'countries'   => $countries,
             'customers'   => $customers,
-            // Filter exposes only the 6 canonical Sales Matrix stages defined
-            // in CLAUDE.md. The Pre-PI CLM (5) and Post-PI CLM (7) checkpoints
-            // are kept in DB for historical leads but excluded here so the
-            // filter UI stays aligned with the visible pipeline.
             'stages'      => [
                 ['value' => '1', 'label' => 'Inquiry Required'],
                 ['value' => '2', 'label' => 'Lead Acknowledgement'],
@@ -2768,23 +1921,6 @@ class SalesLeadController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  Helpers
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Work that only exists because someone decided to PURSUE this lead.
-     *
-     * Stage 3 onwards is built on the Stage 2 verdict, so a lead cannot be
-     * un-decided while that work is sitting on it. Returns a human-readable
-     * list of what is already there ([] when the lead is still clean), which
-     * the caller puts straight into the error so the user knows what to clear.
-     *
-     * Soft-deleted rows are excluded by the models' own global scope: a
-     * removed product is no longer work.
-     *
-     * @return string[]
-     */
     private function downstreamWork(Lead $lead): array
     {
         $bits = [];
@@ -2807,27 +1943,6 @@ class SalesLeadController extends Controller
         return $bits;
     }
 
-    /**
-     * Refuse to un-qualify a lead that already carries downstream work.
-     *
-     * Stage 2 could re-judge a lead at any time, so the reported sequence
-     * (qualify, map a product in Stage 3, come back and disqualify) saved
-     * happily and left a Disqualified lead holding sourced products: the
-     * products were then unreachable, because Stage 3 onwards locks itself to
-     * qualified leads, yet they still counted everywhere that reads them.
-     *
-     * The frontend did warn, but only when lead_stage_id had passed 2 — and
-     * mapping a product does not move lead_stage_id (only Save & Next does),
-     * so walking into Stage 3 from the stage tracker skipped the warning
-     * entirely. That is the exact path in the report, which is why this gate
-     * measures the WORK rather than the stage number, and why it lives here:
-     * a confirm dialog cannot be the thing protecting the invariant.
-     *
-     * The lead stays re-judgeable — clear the sourced work first and the
-     * verdict is open again.
-     *
-     * @return \Illuminate\Http\JsonResponse|null  422 when blocked, null when allowed.
-     */
     private function blockUnqualifyWithWork(Lead $lead, string $verdict)
     {
         $work = $this->downstreamWork($lead);
@@ -2842,19 +1957,6 @@ class SalesLeadController extends Controller
         ], 422);
     }
 
-    /**
-     * Stage 3 onwards is work on a lead worth pursuing, so every write there
-     * needs a live Qualified verdict. The detail page already refuses to
-     * navigate past Stage 2 without one, but that is a client-side lock: an
-     * open tab from before the lead was disqualified, or a direct API call,
-     * walked straight past it.
-     *
-     * Deletes are deliberately NOT gated — a lead that has been disqualified
-     * has to stay clearable, or a lead carrying products could never be
-     * disqualified and then cleaned up.
-     *
-     * @return \Illuminate\Http\JsonResponse|null  422 when blocked, null when allowed.
-     */
     private function blockSourcingUnlessQualified(Lead $lead)
     {
         if ($lead->qualified && !$lead->disqualified) return null;
@@ -2867,32 +1969,6 @@ class SalesLeadController extends Controller
         ], 422);
     }
 
-    /**
-     * Tenant scope — pin rows to the caller's tenant. Branch users are
-     * pinned to their own branch (every branch is an isolated peer).
-     * Mirror of SalesTodoController::applyScope tailored for leads.
-     */
-    /**
-     * Resolve a lead for a WRITE, or fail with a message that says what
-     * actually happened.
-     *
-     * Read and write see different sets of leads: a lead assigned away from
-     * the user stays READABLE (applyScope's $includeFormerOwned) but is not
-     * writable. Every write path used to express that with a plain
-     * findOrFail on the write-scoped query, which is correct — the write is
-     * refused — but its ModelNotFoundException reaches the browser as
-     * "No query results for model [App\Models\Lead] 1116". The user of a
-     * view-only lead therefore got an internal class name and a raw id in a
-     * red toast, which says nothing, names nothing they can act on, and reads
-     * like the lead has been deleted (QA #242).
-     *
-     * The two cases are separated here so each can say its own thing:
-     *   · readable but not writable → 403, "this lead is view-only for you"
-     *   · not readable either       → 404, it is gone or was never theirs
-     *
-     * $action completes the sentence "…so you cannot ___", so each endpoint
-     * names the thing the user just tried to do.
-     */
     private function findLeadForWrite($user, int $leadId, string $action = 'change it'): Lead
     {
         $writeQ = Lead::query();
@@ -2900,7 +1976,6 @@ class SalesLeadController extends Controller
         $lead = $writeQ->find($leadId);
         if ($lead) return $lead;
 
-        // Visible on the read path but not the write path = view-only.
         $readQ = Lead::query();
         $this->applyScope($readQ, $user, null, true);
         if ($readQ->whereKey($leadId)->exists()) {
@@ -2927,10 +2002,6 @@ class SalesLeadController extends Controller
             $q->where('client_id', $user->client_id);
         }
 
-        // Read paths (list + detail) pass $includeFormerOwned = true so a lead
-        // transferred AWAY from the user still shows (read-only — QA #63). Edit
-        // paths keep the owner-only filter, so this only widens what the user can
-        // SEE, never what they can change.
         $applyVisibility = function ($qq) use ($user, $includeFormerOwned) {
             $includeFormerOwned
                 ? \App\Support\SalesVisibility::applyToLeadsIncludingFormerOwned($qq, $user)
@@ -2938,32 +2009,17 @@ class SalesLeadController extends Controller
         };
 
         if (\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
-            // Branch admins AND employees are locked to their own branch —
-            // every branch is an isolated peer and neither gets the
-            // BranchSwitcher, so $branchFilter is ignored here.
-            //
-            // Employees used to fall through to the client-level path below,
-            // where the only narrowing left was the designation tier — and an
-            // employee on the 'all' tier (Director/CEO, HOD) has no narrowing
-            // at all, so they read every branch's leads in the tenant.
             $q->where(function ($w) use ($user) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
             });
-            // Role-based narrowing: a Sales Employee/Intern sees only their own
-            // assigned leads; a Sales Manager sees self + reports (+ unassigned).
             $applyVisibility($q);
             return;
         }
 
-        // Switchable roles (client-level admins): honour the BranchSwitcher's
-        // narrowing when a specific branch is picked.
         $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-        // Same role-based narrowing (no-op for admins / Branch-Admin tiers).
         $applyVisibility($q);
     }
 
-    /** Narrow an already-tenant-scoped query when the BranchSwitcher injects
-     *  ?branch_id=N. Cross-tenant ids are silently dropped. */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -2974,18 +2030,6 @@ class SalesLeadController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-    /**
-     * Branch gate for sync — returns null when the user is allowed to
-     * trigger sync, or a human-readable reason string otherwise.
-     *
-     *   config('lead_sync.branch') === null    → sync disabled for everyone
-     *                                            except super_admin
-     *   config('lead_sync.branch') === 'all'   → any authenticated user OK
-     *   config('lead_sync.branch') === <int>   → only that branch
-     *   config('lead_sync.branch') === [int…]  → any branch in the list
-     *
-     * super_admin always passes (lets us QA sync against any branch).
-     */
     private function checkSyncTenantGate($user): ?string
     {
         if ($user->user_type === 'super_admin') return null;
@@ -3004,25 +2048,11 @@ class SalesLeadController extends Controller
                 ? null
                 : 'Lead sync is configured for a different branch.';
         }
-        // scalar int — strict per-branch match
         return $userBr === (int) $branch
             ? null
             : 'Lead sync is configured for a different branch.';
     }
 
-    /**
-     * Allocate the next opp_code — sequenced PER BRANCH (each branch restarts
-     * at OPP-0001), mirroring the per-branch Shipment ID allocator. Serializes
-     * concurrent calls by row-locking the parent client row (Postgres rejects
-     * FOR UPDATE on aggregates, so we can't lock the MAX() directly).
-     *
-     * Uses `withTrashed()` + highest-numeric-suffix + 1 (NOT count()): a bare
-     * count() excludes soft-deleted rows while the UNIQUE index still counts
-     * them, so after deleting the latest lead the next create would reuse its
-     * number and hit a unique-constraint violation. MAX(suffix)+1 is always
-     * above every existing code, trashed or not, so it can't collide.
-     * The composite UNIQUE (client_id, branch_id, opp_code) is the backstop.
-     */
     public function nextOppCode(int $clientId, ?int $branchId = null): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();

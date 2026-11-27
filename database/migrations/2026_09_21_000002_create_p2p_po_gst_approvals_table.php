@@ -8,8 +8,6 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // One row per senior-approval request on a PO; a re-raise after a decline is a new row.
-        // Tenant comes through the PO; supplier and GST dates are read live from it.
         Schema::create('p2p_po_gst_approvals', function (Blueprint $t) {
             $t->id();
             $t->unsignedBigInteger('purchase_order_id');
@@ -19,8 +17,8 @@ return new class extends Migration
             $t->timestamp('requested_at')->nullable();
 
             $t->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
-            $t->text('reason')->nullable();                     // the approver's reason, on approve and on reject
-            $t->timestamp('decided_at')->nullable();            // when it was approved or rejected
+            $t->text('reason')->nullable();
+            $t->timestamp('decided_at')->nullable();
 
             $t->timestamps();
 

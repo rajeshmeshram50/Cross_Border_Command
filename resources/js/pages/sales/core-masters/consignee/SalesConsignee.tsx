@@ -46,7 +46,9 @@ const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = 
   'High':   { bg:'rgba(239,68,68,0.12)',  color:'#dc2626', dot:'#ef4444' },
 };
 
-const ROWS_PER_PAGE = 10;
+/** 12 entries per page; the table card is sized to fit exactly 12 rows. */
+const TABLE_ROWS = 12;
+const ROWS_PER_PAGE = TABLE_ROWS;
 const titleCase = (s: string): string => {
   if (!s) return s;
   if (s === s.toUpperCase() && /[A-Z]/.test(s)) return s;
@@ -97,12 +99,16 @@ const truncTip = (value?: string | null, max = 15) => {
  * auto-hiding footer is position: fixed, owns no height in the flow, and
  * comes back over the table -- reserving its 40px would leave exactly the
  * white band it exists to remove. */
-const bottomReserve = (): number => {
+/* Room to leave under the card. The app footer usually sits OUTSIDE the
+   scroller (its own slot below .main-content), so the scroller's height already
+   leaves it out and only .page-content's 8px bottom padding is left to keep.
+   Counting the footer again here left an empty ~40px band above it. Only a
+   footer inside the scroller takes room here (same rule as CredVault's fill). */
+const bottomReserve = (scroller: HTMLElement | null): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
-  // Reserve the footer height + 8px so the card ends above it (see DataTable).
-  const fh = f?.offsetHeight ?? 0;
-  return fh > 0 ? fh + 8 : 15;
+  const fh = f && (!scroller || scroller.contains(f)) ? f.offsetHeight : 0;
+  return fh > 0 ? fh + 8 : scroller ? 8 : 15;
 };
 
 /**
@@ -298,7 +304,7 @@ export default function SalesConsignee() {
         ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
         : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
       const spaceH = scroller ? scroller.clientHeight : window.innerHeight;
-      const cardSpace = spaceH - offsetTop - bottomReserve();
+      const cardSpace = spaceH - offsetTop - bottomReserve(scroller);
       /* A floor, not an escape hatch.
          This briefly released the pin whenever cardSpace fell under 240 -- added
          while chasing the bounce, before the cause was known. It makes things
@@ -323,7 +329,6 @@ export default function SalesConsignee() {
         el.style.maxHeight = next;
       }
 
-      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
       // Filter-chips bar only exists when filters are active; leaving it out of
       // the subtraction pushed the last row under the pager (mirrors customer).
@@ -347,8 +352,10 @@ export default function SalesConsignee() {
          screen like the Lead Worksheet. Floor of 5 avoids a 1–2-row page on a
          very short window. Mirrors SalesCustomers. */
       // +2: sub-pixel row heights must not cost a whole row.
-      const rowsFit = Math.max(5, Math.floor((avail + 2) / rowH));
-      setPageSize(rowsFit);
+      /* The card keeps the height of the space under the header: the table scrolls
+         inside it, not the page. */
+      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
+      setPageSize(TABLE_ROWS);
     };
     const onResize = () => fit();
     fit();
@@ -872,7 +879,7 @@ export default function SalesConsignee() {
               divClass="table-responsive"
               SearchPlaceholder="Search consignees..."
               worklistPagination
-              pageSizeOptions={[5, 10, 15, 25, 50]}
+              pageSizeOptions={[5, 10, 12, 15, 25, 50]}
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
@@ -1060,25 +1067,15 @@ export default function SalesConsignee() {
               </div>
               <div className="smcg-mapped-toolbar-right">
                 <span className="smcg-mapped-count">{(mappedTarget.customers ?? []).length} {(mappedTarget.customers ?? []).length === 1 ? 'customer' : 'customers'}</span>
-                {canEdit && (() => {
-                  // A "Same as Customer" consignee mirrors exactly ONE customer,
-                  // so it can't be mapped to more — disable Map Customer and
-                  // explain why on click.
-                  const sac = !!mappedTarget.same_as_customer;
-                  return (
-                    <button
-                      type="button"
-                      aria-disabled={sac}
-                      onClick={() => {
-                        if (sac) { toast.warning('Same as Customer', 'This consignee is “Same as Customer”, so it can be linked to only one customer. Turn off Same as Customer to map more.'); return; }
-                        custMapOpen ? setCustMapOpen(false) : openCustMap();
-                      }}
-                      className="smcg-mapped-add"
-                    >
-                      <i className="ri-link" /> Map Customer
-                    </button>
-                  );
-                })()}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => { custMapOpen ? setCustMapOpen(false) : openCustMap(); }}
+                    className="smcg-mapped-add"
+                  >
+                    <i className="ri-link" /> Map Customer
+                  </button>
+                )}
               </div>
             </div>
             {/* Table — ~5 rows visible, the rest scroll (header ~44px + 5×~46px). */}

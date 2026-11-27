@@ -5,13 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Support\FxRate;
 use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
-/* Fanned out to by qpiMasterBundle() so each list keeps its own scoping
- * and response shape rather than being reimplemented there. */
-use App\Http\Controllers\Api\ConsigneeController;
-use App\Http\Controllers\Api\CustomerController;
-use App\Http\Controllers\Api\MasterController;
-use App\Http\Controllers\Api\ProductController;
-use App\Http\Controllers\Api\SalesLeadController;
 use App\Models\Customer;
 use App\Models\Quotation;
 use App\Models\QuotationItem;
@@ -30,8 +23,6 @@ class QuotationController extends Controller
 {
     use EnforcesSegmentBuyerConsignee;
 
-    /* ── LIST ───────────────────────────────────────────────── */
-
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -43,13 +34,7 @@ class QuotationController extends Controller
                 'consignee:id,consignee_code,company_name',
                 'lead:id,opp_code',
                 'salesManager:id,name',
-                // Branch name is surfaced as a column in the QPI list so
-                // multi-branch users can tell at a glance which branch each
-                // record belongs to.
                 'branch:id,name,code',
-                // Creator (+ creator's branch) drives the "Created By"
-                // column. Mirrors the Master Details pattern — pill
-                // tone is keyed off user_type, sub-label off branch.
                 'creator:id,name,user_type,branch_id',
                 'creator.branch:id,name',
             ])
@@ -62,11 +47,6 @@ class QuotationController extends Controller
         $page    = max((int) $request->query('page', 1), 1);
         $paginator = $q->paginate($perPage, ['*'], 'page', $page);
 
-        // Sales Manager column = the OWNER's REPORTING MANAGER, not the owner.
-        // Owner = sales_manager_id (the lead's salesperson) or created_by. The
-        // stored sales_manager_name holds the owner's name, so override it at
-        // read time with the owner's manager. Resolve all managers in ONE query
-        // (owner user id → Employee → reportingManager/reportingManagerUser).
         $items    = collect($paginator->items());
         $ownerIds = $items->map(fn($r) => (int) ($r->sales_manager_id ?: $r->created_by))
             ->filter()->unique()->values()->all();
@@ -76,25 +56,12 @@ class QuotationController extends Controller
             ->get(['id', 'user_id', 'reporting_manager_id', 'reporting_manager_user_id'])
             ->keyBy('user_id');
 
-        // Stamp a per-row `can_modify` flag so the frontend can dim
-        // edit / delete / email / reminder buttons on rows the user
-        // is only allowed to read (rows outside their own branch).
         $rows = $items->map(function ($r) use ($user, $mgrByOwner) {
             $r->can_modify = $this->userCanModify($r, $user);
-            // Flatten the eager-loaded creator + creator's branch into
-            // top-level fields so the frontend can read them without
-            // walking the relation tree (matches the Master Details
-            // shape).
             $r->creator_name      = $r->creator?->name;
             $r->creator_user_type = $r->creator?->user_type;
-            // Sales Manager column = strictly the owner's Reporting Manager —
-            // never the owner's own name. Null when the owner has no manager so
-            // the column renders "—" instead of the employee's name (QA #4).
             $emp     = $mgrByOwner->get((int) ($r->sales_manager_id ?: $r->created_by));
             $mgrName = $emp?->reportingManager?->user?->name ?? $emp?->reportingManagerUser?->name;
-            // A BRANCH USER is the top of their branch — they have no reporting
-            // manager above them, so a quotation they created would show "—".
-            // Show the branch user's own name as the Sales Manager instead.
             if (!$mgrName && ($r->creator?->user_type === 'branch_user')) {
                 $mgrName = $r->creator?->name;
             }
@@ -113,8 +80,6 @@ class QuotationController extends Controller
             ],
         ]);
     }
-
-    /* ── SHOW ───────────────────────────────────────────────── */
 
     public function show(Request $request, $id): JsonResponse
     {
@@ -135,8 +100,6 @@ class QuotationController extends Controller
         return response()->json(['status' => true, 'data' => $row]);
     }
 
-    /* ── CREATE ─────────────────────────────────────────────── */
-
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -147,17 +110,6 @@ class QuotationController extends Controller
 
         $data = $this->validatePayload($request);
 
-        /* A disqualified lead is a dead deal — nothing further may be raised
-         * against it.
-         *
-         * `disqualified` was only ever a display flag: nothing on either side
-         * enforced it, so a lead qualified at Stage 2, advanced to Stage 3 and
-         * then disqualified on the way back still ran every remaining stage and
-         * produced a Quotation and a PI (QA). Documents against a rejected
-         * opportunity are worse than a blocked click — they reach customers.
-         *
-         * Enforced here rather than only in the UI because this is the
-         * authoritative path; a stale tab or a direct call must fail too. */
         if (!empty($data['opp_id'])) {
             $leadRow = \App\Models\Lead::where('client_id', $user->client_id)
                 ->whereKey($data['opp_id'])
@@ -170,8 +122,6 @@ class QuotationController extends Controller
             }
         }
 
-        // Segment "Buyer ≠ Consignee" guard: if any quoted product belongs to a
-        // segment flagged not-allowed, the consignee must be Same-as-Customer.
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
             array_map(fn($it) => $it['product_id'] ?? null, $data['items']),
@@ -180,20 +130,13 @@ class QuotationController extends Controller
             return $block;
         }
 
-        // Server-compute every line `amount` + the header totals.
-        // Anything the client sent for `amount` / `sub_total` etc. is
-        // discarded — we never trust client-side math.
         $items = $this->prepareItems($data['items']);
         $totals = $this->aggregateTotals($items, (float) ($data['shipping'] ?? 0));
 
         $row = DB::transaction(function () use ($user, $data, $items, $totals) {
-            // Lock the client row to serialize concurrent code allocations.
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = $this->nextCode($user->client_id, $user->branch_id);
 
-            // Resolve cached display labels so listings don't N+1 later.
-            // resolveCachedLabels mutates $data to inject sales_manager_id
-            // from the linked lead's salesperson when none was sent.
             [$customerName, $consigneeName, $oppCode, $oppDate, $bankLabel, $smName] =
                 $this->resolveCachedLabels($data);
 
@@ -246,8 +189,6 @@ class QuotationController extends Controller
         return response()->json(['status' => true, 'data' => $row], 201);
     }
 
-    /* ── UPDATE ─────────────────────────────────────────────── */
-
     public function update(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -255,8 +196,6 @@ class QuotationController extends Controller
 
         $row = Quotation::findOrFail($id);
         $this->assertScope($row, $user, 'write');
-        // Once pushed to Zoho Books the estimate is the source of truth — block
-        // edits so the app and Zoho can't silently diverge.
         if (!empty($row->zoho_estimate_id)) {
             return response()->json([
                 'status' => false,
@@ -270,8 +209,6 @@ class QuotationController extends Controller
             ], 409);
         }
 
-        // A signed quotation is locked so the signed copy keeps matching what
-        // the customer e-signed.
         if (\App\Models\ClmSignatureRequest::hasSignedForDoc(
             $user->client_id,
             \App\Models\ClmSignatureRequest::DOC_QUOTATION,
@@ -285,8 +222,6 @@ class QuotationController extends Controller
 
         $data = $this->validatePayload($request);
 
-        // Segment "Buyer ≠ Consignee" guard — also enforced on edit so a clean
-        // quotation can't be amended to add a not-allowed product/consignee.
         if ($block = $this->segmentPartyBlockResponse(
             (int) $user->client_id,
             array_map(fn($it) => $it['product_id'] ?? null, $data['items']),
@@ -295,11 +230,6 @@ class QuotationController extends Controller
             return $block;
         }
 
-        /* B31: enforce status transition order. Without this any payload
-         * could regress an `approved` quote back to `draft`, or skip
-         * straight from `draft` to `converted_to_pi` without going
-         * through `sent` + `approved`. Allowed forward-edges only — a
-         * `cancelled` quote is terminal. */
         if (array_key_exists('status', $data) && $data['status'] !== null && $data['status'] !== $row->status) {
             static $allowed = [
                 Quotation::STATUS_DRAFT            => [Quotation::STATUS_SENT, Quotation::STATUS_CANCELLED],
@@ -356,9 +286,6 @@ class QuotationController extends Controller
                 'updated_by'        => $user->id,
             ]);
 
-            // Wholesale-replace items. Simpler than diff/patch and the
-            // quote line set is small (typically < 20 rows). Cascade
-            // delete on the FK keeps it clean.
             $row->items()->delete();
             foreach ($items as $i => $it) {
                 $it['quotation_id'] = $row->id;
@@ -367,9 +294,6 @@ class QuotationController extends Controller
             }
         });
 
-        // Editing the quotation invalidates any e-signature already in flight
-        // or completed, so the row reverts to "Not Sent" and must be sent for
-        // signature again.
         \App\Models\ClmSignatureRequest::supersedeForDoc(
             $user->client_id,
             \App\Models\ClmSignatureRequest::DOC_QUOTATION,
@@ -378,8 +302,6 @@ class QuotationController extends Controller
 
         return response()->json(['status' => true, 'data' => $row->fresh(['items'])]);
     }
-
-    /* ── DELETE (soft) ──────────────────────────────────────── */
 
     public function destroy(Request $request, $id): JsonResponse
     {
@@ -404,8 +326,6 @@ class QuotationController extends Controller
         return response()->json(['status' => true, 'message' => 'Cancelled']);
     }
 
-    /* ── DUPLICATE ──────────────────────────────────────────── */
-
     public function duplicate(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -416,8 +336,6 @@ class QuotationController extends Controller
 
         $clone = DB::transaction(function () use ($user, $src) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            // The clone keeps the source's branch_id (replicate copies it), so
-            // allocate its code from that branch's sequence.
             $newCode = $this->nextCode($user->client_id, $src->branch_id);
 
             $copy = $src->replicate(['code', 'status', 'version', 'created_by', 'updated_by']);
@@ -439,8 +357,6 @@ class QuotationController extends Controller
         return response()->json(['status' => true, 'data' => $clone], 201);
     }
 
-    /* ── CONVERT TO PI ──────────────────────────────────────── */
-
     public function convertToPi(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -449,9 +365,6 @@ class QuotationController extends Controller
         $row = Quotation::findOrFail($id);
         $this->assertScope($row, $user, 'write');
 
-        /* Same rule as store(): a disqualified opportunity raises nothing new.
-           Converting is a creation path — it mints a PI — so it is gated too,
-           and the quotation itself is left alone either way. */
         if ($row->opp_id) {
             $leadRow = \App\Models\Lead::where('client_id', $user->client_id)
                 ->whereKey($row->opp_id)
@@ -489,24 +402,10 @@ class QuotationController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────
-     * Internals
-     * ───────────────────────────────────────────────────────── */
-
     private function validatePayload(Request $request): array
     {
-        // Conditional rules: International requires the shipping block,
-        // Domestic requires state_code instead. Both modes share the
-        // identity + party + currency + items block.
         $docType = $request->input('doc_type', Quotation::DOC_INTERNATIONAL);
 
-        /* A Domestic document is settled in rupees by definition, so the
-         * currency is DERIVED here rather than taken from the caller — the same
-         * reasoning as gst_applicable on the customer. The wizard doesn't even
-         * render a Currency field for Domestic (it lives in the international
-         * shipping block), so it posted null and the list rendered a bare "—".
-         * Overwriting rather than validating is what makes it hold for every
-         * caller, including a direct API call. */
         if ($docType === Quotation::DOC_DOMESTIC) {
             $request->merge(['currency' => 'INR']);
         }
@@ -517,9 +416,8 @@ class QuotationController extends Controller
             'customer_id'       => 'required|integer|exists:customers,id',
             'consignee_id'      => 'nullable|integer|exists:consignees,id',
             'bank_account_id'   => 'nullable|integer',
-            // No length cap on currency — free-form code (USD, INR, EUR…).
             'currency'          => 'nullable|string',
-            'exchange_rate'     => FxRate::rules(),   // gt:0 and <= 10,000 — see App\Support\FxRate
+            'exchange_rate'     => FxRate::rules(),
             'sales_manager_id'  => 'nullable|integer|exists:users,id',
             'shipping'          => 'nullable|numeric|min:0',
             'terms'             => 'nullable|string|max:8000',
@@ -528,36 +426,22 @@ class QuotationController extends Controller
             'items.*.product_id'   => 'nullable|integer',
             'items.*.product_name' => 'required|string|max:255',
             'items.*.hsn_code'     => 'nullable|string|max:16',
-            // B13: 0.0001 lower bound rounds away to 0 at decimal:4 cast,
-            // creating an "empty" line that still inflates the line count.
-            // 0.01 is the smallest sensible business quantity (1 paisa /
-            // 1 cent of a unit) and survives the cast.
             'items.*.quantity'     => 'required|numeric|min:0.01',
             'items.*.unit'         => 'nullable|string|max:16',
-            // B12 sibling: quote rate of zero would render "₹ 0.00 / unit"
-            // to the customer. gt:0 mirrors the shared-price fix.
             'items.*.rate'         => 'required|numeric|gt:0',
-            // No upper cap on tax_pct — see ProformaInvoiceController.
 
             'items.*.tax_pct'      => 'nullable|numeric|min:0',
 
-            // GSTIN is 15 chars; the column allows 20 for slack. Snapshotted
-            // from the customer, so never required — a customer legitimately
-            // may not be GST-registered.
             'customer_gst_no'      => 'nullable|string|max:20',
         ];
 
         if ($docType === Quotation::DOC_INTERNATIONAL) {
-            // INCO Term stores the full master label (e.g. "CIP – Carriage
-            // and Insurance Paid"), so it isn't a short 16-char code.
             $rules['inco_term']         = 'required|string|max:100';
             $rules['port_of_loading']   = 'required|string|max:128';
             $rules['port_of_discharge'] = 'required|string|max:128';
             $rules['final_destination'] = 'required|string|max:128';
             $rules['origin_country']    = 'required|string|max:64';
             $rules['state_code']        = 'nullable|string|max:64';
-            // The Domestic block below collects these; an export document has
-            // ports/destination instead, so they stay optional here.
             $rules['dispatch_from']     = 'nullable|string|max:255';
             $rules['deliver_to']        = 'nullable|string|max:255';
         } else {
@@ -574,7 +458,6 @@ class QuotationController extends Controller
         return $request->validate($rules);
     }
 
-    /** Compute each item's `amount` server-side from (qty * rate) + tax. */
     private function prepareItems(array $items): array
     {
         return array_map(function ($it) {
@@ -594,14 +477,6 @@ class QuotationController extends Controller
         }, $items);
     }
 
-    /** Sum prepared item amounts + add shipping.
-     *
-     *  B35: each item's stored `amount` is already rounded to 2dp in
-     *  computeAmount() — those rounded numbers go into the line table
-     *  so the customer sees them. But for the grand_total we re-derive
-     *  the EXACT (unrounded) sum from qty*rate*(1+tax/100) here so a
-     *  spread of `*.005` line subtotals doesn't accumulate banker's-
-     *  rounding error in the header. Round once at the very end. */
     private function aggregateTotals(array $items, float $shipping): array
     {
         $rawSub = 0.0;
@@ -619,16 +494,6 @@ class QuotationController extends Controller
         ];
     }
 
-    /**
-     * Look up the display labels for the FK references so the listing
-     * page can render without an extra round-trip per row. Returns
-     * [customerName, consigneeName, oppCode, oppDate, bankLabel, smName].
-     *
-     * Side-effect: when the payload links to an opportunity but did not
-     * specify a sales_manager_id, this method injects the lead's
-     * salesperson_id into $data so the "SALES PERSON NAME" from the
-     * opportunity becomes the quotation's sales manager.
-     */
     private function resolveCachedLabels(array &$data): array
     {
         $customerName = null;
@@ -654,9 +519,6 @@ class QuotationController extends Controller
             if ($l) {
                 $oppCode = $l->opp_code;
                 $oppDate = $l->query_time ? date('Y-m-d', strtotime($l->query_time)) : null;
-                // Default sales manager to the lead's salesperson when the
-                // client didn't override it — surfaces "Ankita" (etc.) in the
-                // SALES MANAGER column instead of the creating user.
                 if (empty($data['sales_manager_id']) && $l->salesperson_id) {
                     $data['sales_manager_id'] = (int) $l->salesperson_id;
                 }
@@ -680,34 +542,12 @@ class QuotationController extends Controller
         return [$customerName, $consigneeName, $oppCode, $oppDate, $bankLabel, $smName];
     }
 
-    /**
-     * Allocate the next code for a client. Format: QT/YYYY-NN/SEQ
-     * where YYYY-NN is the financial year and SEQ resets each year.
-     *
-     * B20: takes its OWN Postgres advisory lock keyed by (client_id, FY)
-     * so the read-then-write sequence is serialized at the connection
-     * level regardless of whether the caller wrapped this in a row lock.
-     * The outer `lockForUpdate('clients')` in store/duplicate continues
-     * to work for transaction-scoped serialization; this advisory lock
-     * adds a second safety net that follows the code allocation itself
-     * so a future caller (console command, queued job, etc.) that
-     * forgets the outer lock can't allocate a duplicate code.
-     */
-    /**
-     * Read-only preview of the next quotation code for the Create form's
-     * "Quotation ID" pill. Same QT/{FY}/{SEQ} format as nextCode() but
-     * WITHOUT the advisory lock — it never consumes a sequence number, so
-     * it's purely indicative (the authoritative code is allocated on save).
-     */
     public function previewCode(Request $request): JsonResponse
     {
         $user = $request->user();
         $code = null;
         if ($user && $user->client_id) {
             $fy = $this->currentFinancialYear();
-            // Mirror what store() allocates — the sequence is PER BRANCH, and
-            // store stamps $user->branch_id, so preview against the same branch
-            // (null for client-level users) or the row won't match the pill.
             $branchId = $user->branch_id;
             $codes = Quotation::where('client_id', $user->client_id)
                 ->when($branchId !== null, fn($q) => $q->where('branch_id', $branchId))
@@ -726,15 +566,6 @@ class QuotationController extends Controller
         return response()->json(['status' => true, 'data' => ['code' => $code]]);
     }
 
-    /**
-     * This tenant's own GST state code, so the Domestic Quotation / PI form
-     * can decide CGST+SGST (intra-state) vs IGST (inter-state) against the
-     * selected customer's state.
-     *
-     * Resolved from $user->branch_id — the same branch store() stamps onto the
-     * document — NOT the ?branch_id the switcher injects, which would let a
-     * user preview another branch's tax split on a doc they can't create there.
-     */
     public function gstHomeState(Request $request): JsonResponse
     {
         return response()->json([
@@ -747,18 +578,11 @@ class QuotationController extends Controller
     {
         $fy = $this->currentFinancialYear();
 
-        // Advisory-lock key: hashed (clientId, branchId, FY) → 32-bit int. The
-        // branch is in the key so each branch's QT sequence serializes on its
-        // own lock. Released automatically at transaction end.
         $lockKey = crc32("qt-code:{$clientId}:" . ($branchId ?? 0) . ":{$fy}");
         if (DB::getDriverName() === 'pgsql') {
             DB::statement('SELECT pg_advisory_xact_lock(?)', [$lockKey]);
         }
 
-        // Walk through existing codes for this client + BRANCH + FY and find the
-        // highest SEQ. Numbering restarts per branch (each branch gets its own
-        // QT/<FY>/1..N), so scope the scan to the branch. Increment past any gap
-        // so we never collide with an existing row even if rows were deleted.
         $codes = Quotation::where('client_id', $clientId)
             ->when($branchId !== null, fn($q) => $q->where('branch_id', $branchId))
             ->when($branchId === null, fn($q) => $q->whereNull('branch_id'))
@@ -784,38 +608,17 @@ class QuotationController extends Controller
         return $code;
     }
 
-    /** Indian financial year string for the current date (e.g. "2026-27"). */
     private function currentFinancialYear(): string
     {
         $now = now();
         $startYear = (int) $now->format('Y');
         if ((int) $now->format('n') < 4) {
-            $startYear -= 1;   // Jan-Mar belongs to the prior FY
+            $startYear -= 1;
         }
         $endShort = str_pad((string) (($startYear + 1) % 100), 2, '0', STR_PAD_LEFT);
         return "{$startYear}-{$endShort}";
     }
 
-    /* ── Authorisation ──────────────────────────────────────── */
-
-    /**
-     * Branch-aware read scope for listings.
-     *
-     * Visibility matrix (per tenant — client_id always enforced first):
-     *   super_admin / client_admin / client_user → all branches' rows
-     *   branch_user / employee                   → OWN branch rows only
-     *
-     * Branch-level isolation prevents one branch from seeing another
-     * branch's quotations — every branch is an isolated peer.
-     */
-    /* ══════════════════════════ ZOHO SYNC (→ Estimate) ══════════════════════════ */
-
-    /**
-     * Push this quotation to Zoho Books as an **Estimate**. Mirrors the P2P sync
-     * pattern: 503 when unconfigured, an atomic lock so a double-submit can't
-     * create two estimates, idempotent on zoho_estimate_id, and the customer +
-     * each product are created once in Zoho (deduped via their cached ids).
-     */
     public function sync(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -833,9 +636,6 @@ class QuotationController extends Controller
             return response()->json(['status' => false, 'message' => 'A Zoho sync for this quotation is already in progress — try again in a moment.'], 409);
         }
         try {
-            // Re-read under the lock so a request that loaded the row before a
-            // concurrent sync finished sees the freshly-written Zoho id — the
-            // idempotency check must not act on a stale in-memory copy.
             $q->refresh();
             if (!empty($q->zoho_estimate_id)) {
                 return response()->json(['status' => true, 'message' => 'This quotation is already synced to Zoho Books (estimate ' . ($q->zoho_estimate_number ?: $q->zoho_estimate_id) . ').', 'data' => $this->shapeZoho($q)]);
@@ -856,14 +656,7 @@ class QuotationController extends Controller
                 $stateCode  = $q->state_code ?: null;
                 $registered = (bool) $gstin;
 
-                // Zoho forces intra-state (place of supply = supplier) for an
-                // UNREGISTERED customer, so inter-state IGST only applies to a
-                // GST-registered customer whose state differs from the org's.
                 $orgState   = $books->orgStateCode() ?: $this->homeStateCode($q->branch_id);
-                // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
-                // label) before comparing so a single-digit / labelled code isn't
-                // mis-read as inter-state (which would apply IGST and drop
-                // place_of_supply on a same-state sale).
                 $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
                 $interState = $registered && $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
@@ -900,7 +693,6 @@ class QuotationController extends Controller
         }
     }
 
-    /** Stream the cached Zoho estimate PDF for a synced quotation. */
     public function zohoPdf(Request $request, $id)
     {
         $user = $request->user();
@@ -916,9 +708,6 @@ class QuotationController extends Controller
         ]);
     }
 
-    /** Build the Zoho estimate payload. Forward GST always applies on a sale
-     *  (unlike a purchase from an unregistered vendor); the tax TYPE follows the
-     *  customer's place of supply (intra → CGST+SGST, inter → IGST). */
     private function buildZohoEstimatePayload(Quotation $q, ZohoBooksService $books, string $zohoCustomerId, bool $interState, ?string $placeOfSupply = null): array
     {
         $lineItems = $q->items->map(function ($it) use ($books, $interState) {
@@ -939,8 +728,6 @@ class QuotationController extends Controller
         $payload = [
             'customer_id'      => $zohoCustomerId,
             'date'             => now()->toDateString(),
-            // Our quotation code rides on reference_number; Zoho auto-numbers the
-            // estimate itself (the org has estimate auto-numbering on).
             'reference_number' => (string) $q->code,
             'line_items'       => $lineItems,
         ];
@@ -953,7 +740,6 @@ class QuotationController extends Controller
         return $payload;
     }
 
-    /** Small zoho-status payload for the sync response (the list row reads these). */
     private function shapeZoho(Quotation $q): array
     {
         return [
@@ -965,7 +751,6 @@ class QuotationController extends Controller
         ];
     }
 
-    /** This tenant's own registered GST state code (branch), default MH(27). */
     private function homeStateCode(?int $branchId): string
     {
         $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
@@ -980,31 +765,21 @@ class QuotationController extends Controller
             return;
         }
         if (!$user->client_id) {
-            $q->whereRaw('1 = 0');  // No tenant → no rows
+            $q->whereRaw('1 = 0');
             return;
         }
         $q->where('client_id', $user->client_id);
 
-        // Client-level admins / users see every branch under their client —
-        // but honour the BranchSwitcher when they've picked a specific branch.
-        /* Branch admins AND employees are pinned to their own branch; only
-         * the client-level roles cross branches (they hold the switcher).
-         * Employees used to take this client-wide path, and for one on the
-         * 'all' designation tier that leaves no narrowing at all. */
         if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) {
             $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
             return;
         }
 
-        // Branch user: own branch only. They can't use the switcher, so
-        // $branchFilter is ignored.
         $q->where('branch_id', $user->branch_id);
         \App\Support\SalesVisibility::applyToSalesDocs($q, $user);
     }
 
-    /** Narrow an already-tenant-scoped query when the BranchSwitcher injects
-     *  ?branch_id=N. Cross-tenant ids are silently dropped. */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -1015,39 +790,21 @@ class QuotationController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-    /**
-     * Single-row authorisation. The $action distinguishes:
-     *   - 'read'  → list-show-PDF access (matches applyScope rules)
-     *   - 'write' → update / delete / email / reminder.
-     *
-     * Aborts 404 on cross-tenant / cross-branch access (so attackers can't
-     * probe for ID existence). Every branch is an isolated peer, so a branch
-     * user can only reach its own branch's rows.
-     */
     private function assertScope(Quotation $row, $user, string $action = 'read'): void
     {
         if ($user->user_type === 'super_admin') return;
 
-        // Tenant gate — both reads and writes need this.
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) {
             abort(404);
         }
 
-        // Not pinned to a branch (client-level admin / user) → whole client.
         if (!\App\Support\SalesVisibility::pinnedToOwnBranch($user)) return;
 
-        // Pinned account (branch admin / employee): own branch only.
         if ((int) $row->branch_id === (int) $user->branch_id) return;
 
-        // Foreign branch — invisible to this user.
         abort(404);
     }
 
-    /**
-     * UI hint flag — returns whether the given user can mutate this row.
-     * Frontend uses it to grey out Edit / Delete / Email / Reminder buttons
-     * on rows outside the user's own branch.
-     */
     private function userCanModify(Quotation $row, $user): bool
     {
         if ($user->user_type === 'super_admin') return true;
@@ -1056,17 +813,11 @@ class QuotationController extends Controller
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 
-    /* ── List filters ───────────────────────────────────────── */
-
     private function applyFilters($q, Request $request): void
     {
         if ($v = $request->query('status')) {
             $q->where('status', $v);
         } else {
-            // "Delete" on a quotation is a soft-cancel (status → cancelled),
-            // kept for audit. A cancelled quote is "no longer active", so it
-            // drops out of the default list — that's what makes the delete
-            // button visibly remove the row. Pass ?status=cancelled to see them.
             $q->where('status', '!=', Quotation::STATUS_CANCELLED);
         }
         if ($v = $request->query('doc_type'))    $q->where('doc_type', $v);
@@ -1131,7 +882,6 @@ class QuotationController extends Controller
             'gst_home_state' => $this->bundleCall($request, fn($r) => $this->gstHomeState($r)),
         ]);
     }
-
 
     public function qpiMasterBundle(Request $request): JsonResponse
     {

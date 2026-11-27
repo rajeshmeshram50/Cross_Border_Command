@@ -138,6 +138,24 @@ export function TruncCell({
   );
 }
 
+/**
+ * A name inside a "+N / view more" popover (segments, parties, counterparties,
+ * approvers). Cut at 15 characters with the full name in a tooltip - the rule
+ * AuthorityBadges and T&C Segment Wise already follow - so a long name never
+ * widens the popover into a horizontal scroll. The tooltip sits above the
+ * popovers (they run up to z 200101).
+ */
+export const POP_NAME_MAX = 15;
+export function PopName({ text, max = POP_NAME_MAX }: { text: string; max?: number }) {
+  const cut = text.length > max;
+  const shown = cut ? `${text.slice(0, max).trimEnd()}…` : text;
+  return (
+    <Tooltip label={text} position="top" zIndex={200200} disabled={!cut}>
+      <span style={{ whiteSpace: 'nowrap' }}>{shown}</span>
+    </Tooltip>
+  );
+}
+
 export const CLM_NAME_MAX = 100;
 export const CLM_DESC_MAX = 255;
 const CLM_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;

@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Col, Row } from 'reactstrap';
-import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
-import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -23,13 +22,21 @@ const methodLabels: Record<string, string> = {
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', cheque: 'Cheque',
 };
 
-export default function ClientPayments({ clientId, onBack }: Props) {
-  // `clientName` from Props is no longer rendered (breadcrumb chip was
-  // dropped) — destructure left out intentionally to keep the prop type
-  // stable for callers without flagging an unused variable.
-  const navigate = useNavigate();
+export default function ClientPayments({ clientId, clientName, onBack }: Props) {
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  /* Filtering is ours now — TableContainer did its own global filter, the
+     DataTable takes a controlled value and the already-filtered rows. */
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return payments;
+    return payments.filter(p => [
+      p.plan?.name, p.txn_id, p.method, p.billing_cycle, p.status,
+      p.amount, p.total,
+    ].some(v => String(v ?? '').toLowerCase().includes(q)));
+  }, [payments, search]);
 
   useEffect(() => {
     api.get('/payments', { params: { client_id: clientId, per_page: 100 } })
@@ -51,12 +58,7 @@ export default function ClientPayments({ clientId, onBack }: Props) {
     { label: 'Last Payment', value: lastPaymentLabel,                       icon: 'ri-calendar-line',       gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
   ];
 
-  const columns = useMemo(() => [
-    {
-      header: 'Sr No',
-      accessorKey: 'index',
-      cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
-    },
+  const columns = useMemo<DataTableColumn<any>[]>(() => [
     {
       header: 'Date',
       id: 'date',
@@ -190,49 +192,32 @@ export default function ClientPayments({ clientId, onBack }: Props) {
         }
       `}</style>
 
-      <Row>
-        <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0 d-flex align-items-center gap-2">
-              <button className="btn btn-sm btn-soft-secondary rounded-circle d-inline-flex align-items-center justify-content-center" style={{ width: 32, height: 32 }} onClick={onBack}>
-                <i className="ri-arrow-left-line"></i>
-              </button>
-              Payment History
-            </h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                {/* "Clients" jumps back to the list — previously the
-                    anchor pointed at `#` so the link did nothing but add
-                    a hash to the URL. clientName chip is dropped per
-                    request; the trail is now "Client > Payment". */}
-                <li className="breadcrumb-item">
-                  <a
-                    href="#"
-                    onClick={(e) => { e.preventDefault(); navigate('/clients'); }}
-                  >
-                    Client
-                  </a>
-                </li>
-                <li className="breadcrumb-item active">Payment</li>
-              </ol>
+      {/* The .pmt-cstrip family, not a page-title-box: its CSS is global, so
+          this page picks up the strip, the button sizing, the 8px page rhythm
+          and the violet table head every other admin screen already has. */}
+      <div className="pmt-cstrip mb-3">
+        <span className="pmt-cstrip-accent" />
+        <div className="pmt-cstrip-left">
+          <div className="pmt-cstrip-icon"><i className="ri-bill-line" /></div>
+          <div style={{ minWidth: 0 }}>
+            <div className="pmt-cstrip-title">Payment History</div>
+            <div className="pmt-cstrip-sub">
+              {clientName
+                ? `Plan payments, GST and transactions for ${clientName}.`
+                : 'Plan payments, GST and transaction history for this client.'}
             </div>
           </div>
-        </Col>
-      </Row>
+        </div>
+        <button type="button" className="pmt-cstrip-export" onClick={onBack}>
+          <i className="ri-arrow-left-line" />
+          Back to Clients
+        </button>
+      </div>
 
-      <Row>
-        <Col xs={12}>
-          <div
-            className="payments-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
-            {/* ── KPI cards (single row, equal height) ── */}
-            <Row className="g-3 mb-3 align-items-stretch">
+      {/* KPI row sits at PAGE level, as it does on Clients. It used to be
+          nested inside a padded white panel together with the table, which
+          made every tile a card drawn inside another card. */}
+      <Row className="g-2 mb-3 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div
@@ -241,7 +226,8 @@ export default function ClientPayments({ clientId, onBack }: Props) {
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
                       boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                      padding: '16px 18px',
+                      padding: 11,
+                      minHeight: 82,
                       position: 'relative',
                       overflow: 'hidden',
                       height: '100%',
@@ -250,19 +236,19 @@ export default function ClientPayments({ clientId, onBack }: Props) {
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
                       <div style={{ minWidth: 0 }}>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                        <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 6px' }}>
                           {k.label}
                         </p>
                         {loading ? (
                           <Shimmer width={72} height={26} radius={6} style={{ marginTop: 2 }} />
                         ) : (
-                          <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <h3 style={{ fontSize: 24, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {k.value}
                           </h3>
                         )}
                       </div>
-                      <div className="payments-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                      <div className="payments-kpi-icon" style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                        <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
                       </div>
                     </div>
                   </div>
@@ -270,42 +256,40 @@ export default function ClientPayments({ clientId, onBack }: Props) {
               ))}
             </Row>
 
-            {/* ── Title row ── */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col xs={12}>
-                <h5 className="mb-0 fw-bold d-inline-flex align-items-center gap-2">
-                  All Payments
-                  <span className="badge bg-primary-subtle text-primary">{payments.length}</span>
-                </h5>
-              </Col>
-            </Row>
-
-            {/* ── Table ── */}
-            {loading ? (
-              <ShimmerTable rows={6} cols={8} />
-            ) : (
-              <>
-                <TableContainer
-                  columns={columns}
-                  data={payments}
-                  isGlobalFilter={true}
-                  customPageSize={10}
-                  tableClass="align-middle table-nowrap mb-0 "
-                  theadClass="table-light"
-                  divClass="table-responsive table-card border rounded"
-                  SearchPlaceholder="Search by plan, txn ID, method..."
-                />
-                {payments.length === 0 && (
-                  <div className="text-center text-muted py-5">
-                    <i className="ri-bill-line display-4 d-block mb-2"></i>
-                    No payment records for this client yet.
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </Col>
-      </Row>
+      {/* Search + table as one bordered panel, the shape .clients-list-frame
+          gives the Clients list. The table drops its own border/rounding so
+          the frame is the only edge. */}
+      {/* The same DataTable the Clients list uses, with the same `hr-dt` skin
+          — the Velzon TableContainer this replaced drew its own header,
+          search and pager, which is why the two screens never matched. */}
+      <DataTable<any>
+        data={filtered}
+        columns={columns}
+        serial
+        className="hr-dt"
+        accent="violet"
+        title="All Payments"
+        subtitle={
+          loading
+            ? 'Loading…'
+            : `${payments.length} ${payments.length === 1 ? 'transaction' : 'transactions'} on record`
+        }
+        minWidth={1200}
+        fitToViewport
+        autoFitRows
+        minAutoRows={10}
+        fillToFooter
+        loading={loading}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by plan, txn ID, method..."
+        emptyMessage={
+          <>
+            <i className="ri-bill-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+            No payment records for this client yet
+          </>
+        }
+      />
     </>
   );
 }

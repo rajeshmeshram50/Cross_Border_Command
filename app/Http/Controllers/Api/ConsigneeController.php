@@ -18,38 +18,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-
 class ConsigneeController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        /* ── ?light=1 — the picker shape ──────────────────────────────────────
-         *
-         * A separate early return, so the list path below is untouched. That
-         * path eager-loads four relations — one of them nested
-         * (customers.primaryAddress) — and shape() then puts the FULL array of
-         * every customer mapped to the consignee inside each row, twelve fields
-         * per customer, plus its own address list. That is what the Consignee
-         * list page renders.
-         *
-         * A counterparty picker shows a name, a code, a country and a contact,
-         * and filters in the browser. It was carrying all of the above to
-         * display six fields.
-         *
-         * Values are read from exactly the same places shape() reads them, so a
-         * row here is indistinguishable from the full row as far as the picker
-         * is concerned — including the CN-000 fallback code, which the picker
-         * displays.
-         *
-         * same_as_customer is kept: the picker hides mirror consignees, and
-         * without this flag every mirror would become selectable. */
         if ($request->boolean('light')) {
             $rows = Consignee::query()
                 ->forUser($user, $request->integer('branch_id') ?: null)
-                // One eager load, not four. country / cp_contact / cp_email are
-                // plain columns on the address — no nested FK to resolve.
                 ->with(['primaryAddress:id,consignee_id,is_primary,country,cp_contact,cp_email'])
                 ->orderByDesc('id')
                 ->get(['id', 'consignee_code', 'company_name', 'same_as_customer'])
@@ -68,7 +45,6 @@ class ConsigneeController extends Controller
         }
 
         $q = Consignee::query()
-            // Honour the BranchSwitcher (see CustomerController::index).
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->with(['primaryAddress', 'addresses', 'customer', 'customers.primaryAddress'])
             ->orderByDesc('id');
@@ -83,8 +59,6 @@ class ConsigneeController extends Controller
             });
         }
 
-        // Customer → Consignees view: show every consignee MAPPED to this
-        // customer (via the pivot), not just those it "owns" as primary.
         if ($customerId = $request->query('customer_id')) {
             $q->whereHas('customers', fn($w) => $w->whereKey((int) $customerId));
         }
@@ -95,7 +69,7 @@ class ConsigneeController extends Controller
             'count' => count($rows),
             'data'  => $rows,
         ]);
-    } 
+    }
 
     public function show(Request $request, $id): JsonResponse
     {
@@ -105,27 +79,6 @@ class ConsigneeController extends Controller
             ->with(['primaryAddress', 'addresses', 'customer', 'customers.primaryAddress'])
             ->findOrFail($id);
 
-        /* Stage 2 + Stage 3 data embedded inline — mirrors the
-         * CustomerController::show() bundle pattern. AddConsigneeModal
-         * edit-mode previously fired 4 parallel HTTP requests:
-         *   - GET /consignees/{id}
-         *   - GET /consignees/{id}/documents
-         *   - GET /consignees/{id}/owners
-         *   - GET /segment-uploads/consignee/{id}
-         *
-         * On `php artisan serve` these serialised behind each other,
-         * costing 2-5 sec of pure Laravel boot tax. Bundling collapses
-         * 4 round-trips into 1 — same proven pattern we used for
-         * customer + ClientPermissions.
-         *
-         * Each delegated controller's index() reuses its own
-         * resolveConsignee() which applies the same `forUser` tenant
-         * scope, so security stays exactly where it was. Wrapped in
-         * try/catch so a single nested controller's failure (e.g.
-         * segment_uploads returning 404 on a fresh consignee) does
-         * not break the whole response — the key falls back to an
-         * empty list.
-         */
         $documents = $this->safeDelegate(
             fn() => (new ConsigneeDocumentController())->index($request, $id)
         );
@@ -136,19 +89,6 @@ class ConsigneeController extends Controller
             fn() => (new SegmentDocUploadController())->index($request, 'consignee', $id)
         );
 
-        /* Bundle the parent customer's non-primary addresses ("locations")
-         * so AddConsigneeModal's same-as-customer effect can skip its own
-         * GET /customers/{customer_id} round-trip on edit-mode open. The
-         * production network panel showed that call costing ~3 sec
-         * (cbc.idims.in). Frontend uses a skip-once ref pattern: if this
-         * bundled list is present it's consumed, otherwise the existing
-         * lazy fetch runs as fallback — preserving every existing flow
-         * (toggle off/on, change linked customer, etc.).
-         *
-         * Shape mirrors CustomerController::shapeAddress() exactly so the
-         * frontend's map at line 705 reads identical fields. Wrapped in
-         * try/catch so a malformed customer reference cannot break show().
-         */
         $customerLocations = [];
         try {
             if ($row->customer_id) {
@@ -181,8 +121,6 @@ class ConsigneeController extends Controller
             \Log::warning('ConsigneeController::show customer_locations bundle failed: ' . $e->getMessage());
         }
 
-        // Per-segment lock: the segment NAMES whose product appears on a PI (or a
-        // PI with a Shipment) for this consignee.
         $data = $this->shape($row);
         $data['locked_segments'] = array_values(array_unique(array_merge(
             SegmentGuard::lockedSegmentNames(
@@ -190,8 +128,6 @@ class ConsigneeController extends Controller
                 (int) $row->id,
                 (int) $row->client_id,
             ),
-            // Also lock segments referenced by the consignee's leads via a product
-            // (Product Directory dependency — retained before any PI/Shipment).
             SegmentGuard::productMappingSegmentNames(
                 \App\Models\Consignee::class,
                 (int) $row->id,
@@ -203,22 +139,11 @@ class ConsigneeController extends Controller
             'data'            => $data,
             'documents'       => $documents['data'] ?? [],
             'owners'          => $owners['data'] ?? [],
-            // segment_uploads keeps its full shape (data + by_category + count)
-            // because the frontend reads `data[].category` for per-tab bucketing.
             'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
-            // Pre-shaped parent customer locations for the same-as-customer
-            // mirror. Empty array means "no parent customer or no locations" —
-            // the frontend falls through to its existing fetch in that case.
             'customer_locations' => $customerLocations,
         ]);
     }
 
-    /**
-     * Run a delegated controller call and unwrap its JSON response,
-     * returning `null` on any failure. Used by show() to embed nested
-     * resources without letting a single inner failure take down the
-     * whole response. Caller decides how to default the missing key.
-     */
     private function safeDelegate(\Closure $call): ?array
     {
         try {
@@ -251,12 +176,6 @@ class ConsigneeController extends Controller
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
 
-            // Allocate the CN-### code PER CLIENT, not from the global
-            // autoincrement id. The id-based code leaked the cross-tenant
-            // sequence into each client's list (gaps like CN-009 → CN-060).
-            // Serialised under a row lock on the owning client — same
-            // pattern QuotationController uses for QT/PI codes — so two
-            // concurrent inserts can't collide on the same number.
             if ($clientId !== null) {
                 DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
             }
@@ -270,12 +189,6 @@ class ConsigneeController extends Controller
                 'consignee_code'   => $code,
                 'company_name'     => $data['company_name'],
                 'legal_name'       => $data['legal_name']     ?? null,
-                /* DERIVED from the mapped customers, never taken from the
-                 * request — a consignee inherits its customers' segments and has
-                 * no field of its own to set them. Create used to trust
-                 * $data['segment'], so a consignee whose browser-side inherit
-                 * didn't fire saved with an empty segment against a field the
-                 * user couldn't edit. See SegmentGuard::forCustomers(). */
                 'segment'          => SegmentGuard::forCustomers($data['customer_ids']) ?: null,
                 'segment_ids'      => SegmentGuard::idsForCustomers($data['customer_ids']) ?: null,
                 'classification'   => $data['classification'] ?? null,
@@ -298,7 +211,6 @@ class ConsigneeController extends Controller
                 ]));
             }
 
-            // Mirror the full customer mapping into the pivot (includes primary).
             $consignee->customers()->sync($data['customer_ids']);
 
             return $consignee->load(['primaryAddress', 'addresses', 'customer', 'customers.primaryAddress']);
@@ -320,38 +232,23 @@ class ConsigneeController extends Controller
         foreach ($data['customer_ids'] as $cid) {
             $this->assertCustomerInScope($user, (int) $cid);
         }
-        // Reads the INCOMING country — an edit can change the consignee's country
-        // and its customer list in the same request.
         $this->assertCountryCompatible($data['primary_address']['country'] ?? null, $data['customer_ids']);
-        // Carry the previous value forward if the payload omits the
-        // key so the guard reads the user's *current* intent.
         $intendsMirror = array_key_exists('same_as_customer', $data)
             ? (bool) $data['same_as_customer']
             : (bool) $consignee->same_as_customer;
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], $intendsMirror, $consignee->id);
-        /* Same intent-carrying logic as the mirror guard: an edit that only
-           changes the email must still be checked against the mirror flag the
-           record will END UP with, not the one it happens to hold now. */
         $this->assertContactEmailNotCustomers(
             $data['primary_address']['cp_email'] ?? null,
             $intendsMirror,
             $data['customer_ids'],
         );
 
-        /* Segment is DERIVED from the mapped customers here too, so re-mapping
-         * a consignee onto different customers moves its segments with it and
-         * the two can never drift. The request's own `segment` is ignored. */
         $derivedSegment = SegmentGuard::forCustomers($data['customer_ids']);
 
         $oldSegment = $consignee->segment;
         $removed    = SegmentGuard::removedNames($oldSegment, $derivedSegment ?: null);
 
-        /* A dropped segment must remain ATTACHED (not blocked — nothing to fix on
-         * this screen) when it is either (1) used by a PI/Shipment product, or
-         * (2) has an uploaded document not shared with a remaining segment. */
         $keep = array_values(array_unique(array_merge(
-            // Product Directory dependency — a product of the segment is on one of
-            // the consignee's leads (in use before any PI/Shipment).
             SegmentGuard::blockedByProductMapping(
                 \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed,
             ),
@@ -386,9 +283,6 @@ class ConsigneeController extends Controller
                     : $consignee->same_as_customer,
             ]);
 
-            // Replace-all on addresses (same simple strategy as
-            // CustomerController). Cascade keeps it safe — no hard FK
-            // dependents yet.
             ConsigneeAddress::where('consignee_id', $consignee->id)->delete();
             ConsigneeAddress::create(array_merge($primary, [
                 'consignee_id' => $consignee->id,
@@ -401,7 +295,6 @@ class ConsigneeController extends Controller
                 ]));
             }
 
-            // Re-sync the customer mapping (adds new, removes unchecked).
             $consignee->customers()->sync($data['customer_ids']);
 
             return $consignee->load(['primaryAddress', 'addresses', 'customer', 'customers.primaryAddress']);
@@ -423,29 +316,6 @@ class ConsigneeController extends Controller
         return response()->json(['id' => $consignee->id, 'deleted' => true]);
     }
 
-    /**
-     * "Same as Customer" deep-clone. Copies the linked customer's Stage 2
-     * KYC documents (Company DD + Trade Licence) and Owner KYC rows onto
-     * this consignee — including their file attachments via
-     * Storage::copy(). The consignee's *additional addresses* are already
-     * carried in the consignee POST/PUT payload, so this endpoint only
-     * handles the children that live in separate tables.
-     *
-     * Replace semantics: each call wipes the consignee's existing KYC
-     * (rows + on-disk files) and re-clones fresh from the customer. This
-     * keeps "Same as Customer" semantically truthful — re-ticking and
-     * re-saving always produces an exact mirror, even if the customer's
-     * KYC was edited after the consignee was first created. Manual edits
-     * on the consignee side are intentionally overwritten; the user
-     * opted into that by re-ticking the box.
-     *
-     * Tenant scope: both ends are checked. Customer must be visible to
-     * the caller via Customer::forUser($user), same as the
-     * cross-tenant guard used by store/update.
-     *
-     * Route: POST /api/consignees/{id}/clone-from-customer
-     * Body:  { "customer_id": <int> }
-     */
     public function cloneFromCustomer(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -468,11 +338,6 @@ class ConsigneeController extends Controller
         DB::transaction(function () use ($consignee, $customer, $user, &$copied) {
             $disk = Storage::disk('public');
 
-            // ── Wipe existing KYC (replace semantics) ───────────────
-            // Delete on-disk files first (best-effort), then the rows.
-            // cascadeOnDelete from consignee → docs/owners protects us
-            // if anything's left dangling, but explicit deletion is
-            // safer here so we don't accidentally orphan a file.
             foreach ($consignee->documents as $d) {
                 if ($d->attachment_path) $disk->delete($d->attachment_path);
             }
@@ -484,7 +349,6 @@ class ConsigneeController extends Controller
             $consignee->documents()->delete();
             $consignee->owners()->delete();
 
-            // ── Documents ─────────────────────────────────────────────
             foreach ($customer->documents as $doc) {
                 $newPath = null;
                 if ($doc->attachment_path && $disk->exists($doc->attachment_path)) {
@@ -508,7 +372,6 @@ class ConsigneeController extends Controller
                 $copied['documents']++;
             }
 
-            // ── Owners (three file slots each) ────────────────────────
             $fileSlots = ['id_proof_path', 'address_proof_path', 'photograph_path'];
             foreach ($customer->owners as $owner) {
                 $copies = [];
@@ -516,8 +379,6 @@ class ConsigneeController extends Controller
                     $copies[$slot] = null;
                     if ($owner->{$slot} && $disk->exists($owner->{$slot})) {
                         $ext = pathinfo($owner->{$slot}, PATHINFO_EXTENSION) ?: 'bin';
-                        // Reuse the slot name (id_proof/address_proof/photograph)
-                        // in the cloned filename so debugging on-disk stays readable.
                         $slotLabel = str_replace('_path', '', $slot);
                         $newPath = "consignee_documents/{$consignee->id}/owner-clone-{$slotLabel}-" . bin2hex(random_bytes(6)) . ".{$ext}";
                         $disk->copy($owner->{$slot}, $newPath);
@@ -546,15 +407,6 @@ class ConsigneeController extends Controller
         ]);
     }
 
-    /**
-     * Map an EXISTING consignee to a customer (many-to-many). Used by the
-     * customer's "Add Or Map Consignee → Map" flow. Attaches the pivot row
-     * (idempotent) and merges the customer's segment(s) into the consignee's
-     * segment list when the customer carries a segment the consignee lacks.
-     *
-     * Route: POST /api/consignees/{id}/map-customer
-     * Body:  { "customer_id": <int> }
-     */
     public function mapCustomer(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -571,13 +423,11 @@ class ConsigneeController extends Controller
 
         $customer = Customer::query()->forUser($user)->findOrFail($data['customer_id']);
 
-        // Existing consignee, so its country comes from the stored primary address.
         $this->assertCountryCompatible(
             optional($consignee->primaryAddress)->country,
             [(int) $customer->id],
         );
 
-        // Already mapped → tell the caller clearly instead of silently no-op'ing.
         if ($consignee->customers()->whereKey($customer->id)->exists()) {
             return response()->json([
                 'message' => "“{$customer->company_name}” is already mapped to this consignee.",
@@ -586,15 +436,8 @@ class ConsigneeController extends Controller
         }
 
         DB::transaction(function () use ($consignee, $customer) {
-            // Idempotent attach — keeps existing mappings, adds this one.
             $consignee->customers()->syncWithoutDetaching([$customer->id]);
 
-            /* Re-derive from ALL mapped customers (the attach above is already
-             * committed, so the pivot is current). This used to hand-merge just
-             * the incoming customer's segments into whatever the consignee
-             * already had — a third copy of the same union logic, and additive
-             * only, so an unmap never shrank the list. One helper now owns the
-             * rule for create, update and map alike. */
             $derived = SegmentGuard::forCustomers(
                 $consignee->customers()->pluck('customers.id')->all()
             );
@@ -608,18 +451,9 @@ class ConsigneeController extends Controller
         return response()->json(['data' => $this->shape($consignee)]);
     }
 
-    /* ── Helpers ──────────────────────────────────────────────────── */
-
-    /**
-     * Reshape a Consignee + addresses + linked customer into the
-     * frontend contract. The Add Consignee modal's edit hydration and
-     * the SalesConsignee list both read these keys.
-     */
     private function shape(Consignee $c): array
     {
         $primary = $c->primaryAddress;
-        // All mapped customers (many-to-many). `customer_*` singular fields stay
-        // for backward compat = the primary customer.
         $mapped = $c->relationLoaded('customers')
             ? $c->customers->map(function ($m) {
                 $pa = $m->relationLoaded('primaryAddress') ? $m->primaryAddress : null;
@@ -658,8 +492,6 @@ class ConsigneeController extends Controller
             'website'         => $c->website,
             'status'          => $c->status,
             'country'         => $primary?->country,
-            // Compact ISO code for the aligned Country column (QA #20); null
-            // when the stored value matches no master country → UI keeps raw.
             'country_iso'     => \App\Models\Masters\Countries::isoFor($primary?->country),
             'countryDetail'   => trim(implode(', ', array_filter([$primary?->city, $primary?->state, $primary?->country]))),
             'state'           => $primary?->state,
@@ -701,23 +533,10 @@ class ConsigneeController extends Controller
         ];
     }
 
-    /**
-     * Validate the POST / PUT body. Returns the validated array
-     * (nested primary_address + locations preserved).
-     *
-     * primary_email and primary phone uniqueness is per-tenant within
-     * the consignees table, ignoring the row being edited. The
-     * Same-as-Customer flow is exempt because it deliberately copies
-     * the customer's contact details onto the consignee — a unique
-     * rule would block that intended flow.
-     */
     private function validatePayload(Request $request, ?int $consigneeId = null, $clientId = null, $branchId = null): array
     {
         $sameAsCustomer = (bool) $request->input('same_as_customer', false);
 
-        // A consignee can now be mapped to MANY customers (checkbox multi-select
-        // on the modal). Accept the new `customer_ids[]` payload, but stay
-        // backward-compatible with the old scalar `customer_id` by wrapping it.
         $incomingIds = $request->input('customer_ids');
         if ((!is_array($incomingIds) || count($incomingIds) === 0) && $request->filled('customer_id')) {
             $request->merge(['customer_ids' => [$request->input('customer_id')]]);
@@ -727,21 +546,12 @@ class ConsigneeController extends Controller
             'customer_ids'     => 'required|array|min:1',
             'customer_ids.*'   => 'integer|exists:customers,id',
             'company_name'     => 'required|string|max:255',
-            /* Legal (registered entity) name: base format rules only. The
-             * per-tenant UNIQUENESS check is added below — but ONLY when this
-             * is NOT a "Same as Customer" mirror. A mirror intentionally
-             * copies the customer's legal name, so enforcing uniqueness there
-             * would make same-as-customer impossible whenever the customer's
-             * legal name is already in use. (The "one mirror per customer"
-             * rule still prevents duplicate mirrors of the same customer.) */
             'legal_name'       => 'nullable|string|max:255',
             'segment'          => 'nullable|string|max:1024',
             'classification'   => 'nullable|string|max:64',
             'risk_level'       => 'nullable|string|max:32',
             'website'          => 'nullable|string|max:500',
             'status'           => 'nullable|in:Active,Inactive',
-            // Marks consignees created via the "Same as Customer"
-            // toggle. Powers the warning popup on Edit Customer.
             'same_as_customer' => 'sometimes|boolean',
 
             'primary_address'                => 'required|array',
@@ -750,9 +560,6 @@ class ConsigneeController extends Controller
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
             'primary_address.city'           => 'nullable|string|max:64',
-            /* Country decides the rule — India → exactly 6 digits, elsewhere →
-             * letters/digits/spaces/hyphens up to 12. Same rule the shipment
-             * module uses; see App\Support\PostalCode. */
             'primary_address.pin'            => [
                 'nullable', 'string',
                 PostalCode::rule(fn () => $request->input('primary_address.country')),
@@ -767,29 +574,15 @@ class ConsigneeController extends Controller
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',
-            // Country lives on the same row, so the rule reads it per index.
             'locations.*.pin'            => ['nullable', 'string', PostalCode::locationRule($request->all())],
             'locations.*.cp_name'        => 'required_with:locations|string|max:255',
             'locations.*.cp_designation' => 'nullable|string|max:128',
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
-            // Standard email format — username@domain.extension. Allows
-            // digit-containing domains (office365.com, 7eleven.com) but
-            // still rejects malformed inputs like "x@.com", "x@gmail",
-            // or "x@gmail.c". Frontend uses the same regex inline.
             'locations.*.cp_email'       => ['nullable', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/'],
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
         ];
 
-        /* Cross-consignee uniqueness on the legal name + primary contact's
-         * phone + email — mirrors CustomerController so two consignees in the
-         * same tenant can't claim the same identity. ALL skipped when
-         * same_as_customer is on because that flow deliberately copies the
-         * customer's legal name + contact details onto the consignee; the
-         * "one mirror per customer" rule already blocks duplicate mirrors. */
         if (!$sameAsCustomer) {
-            /* Branch-scoped, like the phone + email rules beneath it: two
-             * branches of one client keep independent address books, so the
-             * same registered entity may be on file once under each. */
             $rules['legal_name'] = [
                 'nullable',
                 'string',
@@ -817,8 +610,6 @@ class ConsigneeController extends Controller
                 'email',
                 'max:255',
                 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
-                // Unique within the SAME BRANCH (not the whole client) — the
-                // same contact can exist once per branch.
                 Rule::unique('consignees', 'primary_email')
                     ->where(function ($q) use ($clientId, $branchId) {
                         $q->whereNull('deleted_at');
@@ -849,36 +640,21 @@ class ConsigneeController extends Controller
                 },
             ];
         } else {
-            // Mirror flow — keep the format / required rules but skip
-            // the cross-consignee uniqueness check.
             $rules['primary_address.cp_email']   = ['required', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/'];
             $rules['primary_address.cp_contact'] = ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'];
         }
 
         $data = $request->validate($rules);
 
-        // De-dupe + normalise the mapped customers; the FIRST id is the
-        // "primary" customer (drives the Same-as-Customer mirror + downstream
-        // party resolution) and is what the rest of store()/update() reads.
         $data['customer_ids'] = array_values(array_unique(array_map('intval', $data['customer_ids'])));
         $data['customer_id']  = $data['customer_ids'][0];
 
-        // Same-as-Customer is intrinsically 1:1 — only allowed when the
-        // consignee is mapped to exactly one customer.
         if ($sameAsCustomer && count($data['customer_ids']) > 1) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'same_as_customer' => ['“Same as Customer” can only be used when the consignee is mapped to a single customer.'],
             ]);
         }
 
-        /* Cross-row uniqueness within the payload. A single consignee
-         * can't have two addresses sharing the same primary contact
-         * (the address book would point to one human under two
-         * different roof-tops). Cross-consignee sharing is still
-         * allowed — see the comment on primary_address.cp_email above
-         * for why ("Same as Customer" copies the customer's email).
-         * Errors are keyed by `locations.{i}.cp_email` / `cp_contact`
-         * so the frontend's 422 mapper lands them on the right field. */
         $primary       = $data['primary_address'] ?? [];
         $seenEmails    = [];
         $seenPhones    = [];
@@ -906,19 +682,6 @@ class ConsigneeController extends Controller
         return $data;
     }
 
-    /**
-     * Ensure the customer the consignee is being attached to is
-     * visible under the caller's tenant scope. Without this a tenant
-     * could create a consignee under another tenant's customer just
-     * by passing its id.
-     */
-    /**
-     * Block cross-tenant linkage — without this check a caller could
-     * create a consignee under a customer they're not entitled to
-     * see, just by knowing/guessing the customer_id. Reuses the
-     * shared Customer::forUser() scope so this stays in lockstep
-     * with the customer index visibility.
-     */
     private function assertCustomerInScope($user, int $customerId): void
     {
         $exists = Customer::query()
@@ -928,21 +691,6 @@ class ConsigneeController extends Controller
         if (!$exists) abort(404, 'Customer not found');
     }
 
-    /**
-     * Business rule: an India customer may only be mapped to an India consignee,
-     * and an India consignee only to India customers. The rule is about crossing
-     * the India boundary — two DIFFERENT non-India countries are fine (a USA
-     * customer shipping to a UAE consignee is legitimate), so this compares
-     * domestic-ness, not the country strings.
-     *
-     * Both countries live on the party's PRIMARY address, not the parent row.
-     * Runs on all three pivot writes (store / update / mapCustomer) — the guard
-     * has to sit here rather than in the form, because the customer picker
-     * appears in two different screens and the endpoint is reachable directly.
-     *
-     * @param string|null $consigneeCountry Primary-address country of the consignee.
-     * @param int[]       $customerIds      Customers about to be mapped.
-     */
     private function assertCountryCompatible(?string $consigneeCountry, array $customerIds): void
     {
         $ids = array_values(array_filter(array_map('intval', $customerIds)));
@@ -973,13 +721,6 @@ class ConsigneeController extends Controller
         }
     }
 
-    /**
-     * Business rule: a customer can have *at most one* same-as-customer
-     * consignee, but unlimited regular consignees. This guard runs on
-     * store() and update() whenever the caller intends to set
-     * `same_as_customer = true`. Excludes $ignoreConsigneeId from the
-     * count so editing the existing mirror doesn't fail on itself.
-     */
     private function assertSingleMirrorPerCustomer(int $customerId, bool $intendsMirror, ?int $ignoreConsigneeId): void
     {
         if (!$intendsMirror) return;
@@ -988,8 +729,6 @@ class ConsigneeController extends Controller
             ->where('same_as_customer', true);
         if ($ignoreConsigneeId !== null) $q->where('id', '!=', $ignoreConsigneeId);
         if ($q->exists()) {
-            // 422 keeps it on the field-validation path so the frontend's
-            // existing 422 → inline-error mapper picks it up uniformly.
             abort(response()->json([
                 'message' => 'Only one same-as-customer consignee is allowed per customer.',
                 'errors'  => [
@@ -999,26 +738,11 @@ class ConsigneeController extends Controller
         }
     }
 
-    /**
-     * A consignee that is NOT the customer must not reuse that customer's
-     * contact-person email.
-     *
-     * A mirror consignee (same_as_customer) IS the customer, so sharing the
-     * address and its contact is correct and this guard steps aside. For a
-     * genuinely separate party the shared email made the two indistinguishable
-     * downstream: signature requests, acknowledgement mail and the CLM trail
-     * are addressed by contact email, so both sides resolved to one inbox and
-     * a document meant for the consignee reached the customer instead.
-     *
-     * Scope is deliberately narrow — the mapped customers only, not a global
-     * uniqueness rule. One contact person legitimately handles several
-     * consignees, and rejecting that would break existing records.
-     */
     private function assertContactEmailNotCustomers(?string $cpEmail, bool $isMirror, array $customerIds): void
     {
-        if ($isMirror) return;                                  // it IS the customer
+        if ($isMirror) return;
         $email = mb_strtolower(trim((string) $cpEmail));
-        if ($email === '') return;                              // optional field
+        if ($email === '') return;
 
         $ids = array_values(array_filter(array_map('intval', $customerIds)));
         if (empty($ids)) return;
@@ -1041,11 +765,6 @@ class ConsigneeController extends Controller
         }
     }
 
-    /**
-     * Resolve `[client_id, branch_id]` for the row being inserted.
-     * Only used by store() — tenant *visibility* is handled by the
-     * Consignee::scopeForUser() Eloquent scope.
-     */
     private function resolveOwnership($user): array
     {
         if (!$user) return [null, null];
@@ -1055,18 +774,8 @@ class ConsigneeController extends Controller
         return [$clientId, $branchId];
     }
 
-    /**
-     * Next per-client consignee code (CN-001, CN-002 …).
-     *
-     * Sequential WITHIN a tenant, not global — so each client gets a
-     * clean gap-free list. The caller holds a lockForUpdate on the owning
-     * `clients` row (super_admin null bucket excepted) to serialise
-     * concurrent allocations. Scans `withTrashed` so a soft-deleted
-     * consignee's number is never reused.
-     */
     private function nextConsigneeCode($clientId, $branchId = null): string
     {
-        // Per-branch sequence: each branch owns its own CN-001, CN-002 … run.
         $codes = Consignee::withTrashed()
             ->when(
                 $clientId === null,

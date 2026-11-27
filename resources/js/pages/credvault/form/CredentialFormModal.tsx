@@ -13,6 +13,8 @@ export interface CredentialFormProps {
   scope?: 'personal' | 'team';
   departmentId?: number | null;
   previewRow?: CredentialRow;
+  /** Detail already loaded for `credentialId` (e.g. by the view drawer): used instead of fetching it again. */
+  initialDetail?: CredentialDetail;
   onClose: () => void;
   onSaved: (c: CredentialDetail) => void;
 }
@@ -73,7 +75,7 @@ function Wait({ title, text, onClose, error, onRetry }: { title: string; text: s
   );
 }
 
-export default function CredentialFormModal({ credentialId, initialType, critical, prefillPassword, scope, departmentId, previewRow, onClose, onSaved }: CredentialFormProps) {
+export default function CredentialFormModal({ credentialId, initialType, critical, prefillPassword, scope, departmentId, previewRow, initialDetail, onClose, onSaved }: CredentialFormProps) {
   const { meta, typeOf, error: metaFailed, reload: reloadMeta } = useCvMeta();
   const [typeKey, setTypeKey] = useState<string | null>(credentialId ? null : initialType ?? null);
   const [detail, setDetail] = useState<CredentialDetail | null>(null);
@@ -87,9 +89,14 @@ export default function CredentialFormModal({ credentialId, initialType, critica
 
   useEffect(() => {
     if (!credentialId || previewRow) return;
+    setFailed(null);
+    if (initialDetail && initialDetail.id === credentialId) {
+      if (initialDetail.can && !initialDetail.can.edit) setFailed('Only the owner, a Vault Admin or someone with Full Access can edit this credential.');
+      else { setDetail(initialDetail); setTypeKey(initialDetail.type); }
+      return;
+    }
     let on = true;
     setDetail(null);
-    setFailed(null);
     cvApi.show(credentialId)
       .then(d => {
         if (!on) return;

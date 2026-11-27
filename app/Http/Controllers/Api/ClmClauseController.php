@@ -9,12 +9,8 @@ use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-
 class ClmClauseController extends Controller
 {
-    private const DEFAULT_PER_PAGE = 10;
-    private const MAX_PER_PAGE     = 100;
-    /* ── TYPES ── */
 
     public function typesIndex(Request $request)
     {
@@ -23,20 +19,11 @@ class ClmClauseController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        // Branch-scoped read: branch users see globals + client-level rows +
-        // their own branch's rows; sibling branches stay hidden.
         $branchFilter = $request->integer('branch_id') ?: null;
-        /* Newest first WHEN PAGING — the list is read that way, and page 2 has
-           to continue page 1 rather than be a different set depending on who
-           sorted last. Unpaged callers keep the original ascending order, which
-           some of them render without sorting again. */
         $typeQuery = ClmClauseType::query()
             ->orderBy('id', $request->filled('per_page') ? 'desc' : 'asc');
         MasterVisibility::applyReadScope($typeQuery, $user, $branchFilter);
 
-        /* Search moves server-side with the paging. Once the client holds one
-           page, filtering there searches 10 rows out of 500 and reports "2
-           results" for a term that matches 80. */
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
             $typeQuery->where(function ($w) use ($like) {
@@ -44,26 +31,13 @@ class ClmClauseController extends Controller
             });
         }
 
-        /* Only types that actually HAVE clauses (?with_clauses=1).
-           The clause picker offers these — an empty type can be selected and
-           then just reports "No clauses found for X", a dead end the user has
-           to back out of. It used to filter client-side on `in_use`, which
-           needed every type in memory; once the dropdown pages, a client-side
-           filter would strip rows out of a page and deliver seven of ten.
-           Built from a SCOPED library query rather than a raw EXISTS so the
-           branch-visibility rule stays in one place — the library links to a
-           type by name, case- and whitespace-insensitively. */
         if ($request->boolean('with_clauses')) {
             $usedQuery = ClmClauseLibrary::query();
             MasterVisibility::applyReadScope($usedQuery, $user, $branchFilter);
             $used = $usedQuery->selectRaw('DISTINCT LOWER(TRIM(clause_type)) AS t')->pluck('t')->all();
-            // `?: ['']` so "no clauses at all" yields an empty list rather than
-            // an IN () that Postgres rejects.
             $typeQuery->whereIn(DB::raw('LOWER(TRIM(name))'), $used ?: ['']);
         }
 
-        /* PAGINATION — opt-in via per_page, so every existing caller that just
-           wants the whole list (pickers, the clause insert panel) is unchanged. */
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -72,11 +46,6 @@ class ClmClauseController extends Controller
 
         $rows = $perPage ? $typeQuery->forPage($page, $perPage)->get() : $typeQuery->get();
 
-        /* Usage map: how many Clause Library entries reference each type. The
-         * library links to a type by NAME (no FK), so we match case-insensitively.
-         * Drives the "can't edit an in-use type" guard on the client. Scope the
-         * usage count the same way so a branch only counts library rows it can
-         * actually see. */
         $usageQuery = ClmClauseLibrary::query();
         MasterVisibility::applyReadScope($usageQuery, $user, $branchFilter);
         $usage = $usageQuery
@@ -90,8 +59,6 @@ class ClmClauseController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-            // `count` stays the rows in hand (unchanged for existing callers);
-            // `total` is the whole filtered set, which is what a pager needs.
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
         ]);
@@ -103,18 +70,12 @@ class ClmClauseController extends Controller
         if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
-        /* Description is no longer required — the redesigned Clause Type
-         * modal collects only the name. Old payloads with description
-         * still work; new ones can send empty string or omit. */
         $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
             'name'        => ['required', 'string', 'max:100'],
             'description' => 'nullable|string|max:500',
         ]);
 
-        // Reject duplicate clause-type names within the creator's own scope
-        // (case-insensitive). Scoped via MasterVisibility so the same name can
-        // exist in different branches — matches the branch-scoped master rule.
         $name = trim($data['name']);
         $dupQuery = ClmClauseType::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupQuery, $user, $user->branch_id ?: null);
@@ -126,7 +87,7 @@ class ClmClauseController extends Controller
             $code = $this->nextCode(ClmClauseType::class, $user->client_id, $user->branch_id, 'CLT');
             return ClmClauseType::create([
                 'client_id'   => $user->client_id,
-                'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'   => $user->branch_id,
                 'code'        => $code,
                 'name'        => trim($data['name']),
                 'description' => trim($data['description'] ?? ''),
@@ -144,14 +105,10 @@ class ClmClauseController extends Controller
         $lookup = ClmClauseType::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        // A branch user can VIEW shared client-level types but not manage them.
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        /* Block editing while the Clause Library still references this type — the
-         * library links to it by NAME, so renaming would orphan those clauses.
-         * The user must reassign/remove those clauses first. */
         $inUse = ClmClauseLibrary::where('client_id', $user->client_id)
             ->whereRaw('LOWER(clause_type) = ?', [mb_strtolower((string) $row->name)])
             ->count();
@@ -170,8 +127,6 @@ class ClmClauseController extends Controller
         if (isset($data['name']))        $data['name']        = trim($data['name']);
         if (array_key_exists('description', $data)) $data['description'] = trim((string) $data['description']);
 
-        // Reject rename to a duplicate name within the tenant (case-insensitive,
-        // excluding self).
         if (isset($data['name'])) {
             $clash = ClmClauseType::where('client_id', $user->client_id)
                 ->where('id', '!=', $row->id)
@@ -201,8 +156,6 @@ class ClmClauseController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /* ── LIBRARY ── */
-
     public function libraryIndex(Request $request)
     {
         $user = $request->user();
@@ -210,21 +163,15 @@ class ClmClauseController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
-        @ini_set('memory_limit', '512M'); // usage-scan reads CTC drafts; guard against OOM on large data
+        @ini_set('memory_limit', '512M');
 
-        $query = ClmClauseLibrary::query()->orderBy('id', 'desc');   // newest entry first
+        $query = ClmClauseLibrary::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
 
-        /* Filter to one clause TYPE. The clause picker in the CTC editor shows
-           one type's clauses at a time; without this it had to download every
-           clause in the tenant (302 KB) and filter in the browser. */
         if ($type = trim((string) $request->input('clause_type', ''))) {
             $query->where('clause_type', $type);
         }
 
-        // Server-side search — same reason as typesIndex: a client filtering one
-        // page reports the page, not the set.
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
             $query->where(function ($w) use ($like) {
@@ -240,19 +187,8 @@ class ClmClauseController extends Controller
         $page  = max(1, (int) $request->input('page', 1));
         $total = $perPage ? (clone $query)->count() : null;
 
-        /* Paginate BEFORE the CTC scan below — that is the expensive half.
-           scanCtcForClauses() reads every CTC contract's content and saved
-           versions looking for each row's heading, so the work scales with the
-           number of rows handed to it. Unpaged, 500 clauses meant 500 needles
-           against every draft in the tenant, which is what the memory_limit
-           bump above exists to survive. One page needs 10. */
         $rows = $perPage ? $query->forPage($page, $perPage)->get() : $query->get();
 
-        // Best-effort "used in a CTC agreement" flag. Clauses are COPIED into an
-        // agreement's draft as `<h3>Name</h3>…` (see ClmClauseInsertPanel), not
-        // linked by FK — so we detect usage by looking for that heading in every
-        // CTC contract's current content + saved versions. Drives the client-side
-        // "can't delete a clause that's used in a CTC" guard.
         $used = $this->usedClauseNames((int) $user->client_id);
         foreach ($rows as $row) {
             $row->in_use = isset($used[mb_strtolower(trim((string) $row->name))]) ? 1 : 0;
@@ -266,26 +202,6 @@ class ClmClauseController extends Controller
         ]);
     }
 
-    /**
-     * The clause names this client has used in a CTC draft, lower-cased, as a
-     * lookup set. Cached for a minute.
-     *
-     * The scan itself cannot be cheap: clauses are COPIED into a draft as
-     * `<h3>Name</h3>`, not linked by a foreign key, so finding out whether one
-     * is in use means reading every CTC contract's content AND every saved
-     * version and searching the text. On this tenant that is 2.0 MB of current
-     * content plus 5.5 MB across 192 saved versions — 7.5 MB read and
-     * lower-cased, 188 ms of it, on EVERY Clause Library load. It was also
-     * done per PAGE of clauses, so paging through the library repeated the
-     * whole thing.
-     *
-     * Scanning for every clause at once and remembering the answer turns that
-     * into one pass per minute, however many pages are viewed. Staleness is
-     * safe for the same reason it is elsewhere in CLM: this only greys out a
-     * delete button, and destroy() re-checks before it deletes.
-     *
-     * @return array<string, true>
-     */
     private function usedClauseNames(int $clientId): array
     {
         $build = function () use ($clientId): array {
@@ -309,7 +225,7 @@ class ClmClauseController extends Controller
 
         try {
             return \Illuminate\Support\Facades\Cache::remember(
-                'clm:clause:used:v1:' . $clientId,
+                'clm:clause:used:v2:' . $clientId,
                 now()->addSeconds(60),
                 $build
             );
@@ -318,11 +234,6 @@ class ClmClauseController extends Controller
         }
     }
 
-    /** Scan every CTC contract's content + saved versions in CHUNKS (bounded
-     *  memory) and mark $item['row']->in_use = 1 when the clause heading
-     *  $item['needle'] appears. Each item = ['row' => model|object, 'needle' => '<h3>name</h3>' lc].
-     *  Replaces the old load-everything haystack that exhausted PHP memory when a
-     *  client had many/large CTC drafts (whose `versions` JSON stores every past draft). */
     private function scanCtcForClauses(int $clientId, array $items): void
     {
         $items = array_values(array_filter($items, fn($it) => ($it['needle'] ?? '') !== ''));
@@ -341,12 +252,32 @@ class ClmClauseController extends Controller
                         if (mb_strpos($hay, $it['needle']) !== false) $it['row']->in_use = 1;
                         else $allDone = false;
                     }
-                    if ($allDone) return false; // every clause already matched — stop scanning
+                    if ($allDone) return false;
                 }
             });
+
+        // The same Clause Library picker also inserts clauses into Agreement Library templates, T&C
+        // entries and Trade Document drafts - a clause printed in any of them is in use too.
+        foreach (['clm_agreement_library', 'clm_tnc_library', 'clm_trade_doc_library'] as $table) {
+            $left = array_filter($items, fn($it) => !$it['row']->in_use);
+            if (!$left) return;
+            DB::table($table)->where('client_id', $clientId)->whereNotNull('content')
+                ->select('id', 'content')->orderBy('id')
+                ->chunk(50, function ($chunk) use ($left) {
+                    foreach ($chunk as $c) {
+                        $hay = mb_strtolower((string) $c->content);
+                        $allDone = true;
+                        foreach ($left as $it) {
+                            if ($it['row']->in_use) continue;
+                            if (mb_strpos($hay, $it['needle']) !== false) $it['row']->in_use = 1;
+                            else $allDone = false;
+                        }
+                        if ($allDone) return false;
+                    }
+                });
+        }
     }
 
-    /** The heading a clause is inserted with — `<h3>Name</h3>`, lower-cased. */
     private function clauseNeedle(string $name): string
     {
         $name = trim($name);
@@ -359,9 +290,6 @@ class ClmClauseController extends Controller
         if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
-        /* Party is no longer required — the redesigned Add Clause modal
-         * collects only clause_type + name + content. Backward compatible:
-         * old payloads with party still work. */
         $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
             'clause_type'   => 'required|string|max:255',
@@ -371,9 +299,6 @@ class ClmClauseController extends Controller
             'content'       => 'nullable|string',
         ]);
 
-        // Reject duplicate clause names within the creator's own scope
-        // (case-insensitive). Scoped via MasterVisibility so the same name can
-        // exist in different branches — matches the branch-scoped master rule.
         $name = trim($data['name']);
         $dupQuery = ClmClauseLibrary::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupQuery, $user, $user->branch_id ?: null);
@@ -385,7 +310,7 @@ class ClmClauseController extends Controller
             $code = $this->nextCode(ClmClauseLibrary::class, $user->client_id, $user->branch_id, 'CL');
             return ClmClauseLibrary::create([
                 'client_id'     => $user->client_id,
-                'branch_id'     => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'     => $user->branch_id,
                 'code'          => $code,
                 'clause_type'   => trim($data['clause_type']),
                 'name'          => trim($data['name']),
@@ -396,9 +321,6 @@ class ClmClauseController extends Controller
                 'updated_by'    => $user->id,
             ]);
         });
-        /* Without content — the modal awaits this and never reads it, so
-           echoing the clause body back sends it a second time for nothing
-           (QA #40). Every other column still goes back. */
         return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
@@ -409,7 +331,6 @@ class ClmClauseController extends Controller
         $lookup = ClmClauseLibrary::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        // Branch users may view shared client-level clauses but not edit them.
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
@@ -423,8 +344,6 @@ class ClmClauseController extends Controller
             'content'       => 'nullable|string',
         ]);
 
-        // Reject rename to a duplicate name within the tenant (case-insensitive,
-        // excluding self).
         if (isset($data['name'])) {
             $clash = ClmClauseLibrary::where('client_id', $user->client_id)
                 ->where('id', '!=', $row->id)
@@ -438,7 +357,6 @@ class ClmClauseController extends Controller
         if (array_key_exists('party', $data)) $data['party'] = trim((string) $data['party']);
         $data['updated_by'] = $user->id;
         $row->update($data);
-        // Without content — see libraryStore.
         return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
@@ -452,32 +370,18 @@ class ClmClauseController extends Controller
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
-        // Block deletion of a clause that has been inserted into any CTC agreement
-        // (same best-effort heading match as libraryIndex's in_use flag).
         $needle = $this->clauseNeedle((string) $row->name);
         if ($needle !== '') {
             $probe = (object) ['in_use' => 0];
             $this->scanCtcForClauses((int) $user->client_id, [['row' => $probe, 'needle' => $needle]]);
             if ($probe->in_use) {
-                return response()->json(['status' => false, 'message' => 'This clause is used in one or more CTC agreements and cannot be deleted.'], 409);
+                return response()->json(['status' => false, 'message' => 'This clause is used in a CTC agreement, Agreement Library, Terms and Conditions or Trade Document and cannot be deleted.'], 409);
             }
         }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /**
-     * Allocate the next sequential code (e.g. CL-005 / CLT-005) for a
-     * client + branch. Branch-scoped so each branch restarts its own
-     * sequence from 001 rather than continuing another branch's tally
-     * (the clause master is branch-isolated via MasterVisibility). A
-     * client-level creator ($branchId null) sequences the shared rows.
-     * Uses max-existing + skip-taken rather than count()+1, so deleting a
-     * middle row never makes the next code collide with an existing one.
-     * Runs under a row lock on the client to serialise concurrent inserts.
-     *
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $model
-     */
     private function nextCode(string $model, int $clientId, ?int $branchId, string $prefix): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();

@@ -5,13 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Branch-isolate the Document Control Panel (segment rules). Adds branch_id so
- * the MasterVisibility read scope applies: a branch sees globals + client-level
- * rules + its own branch's rules; sibling branches stay hidden. Mirrors the
- * agreement-master branch isolation. Backfill stamps each row with its creator's
- * branch; client-level creators (branch_id NULL) stay shared.
- */
 return new class extends Migration {
     public function up(): void
     {

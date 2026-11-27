@@ -7,9 +7,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * P2P · Bulk Sourcing — a product line within a sourcing target.
- */
 class SourcingProduct extends Model
 {
     use SoftDeletes;

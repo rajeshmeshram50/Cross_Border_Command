@@ -3,28 +3,8 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useNavigateContext } from '../../../components/App';
 import LeadsKpiModal, { type KpiFilter } from './LeadsKpiModal';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Lead Distribution — full-screen "Assigned Leads" experience.
- *
- * Ports the SalesMatrix_v4_9 HTML prototype into our React SPA. The page
- * is rendered as a full-screen modal so the worksheet stays in the back-
- * stack and "Back to My Workplace" simply dismisses the overlay.
- *
- * Layout (top → bottom):
- *   1. Amber gradient header — title, sub, two stat pills, back button
- *   2. Four KPI cards — Total Salespersons / Total Leads / Assigned /
- *      Unassigned. The latter two are coloured (green / red) to highlight
- *      assignment health.
- *   3. Roster table — one row per salesperson with their department,
- *      designation, primary & ancillary role chips, reporting manager,
- *      lead total, and a View Leads action that filters the worksheet
- *      by that salesperson.
- *
- * The department / role chips colour-cycle from a small palette keyed by
- * a deterministic hash of the label so the same string always picks the
- * same colour across rows. Total Leads is shown as a bold cyan pill.
- * ───────────────────────────────────────────────────────────────────────── */
 
 type Row = {
   salesperson_id:        number;
@@ -38,8 +18,6 @@ type Row = {
   email:                 string | null;
   total_assigned_leads:  number;
   platform_counts:       Record<string, number>;
-  /* False only for a deactivated user who still holds leads. They are listed
-     so their leads can be handed on; the chip says why they are here. */
   is_active?:            boolean;
 };
 
@@ -57,24 +35,13 @@ export default function AssignedLeadsModal() {
   const [summary, setSummary] = useState<Summary>({
     total_sales_persons: 0, total_leads: 0, assigned_leads: 0, unassigned_leads: 0,
   });
-  /* Starts TRUE. The summary above is only a SHAPE, not an answer — every
-   * count in it is zero until the API replies. With `loading` starting false
-   * the first painted frame published those zeros as if they were real
-   * ("Total Leads 0", "Assigned 0", "Unassigned 0") and then snapped to the
-   * true figures, which is what QA #261–#263 saw. True here means the cards
-   * show a shimmer until there is something honest to print. */
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  /* KPI popup — clicking a lead-count card opens the prototype's
-   * "Assigned Leads"-style modal scoped to that bucket. `null` = closed. */
   const [kpiModal, setKpiModal] = useState<{ title: string; filter: KpiFilter } | null>(null);
 
   const onClose = () => navigate('sales.workplace');
-  /* Route to the dedicated Leads Details page (ports the SalesMatrix_v4_9
-   * `#leadsDetailModal` design). The page reads the salesperson + meta
-   * from the URL query string so a direct deep-link works too. */
   const onViewLeads = (sp: { id: number; name: string; emp?: string | null; mgr?: string | null }) => {
     navigate('sales.leads_details', {
       salespersonId:   sp.id,
@@ -91,11 +58,6 @@ export default function AssignedLeadsModal() {
     )
       .then(({ data }) => {
         setRows(data.data ?? []);
-        /* Preserve the safe initial summary when the server response
-         * doesn't include the `summary` field (or returns it as null).
-         * Previously `setSummary(data.summary)` overwrote the seed with
-         * `undefined`, and the header pill at line 117 crashed reading
-         * `.total_sales_persons` on undefined. */
         if (data.summary && typeof data.summary === 'object') {
           setSummary(data.summary);
         }
@@ -104,18 +66,6 @@ export default function AssignedLeadsModal() {
       .finally(() => setLoading(false));
   }, [toast]);
 
-  /* Every salesperson in the roster, including those holding no leads yet.
-   *
-   * This used to filter to `total_assigned_leads > 0` on the grounds that an
-   * empty salesperson is noise. On a page called Lead DISTRIBUTION they are
-   * precisely the people being looked for: someone with zero leads is the
-   * next person to hand one to, and hiding them made the team look like it
-   * was three people (QA #10). The server already builds the roster this way
-   * on purpose — "the table shows zero-lead salespeople too so the user can
-   * see the whole team at a glance".
-   *
-   * The KPI and header pill still count these same rows, so the number keeps
-   * matching what is visible in the table. */
   const leadRows   = rows;
   const totalCount = leadRows.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -124,7 +74,6 @@ export default function AssignedLeadsModal() {
   const endIdx     = Math.min(startIdx + pageSize, totalCount);
   const pageRows   = leadRows.slice(startIdx, endIdx);
 
-  // Clamp page back into range whenever the dataset shrinks (search/filter).
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
@@ -133,7 +82,6 @@ export default function AssignedLeadsModal() {
     <div className="ldp-page">
       <style>{LDP_CSS}</style>
 
-      {/* ── Header card (standalone container) ─────────────────────── */}
       <div className="ldp-header-card">
         <span className="ldp-banner-accent" />
         <span className="ldp-banner-glow" />
@@ -158,10 +106,6 @@ export default function AssignedLeadsModal() {
           </div>
 
           <div className="ldp-header-right">
-            {/* Optional-chained so the pills never crash if `summary` is
-             * unexpectedly null/undefined from a future API change.
-             * Falls back to 0 so the layout still renders with a clear
-             * "no data" reading instead of an error boundary. */}
             <div className="ldp-hp">
               <span className="ldp-hp-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
               <div className="ldp-hp-txt">
@@ -188,7 +132,6 @@ export default function AssignedLeadsModal() {
       </div>
 
       <div className="ldp-shell">
-        {/* ── KPI cards ────────────────────────────────────────────── */}
         <div className="ldp-stats">
           <StatCard
             label="TOTAL SALES PERSONS"
@@ -247,7 +190,6 @@ export default function AssignedLeadsModal() {
           />
         </div>
 
-        {/* ── Table ────────────────────────────────────────────────── */}
         <div className="ldp-table-wrap">
           <div className="ldp-table-scroll">
           <table className="ldp-table">
@@ -349,22 +291,16 @@ export default function AssignedLeadsModal() {
           </table>
           </div>
 
-          {/* ── Pagination footer ──────────────────────────────────── */}
           {!loading && totalCount > 0 && (
             <div className="ldp-pagination">
               <div className="ldp-pagination-info">
                 Showing {startIdx + 1}–{endIdx} of {totalCount}
               </div>
               <div className="ldp-pagination-controls">
-                <label className="ldp-rows-per-page">
+                <span className="ldp-rows-per-page">
                   <span>Rows per page:</span>
-                  <select
-                    value={pageSize}
-                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                  >
-                    {[...new Set([pageSize, 10, 25, 50])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </label>
+                  <RowsPerPageSelect pageSize={pageSize} options={[10, 25, 50]} onChange={n => { setPageSize(n); setPage(1); }} />
+                </span>
                 <div className="ldp-page-indicator">
                   {safePage}/{totalPages}
                 </div>
@@ -396,7 +332,6 @@ export default function AssignedLeadsModal() {
         </div>
       </div>
 
-      {/* KPI popup — lists the leads behind the clicked card. */}
       <LeadsKpiModal
         open={kpiModal !== null}
         onClose={() => setKpiModal(null)}
@@ -407,26 +342,13 @@ export default function AssignedLeadsModal() {
   );
 }
 
-/* ─── Stat card primitive ─────────────────────────────────────────────
- * Matches the Figma KPI design: white surface with a 12px radius and a
- * tone-tinted border, a soft (light) icon tile carrying the tone-coloured
- * icon, a tone-coloured value + sub-line, and a thin accent stripe on the
- * left edge. Tone palette is driven by CSS custom properties (set per
- * `ldp-stat-<tone>` class) so light + dark modes can each retune the
- * exact hues without inline styles.
- * ───────────────────────────────────────────────────────────────────── */
 function StatCard(props: {
   label: string;
   value: number;
   sub: string;
   tone: 'cyan' | 'green' | 'red' | 'slate';
   icon: React.ReactNode;
-  /* While true the card prints a shimmer bar instead of `value`. A zero that
-   * only means "not fetched yet" is a wrong answer, not a neutral one — see
-   * the note on `loading` above. The card is also not clickable yet: the KPI
-   * popup it opens is scoped to a bucket whose size isn't known. */
   loading?: boolean;
-  /* When provided the card becomes a button that opens the KPI popup. */
   onClick?: () => void;
 }) {
   const clickable = typeof props.onClick === 'function' && !props.loading;
@@ -458,8 +380,6 @@ function StatCard(props: {
 }
 
 const LDP_CSS = `
-/* Lead Distribution — the My Workplace (Lead Worksheet) look: its cyan banner,
-   toolbar button, table header, row tint and pager, so the two pages read as one. */
 .ldp-page {
   animation: ldp-fade .18s ease-out;
   box-sizing: border-box;
@@ -478,11 +398,10 @@ const LDP_CSS = `
   display: flex; flex-direction: column; flex: 1; min-height: 0;
 }
 
-/* ── Header — the My Workplace banner (.lwp-banner) ── */
 .ldp-header-card {
   position: relative; overflow: hidden;
   width: 100%; flex-shrink: 0;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   border: 1px solid #cef3f9; border-radius: 16px;
   background: linear-gradient(110deg, #f0fdff 0%, #e6fafe 25%, #d0f5fb 55%, #bef0f8 85%, #a8eaf5 100%);
   box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 4px 16px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
@@ -529,9 +448,8 @@ const LDP_CSS = `
 .ldp-header-sub   { font-size: 10px; font-weight: 500; color: #0e7490; opacity: .85; margin-top: 2px; }
 
 .ldp-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-/* Header reference pills = the Create PO header (.spi-dt-pill): icon tile,
-   small-caps label over a mono value, dotted separators. */
-.ldp-hp { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 12px; min-width: 0;
+.ldp-hp { display: flex; align-items: center; gap: 9px; padding: 0 14px; border-radius: 12px; min-width: 0;
+  box-sizing: border-box; height: 40px; min-height: 40px; max-height: 40px; align-self: center; flex-shrink: 0;
   background: rgba(255,255,255,.65); border: 1.5px solid rgba(8,145,178,.3);
   box-shadow: 0 2px 8px rgba(6,182,212,.12), inset 0 1px 0 rgba(255,255,255,.95);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
@@ -547,7 +465,6 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-hp { background: rgba(12,38,48,.55); border-color: rgba(34,211,238,.28); box-shadow: 0 2px 8px rgba(0,0,0,.3), inset 0 1px 0 rgba(34,211,238,.08); }
 [data-bs-theme="dark"] .ldp-hp-val { color: #e8f2f6; }
 [data-bs-theme="dark"] .ldp-hp-lbl { color: #38d6f0; }
-/* Back = the My Workplace toolbar button (.lwp-bact): cyan gradient, 40px, 11.5 / 700. */
 .ldp-back-btn {
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
@@ -567,10 +484,9 @@ const LDP_CSS = `
 }
 .ldp-back-btn:active { transform: translateY(0); }
 
-/* ── KPI cards ── */
 .ldp-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-  padding: 0 0 4px;
+  padding: 4px 0 4px;
   flex-shrink: 0;
 }
 .ldp-stat {
@@ -590,23 +506,12 @@ const LDP_CSS = `
 }
 .ldp-stat-clickable { cursor: pointer; }
 .ldp-stat-clickable:focus-visible { outline: 2px solid var(--ldp-tone-accent, #0891b2); outline-offset: 2px; }
-/* KPI tones — all in the page's cyan family (sky / cyan / deep cyan / bright cyan). */
-.ldp-stat-slate {
-  --ldp-tone-accent: #0284c7; --ldp-tone-border: #bae6fd; --ldp-tone-icon-bg: #e0f2fe;
-  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0369a1;    --ldp-tone-shadow: rgba(2,132,199,.16);
-}
-.ldp-stat-cyan {
+.ldp-stat-slate, .ldp-stat-cyan, .ldp-stat-green, .ldp-stat-red {
   --ldp-tone-accent: #0891b2; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #cffafe;
   --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0e7490;    --ldp-tone-shadow: rgba(8,145,178,.16);
 }
-.ldp-stat-green {
-  --ldp-tone-accent: #0e7490; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #cffafe;
-  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0e7490;    --ldp-tone-shadow: rgba(14,116,144,.16);
-}
-.ldp-stat-red {
-  --ldp-tone-accent: #06b6d4; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #ecfeff;
-  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0891b2;    --ldp-tone-shadow: rgba(6,182,212,.16);
-}
+.ldp-stat { box-sizing: border-box; min-height: 80px; display: flex; flex-direction: column; justify-content: center; }
+.ldp-stat-body { align-items: center; }
 .ldp-stat-stripe {
   position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
   background: var(--ldp-tone-accent, #6366f1);
@@ -646,7 +551,6 @@ const LDP_CSS = `
 .ldp-stat:hover .ldp-stat-icon { transform: scale(1.06); box-shadow: 0 6px 14px var(--ldp-tone-shadow, rgba(0,0,0,0.12)); }
 .ldp-stat-icon svg { width: 16px; height: 16px; color: inherit; }
 
-/* ── Table — the My Workplace table card (.lwp-table-card / .lwp-table) ── */
 .ldp-table-wrap {
   margin: 8px 0 0;
   background: #fff; border: 1.5px solid #a5f3fc; border-radius: 14px;
@@ -693,8 +597,6 @@ const LDP_CSS = `
 .ldp-chip-inactive  { background: #e5e7eb; color: #4b5563; border-color: #d1d5db; margin-left: 6px; vertical-align: middle; }
 .ldp-chip-primary   { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
 .ldp-chip-ancillary { background: #ccfbf1; color: #0f766e; border-color: #99f6e4; }
-.ldp-chip-green     { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
-.ldp-chip-outline   { background: #fff; color: #0e7490; border-color: #a5f3fc; }
 
 .ldp-total {
   display: inline-flex; align-items: center; justify-content: center;
@@ -705,8 +607,6 @@ const LDP_CSS = `
   font-size: 11px; font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-/* Sr No = the Customers list badge (.dt-serial): filled rounded square, white
-   number — in this page's cyan. */
 .ldp-sr-badge {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 7px;
@@ -734,8 +634,6 @@ const LDP_CSS = `
 }
 .ldp-view-btn:active { transform: translateY(0); }
 
-/* Cell type = the Customers list (.smc-table-wrap): 11.5 / 500 for every data cell;
-   badges keep their own sizes (chips at the Leads Details lead-type badge weight). */
 .ldp-table tbody td,
 .ldp-table tbody td *:not(i):not(svg):not(svg *) { font-size: 11.5px !important; font-weight: 500 !important; }
 .ldp-table tbody td .ldp-sr-badge.ldp-sr-badge { font-size: 11px !important; font-weight: 800 !important; }
@@ -745,7 +643,6 @@ const LDP_CSS = `
 .ldp-table tbody td .ldp-view-btn.ldp-view-btn * { font-size: 10.5px !important; font-weight: 700 !important; }
 .ldp-status { text-align: center; padding: 24px 14px; color: #94a3b8; font-style: italic; font-size: 11px; }
 
-/* ── Loading shimmer ── */
 .ldp-skel-row td { padding: 9px 13px; }
 .ldp-skel {
   display: inline-block; vertical-align: middle;
@@ -763,7 +660,6 @@ const LDP_CSS = `
 .ldp-skel-btn    { width: 86px; height: 26px; border-radius: 7px; }
 @keyframes ldp-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-/* ── Pager — the My Workplace pager (.lwp-pagination) ── */
 .ldp-pagination {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
@@ -814,7 +710,6 @@ const LDP_CSS = `
 .ldp-page-btn:active:not(:disabled) { transform: translateY(0); }
 .ldp-page-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ── Dark mode — the My Workplace dark cyan ── */
 [data-bs-theme="dark"] .ldp-page { background: transparent; }
 [data-bs-theme="dark"] .ldp-header-card {
   background:
@@ -834,18 +729,9 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-header-sub   { color: #67e8f9; }
 [data-bs-theme="dark"] .ldp-stat { background: #0f2233; color: #e0f2fe; }
 [data-bs-theme="dark"] .ldp-stat-label { color: #94a3b8; }
-[data-bs-theme="dark"] .ldp-stat-slate {
-  --ldp-tone-accent: #7dd3fc; --ldp-tone-border: rgba(56,189,248,.40); --ldp-tone-icon-bg: rgba(56,189,248,.16);
-  --ldp-tone-value: #e0f2fe;  --ldp-tone-sub: #7dd3fc;
-}
-[data-bs-theme="dark"] .ldp-stat-cyan {
-  --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
-  --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
-}
-[data-bs-theme="dark"] .ldp-stat-green {
-  --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
-  --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
-}
+[data-bs-theme="dark"] .ldp-stat-slate,
+[data-bs-theme="dark"] .ldp-stat-cyan,
+[data-bs-theme="dark"] .ldp-stat-green,
 [data-bs-theme="dark"] .ldp-stat-red {
   --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
   --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
@@ -857,7 +743,6 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-table tbody td { color: #cbd5e1; }
 [data-bs-theme="dark"] .ldp-person-name   { color: #cbd5e1; }
 [data-bs-theme="dark"] .ldp-text          { color: #cbd5e1; }
-[data-bs-theme="dark"] .ldp-chip-outline  { background: transparent; }
 [data-bs-theme="dark"] .ldp-chip-dept      { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(103,232,249,.35); }
 [data-bs-theme="dark"] .ldp-chip-inactive  { background: rgba(75,85,99,.35); color: #d1d5db; border-color: rgba(209,213,219,.3); }
 [data-bs-theme="dark"] .ldp-chip-primary   { background: rgba(3,105,161,.25); color: #7dd3fc; border-color: rgba(125,211,252,.35); }
@@ -868,26 +753,30 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-pagination { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
 [data-bs-theme="dark"] .ldp-pagination-info,
 [data-bs-theme="dark"] .ldp-rows-per-page { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
-[data-bs-theme="dark"] .ldp-rows-per-page select { color: #a5f3fc; }
+.ldp-rows-per-page { --tcwl-accent: #0891b2; --tcwl-text: #0e7490; --tcwl-border: #a5f3fc; --tcwl-band: #ecfeff; }
+.ldp-rows-per-page .tc-wl-rows-btn { color: #0891b2; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-btn { color: #67e8f9; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu { background: #0c1f2e; border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu button { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu button:hover { background: rgba(34, 211, 238, .16); color: #fff; }
+[data-bs-theme="dark"] .ldp-rows-per-page .tc-wl-rows-menu button.is-on { background: #0891b2; color: #fff; }
 [data-bs-theme="dark"] .ldp-page-btn { background: rgba(15,34,51,.8); border-color: rgba(103,232,249,.30); color: #67e8f9; }
 
-/* Tablet — 2-up stats, header pills wrap below the back button */
 @media (max-width: 1100px) {
   .ldp-stats { grid-template-columns: repeat(2, 1fr); }
   .ldp-header { flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
   .ldp-header-right { flex-wrap: wrap; justify-content: flex-end; width: 100%; }
 }
 
-/* Phone — full-width page, single-column stats, table scrolls horizontally. */
 @media (max-width: 640px) {
   .ldp-page { padding: 0; }
-  .ldp-header-card { border-radius: 0; border-left: none; border-right: none; margin-bottom: 10px; }
+  .ldp-header-card { border-radius: 0; border-left: none; border-right: none; margin-bottom: 6px; }
   .ldp-header { padding: 14px 16px; gap: 12px; flex-direction: column; align-items: flex-start; }
   .ldp-header-left { gap: 10px; }
   .ldp-header-right { flex-wrap: wrap; gap: 8px; }
   .ldp-header-right .ldp-back-btn { flex: 1; justify-content: center; }
   .ldp-hp { flex: 1; justify-content: center; }
-  .ldp-stats { grid-template-columns: 1fr; padding: 0 16px 4px; gap: 10px; }
+  .ldp-stats { grid-template-columns: 1fr; padding: 4px 16px 4px; gap: 10px; }
   .ldp-stat-value { font-size: 24px; }
   .ldp-table-wrap { margin: 12px 16px 16px; }
   .ldp-pagination { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }

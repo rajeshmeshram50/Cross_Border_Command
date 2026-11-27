@@ -16,7 +16,6 @@
   body{margin:0; background:#f6f7fb; color:var(--ink);
        font:16px/1.75 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 
-  /* Sticky site bar */
   .nav{position:sticky; top:0; z-index:20; background:rgba(11,15,30,.92);
        backdrop-filter:saturate(180%) blur(10px); border-bottom:1px solid rgba(255,255,255,.08)}
   .nav .in{max-width:1120px; margin:0 auto; padding:13px 20px;
@@ -28,7 +27,6 @@
              background:linear-gradient(135deg,var(--brand),var(--brand2)); color:#fff;
              font-size:14px; font-weight:600; text-decoration:none}
 
-  /* Hero */
   .hero{background:linear-gradient(135deg,#0b0f1e 0%,#1e1b4b 35%,#350d72 70%,#251541 100%);
         position:relative; overflow:hidden}
   .hero::after{content:""; position:absolute; inset:0;
@@ -42,7 +40,6 @@
   .hero p{color:#94a3b8; font-size:14.5px; margin:0}
   .rule{height:3px; background:linear-gradient(90deg,var(--cyan),var(--brand) 45%,var(--brand2))}
 
-  /* Layout */
   .wrap{max-width:1120px; margin:-22px auto 0; padding:0 20px 72px;
         display:grid; grid-template-columns:232px 1fr; gap:30px; align-items:start}
   .toc{position:sticky; top:86px; background:#fff; border:1px solid var(--line);
@@ -55,8 +52,6 @@
   .toc a:hover{color:var(--brand)}
   .toc a.on{color:var(--brand); font-weight:600; border-left-color:var(--brand)}
 
-  /* The document itself is set in a serif — it reads as a legal instrument,
-     while the nav, index and footer stay in the UI sans. */
   .card{background:#fff; border:1px solid var(--line); border-radius:16px;
         box-shadow:0 8px 28px rgba(15,23,42,.06); padding:40px 48px 46px;
         font-family:"Times New Roman",Times,Georgia,serif;
@@ -77,7 +72,6 @@
 
   .sig{margin-top:38px; padding-top:22px; border-top:1px solid var(--line); color:var(--muted); font-size:14px}
 
-  /* Site footer */
   .foot{background:var(--dark); color:#94a3b8}
   .foot .in{max-width:1120px; margin:0 auto; padding:40px 20px 30px;
             display:flex; gap:28px; justify-content:space-between; flex-wrap:wrap}
@@ -164,7 +158,6 @@
 </div>
 
 <script>
-// Section index is built from the headings so the policy text stays plain prose.
 (function () {
   var doc = document.getElementById('doc');
   var list = document.getElementById('toclist');

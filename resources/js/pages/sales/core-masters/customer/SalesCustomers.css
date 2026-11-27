@@ -7,8 +7,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Matches the Supplier list's .cstrip (58px, no vertical padding) — this
-     page was noticeably taller than Suppliers before the table even started. */
   min-height: 58px;
   padding: 0 20px;
   margin-bottom: 0;
@@ -54,8 +52,6 @@
     rgba(168,85,247,0.95)   86%,
     rgba(124,58,237,0.92)  100%);
   opacity: 0.9;
-  /* No blur -- see the Consignee list: a filter promotes this strip to its
-     own layer and repaints it as the page moves, for 0.4px nobody can see. */
 }
 .smc-cstrip-left {
   display: flex; align-items: center; gap: 16px;
@@ -216,13 +212,6 @@
   background: transparent;
   padding: 0;
   margin: 0;
-  /* 8px between the strips — the page's own number, the same one
-     .page-content leaves around the whole page. This said "6px, as on the
-     Supplier list"; the Supplier list (.sup-fig) is 8px, so the comment had
-     outlived the value and these two pages were the only ones at 6. */
-  /* The header is the Supplier list's (.sup-fig .cstrip), not the HRMS strip,
-     so app.css's 8px margin-bottom for pages with .frm-cstrip.hr-cstrip no
-     longer applies — the 8px between the header block and the table is this gap. */
   display: flex; flex-direction: column; gap: 8px;
   color: var(--vz-body-color);
 }
@@ -266,9 +255,6 @@
   background: transparent;
 }
 
-/* Collapsed height matches the Supplier list's .bref-box__header (~48px):
-   this strip is closed almost all the time, so its height is pure overhead
-   above the table. */
 .smc-wdh-card:not(.is-open) .smc-wdh-toggle-row { padding: 7px 14px; min-height: 48px; }
 .smc-wdh-card:not(.is-open) .smc-wdh-bulb { width: 32px; height: 32px; border-radius: 9px; font-size: 15px; }
 .smc-wdh-heading { display: flex; align-items: center; gap: 12px; }
@@ -361,9 +347,6 @@
 }
 
 .smc-toolbar {
-  /* Matches the Supplier list toolbar (.sl-toolbar): softer lavender band,
-     comfortable 14px inset so the tabs/search don't touch the card edge,
-     and a light 1px divider instead of the heavy 2px rule. */
   display: flex; align-items: center; gap: 14px;
   padding: 12px 14px;
   background: linear-gradient(110deg, #faf5ff 0%, #f3e8ff 35%, #ede9fe 70%, #ddd6fe 100%);
@@ -373,13 +356,6 @@
   z-index: 1;
   margin-bottom: 0;
 }
-/* Region filter (Domestic / International). Fixed width so it doesn't compete
-   with the search field for the row's free space; flex-shrink:0 keeps it from
-   being squeezed to nothing before the toolbar wraps. The 42px height lines it
-   up with the search bar and the pill rail. */
-/* Filter button — replaced the old Region dropdown (.smc-filter-ms). Keeps the
-   42px height and 11px radius of the toolbar's other controls so it lines up
-   flush with the search field and the pill rail. */
 .smc-toolbar .smc-filter-btn {
   display: inline-flex; align-items: center; gap: 7px;
   flex-shrink: 0;
@@ -399,8 +375,6 @@
   border-color: rgba(139,92,246,.42);
   color: #5b21b6;
 }
-/* Active state mirrors .smc-pill.on — a filtered table must be obvious at a
-   glance, otherwise it reads as missing data. */
 .smc-toolbar .smc-filter-btn.on {
   border: 0;
   background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
@@ -419,8 +393,6 @@
   font-size: 10.5px; font-weight: 800; line-height: 1;
   text-shadow: none;
 }
-/* Inline "clear filters" action in the empty state — a link, not a button
-   chrome, so it doesn't compete with the toolbar. */
 .smc-empty-link {
   background: none; border: 0; padding: 0;
   font: inherit; font-weight: 700;
@@ -429,7 +401,6 @@
 }
 .smc-empty-link:hover { color: #5b21b6; }
 .smc-toolbar .smc-search {
-  /* Matches the Supplier .sl-search field. */
   position: relative;
   flex: 1; min-width: 240px;
   background: rgba(255,255,255,0.8);
@@ -483,7 +454,6 @@
   position: relative;
   background: var(--vz-card-bg, #fff);
   border: 1px solid var(--vz-border-color);
-  /* Rounded, single-frame card — matches the Consignee list outline. */
   border-radius: 16px;
   overflow: hidden;
   display: flex; flex-direction: column;
@@ -498,9 +468,6 @@
   background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
 }
 .smc-pill-group {
-  /* Mirrors the Supplier .sl-tabs group: translucent white pill rail with a
-     soft violet hairline. No fixed height — 34px tab + 4px padding = 42px,
-     which lines the rail up flush with the 42px search bar. */
   display: inline-flex; align-items: center; gap: 8px;
   background: rgba(255, 255, 255, .55);
   border: 1px solid rgba(139, 92, 246, .22);
@@ -508,9 +475,6 @@
   padding: 4px;
   flex-shrink: 0;
 }
-/* Tabs mirror the Supplier .sl-tab: inactive tabs are light-gradient buttons
-   with a violet hairline (not flat/transparent); the active tab is a deep
-   violet gradient pill with a lit top edge. */
 .smc-pill {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 0 14px; height: 34px;
@@ -541,9 +505,6 @@
   color: #5b21b6;
 }
 .smc-pill i { font-size: 14px; }
-/* Count badge on each tab (like the Supplier list's .sl-tab-count). White pill
-   on the inactive tab; translucent-white on the active one so it stays legible
-   against the purple gradient. */
 .smc-pill-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 18px; padding: 0 7px;
@@ -566,7 +527,6 @@
   flex-direction: column;
   overflow: hidden;
   flex: 1; min-height: 0;
-  /* Flush — single outline, no card-within-a-card (matches Consignee). */
   padding: 0;
 
   position: relative;
@@ -599,21 +559,8 @@
 .smc-table-wrap .table-responsive {
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
-  /* This element owns BOTH scrolls: vertical (its height is capped by the
-     viewport-fit JS on .smc-table-wrap) and horizontal (the table has a
-     min-width, so on a narrow screen it's wider than here). Without an explicit
-     overflow-x the last column — Actions — sat under the parent's
-     overflow:hidden and was clipped off with no way to scroll to it.
-     `.table-card` used to bleed this container past its parent with negative
-     margins too; it was removed from divClass for the same reason. */
   overflow-x: auto;
   overflow-y: auto;
-  /* min-width:0 is the actual fix. As a flex item of .smc-table-wrap this box
-     defaults to min-width:auto, which sizes it to its CONTENT — i.e. the table's
-     940px min-width. It then overflowed the parent (overflow:hidden) and got
-     clipped, so overflow-x:auto here never had anything to scroll. Forcing
-     min-width:0 lets it shrink to the flex width, at which point the 940px table
-     genuinely overflows THIS box and the scrollbar appears. */
   min-width: 0;
   max-width: 100%;
 }
@@ -639,12 +586,8 @@
 
 .smc-table-wrap .table-responsive {
   background: var(--vz-card-bg, #fff) !important;
-  /* No inner border/radius — the outer card provides the single frame. */
   border: none !important;
   border-radius: 0 !important;
-  /* Reset Velzon .table-card's negative margin (-$card-spacer) — with the
-     flush layout it would drag the header up under the toolbar and bleed the
-     sides past the card edge. */
   margin: 0 !important;
 
   flex: 1; min-height: 0;
@@ -654,13 +597,11 @@
 }
 .smc-table-wrap .table {
   --bs-table-bg: transparent;
-  --bs-table-border-color: transparent;   /* kill Bootstrap's light cell borders */
-  border-collapse: collapse !important;    /* no border-spacing gaps between cells */
+  --bs-table-border-color: transparent;
+  border-collapse: collapse !important;
   margin-bottom: 0 !important;
 }
 
-/* Header colours, type and hairlines come from the shared Employee table header
-   (.dt-root.hr-dt .dt-table thead th); only geometry is set here. */
 .smc-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
@@ -676,50 +617,9 @@
 .smc-table-wrap .table thead th i { font-size: 12px; }
 
 
-/* Responsive compression — copied from the Supplier list (supplier-management
- * .sup-fig media queries). Rather than letting a 13-column table push into a
- * horizontal scroll, the cells give up font size and padding as the viewport
- * narrows. Combined with the fixed percentage widths above, the table keeps
- * fitting its container instead of overflowing it. */
-/* No font/padding crush on smaller screens — the table keeps its natural
-   column widths (min-width) and the wrapper scrolls horizontally instead, so
-   text/badges/icons stay readable and uncut. */
-/* Column widths — proportional, not content-driven.
- *
- * History worth knowing before touching this: with the default `auto` layout the
- * table hands its leftover width to whichever columns aren't pinned. Pinning
- * columns one at a time just moved the empty space along the row (Company Name →
- * Segment → Email); pinning them ALL made the browser split the slack equally,
- * so every column got a gap; leaving exactly one free dumped the entire
- * remainder into that one column. None of those can be "tuned" into a table that
- * fits every screen — auto layout sizes to CONTENT, and 13 columns of content
- * have no reason to add up to the viewport.
- *
- * `table-layout: fixed` inverts it: these percentages ARE the widths. They
- * always total 100%, so there is no leftover to place anywhere, and every column
- * scales with the container — the same layout at 1280px and 2560px. Text longer
- * than its share ellipsises (rule below) instead of widening the table.
- *
- * Percentages are budgeted by how much each column actually needs:
- *   1 Sr No 4 · 2 Customer ID 6 · 3 Company Name 10 · 4 Cust Category 8
- *   5 Customer Type 8 · 6 Segment 10 · 7 Country 4 · 8 Contact Person 9
- *   9 Contact No 9 · 10 Email 11 · 11 WhatsApp 6 · 12 Consignees 6 · 13 Actions 9
- * They MUST keep summing to 100 — a short sum re-creates the leftover problem.
- *
- * WhatsApp and Consignees carry one small centred pill each and were the two
- * narrowest columns on the table (4 + 5), so their two pills sat almost
- * shoulder to shoulder while every other pair on the row had air around it.
- * Widening both moves each pill's centre further from the border they share.
- * The 3 points come off columns whose content never fills them: the ID chip
- * (C-021), the 2-letter ISO country code, and Contact Person, which truncates
- * at 16 chars well before its old share ran out.
- */
 .smc-table-wrap .table {
   table-layout: fixed;
   width: 100%;
-  /* Below this the shares get too narrow — badges and the 3-icon Actions
-     column start clipping. So the wrapper scrolls HORIZONTALLY instead of
-     crushing/cutting content (scroll > cut). */
   min-width: 1440px;
 }
 .smc-table-wrap .table thead th:nth-child(1),  .smc-table-wrap .table tbody td:nth-child(1)  { width: 4%; }
@@ -736,12 +636,6 @@
 .smc-table-wrap .table thead th:nth-child(12), .smc-table-wrap .table tbody td:nth-child(12) { width: 6%; }
 .smc-table-wrap .table thead th:nth-child(13), .smc-table-wrap .table tbody td:nth-child(13) { width: 9%; }
 
-/* Fixed layout can't grow a column to fit its content, so anything too long has
-   to be cut here rather than pushing the table wider. */
-/* Headers WRAP to a second line instead of clipping. Ellipsis on a th cut
-   labels down to "CUST CATEG" / "CONTACT PERSO" / "VHATSAP", which is worse than
-   a two-line header — you couldn't tell what the column was. Body cells still
-   ellipsis (values can be arbitrarily long; headers are fixed and short). */
 .smc-table-wrap .table thead th {
   white-space: normal;
   overflow: visible;
@@ -756,9 +650,6 @@
 
 .smc-table-wrap .table tbody tr {
   background: #ffffff;
-  /* No background transition: it animated the hardcoded white base toward the
-     dark override on every theme flip, so all rows flashed white for ~120ms
-     (read as "rows reload white") when switching Dark/Light. Instant swap. */
 }
 
 .smc-table-wrap .table tbody tr:nth-child(even) {
@@ -770,8 +661,6 @@
 .smc-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
-  /* Supplier's .sl-table tbody td — 7px 9px. The 12px vertical padding here
-     was what made these rows taller than the Supplier list's. */
   padding: 7px 9px !important;
   font-size: 11.5px;
   font-weight: 500;
@@ -810,11 +699,6 @@
   background: #faf7ff;
 }
 
-/* Worklist footer: TableContainerReactTable renders `.tc-wl-pag`, whose base
-   rule uses `margin: 10px -16px -16px` to bleed into a 16px-padded wrap. The
-   flush layout (QA #35) removed that padding, so those negatives shoved the
-   footer outside the rounded card. Reset the side/bottom bleed so it sits
-   inside the card at the bottom; keep the top gap as a divider. */
 .smc-table-wrap .tc-wl-pag {
   margin: 0 !important;
 }
@@ -822,7 +706,6 @@
 .smc-table-wrap > .row {
   margin: 0 !important;
   --bs-gutter-x: 0; --bs-gutter-y: 0;
-  /* Flush table → footer carries its own inset + a top divider. */
   padding: 12px 16px;
   border-top: 1px solid var(--vz-border-color);
   display: flex; align-items: center; justify-content: space-between;
@@ -1012,9 +895,6 @@
 .smc-table tbody tr:hover td { background: linear-gradient(90deg, rgba(196,181,253,.25), rgba(167,139,250,.2), rgba(196,181,253,.25)) !important; }
 .smc-table tbody tr:last-child td { border-bottom: none; }
 
-/* Centred on the table BODY — the strip between the header and the pager —
-   not on the whole wrap, which includes the pager and pushed the message
-   onto/below it when the card was short. Both heights are published by fit(). */
 .smc-empty {
   position: absolute;
   left: 50%;
@@ -1089,7 +969,6 @@
 .smc-confirm-actions {
   display: flex; gap: 10px; justify-content: center;
 }
-/* The app's button size: 40px tall, 11.5 / 700 (as on My Workplace). */
 .smc-confirm-cancel,
 .smc-confirm-ok {
   flex: 1 1 0;
@@ -1147,7 +1026,10 @@
 .smc-company { font-weight: 600; color: #212529; }
 
 .smc-type-pill {
-  display: inline-flex; align-items: center;
+  /* inline-block (not flex) so a long master name ends in "…" inside the
+     pill instead of being cut by the cell (QA #127); full name on hover. */
+  display: inline-block; vertical-align: middle;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
   padding: 4px 12px;
   border-radius: 999px;
   font-size: 10.5px; font-weight: 700;
@@ -1158,11 +1040,6 @@
 }
 .smc-type-pill:hover { filter: brightness(1.05); transform: translateY(-1px); }
 
-/* Customer Type (Domestic / International) — same pill shape as the Category
-   pill beside it, but only two states, so the colours are fixed here rather
-   than looked up per value. Slate for Domestic, amber for International: two
-   plainly different hues, and neither reuses a Category colour (which would
-   read as a relationship between the two columns that doesn't exist). */
 .smc-trade-pill {
   display: inline-flex; align-items: center;
   padding: 4px 12px;
@@ -1187,9 +1064,6 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
 }
 .smc-seg {
-  /* inline-block (not inline-flex) so text-overflow: ellipsis works — a long
-     segment name is clipped INSIDE the pill with an ellipsis instead of
-     overflowing and getting hard-cut by the column edge (QA #43). */
   display: inline-block; vertical-align: middle;
   max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 11px; font-weight: 600; color: #5b21b6;
@@ -1235,9 +1109,6 @@
 .smc-wa.yes { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
 .smc-wa.no  { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
 
-/* The leading dot on the Category / Segment / WhatsApp pills was removed — the
-   pill's own fill and border already carry the colour, so the dot repeated it.
-   (The Consignee list never had these dots, so the two lists now match.) */
 .smc-actions { display:flex; align-items:center; justify-content:center; gap:4px; flex-wrap:nowrap; }
 .smc-act {
   width:28px; height:28px; border-radius:8px;
@@ -1323,9 +1194,6 @@
 [data-bs-theme="dark"] .smc-wdh-chev:hover { background: rgba(255,255,255,0.20); }
 
 [data-bs-theme="dark"] .smc-step {
-  /* Opaque, with no backdrop-filter -- see the Consignee list. A blurred
-     backdrop is re-composited on every frame the page moves, and these four
-     cards sit on a flat panel where the blur bought nothing. (Customer #40) */
   background: #11161f;
   border-color: rgba(167,139,250,0.30);
 }
@@ -1355,12 +1223,6 @@
   background: var(--vz-secondary-bg);
   border-color: var(--vz-border-color);
 }
-/* Inactive tabs in dark mode.
-   The old rule only recoloured the TEXT and left the light-mode background
-   (#f5f1fe → #ede9fe) in place, so "Fresh"/"Recurring" rendered as pale lavender
-   text on a pale lavender pill — near-invisible on the dark page. Dropping the
-   background is the fix, and it's what the Supplier list's .sl-tab already does
-   in dark: transparent pill, muted text, tint only on hover. */
 [data-bs-theme="dark"] .smc-pill.off {
   background: transparent;
   border-color: transparent;
@@ -1373,10 +1235,6 @@
   color: #fff;
 }
 
-/* Filter button had NO dark rules at all — it kept its light gradient and sat
-   as a bright block on the dark toolbar. Inactive follows the tabs above; the
-   active (filters applied) state keeps its purple gradient, since that state
-   has to stay obvious in either theme. */
 [data-bs-theme="dark"] .smc-toolbar .smc-filter-btn {
   background: rgba(124,58,237,0.10);
   border-color: rgba(167,139,250,0.22);
@@ -1433,7 +1291,6 @@
   border-color: rgba(167,139,250,.35);
 }
 [data-bs-theme="dark"] .smc-company { color: #f1ecff; }
-/* Pill that carries the Reg badge inside it: flex, so only the NAME truncates. */
 .smc-seg--withbadge { display: inline-flex; align-items: center; gap: 5px; max-width: 210px; padding-right: 5px; }
 .smc-seg-name { display: inline-block; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1536,14 +1393,9 @@
   .smc-table-wrap .table tbody td { padding: 8px 10px !important; font-size: 12px !important; }
 }
 
-/* ── Active-filter chips bar (above the table) — applied filters shown outside
-   the modal with per-chip remove (×) + Clear all. Violet palette. ── */
 .smc-filterbar {
   display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px;
   padding: 10px 4px 2px;
-  /* Twenty-seven segments wrapped to seven rows and pushed the table off the
-     screen. Three rows is enough to see what is applied; past that the bar
-     scrolls on its own rather than growing into the page. */
   max-height: 104px; overflow-y: auto; overscroll-behavior: contain;
   scrollbar-width: thin;
 }
@@ -1553,8 +1405,6 @@
   font-size: 12px; font-weight: 600; color: #6d28d9;
   background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 20px;
   padding: 4px 6px 4px 12px; white-space: nowrap;
-  /* A segment name can be a whole sentence. Without a ceiling the chip ran
-     past the card's right edge; the full text is on the title attribute. */
   max-width: 320px;
 }
 .smc-filterchip > span {
@@ -1578,11 +1428,6 @@
 [data-bs-theme="dark"] .smc-filterchip button { background: rgba(196,181,253,.15); color: #c4b5fd; }
 
 
-/* ── Unpinned: no room to fit the card to the viewport ──────────────────────
-   See the Consignee list. Set by fit() when the hero and an open banner have
-   used the space; the card takes its natural height and the page scrolls.
-   .smc-table-wrap is `flex: 1; min-height: 0`, which collapses to nothing when
-   the card has no fixed height, so it has to be released too. */
 [data-unpinned="1"] .smc-table-wrap {
   flex: 0 0 auto;
   min-height: auto;
@@ -1594,31 +1439,6 @@
 }
 
 
-/* ── The vertical scrollbar belongs to the ROWS, not the whole table ────────
-   The header used to be `position: sticky` inside .table-responsive, which is
-   also the vertical scroller -- so the browser drew that box's scrollbar down
-   its full height, including the strip beside the header. (QA #35)
-
-   A scrollbar cannot be inset: `margin` on ::-webkit-scrollbar-track was tried
-   and does nothing. The only way to start it under the header is to take the
-   header out of the scrolling box, which is what this does WITHOUT touching
-   the shared table component:
-
-     .table-responsive  keeps the HORIZONTAL scroll, so the header and the rows
-                        still slide sideways together.
-     thead              becomes its own `display: table` band, outside anything
-                        that scrolls vertically. It no longer needs to be
-                        sticky -- nothing scrolls past it any more.
-     tbody              becomes the vertical scroller, so its scrollbar starts
-                        exactly at the first row.
-
-   Columns stay aligned because thead and every tbody row are `table-layout:
-   fixed` at the same width, and the per-column percentages below already
-   apply to `thead th:nth-child(n)` and `tbody td:nth-child(n)` equally.
-
-   When the card is unpinned (see the fit() effect) .table-responsive has no
-   definite height, so the calc() resolves against auto, tbody is uncapped and
-   the PAGE scrolls instead -- which is the intended behaviour there. */
 .smc-table-wrap .table-responsive {
   overflow-y: hidden;
 }
@@ -1639,37 +1459,15 @@
   max-height: calc(100% - var(--smc-thead-h, 36px));
   scrollbar-width: thin;
 }
-/* Not sticky any more: it sits outside the scroller, so pinning it would only
-   add a stacking context and the 1px seam that comes with it. */
 .smc-table-wrap .table thead th {
   position: static !important;
   top: auto !important;
 }
 
 
-/* ── How tall the "what we are doing here" banner may get ───────────────────
-   The viewport, less what has to stay visible beneath it: the app header
-   (150), this page's hero strip and gaps (~85), and the table card's own 240px
-   floor plus its bottom reserve. Whatever is left is the banner's.
-
-   It used to be a flat 600px, which on a short window -- or at 150% zoom,
-   where the viewport is barely 540 CSS px -- was more height than existed. The
-   table went below the fold, the page had to scroll, and every strip on it
-   moved when you dragged. Capped, the banner scrolls inside itself instead and
-   the page keeps still.
-
-   clamp, so it never collapses to nothing on a very short screen and never
-   exceeds the 600 it was designed around on a tall one. */
 .smc-wdh-body-wrap { --wdh-max: clamp(160px, calc(100vh - 500px), 600px); }
 .smc-wdh-card.is-open .smc-wdh-body-wrap { overflow-y: auto; overscroll-behavior: contain; }
 
-/* ── Applied filters · the overflow lives in a popover ──────────────────────
- * The bar keeps a couple of chips and hands the rest to "+N more", so it is a
- * summary again rather than a wall. No cap and no scrolling: nothing wraps.
- * ──────────────────────────────────────────────────────────────────────────*/
-/* 2px of bottom padding left the chips sitting on the table's header row.
-   The bar no longer wraps (the overflow went into "+N more"), so it is one
-   row of chips and can be centred and given a real gap below it. */
 .smc-filterbar {
   max-height: none; overflow: visible; flex-wrap: nowrap;
   align-items: center; padding: 10px 4px 12px;
@@ -1686,8 +1484,6 @@
 }
 .smc-filterchip-more:hover { background: #f5f3ff; border-style: solid; }
 
-/* The popover reuses the Segment column's own overflow card, so "there are
-   more of these than fit" looks the same wherever it happens. */
 .smc-filterpop-lbl {
   flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: #6d28d9;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1703,51 +1499,50 @@
 [data-bs-theme="dark"] .smc-filterpop-lbl { color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-filterpop-x { background: rgba(255,255,255,.08); color: #c4b5fd; }
 
-/* ── Aligned with the HRMS Employee list (same as Quotations V/S PI) ─────────── */
-/* Left edges: header icon, banner icon and first tab all start 19px in (1px border + 18px).
-   Right edges: header button, banner toggle and search all end 15px in. */
 .smc-root .sup-fig .cstrip { padding-left: 18px; padding-right: 14px; }
 .smc-root .sup-fig .cstrip__left { padding-left: 0; }
 .smc-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
 .smc-root .smc-toolbar { padding: 14px; gap: 14px; }
-/* Tabs 40px / 12.5px; the search bar and Filter button stand the same 40px. */
 .smc-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
-/* Search and Filter stretch to the tab rail's full height (40px tabs + the rail's padding and
-   border) so every control in the row is the same height; 40px floor for a wrapped row. */
 .smc-root .smc-toolbar { align-items: stretch; }
-/* Filter = the tab rail / search track: 48px outer track (1px border, 3px
-   padding, tint) with the 40px button face drawn inside it by ::before. */
 .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn {
   position: relative; isolation: isolate; flex-shrink: 0; align-self: stretch;
-  height: auto; min-height: 48px; padding: 3px 18px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px; padding: 0 18px;
+  border: 0;
+  background: transparent;
   border-radius: 11px; box-shadow: none; text-shadow: none;
   color: var(--dt-a-700);
 }
 .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn::before {
-  content: ''; position: absolute; inset: 3px; z-index: -1; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, background .16s, box-shadow .16s;
 }
 .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn > * { position: relative; z-index: 1; }
 .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn:hover::before { border-color: var(--dt-a-400); background: var(--dt-a-50); }
-/* Filters applied: the inner face takes the selected-tab fill. */
 .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn.on { color: #fff; }
 .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn.on::before {
   border: 0;
   background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-500) 35%, var(--dt-a-600) 68%, var(--dt-a-800) 100%);
   box-shadow: 0 3px 10px rgba(var(--dt-a-rgb), .40);
 }
-[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
-[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn:not(.on)::before { background: rgba(255,255,255,.03); border-color: rgba(var(--dt-a-rgb), .25); }
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn { background: transparent; border: 0; }
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.2); }
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn::before,
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn:not(.on)::before {
+  border: 0;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  box-shadow: 0 4px 16px rgba(124,58,237,.5), 0 1px 3px rgba(91,33,182,.3), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn:hover::before {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 50%, #4c1d95 100%);
+  box-shadow: 0 8px 24px rgba(124,58,237,.6), 0 2px 6px rgba(91,33,182,.35), 0 1px 0 rgba(255,255,255,.2) inset;
+}
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search {
   height: auto; min-height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
-/* One type size and weight for every data cell (HRMS body text: 11.5 / 500).
-   Badges with a fixed design keep their own sizing. */
 .smc-table-wrap .table tbody td:not(:last-child),
 .smc-table-wrap .table tbody td:not(:last-child) *:not(i):not(svg):not(svg *) {
   font-size: 11.5px !important;
@@ -1765,25 +1560,17 @@
 }
 .smc-root .smc-table-wrap .table tbody td:not(:last-child) .seg-reg-badge.seg-reg-badge { font-size: 10px !important; font-weight: 600 !important; }
 .smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-seg-more.smc-seg-more { font-size: 10px !important; font-weight: 800 !important; }
-.smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-cons.smc-cons { font-size: 11px !important; font-weight: 800 !important; }/* Add Customer = the Supplier header's own Add button (.sup-fig .cstrip__action-btn),
-   only held at 40px to match the search bar / Filter / tabs below. */
-.smc-root .sup-fig .cstrip__action-btn { height: 40px; padding-top: 0; padding-bottom: 0; }/* The search input stays type="search" (it keeps Chrome's autofill off), so
-   hide the browser's own clear ✕ — the dt-search-clear button is the one. */
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-cons.smc-cons { font-size: 11px !important; font-weight: 800 !important; }
+.smc-root .sup-fig .cstrip__action-btn { height: 40px; padding-top: 0; padding-bottom: 0; }
 .smc-toolbar .dt-search input[type="search"]::-webkit-search-cancel-button,
 .smc-toolbar .dt-search input[type="search"]::-webkit-search-decoration {
   -webkit-appearance: none;
   appearance: none;
   display: none;
-}/* Segment "+N" popover (and the applied-filters popover, same classes): the
-   table's type. It is portalled to <body>, so the family is stated or it falls
-   back to the theme's Rubik. */
+}
 .smc-seg-pop { font-family: var(--font-sans); }
 .smc-seg-pop .smc-seg-pop-title { font-size: 9.5px; font-weight: 800; letter-spacing: .07em; }
 .smc-seg-pop .smc-seg { font-size: 11.5px; font-weight: 500; }
-/* Cust Category / Customer Type pills: at the table type (11.5px) "International"
-   no longer fit its fixed 8% column at the 1440px minimum width, and the cell's
-   ellipsis showed a stray "..." after the pill. Tighter side padding and no
-   extra tracking keep the text size and let it fit. */
 .smc-table-wrap .table tbody td .smc-type-pill,
 .smc-table-wrap .table tbody td .smc-trade-pill {
   padding: 4px 8px;
@@ -1791,28 +1578,25 @@
   max-width: 100%;
 }
 
-/* Search = the tab rail's track: the same 1px border, 3px padding and tint as
-   .dt-tabs (so both stand 48px), with the 40px field drawn inside it by ::before
-   — the icon, input and clear button all sit inside that field. */
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search {
   position: relative;
-  min-height: 48px;
-  padding: 3px 14px 3px 38px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  border: 0;
+  background: transparent;
   border-radius: 11px;
   box-shadow: none;
 }
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, box-shadow .16s;
 }
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search > * { position: relative; z-index: 1; }
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search .dt-search-icon { position: absolute; }
-.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
-[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }

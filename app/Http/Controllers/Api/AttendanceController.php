@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
-use App\Models\AttendancePunch;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\Module;
@@ -12,25 +11,20 @@ use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-
 class AttendanceController extends Controller
 {
     private const MATCH_THRESHOLD = 0.55;
     private const DESCRIPTOR_LEN  = 128;
 
-
     private const MODULE_SLUG = 'hr.attendance';
 
-   
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
-   
     private static function todayLocal(): string
     {
         return now(self::DISPLAY_TZ)->toDateString();
     }
- 
-    
+
     private const KNOWN_LABELS = ['Check In', 'Check Out'];
 
     public function today(Request $request)
@@ -40,7 +34,7 @@ class AttendanceController extends Controller
             ->where('employee_id', $employee->id)
             ->whereDate('attendance_date', self::todayLocal())
             ->first();
-       
+
         if ($row) $row->setRelation('employee', $employee);
         $cutoffRow = $row ?: (new Attendance(['attendance_date' => self::todayLocal()]))->setRelation('employee', $employee);
         return response()->json([
@@ -52,14 +46,13 @@ class AttendanceController extends Controller
                 'face_registered' => !empty($employee->face_descriptor) && $employee->face_registered_at !== null,
             ],
             'record'   => $row,
-            // Convenience flags so the SPA doesn't have to derive them.
             'next_direction' => $row ? $row->next_direction : 'in',
             'allowed_labels' => self::KNOWN_LABELS,
-            
+
             'auto_cutoff_at' => \Carbon\Carbon::createFromTimestamp(
                 $cutoffRow->autoCheckoutCutoffTs(self::todayLocal()), self::DISPLAY_TZ
             )->toIso8601String(),
-            
+
             'overtime_applicable' => $employee->overtimeApplicable(),
             'shift_end_at'        => \Carbon\Carbon::createFromTimestamp(
                 $cutoffRow->shiftEndTs(self::todayLocal()), self::DISPLAY_TZ
@@ -68,11 +61,10 @@ class AttendanceController extends Controller
         ]);
     }
 
-   
     public function my(Request $request)
     {
         $employee = $this->callerEmployee($request);
-       
+
         $q = Attendance::with(['punches', 'employee.branch:id,shifts'])
             ->where('employee_id', $employee->id)
             ->orderByDesc('attendance_date');
@@ -91,17 +83,15 @@ class AttendanceController extends Controller
         return $this->facePunch($request, expected: 'out');
     }
 
-  
     public function import(Request $request, \App\Services\EsslAttendanceImporter $importer)
     {
-      
         $user = $request->user();
         if (!$user->isSuperAdmin() && $user->user_type !== 'client_admin') {
             abort(403, 'Only administrators can import attendance.');
         }
 
         $data = $request->validate([
-            'file'               => 'nullable|file|max:5120',           
+            'file'               => 'nullable|file|max:5120',
             'punches'            => 'nullable|array',
             'punches.*.user_id'  => 'required_with:punches|string',
             'punches.*.punched_at' => 'required_with:punches|string',
@@ -117,7 +107,6 @@ class AttendanceController extends Controller
         $serial   = 'CSV-IMPORT';
         $tz       = $data['timezone'] ?? 'Asia/Kolkata';
 
-      
         if (!empty($data['device_terminal_id'])) {
             $terminal = \App\Models\DeviceTerminal::where('client_id', $clientId)
                 ->findOrFail($data['device_terminal_id']);
@@ -126,7 +115,6 @@ class AttendanceController extends Controller
             $tz       = $terminal->timezone ?: $tz;
         }
 
-      
         if ($request->hasFile('file')) {
             $rows = $this->parseUploadedPunches((string) $request->file('file')->get());
         } else {
@@ -146,19 +134,14 @@ class AttendanceController extends Controller
         return response()->json(['data' => $summary]);
     }
 
- 
     private function parseUploadedPunches(string $body): array
     {
         $rows = [];
         foreach (preg_split('/\r\n|\r|\n/', trim($body)) as $line) {
             if (trim($line) === '') continue;
-            // Tab-delimited keeps the datetime's internal space intact; fall back
-            // to comma for CSV exports.
             $f = str_contains($line, "\t") ? explode("\t", $line) : explode(',', $line);
             if (count($f) < 2) continue;
             $when = trim($f[1]);
-            // Skip header / junk: a real punch time contains both a digit and a
-            // date/time separator.
             if (!preg_match('/\d/', $when) || !preg_match('/[-:\/]/', $when)) continue;
             $rows[] = [
                 'user_id'    => trim($f[0]),
@@ -169,14 +152,11 @@ class AttendanceController extends Controller
         return $rows;
     }
 
-
     public function employeeSummary(Request $request, string $employeeId)
     {
-
         $user = $request->user();
         if (!$user) abort(401, 'Unauthenticated');
 
-       
         if (ctype_digit($employeeId)) {
             $emp = Employee::withTrashed()->find((int) $employeeId);
         } else {
@@ -186,10 +166,10 @@ class AttendanceController extends Controller
                     $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
                 });
             }
-        
+
             $emp = (clone $q)->where('user_id', $user->id)->first()
                 ?: $q->orderBy('id')->first();
-            
+
             if (!$emp) {
                 $emp = Employee::withTrashed()->where('emp_code', $employeeId)
                     ->where('user_id', $user->id)
@@ -199,14 +179,9 @@ class AttendanceController extends Controller
         }
         if (!$emp) abort(404, 'Employee not found.');
 
-        // Access check — self OR admin in same tenant OR super_admin.
         $isSelf = Employee::withTrashed()->where('id', $emp->id)->where('user_id', $user->id)->exists();
-        // A14: strict tenant match. The self-path is already covered by $isSelf,
-        // so a null client_id must NOT count as "same tenant" for admins (that
-        // let any tenant read a client-less employee's attendance).
         $sameTenant = (int) $emp->client_id === (int) $user->client_id;
 
-      
         $isAdminLogin = in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
         $isPermittedStaff = $user->user_type === 'employee' && $this->hasAttendanceViewPermission($user);
 
@@ -216,58 +191,49 @@ class AttendanceController extends Controller
             abort(403, 'You do not have access to this employee.');
         }
 
-       
         $monthQ = (string) $request->query('month', now(self::DISPLAY_TZ)->format('Y-m'));
         if (!preg_match('/^\d{4}-\d{2}$/', $monthQ)) $monthQ = now(self::DISPLAY_TZ)->format('Y-m');
         $start = \Carbon\Carbon::createFromFormat('Y-m-d', $monthQ . '-01')->startOfMonth();
         $end   = (clone $start)->endOfMonth();
 
-        // Today's row with punches — drives the Today card on the profile.
         $today = Attendance::with('punches')
             ->where('employee_id', $emp->id)
             ->whereDate('attendance_date', self::todayLocal())
             ->first();
 
-      
         $history = Attendance::with('punches')
             ->where('employee_id', $emp->id)
             ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
             ->orderByDesc('attendance_date')
             ->get();
 
-      
         [$shiftStart, $shiftEnd] = $emp->resolveShiftWindow();
         $shiftStart = $shiftStart ?: '09:30';
         $shiftEnd   = $shiftEnd   ?: '18:30';
         $todayStr = self::todayLocal();
         $present  = 0; $late = 0; $missingBio = 0; $leaveDays = 0;
         foreach ($history as $row) {
-           
             $row->setRelation('employee', $emp);
             [$rowShiftStart] = $row->shiftWindow();
             $rowShiftStart = $rowShiftStart ?: $shiftStart;
             $status = (string) ($row->status ?? '');
             $rowIso = \Carbon\Carbon::parse($row->attendance_date)->toDateString();
             if (strcasecmp($status, 'Present') === 0)  $present++;
-            if (strcasecmp($status, 'Late') === 0)     { $late++; $present++; } // late still counts as present
-           
+            if (strcasecmp($status, 'Late') === 0)     { $late++; $present++; }
+
             if (strcasecmp($status, 'Missing In') === 0 || strcasecmp($status, 'Missing Out') === 0) {
                 $missingBio++;
             } elseif ($rowIso < $todayStr && $row->check_in_at && !$row->check_out_at) {
-                // Clocked in on a past day but never clocked out → missing punch.
                 $missingBio++;
             }
-           
+
             $firstIn = $row->check_in_at;
             if ($firstIn && strcasecmp($status, 'Present') === 0) {
                 $localIn = $firstIn->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                // Single source of truth for lateness (0 = any minute late), so
-                // this KPI matches the calendar day pills. (#22)
                 if ($this->minutesBetween($rowShiftStart, $localIn) > Attendance::LATE_GRACE_MINUTES) $late++;
             }
         }
 
-        
         $empHolidayMap = $this->holidayDatesForGroups(
             array_filter([$emp->holiday_group_id]),
             (clone $start), (clone $end),
@@ -283,16 +249,8 @@ class AttendanceController extends Controller
             ->whereDate('from_date', '<=', $end->toDateString())
             ->whereDate('to_date', '>=', $start->toDateString())
             ->get(['from_date', 'to_date', 'leave_type_id', 'day_type']);
-        // Paid vs Unpaid per leave type (master_leave_types.paid_unpaid) so the
-        // Attendance Log can label each leave day "Paid Leave" / "Unpaid Leave".
         $paidByType = \App\Models\Masters\LeaveTypes::whereIn('id', $approvedLeaves->pluck('leave_type_id')->filter()->unique()->all())
             ->pluck('paid_unpaid', 'id');
-        /* $leaveDaySet[iso] = ['paid' => 'Paid'|'Unpaid', 'portion' => 'full'|
-           'first_half'|'second_half'] — drives the KPI count and the per-day
-           leave overlay in buildHistoryLogs(). The portion comes from the
-           request's `day_type`: a half-day leave means the employee still
-           worked the other half, so the log must say which half rather than
-           blanking the whole day out as "Full day Paid Leave". */
         $leaveDaySet = [];
         foreach ($approvedLeaves as $lv) {
             $paid    = strcasecmp((string) ($paidByType[$lv->leave_type_id] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
@@ -304,27 +262,17 @@ class AttendanceController extends Controller
             for ($c = $cursor->copy(); $c->lte($till); $c->addDay()) {
                 $iso = $c->toDateString();
                 if (isset($leaveDaySet[$iso])) continue;
-                if (\App\Support\WeekOff::isOff($weeklyOffLabel, $c)) continue; // weekly off isn't a leave day
-                if (isset($empHolidaySet[$iso])) continue;         // holiday isn't a leave day
+                if (\App\Support\WeekOff::isOff($weeklyOffLabel, $c)) continue;
+                if (isset($empHolidaySet[$iso])) continue;
                 $leaveDaySet[$iso] = ['paid' => $paid, 'portion' => $portion];
             }
         }
         $leaveDays = count($leaveDaySet);
 
-        /* The far end of the employment window, resolved once. (#87)
-         *
-         * Null for anyone still employed, and for a REHIRED case — that exit is
-         * spent and the person is on the books again, so their window has no
-         * end. Same rule the roster in index() applies. */
         $empExit = $emp->exit;
         $lastWorkingIso = ($empExit && $empExit->rehired_at === null && $empExit->last_working_day)
             ? $empExit->last_working_day->toDateString()
             : null;
-        /* No exit record, but the row is soft-deleted — removed from Employee
-         * Management instead of exited (EmployeeController::destroy). The
-         * removal date is the only end-of-employment marker there is, and
-         * without it this tab opens on the current month for someone who
-         * stopped appearing months ago. Mirrors the roster arm in index(). */
         if ($lastWorkingIso === null && !$empExit && $emp->deleted_at) {
             $lastWorkingIso = $emp->deleted_at->toDateString();
         }
@@ -337,28 +285,9 @@ class AttendanceController extends Controller
                 'face_registered' => !empty($emp->face_descriptor) && $emp->face_registered_at !== null,
                 'shift_start'     => $shiftStart,
                 'shift_end'       => $shiftEnd,
-                // Calendar cells before this date are not attendance days
-                // (CBC #74) — the SPA needs the date to blank them out.
                 'date_of_joining' => $this->joiningIso($emp),
-                /* The effective lower bound of the attendance window — the
-                   joining date, or the record's creation date when there is
-                   none. The SPA blanks cells before it. Sent separately from
-                   date_of_joining because it must not be shown as a joining
-                   date: it is a bound, not a fact about employment. (QA #218) */
                 'attendance_from' => $this->attendanceStartIso($emp),
-                /* False while onboarding is unfinished: no synthesised
-                   absences, so the calendar leaves those days blank. */
                 'owes_attendance' => $this->owesAttendance($emp),
-                /* The other end of the employment window. (#87)
-                 *
-                 * withTrashed() above made an exited employee's history
-                 * REACHABLE, but the tab still opened on the current month and
-                 * offered a month rail anchored on today — so a leaver whose
-                 * last day was in March read as "no attendance" all through
-                 * September, which is the same report from the UI side. Sending
-                 * the last working day lets the SPA open on the last month the
-                 * employee actually worked and bound the rail to their real
-                 * employment window. */
                 'last_working_day' => $lastWorkingIso,
             ],
             'month' => $monthQ,
@@ -370,17 +299,10 @@ class AttendanceController extends Controller
             ],
             'today'   => $today,
             'history' => $history,
-            // Rich per-day logs (same shape the HR Attendance "Logs & Requests"
-            // view consumes) so the employee profile can render the identical
-            // visual-bar / effective-gross / arrival / calendar UI.
             'shift'            => (string) ($emp->shift ?: '—'),
             'shift_start'      => $shiftStart,
             'shift_end'        => $shiftEnd,
             'weekly_off'       => (string) ($emp->weekly_off ?? ''),
-            /* Resolved weekly-off DAYS, not just the label — see the matching
-               `weeklyOffDates` in dailyView(). The employee-profile calendar
-               ran the same label-scanning guess and had the same blind spots,
-               so it gets the same server-resolved answer. (#94) */
             'weekly_off_dates' => (object) \App\Support\WeekOff::datesInRange(
                 (string) ($emp->weekly_off ?? ''),
                 $start->copy(),
@@ -405,14 +327,6 @@ class AttendanceController extends Controller
         ]);
     }
 
-    /**
-     * Does this employee-type login hold can_view on the Attendance module?
-     *
-     * Extracted so the list endpoints (authorizeAttendanceView) and the
-     * per-employee summary gate ask the identical question — they disagreed
-     * before, which is how an HR user could open the Attendance list but not a
-     * colleague's Attendance tab (#88).
-     */
     private function hasAttendanceViewPermission($user): bool
     {
         $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
@@ -436,7 +350,6 @@ class AttendanceController extends Controller
     {
         return in_array($user->user_type, ['branch_user', 'employee'], true);
     }
-    
 
     public function index(Request $request)
     {
@@ -455,10 +368,6 @@ class AttendanceController extends Controller
 
         if ($user->user_type !== 'super_admin') {
             $q->where('client_id', $user->client_id);
-            // A13: a branch user is HARD-pinned to their own branch — pin
-            // first, so passing a sibling branch_id can't leak other branches'
-            // attendance. Only client admins may use the filter (every branch
-            // is an isolated peer). Permitted employees are pinned too.
             if ($this->isBranchPinned($user)) {
                 $q->where('branch_id', $user->branch_id);
             } else {
@@ -474,8 +383,6 @@ class AttendanceController extends Controller
             $q->where('branch_id', $branchFilter);
         }
 
-        // A17: validate date filters so a malformed value returns 422 instead of
-        // silently passing junk to whereDate and yielding a confusing empty list.
         $request->validate([
             'date' => ['nullable', 'date'],
             'from' => ['nullable', 'date'],
@@ -491,28 +398,6 @@ class AttendanceController extends Controller
         return response()->json($q->paginate((int) $request->query('per_page', 50)));
     }
 
-    
-    /**
-     * The shift window to DISPLAY against a day. (#216)
-     *
-     * The name was already taken from the day's stamp while the window beside
-     * it still came from the employee, so the two halves of one chip described
-     * different things — "After noon shift 12:00 PM – 06:00 PM", a pairing that
-     * exists nowhere: the name off the day, the hours off the shift assigned
-     * minutes earlier.
-     *
-     * A day that NAMES its shift answers for its own window, even when that
-     * answer is "unknown" — 8,627 rows carry a name whose definition the branch
-     * no longer has, and the employee's current hours are a fabrication there,
-     * not a fallback. The caller renders nothing rather than something untrue.
-     *
-     * Only a day with NO stamp at all borrows the employee's window; there is
-     * no recorded history on it to contradict.
-     *
-     * DISPLAY ONLY. The late-mark and overtime maths keep their own fallback,
-     * because removing it would restate lateness on those 8,627 historical days
-     * — a payroll change, not a labelling one.
-     */
     private static function displayShiftWindow($row, ?string $empStart, ?string $empEnd): array
     {
         if (!$row) return [$empStart, $empEnd];
@@ -531,57 +416,19 @@ class AttendanceController extends Controller
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             $date = self::todayLocal();
         }
-        // Clamp to today — a future date would otherwise mark everyone "Absent"
-        // for a day that hasn't happened yet.
         if ($date > self::todayLocal()) {
             $date = self::todayLocal();
         }
         $dateC      = \Carbon\Carbon::parse($date);
         $monthStart = (clone $dateC)->startOfMonth()->toDateString();
         $monthEnd   = (clone $dateC)->endOfMonth()->toDateString();
-        // 90-day log window so the month range pills (THIS MONTH + previous
-        // 6 months on the SPA) actually have data to filter against — and so
-        // the Calendar tab can light up cells in any of those months without
-        // a separate refetch.
         $histStart  = (clone $dateC)->subDays(89)->toDateString();
 
-        /* Where that window ENDS is a separate question from which day the
-         * user is inspecting.
-         *
-         * It used to end at $date, so selecting a day mid-month tore the rest
-         * of the month out of the calendar: clicking 13 Aug blanked every cell
-         * from the 14th onward and dropped those days out of the month KPI
-         * tiles too, as if the second half of the month had never happened.
-         * The day panel is what moves when you pick a date — the history
-         * behind it must not.
-         *
-         * Runs to today, capped at the selected month's end so that picking a
-         * date far in the past cannot widen the query without bound. Days
-         * after today are never emitted anyway: buildHistoryLogs() skips them,
-         * and the calendar paints its own future cells. */
         $todayStr   = self::todayLocal();
         $selMonthEnd = (clone $dateC)->endOfMonth()->toDateString();
         $histEnd    = $selMonthEnd < $todayStr ? $selMonthEnd : $todayStr;
         $histEndC   = \Carbon\Carbon::parse($histEnd);
 
-        // ── 1) Resolve which employees the caller is allowed to see ──
-        /* Exited employees stay visible for the days they WORKED. (#87)
-         *
-         * Completing an exit sets status to Resigned/Terminated AND soft-deletes
-         * the employee row (ExitController). Between the soft-delete global
-         * scope and a literal `where('status','Active')`, they vanished from
-         * this roster the moment their exit completed — and because the roster
-         * IS the employee set the attendance rows are then fetched for, their
-         * entire history disappeared with them. The rows were never touched:
-         * attendance is queried by employee_id and the delete is soft, so
-         * nothing cascaded. There was simply no id left to ask for.
-         *
-         * The rule is employment, not status: an employee belongs on the sheet
-         * for a date if they had joined by then and had not yet left. So a past
-         * date shows the people who were actually working that day, and today
-         * shows only current staff — a leaver drops off the day after their
-         * last working day rather than retroactively erasing their history. */
-        /* Opt-in audit flag — see the AUDIT MODE arm below. (#91) */
         $includeExited = $request->boolean('include_exited');
 
         $empQ = Employee::withTrashed()
@@ -590,30 +437,10 @@ class AttendanceController extends Controller
                 $q->where(function ($active) {
                     $active->where('status', 'Active')->whereNull('deleted_at');
                 })->orWhereHas('exit', function ($x) use ($date) {
-                    // Left, but the day being viewed is on or before their last
-                    // working day. A rehired case is excluded — that exit is
-                    // spent and the person is active again on their own row.
                     $x->whereNull('rehired_at')
                       ->whereNotNull('last_working_day')
                       ->whereDate('last_working_day', '>=', $date);
                 })->orWhere(function ($audit) use ($includeExited) {
-                    /* AUDIT MODE — every leaver, whatever date is selected. (#91)
-                     *
-                     * The arms around this one bound a leaver by their last
-                     * working day, which is right for the sheet: a person who
-                     * left in August is not part of September's attendance and
-                     * must not sit in the Absent column forever. But it also
-                     * meant the only route to their history was to already know
-                     * their leaving date and wind the date picker back past it.
-                     * From the Attendance screen, on today's date, an exited
-                     * employee simply did not exist — so their records could
-                     * not be audited from the module that owns them.
-                     *
-                     * Opt-in, never the default, so current processing is
-                     * unchanged unless the operator asks for leavers. Their day
-                     * status is forced to 'Exited' below rather than left to
-                     * read Absent, which is what keeps them out of the Absent
-                     * chip while they are on screen. */
                     if (!$includeExited) {
                         $audit->whereRaw('1 = 0');
                         return;
@@ -621,51 +448,21 @@ class AttendanceController extends Controller
                     $audit->whereHas('exit', fn ($x) => $x->whereNull('rehired_at'))
                           ->orWhereNotNull('deleted_at');
                 })->orWhere(function ($removed) use ($date) {
-                    /* Removed from Employee Management rather than exited. (#87)
-                     *
-                     * EmployeeController::destroy() soft-deletes the row without
-                     * creating an employee_exits record, so the arm above cannot
-                     * match and the person vanished from every past date — the
-                     * same disappearing history, reached by a different door.
-                     * There is no last working day to bound them by, so the
-                     * removal date stands in for it: they were on the books
-                     * until the day they were deleted.
-                     *
-                     * Narrow on purpose — only rows with NO exit record. Anyone
-                     * who went through Exit Management is judged on their last
-                     * working day above, which stays the authority. */
                     $removed->whereNotNull('deleted_at')
                             ->whereDate('deleted_at', '>=', $date)
                             ->whereDoesntHave('exit');
                 });
             })
-            // Never before they joined: a date preceding the joining date is
-            // not a day they were absent, it is a day they did not exist here.
             ->where(function ($q) use ($date) {
                 $q->whereNull('date_of_joining')->orWhereDate('date_of_joining', '<=', $date);
             })
-            // Only fully-onboarded employees belong in the Attendance Sheet.
-            // An employee still mid-onboarding (onboarding_stage_completed < 6)
-            // has no settled org context yet and must not be available for
-            // attendance marking until HR finishes onboarding (stage 6). Mirrors
-            // the "onboarded_only" gate used by managers() / Exit Management.
             ->where('onboarding_stage_completed', '>=', 6)
             ->with([
                 'department:id,name',
                 'designation:id,name',
                 'reportingManager:id,first_name,last_name,display_name',
-                // A manager can also be a BRANCH USER with no Employee row —
-                // loaded here so the Mgr. chip resolves without an N+1.
                 'reportingManagerUser:id,name',
-                'branch:id,shifts', // shift-window resolution (resolveShiftWindow) without an N+1
-                // Last working day, to label a leaver's post-exit days (#91).
-                /* exit_case_status is REQUIRED here, not decorative: it is how
-                   "has left" is told apart from "is leaving" (#13). Leave it
-                   out of this column list and the attribute reads null, every
-                   exit looks Open, and a fully exited employee is badged as
-                   serving notice. A constrained select that silently omits a
-                   column a caller depends on fails quietly — nothing errors,
-                   the answer is just wrong. */
+                'branch:id,shifts',
                 'exit:id,employee_id,last_working_day,rehired_at,exit_case_status',
             ])
             ->orderBy('display_name');
@@ -674,13 +471,6 @@ class AttendanceController extends Controller
             $empQ->where('client_id', $user->client_id);
             $branchFilter = $request->integer('branch_id') ?: null;
 
-            // A branch_user is always pinned to their own branch — doesn't
-            // matter what `branch_id` query param they send. A bad
-            // (cross-tenant) value used to fall through and surface every
-            // employee in the client, which leaked rows across branches.
-            // Only client admins can switch branches within the tenant.
-            // Permitted employees are pinned the same way — they never send a
-            // branch_id, so the client-admin arm would leave them unpinned.
             $isSubBranchUser = $this->isBranchPinned($user);
             if ($isSubBranchUser) {
                 $empQ->where('branch_id', $user->branch_id);
@@ -694,21 +484,6 @@ class AttendanceController extends Controller
             $empQ->where('branch_id', $branchFilter);
         }
 
-        /* Two modes, one endpoint.
-         *
-         * ROSTER (no employee_id) — every employee the caller may see, carrying
-         * only what the left-hand list and its filter chips read: identity, the
-         * day's status, first-in. No punches, no 90-day log.
-         *
-         * DETAIL (employee_id=N) — that one employee, fully loaded, for the
-         * right-hand panels.
-         *
-         * The split exists because the log window is the entire cost of this
-         * endpoint: ~90 attendance rows PLUS their punches, per employee,
-         * built and serialised for the whole roster when exactly one of them
-         * was ever on screen. Narrowing here rather than in a separate method
-         * keeps every tenant / branch scope above applying unchanged — an
-         * employee_id outside the caller's scope simply matches nothing. */
         $onlyEmployeeId = $request->integer('employee_id') ?: null;
         $detailMode     = $onlyEmployeeId !== null;
         if ($detailMode) {
@@ -722,7 +497,6 @@ class AttendanceController extends Controller
 
         $empIds = $employees->pluck('id')->all();
 
-        // ── 2) Load attendance for selected date + MTD + last 30 days ──
         $dailyRows = Attendance::with('punches')
             ->whereIn('employee_id', $empIds)
             ->whereDate('attendance_date', $date)
@@ -731,20 +505,12 @@ class AttendanceController extends Controller
 
         $monthRows = Attendance::whereIn('employee_id', $empIds)
             ->whereBetween('attendance_date', [$monthStart, $monthEnd])
-            /* The shift stamp comes along, or Attendance::shiftWindow() finds no
-               stamp on these rows and silently falls back to the employee's
-               CURRENT shift — re-scoring every MTD day against a shift assigned
-               afterwards, which is the whole bug the stamp exists to stop. A
-               column list that omits a column is indistinguishable from a null
-               one at read time, so the omission failed quietly. (#35 / #216) */
             ->get([
                 'employee_id', 'attendance_date', 'status', 'check_in_at', 'check_out_at',
                 'shift_name', 'shift_start', 'shift_end',
             ])
             ->groupBy('employee_id');
 
-        // Backs the 90-day Log / Calendar, which only the detail request
-        // renders — by far the largest read on this endpoint.
         $historyRows = $detailMode
             ? Attendance::with('punches')
                 ->whereIn('employee_id', $empIds)
@@ -754,58 +520,22 @@ class AttendanceController extends Controller
                 ->groupBy('employee_id')
             : collect();
 
-        // ── 2b) Preload company holidays so compliance can exclude them ──
-        // Compliance is "present days ÷ working days elapsed this month".
-        // A working day is any calendar day that is NOT a weekly-off and NOT
-        // a company holiday from the employee's holiday group. Holidays are
-        // loaded once per request (keyed by group) to avoid an N+1.
         $holidayGroupIds = $employees->pluck('holiday_group_id')->filter()->unique()->values()->all();
-        // Compliance is the only reader, so this follows it into detail mode.
-        /* Client/branch passed so COMPANY-wide holidays (no group) are included
-           — they apply to every employee here, grouped or not. (#85) */
         $holidayScopeClient = $employees->first()?->client_id;
         $holidayScopeBranch = $employees->pluck('branch_id')->filter()->unique()->count() === 1
             ? $employees->pluck('branch_id')->filter()->first()
-            : null;   // mixed branches → client-wide only, never one branch's calendar for all
+            : null;
         $holidayByGroup  = $detailMode
             ? $this->holidayDatesForGroups(
                 $holidayGroupIds, (clone $dateC)->startOfMonth(), (clone $dateC)->endOfMonth(),
                 $holidayScopeClient, $holidayScopeBranch,
             )
             : [];
-        // Wider holiday set covering the full 90-day Log / Calendar window, so
-        // holidays outside the current month still surface in the log/calendar.
-        /* Loaded in BOTH modes now, not just detail. (#86)
-           The selected day's status is resolved from this set — a holiday with
-           no attendance row has to read "Holiday" rather than "Absent" — and
-           the list view resolves a status just as the log does, so gating this
-           on detailMode left the list still calling a closed day an absence.
-           One indexed query per request. */
         $holidayByGroupLog = $this->holidayDatesForGroups(
             $holidayGroupIds, \Carbon\Carbon::parse($histStart), $histEndC->copy(),
             $holidayScopeClient, $holidayScopeBranch,
         );
 
-        /* Holidays the CALENDAR can paint, which reach past today. (#93)
-         *
-         * Every set above stops at $histEnd, and $histEnd stops at today,
-         * because attendance for a day that has not happened cannot be known.
-         * A holiday is the opposite kind of fact: it is declared in advance,
-         * and announcing an UPCOMING one is the whole point of the Holiday
-         * screen. Sharing attendance's window meant a holiday added for any
-         * future date — the normal case — appeared in the Holiday list and
-         * never on the calendar.
-         *
-         * Kept as its own set rather than widening $histEnd. That bound also
-         * governs the attendance queries, the Log tab and the month KPIs, all
-         * of which are right to end at today; moving it would have invented
-         * empty future rows across the whole endpoint to fix a calendar
-         * label. This set carries holidays and nothing else.
-         *
-         * A year forward, because the calendar pages month to month without
-         * refetching — a narrower window would leave next month blank again,
-         * one click from the bug being reported. The read is a handful of
-         * holiday rows; the cost is a second query on a small table. */
         $calendarHolidayEnd = (clone $dateC)->endOfMonth()->addYear();
         $holidayByGroupCal  = $detailMode
             ? $this->holidayDatesForGroups(
@@ -814,38 +544,12 @@ class AttendanceController extends Controller
             )
             : [];
 
-        // Denominator window end = month-to-date: never count days in the
-        // future toward "absent". For a fully-past month this is the month
-        // end; for the current month it stops at today — which is exactly the
-        // bound $histEnd already resolves, so it is reused rather than
-        // recomputed: two copies of this min() are two chances to drift.
         $monthEndC = (clone $dateC)->endOfMonth();
         $mtdEndC   = $histEndC->copy();
 
-        // ── 3) Compose per-employee payload in the shape the SPA expects ──
-        // Default office window used when an employee's `shift` string has
-        // no parseable time pair (e.g. just "General Shift"). Late-by-minutes
-        // and the historic late heuristic both fall back to this so the KPIs
-        // stay meaningful even when shift data is incomplete.
         $defaultShiftStart = '09:30';
         $defaultShiftEnd   = '18:30';
 
-        /* Pending regularizations for the selected date — the "Correction
-         * Pending" pill in the employee list (#92).
-         *
-         * The pill used to be pure client state: the SPA set it optimistically
-         * when a request was filed and this payload never carried it, so every
-         * refresh copied the stale value forward rather than re-reading it.
-         * Nothing could clear it once the request was approved — the label
-         * survived until the page was reloaded from scratch.
-         *
-         * Sending it makes the server the source of truth: still Pending while
-         * it is pending, gone the moment it is approved or rejected. Only the
-         * 'Pending' status is selected, so an approved row simply produces no
-         * entry and the pill disappears on the next poll.
-         *
-         * One query for the whole roster, keyed by employee, so this stays O(1)
-         * rather than a lookup per card. */
         $pendingCorrections = [];
         $empIdsForCorrection = $employees->pluck('id')->filter()->all();
         if ($empIdsForCorrection) {
@@ -859,10 +563,6 @@ class AttendanceController extends Controller
                 ->all();
         }
 
-        // Approved-leave overlay — an employee with an approved leave covering
-        // the selected date should read "Leave", not "Absent", even though they
-        // have no attendance row for the day. (Bug: on-leave employees showed
-        // Absent in the list and Today's Record.)
         $onLeaveSet = [];
         $empIdsForLeave = $employees->pluck('id')->filter()->all();
         if (!empty($empIdsForLeave)) {
@@ -875,16 +575,7 @@ class AttendanceController extends Controller
             foreach ($leaveEmpIds as $lid) $onLeaveSet[(int) $lid] = true;
         }
 
-        // Approved-leave days across the WHOLE month, keyed employee → ISO-day
-        // set. The compliance denominator must exclude these (a sanctioned
-        // absence neither helps nor hurts the score) — but leaves aren't stored
-        // in the attendance table, so trackedWorkingDays could never "see" them
-        // and counted them as expected working days, understating compliance
-        // (bug #20). Precompute once here to avoid an N+1 in the map.
         $monthStartC = (clone $dateC)->startOfMonth();
-        // Also compliance-only. $onLeaveSet below is the roster's leave input
-        // and stays unconditional — it decides the day's STATUS, which the
-        // list renders for every employee.
         $leaveDaysByEmp = [];
         if ($detailMode && !empty($empIdsForLeave)) {
             $mLeaves = \App\Models\LeaveRequest::query()
@@ -904,15 +595,6 @@ class AttendanceController extends Controller
             }
         }
 
-        /* Approved-leave days across the LOG window, keyed employee → ISO →
-           'Paid' | 'Unpaid'. The month map above is a boolean set sized to the
-           compliance window; the Attendance Log needs the wider 90-day range AND
-           the paid/unpaid label, otherwise a leave day in this module rendered as
-           a bare "Absent" row while the employee profile — which already passes a
-           leave set — showed "Paid Leave" for the same day.
-           No weekly-off / holiday filtering needed here: buildHistoryLogs only
-           lets a leave override a day already reading 'Absent', and weekly-offs
-           and holidays are resolved before that point. */
         $leaveLogByEmp = [];
         if ($detailMode && !empty($empIdsForLeave)) {
             $logStartC = \Carbon\Carbon::parse($histStart);
@@ -946,78 +628,29 @@ class AttendanceController extends Controller
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
             $expectedMinutes = $this->expectedMinutesFromWindow($shiftStart, $shiftEnd);
             $weeklyOffLabel  = (string) ($emp->weekly_off ?? '');
-            // $dateC is the same day, already parsed outside the loop; isOff()
-            // only reads from it, so there is nothing to clone.
             $isWeeklyOff     = \App\Support\WeekOff::isOff($weeklyOffLabel, $dateC);
 
             $today    = $dailyRows->get($emp->id);
-            // Hand the row its employee so the shift-based auto-checkout can be
-            // resolved without a lazy-load per employee (the branch relation is
-            // already eager-loaded on $emp for resolveShiftWindow).
             if ($today) $today->setRelation('employee', $emp);
             $todayPunches = $today ? $today->punches->sortBy('punched_at')->values() : collect();
 
-            // Determine status for the selected date.
             $joinIso     = $this->joiningIso($emp);
-            /* Is the selected date a company holiday for THIS employee? Read
-               from the log-window set, which now covers company-wide holidays
-               and employees in no group alike (#85). Without it the day fell to
-               "Absent" until a regularization created a row (#86). */
             $logHolidaySet = $holidayByGroupLog[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
                 ?? $holidayByGroupLog[self::HOLIDAY_COMPANY_KEY] ?? [];
             $statusToday = $this->resolveDayStatus(
                 $today, $isWeeklyOff, $shiftStart, $date, isset($logHolidaySet[$date]),
             );
-            /* Selected date sits BEFORE this employee joined → the day is out of
-               scope for them, not an absence. Reading it as "Absent" put people
-               in the Absent tab and the Absent KPI for months they had not been
-               hired in (CBC #74). A stored row still wins — if a punch really
-               exists on a pre-joining date, HR needs to see it, not a label
-               that hides it. Weekly-off is deliberately overridden too: a
-               Sunday before joining is not this employee's weekly off yet. */
-            /* $joinIso ?? the creation date, for the same reason the log builder
-               falls back: an employee still in onboarding has no joining date,
-               so this guard never fired for them and the roster read them as
-               plainly Absent. (QA #218) */
             $startIso = $joinIso ?? $this->attendanceStartIso($emp);
             if ($startIso !== null && $date < $startIso && !$today) {
                 $statusToday = 'Not Joined';
             }
-            /* Onboarding still in progress — they are not expected in yet, so
-               the roster says so instead of counting them absent. A real row
-               still wins, as above. (QA #218) */
             if (!$this->owesAttendance($emp) && !$today) {
                 $statusToday = 'Not Joined';
             }
-            /* Selected date sits AFTER this employee left → out of scope for
-               them, not an absence. Mirror image of 'Not Joined' above, and
-               reached only in audit mode: without include_exited a leaver is
-               not in the roster on such a date at all. Leaving it to read
-               "Absent" would have put a person who has left into the Absent
-               chip for every day since, which is exactly the "excluded from
-               current processing" half of this ticket. (#91)
-
-               A stored row still wins, on the same reasoning as 'Not Joined':
-               if a punch really exists after the last working day, HR needs to
-               see it rather than a label that hides it. */
             $exitIso = $emp->exit && !$emp->exit->rehired_at && $emp->exit->last_working_day
                 ? \Carbon\Carbon::parse($emp->exit->last_working_day)->toDateString()
                 : null;
 
-            /* HAS LEFT versus IS LEAVING — two different states that were
-               reported as one. (#13)
-               $exitIso above is the employment WINDOW: it exists from the
-               moment notice is filed at Stage 1, because that is when the last
-               working day is captured, and it correctly bounds the calendar and
-               the log at both ends. But it says nothing about whether the
-               person has actually gone. Using it to label them made an employee
-               serving notice — still on the floor, still punching in every
-               morning — read as "Exited" in the roster.
-               Someone has LEFT only once the exit case is Closed (the marker
-               ExitController stamps with completed_at at Stage 4), or when they
-               were removed through Employee Management with no exit record at
-               all. Until then they are an ordinary employee with a known end
-               date, which is what noticeUntil says instead. */
             $exitCompleted = $emp->exit
                 && !$emp->exit->rehired_at
                 && (string) ($emp->exit->exit_case_status ?? 'Open') === 'Closed';
@@ -1026,49 +659,24 @@ class AttendanceController extends Controller
             $exitedOnIso = $hasLeft ? ($exitIso ?? $emp->deleted_at?->toDateString()) : null;
             $noticeUntil = (!$hasLeft && $exitIso !== null) ? $exitIso : null;
 
-            /* An open exit keeps the real attendance reading (Absent): the notice pill
-               beside the name already says the exit is in progress. Only a CLOSED exit
-               replaces the status, so a genuine leaver stops reading as absent. */
             if ($exitIso !== null && $date > $exitIso && !$today && $hasLeft) {
                 $statusToday = 'Exited';
             }
 
-            // Approved leave wins over an "Absent" reading (no attendance row).
             if (isset($onLeaveSet[$emp->id]) && strcasecmp($statusToday, 'Absent') === 0) {
                 $statusToday = 'Leave';
             }
             $firstIn     = $today?->check_in_at ? $today->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
             $lastOut     = $today?->check_out_at ? $today->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
-            // Full worked total (completed pairs + any open pair auto-closed an
-            // hour after shift end) — used for static / past-day display.
             $workedSecs  = $today ? (int) $today->total_worked_seconds : 0;
             $workedMins  = (int) floor($workedSecs / 60);
 
-            // Live-tick inputs. For an OPEN day (clocked-in, not yet out) the SPA
-            // re-derives the running total each second as:
-            //     completedSeconds + (min(now, autoCutoff) − openInAt)
-            // so the WORKED figure ticks up to the auto-checkout and then
-            // freezes — matching the employee's own Clock-In screen. Past days
-            // have no open punch, so the SPA just shows $workedSecs (already
-            // capped by the model).
             $workedCompletedSecs = $today ? (int) $today->completedWorkedSeconds() : 0;
             $openInAt  = null;
-            /* Auto-checkout is the employee's SHIFT END + 1h, not a blanket
-               9 PM — an 08:00–14:00 shift closes at 15:00. Derived from the
-               same model helper the worked-seconds total uses, so the live
-               ticker and the stored figure can't drift apart. Employees with
-               no attendance row today still need a boundary for the ticker,
-               so fall back to a bare Attendance carrying this date/employee. */
             $cutoffRow = $today ?: (new Attendance(['attendance_date' => $date]))->setRelation('employee', $emp);
             $autoCutoffAt = \Carbon\Carbon::createFromTimestamp(
                 $cutoffRow->autoCheckoutCutoffTs($date), self::DISPLAY_TZ
             )->toIso8601String();
-            /* Overtime — only for employees the employee master marks
-               overtime-applicable, counted from the SHIFT END regardless of a
-               late arrival. While the employee is still clocked in the figure
-               is provisional: not punching out before the next shift starts
-               (which is what autoCutoffAt now is for these employees, since
-               they get no auto-logout) drops the day's overtime to zero. */
             $otApplicable = $emp->overtimeApplicable();
             $shiftEndAt   = \Carbon\Carbon::createFromTimestamp(
                 $cutoffRow->shiftEndTs($date), self::DISPLAY_TZ
@@ -1080,54 +688,31 @@ class AttendanceController extends Controller
             }
 
             $lateByMinutes = 0;
-            /* Against the shift THIS day was stamped with, not the employee's
-               current one: a shift reassigned after the punch must not turn an
-               on-time arrival into a late one retroactively. (#35 / #216) */
             $dayShiftStart = ($today ? $today->shiftWindow()[0] : null) ?: $shiftStart;
             if ($firstIn && $dayShiftStart) {
                 $diff = $this->minutesBetween($dayShiftStart, $firstIn);
                 if ($diff > 0) $lateByMinutes = $diff;
             }
 
-            // KPIs — month-to-date
             $mRows = $monthRows->get($emp->id, collect());
             $presentDays = 0; $lateMarks = 0; $missingPunch = 0;
             $mByIso = [];
             foreach ($mRows as $r) {
                 $mByIso[\Carbon\Carbon::parse($r->attendance_date)->toDateString()] = $r;
                 $st = strtolower((string) $r->status);
-                /* A rest-day label with real attendance under it counts as a
-                   WORKED day here too (#89/#90).
-                   These KPIs read the stored status, while the day on screen is
-                   resolved by resolveDayStatus(). Without this the two disagree
-                   the moment someone works a holiday: the row reads Present or
-                   Late, and "Present Days" does not include it — the same
-                   contradiction the ticket reports, moved into the counters. */
                 if ($this->workedARestDay($st, $r)) {
                     $st = 'present';
                 }
                 if (in_array($st, ['present', 'late', 'on duty', 'work from home', 'corrected', 'half day'], true)) {
                     $presentDays++;
                 }
-                // A half day is its own category (0.5 present credit), NOT a late
-                // mark — counting it here over-stated the KPI and, worse, diverged
-                // from payroll's late count (PayrollService::attendanceAggregates)
-                // and the profile summary, so the "Late Marks" HR sees no longer
-                // matched the BR-01 LOP actually deducted. Late = stored 'Late'
-                // plus the Present→Late >10-min promotion below.
                 if ($st === 'late') $lateMarks++;
                 if ($st === 'missing in' || $st === 'missing out') {
                     $missingPunch++;
                 } elseif ($r->check_in_at && !$r->check_out_at
                     && \Carbon\Carbon::parse($r->attendance_date)->toDateString() < self::todayLocal()) {
-                    // Clocked in on a past day but never clocked out → missing punch.
                     $missingPunch++;
                 }
-                // Heuristic late on top of stored status — shift_start is in
-                // local time, so the punch timestamp must be converted from
-                // UTC before comparing.
-                // Per-row shift, so a reassignment can't re-mark past days of
-                // the month as late. (#35 / #216)
                 $rowShiftStart = $r->shiftWindow()[0] ?: $shiftStart;
                 if ($r->check_in_at && $rowShiftStart) {
                     $localIn = $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
@@ -1136,21 +721,8 @@ class AttendanceController extends Controller
                 }
             }
 
-            // Compliance = present days ÷ working days ELAPSED this month.
-            // The denominator must walk the calendar — NOT just the days that
-            // happen to have an attendance row — otherwise an employee who
-            // punched a single day reads 1/1 = 100 % while every absent
-            // working day (which has no row at all) is silently ignored.
-            // Sanctioned days (weekly-off, company holiday, approved leave),
-            // future days, and days before the employee joined are excluded
-            // from the denominator so they neither help nor hurt the score.
-            /* Detail request only — and measured, not assumed: walking the
-               calendar once per employee was 486 ms of a 1.4 s roster
-               response, 44% of the whole thing, for a number the roster does
-               not render anywhere. One employee costs ~2 ms. */
             $compliancePct = null;
             if ($detailMode) {
-            /* No group → the company-wide set, not an empty one. (#85) */
             $holidaySet  = $holidayByGroup[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
                 ?? $holidayByGroup[self::HOLIDAY_COMPANY_KEY] ?? [];
             $joinDate    = $emp->date_of_joining ? \Carbon\Carbon::parse($emp->date_of_joining) : null;
@@ -1158,28 +730,11 @@ class AttendanceController extends Controller
                 (clone $dateC)->startOfMonth(), $mtdEndC, $joinDate, $weeklyOffLabel, $holidaySet, $mByIso,
                 $leaveDaysByEmp[$emp->id] ?? []
             );
-            /* No tracked working days -> NO percentage, not a perfect one.
-             *
-             * The denominator is zero whenever nothing was ever expected of the
-             * employee in the window: they joined after it, or every day in it
-             * is a weekly-off, company holiday, approved leave or still in the
-             * future. Reporting 100% there invented a score out of no data —
-             * present 0, absent 0, compliance 100% is the exact reading QA
-             * filed (CBC #66), and it is the same wrong answer for someone who
-             * has not started yet as for someone with a spotless month.
-             *
-             * null instead, so the tile can say "no working days" rather than
-             * pick a number. 0 would be just as false in the other direction:
-             * it reads as total non-attendance when nothing was owed. */
             $compliancePct = $tracked === 0
                 ? null
                 : (int) round(min(100, max(0, $presentDays / $tracked * 100)));
             }
 
-            // 90-day log — covers EVERY day in the window so the calendar
-            // and the month range pills paint a full picture, not just the
-            // days the employee happened to punch. Detail request only; the
-            // roster ships an empty array rather than 90 days per row.
             $logs = [];
             if ($detailMode) {
                 $hRows = $historyRows->get($emp->id, collect());
@@ -1198,41 +753,16 @@ class AttendanceController extends Controller
                 'empCode'           => (string) ($emp->emp_code ?? ''),
                 'name'              => (string) ($emp->display_name ?? trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))),
                 'initials'          => $this->initials((string) ($emp->display_name ?? '')),
-                'accent'            => '',                            // SPA picks colour from index
+                'accent'            => '',
                 'department'        => $emp->department?->name ?? '—',
                 'designation'       => $emp->designation?->name ?? '—',
                 'managerName'       => $this->managerDisplayName($emp),
-                // Lets the SPA blank out calendar cells before the employee
-                // joined instead of painting them as attendance days (CBC #74).
                 'dateOfJoining'     => $joinIso,
-                /* The day they LEFT — set only once the exit is complete, so
-                   the roster badges someone who has actually gone. Null while
-                   an exit is still in progress: that person is on notice, not
-                   out the door. (#91, narrowed by #13) */
                 'exitedOn'          => $exitedOnIso,
-                /* Their last working day while the exit is still IN PROGRESS.
-                   Same date, different meaning — it lets the roster say "on
-                   notice until X" rather than mislabelling them as exited, and
-                   keeps the end of their employment window on screen. (#13) */
                 'noticeUntil'       => $noticeUntil,
-                /* The employment window's far end whatever the exit's stage —
-                   what the calendar bounds itself by. Kept separate from the
-                   two above precisely because bounding a window and saying
-                   somebody has left are different questions. (#13) */
                 'employedUntil'     => $exitIso,
-                // Default office hours fall back to 09:30 – 18:30 (9 h
-                // working window). Employees with a parseable shift string
-                // like "General (09:00 – 18:00)" override this — handled
-                // up-front via $shiftStart / $shiftEnd defaulting.
-                /* The shift stamped on the selected day, falling back to the
-                   employee's current one when the day has no row (nothing was
-                   recorded, so there is no historical shift to preserve). The
-                   employee's live shift was shown here unconditionally, so a
-                   reassignment relabelled days already worked. (#35) */
                 'shift'             => ($today?->shiftNameForDay())
                     ?: (string) ($emp->shift ?? 'General (09:30 – 18:30)'),
-                /* Window from the SAME day as the name above — see
-                   displayShiftWindow(). These two read as one fact on screen. */
                 'shiftStart'        => self::displayShiftWindow($today, $shiftStart, $shiftEnd)[0],
                 'shiftEnd'          => self::displayShiftWindow($today, $shiftStart, $shiftEnd)[1],
                 'weeklyOff'         => (string) ($emp->weekly_off ?? 'Sun'),
@@ -1250,11 +780,6 @@ class AttendanceController extends Controller
                 'overtimeSeconds'   => $overtimeSecs,
                 'expectedMinutes'   => $expectedMinutes,
                 'lateByMinutes'     => $lateByMinutes,
-                /* #22: the raw figure stays raw — the log and the payslip both
-                   want it — but the client was deciding on its own what counted
-                   as late and drew a "7m late" caption beside a roster that had
-                   already filed the day as on time. The threshold travels with
-                   the number now. */
                 'lateGraceMinutes'  => Attendance::LATE_GRACE_MINUTES,
                 'punches'           => $detailMode ? $this->renderPunches($todayPunches) : [],
                 'presentDays'       => $presentDays,
@@ -1262,32 +787,10 @@ class AttendanceController extends Controller
                 'missingPunch'      => $missingPunch,
                 'compliancePct'     => $compliancePct,
                 'logs'              => $logs,
-                /* { "YYYY-MM-DD": "Holiday name" } for this employee's group
-                   plus the company-wide set, running past today so the
-                   calendar can mark holidays that have not arrived yet (#93).
-                   Past dates are in here too and deliberately so — the
-                   calendar reads a day's status from `logs` first and only
-                   falls back to this, which keeps a holiday that was actually
-                   WORKED reading as Present rather than being overpainted. */
                 'holidays'          => $detailMode
                     ? (object) ($holidayByGroupCal[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
                         ?? $holidayByGroupCal[self::HOLIDAY_COMPANY_KEY] ?? [])
                     : (object) [],
-                /* { "YYYY-MM-DD": true } — the employee's weekly-off days,
-                   resolved SERVER-SIDE by WeekOff and spanning the same window
-                   as `holidays` above. (#94)
-                   The SPA used to receive only the `weeklyOff` LABEL and
-                   re-derive the days by scanning it for weekday names. That
-                   could not express "1st & 3rd Saturday" — it saw the word
-                   "Saturday" and marked every one of them off — and a label
-                   with no weekday in it at all, like the seeded "Week Off
-                   Policy", matched nothing, so the calendar showed no weekly
-                   off whatsoever. WeekOff is the single authority everywhere
-                   else (payroll, leave, the log builder); the calendar now
-                   reads the same answer instead of guessing at the label.
-                   Runs past today on purpose, exactly like the holiday map: a
-                   weekly off is a known recurring pattern, so upcoming ones
-                   paint rather than leaving the rest of the month blank. */
                 'weeklyOffDates'    => $detailMode
                     ? (object) \App\Support\WeekOff::datesInRange(
                         (string) ($emp->weekly_off ?? ''),
@@ -1295,10 +798,6 @@ class AttendanceController extends Controller
                         $calendarHolidayEnd,
                     )
                     : (object) [],
-                /* Null unless a regularization for THIS date is still awaiting
-                   a decision (#92). The SPA shows its pill on
-                   `correction.status === 'Pending'`, so an approved or rejected
-                   request sends null and the pill clears itself. */
                 'correction'        => (function () use ($pendingCorrections, $emp, $date) {
                     $c = $pendingCorrections[$emp->id] ?? null;
                     if (!$c) return null;
@@ -1317,16 +816,14 @@ class AttendanceController extends Controller
         return response()->json($out);
     }
 
-    /** Expected minutes between two HH:MM strings — wraps midnight for night shifts. */
     private function expectedMinutesFromWindow(?string $start, ?string $end): int
     {
-        if (!$start || !$end) return 540; // default 9h
+        if (!$start || !$end) return 540;
         $diff = $this->minutesBetween($start, $end);
         if ($diff <= 0) $diff += 24 * 60;
         return $diff;
     }
 
-    /** Minutes from $from ("HH:MM") to $to ("HH:MM"); negative if $to earlier. */
     private function minutesBetween(string $from, string $to): int
     {
         [$fh, $fm] = array_map('intval', explode(':', $from));
@@ -1334,14 +831,6 @@ class AttendanceController extends Controller
         return ($th * 60 + $tm) - ($fh * 60 + $fm);
     }
 
-    /**
-     * Company holidays for the given holiday groups that fall inside [$start,$end].
-     * Returns [holiday_group_id => [Y-m-d => true]]. Recurring holidays are
-     * re-anchored to the window's year. Mirrors PayrollService::holidayAggregates
-     * so attendance compliance and payroll agree on what a holiday is.
-     */
-    /** Key under which the COMPANY-wide holiday set is returned — the set that
-     *  applies to an employee belonging to no holiday group. */
     public const HOLIDAY_COMPANY_KEY = 0;
 
     private function holidayDatesForGroups(
@@ -1355,47 +844,22 @@ class AttendanceController extends Controller
             return [];
         }
 
-        /* A holiday with NO group is a COMPANY holiday — it applies to everyone
-         * in the client, not to nobody. (#85)
-         *
-         * `whereIn('holiday_group_id', $groupIds)` never matches NULL, so every
-         * ungrouped holiday was invisible to attendance: the Log showed the day
-         * as Absent for anyone without punches, while payroll — which fixed
-         * this same rule under QA #93 — was crediting it as a paid holiday. The
-         * two modules disagreed about what a holiday is, which is exactly what
-         * this method's docblock says must not happen.
-         *
-         * holidays.holiday_group_id is nullable and the Holiday screen offers
-         * "no group" as a normal choice, so this is not an edge case — it is how
-         * company-wide holidays are entered. The early return on an empty
-         * $groupIds is gone with it: a tenant that uses no groups at all still
-         * has company holidays to honour. */
         $rows = DB::table('holidays')
             ->whereNull('deleted_at')
             ->where(function ($q) use ($groupIds, $clientId, $branchId) {
-                // Company-wide: no group, scoped to this client/branch.
                 $q->where(function ($w) use ($clientId, $branchId) {
                     $w->whereNull('holiday_group_id');
-                    // The client must MATCH — a null client_id is an unscoped
-                    // row, not a global one, and treating it as global would
-                    // hand one tenant's calendar to all of them.
                     if ($clientId) $w->where('client_id', $clientId);
-                    // Branch, by contrast, IS "match or null": a company holiday
-                    // entered without a branch covers every office.
                     if ($branchId) {
                         $w->where(fn ($b) => $b->whereNull('branch_id')->orWhere('branch_id', $branchId));
                     }
                 });
-                // Plus the specific groups asked for.
                 if (!empty($groupIds)) {
                     $q->orWhereIn('holiday_group_id', $groupIds);
                 }
             })
             ->get(['holiday_group_id', 'name', 'date', 'is_recurring']);
 
-        // Value is the holiday NAME (not just `true`) so the Attendance Log can
-        // label the day with which holiday it is. All readers use isset(), so a
-        // non-empty string is still truthy for the "is this a holiday?" checks.
         $map = [];
         $company = [];
         foreach ($rows as $r) {
@@ -1403,20 +867,6 @@ class AttendanceController extends Controller
             $src  = \Carbon\Carbon::parse($r->date);
             $name = $r->name ?: 'Holiday';
 
-            /* A recurring holiday recurs in EVERY year the window covers, not
-             * just the year the window opens in. (#93)
-             *
-             * Re-anchoring to $start->year alone silently dropped occurrences
-             * whenever a window straddled a year boundary — the 90-day log
-             * window viewed in December reaches into January, and a recurring
-             * 26 January was being pinned back to the January that had already
-             * passed, landing outside the window and vanishing. The wider
-             * window the calendar now asks for spans years by design, so this
-             * had to stop being a single-year assumption.
-             *
-             * Feb 29 on a non-leap year is skipped rather than rolled into
-             * March: Carbon would happily overflow it to the 1st, inventing a
-             * holiday on a date nobody configured. */
             $dates = [];
             if ($r->is_recurring) {
                 for ($yr = $start->year; $yr <= $end->year; $yr++) {
@@ -1438,10 +888,6 @@ class AttendanceController extends Controller
             }
         }
 
-        /* Company holidays belong to every group as well as to the no-group
-           set, so a reader that indexes by the employee's group id gets them
-           without having to know they exist. A group's OWN entry for the same
-           date wins — a group that overrides a company holiday means it. */
         foreach ($groupIds as $gid) {
             if ($gid === null) continue;
             $map[$gid] = ($map[$gid] ?? []) + $company;
@@ -1451,13 +897,6 @@ class AttendanceController extends Controller
         return $map;
     }
 
-    /**
-     * Count the working days that have ELAPSED in [$monthStart, $mtdEnd] for an
-     * employee — the compliance denominator. A day counts only when it is NOT a
-     * weekly-off, NOT a company holiday, NOT a sanctioned-leave day (per the
-     * stored attendance status), and the employee had already joined. This walks
-     * the calendar so absent days (which carry no attendance row) are counted.
-     */
     private function trackedWorkingDays(
         \Carbon\Carbon $monthStart,
         \Carbon\Carbon $mtdEnd,
@@ -1472,7 +911,6 @@ class AttendanceController extends Controller
         while ($cursor->lte($mtdEnd)) {
             $iso = $cursor->toDateString();
 
-            // Day predates the employee's joining → not theirs to attend.
             if ($joinDate && $cursor->lt($joinDate->copy()->startOfDay())) {
                 $cursor->addDay();
                 continue;
@@ -1481,10 +919,6 @@ class AttendanceController extends Controller
             $isWeeklyOff = \App\Support\WeekOff::isOff($weeklyOffLabel, $cursor);
             $isHoliday   = isset($holidaySet[$iso]);
             $st          = strtolower((string) ($mByIso[$iso]->status ?? ''));
-            // Approved leave is sanctioned — exclude via the precomputed leave-day
-            // set (leaves aren't stored as an attendance status), plus the legacy
-            // status-string check for any row that does carry a leave/holiday
-            // status. (bug #20)
             $isSanctioned = isset($leaveDaySet[$iso])
                 || str_contains($st, 'leave') || str_contains($st, 'holiday')
                 || str_contains($st, 'week off') || $st === 'weekly off';
@@ -1497,36 +931,9 @@ class AttendanceController extends Controller
         return $tracked;
     }
 
-   
-    /* parseWeeklyOff() lived here. It scanned the label for day names, so it
-     * could only ever say "Saturdays are off" — never "the 2nd and 4th
-     * Saturday" — and anything it failed to parse collapsed to Sunday.
-     * App\Support\WeekOff::isOff() replaces it and is shared with
-     * LeaveRequestController, so attendance and leave can no longer disagree
-     * about which days are off. */
-
-   
-    /**
-     * Does this row carry a rest-day LABEL but real attendance underneath?
-     *
-     * Shared by the daily list (resolveDayStatus, #89) and the Attendance Log /
-     * Calendar (buildHistoryLogs, #90) so the two describe the same day the
-     * same way — they disagreed before, which is how the Updated Record could
-     * read "Late" while the log row for the very same date read "Holiday".
-     *
-     * A stored 'Holiday' / 'Weekly Off' is not proof the employee was off; it
-     * is sometimes just what the row was stamped with when it was created (see
-     * PayrollService::restDayKind via the regularization path), and
-     * AttendancePunchService reuses an existing row without revisiting its
-     * status. A punch on the row settles the question.
-     */
     private function workedARestDay(?string $status, ?Attendance $row): bool
     {
-        if (!$row || $status === null) return false;
-        if (!in_array(strtolower(trim($status)), ['holiday', 'weekly off'], true)) return false;
-
-        return (bool) $row->check_in_at
-            || ($row->relationLoaded('punches') && $row->punches->isNotEmpty());
+        return \App\Support\AttendanceDayStatus::workedARestDay($status, $row);
     }
 
     private function resolveDayStatus(
@@ -1536,74 +943,11 @@ class AttendanceController extends Controller
         string $date,
         bool $isHoliday = false,
     ): string {
-        if ($row && !empty($row->status)) {
-            $stored = (string) $row->status;
-
-            /* Working a rest day beats the rest-day label. (#89)
-             *
-             * A stored 'Holiday' / 'Weekly Off' is not always a statement that
-             * the employee was off — it is sometimes just what the row was
-             * STAMPED with when it was created. AttendanceRegularization's
-             * exemption path seeds a new row from PayrollService::restDayKind(),
-             * which returns 'Holiday' on a holiday, and AttendancePunchService
-             * reuses an existing row without touching its status. So once such
-             * a row exists, later punches attach to it and the day keeps
-             * reading "Holiday" while the Attendance Log lists the punches
-             * right next to it — the contradiction in the report.
-             *
-             * If the row carries real attendance, the person worked; say so.
-             * Only a rest-day label is overridden, and only when there is a
-             * punch to justify it, so a genuine holiday with no attendance is
-             * untouched.
-             *
-             * Falls THROUGH to the Late promotion below rather than returning
-             * 'Present' outright. An earlier revision returned early, reasoning
-             * that a closed day has no shift to be late against and that Late
-             * would feed the LOP deduction — the second half of which is simply
-             * wrong: the late-mark KPI and payroll both count the STORED status
-             * (see the MTD loop in dailyView), never this resolved one, so
-             * returning Present suppressed nothing. It only hid a late arrival
-             * the Attendance Log was reporting two rows away, and #90 asks for
-             * "Present/Worked (or Late, if applicable)". */
-            if ($this->workedARestDay($stored, $row)) {
-                $stored = 'Present';
-            }
-
-            // Auto-promote Present → Late based on the local first-in, using
-            // the one grace figure every layer reads (#22).
-            if (strcasecmp($stored, 'Present') === 0 && $row->check_in_at && $shiftStart) {
-                // The shift THIS day was worked under, not the employee's
-                // current one — see Attendance::shiftWindow(). (#216)
-                $dayShiftStart = $row->shiftWindow()[0] ?: $shiftStart;
-                $localIn = $row->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                $late = $this->minutesBetween($dayShiftStart, $localIn);
-                if ($late > Attendance::LATE_GRACE_MINUTES) return 'Late';
-            }
-            return $stored;
-        }
-        if ($weeklyOff) return 'Weekly Off';
-        /* A company holiday is not an absence. (#86)
-         *
-         * With no attendance row this fell straight through to 'Absent', so a
-         * holiday only started reading as one once a regularization CREATED a
-         * row for the day — the status appeared to depend on paperwork rather
-         * than on the calendar. Nobody has to be regularized onto a day the
-         * company was closed.
-         *
-         * Checked after the stored status, so an employee who genuinely worked
-         * the holiday keeps their Present/Late reading, and after the weekly
-         * off, so a holiday landing on someone's off-day still reads as their
-         * off-day. Only the "no row, working day" case changes — which is the
-         * one that was wrong. */
-        if ($isHoliday) return 'Holiday';
-        // Future dates with no attendance row default to Absent rather than
-        // pretending the day is already "Present". The SPA's date picker
-        // shouldn't be in the future in practice, but if the user navigates
-        // there we don't want to claim attendance that hasn't happened.
-        return 'Absent';
+        return \App\Support\AttendanceDayStatus::resolve(
+            $row, $weeklyOff, $shiftStart, $date, $isHoliday,
+        );
     }
 
-   
     private function initials(string $name): string
     {
         $name = trim($name);
@@ -1614,25 +958,6 @@ class AttendanceController extends Controller
         return strtoupper($first . $second);
     }
 
-    /**
-     * Reporting-manager name for the roster row / day panel Mgr. chip.
-     *
-     * An employee's manager is EITHER another employee (`reporting_manager_id`)
-     * or a branch user who never got an Employee row of their own
-     * (`reporting_manager_user_id`) — exactly one of the two is populated, and
-     * HOD-level staff are routinely assigned the branch user. Attendance only
-     * ever read the employee link, so every employee reporting to a branch user
-     * showed "—" here even though the manager was assigned (CBC #75).
-     */
-    /**
-     * The employee's joining date as a Y-m-d string, or null when unset.
-     *
-     * Nothing before this date is an attendance day at all: the person was not
-     * on the payroll, so those days are neither Present nor Absent — they are
-     * out of scope. facePunch() has refused pre-joining punches since bug #19;
-     * the READ paths never learned the same rule and kept synthesising "Absent"
-     * rows for them (CBC #74).
-     */
     private function joiningIso(Employee $emp): ?string
     {
         return $emp->date_of_joining
@@ -1640,19 +965,6 @@ class AttendanceController extends Controller
             : null;
     }
 
-    /**
-     * The first day this employee could meaningfully be marked absent. (QA #218)
-     *
-     * The joining date, and when there isn't one, the day the record was
-     * created — they did not exist to the company before that, so there is
-     * nothing for them to have been absent from.
-     *
-     * The fallback is the fix. The pre-joining guard read `$joinIso !== null`,
-     * so an employee still part-way through onboarding — who has no joining
-     * date yet — had no lower bound at all, and every past day in the window
-     * was synthesised as Absent. A profile opened on someone hired last week
-     * showed a full month of absences they could not possibly have accrued.
-     */
     private function attendanceStartIso(Employee $emp): ?string
     {
         $join = $this->joiningIso($emp);
@@ -1663,18 +975,6 @@ class AttendanceController extends Controller
             : null;
     }
 
-    /**
-     * Is this employee expected to attend yet? (QA #218)
-     *
-     * Onboarding runs to stage 6, and PayrollService::eligibleEmployees() will
-     * not pay anyone below it. Marking those employees Absent asserts an
-     * obligation the rest of the system does not recognise — the calendar was
-     * the only place claiming they owed attendance at all.
-     *
-     * This suppresses SYNTHESISED absences only. A real punch still renders:
-     * if someone clocked in before their paperwork finished, that happened and
-     * the day says so.
-     */
     private function owesAttendance(Employee $emp): bool
     {
         return (int) ($emp->onboarding_stage_completed ?? 0) >= 6;
@@ -1692,7 +992,6 @@ class AttendanceController extends Controller
         return $name !== '' ? $name : '—';
     }
 
-    
     private function renderPunches($punches): array
     {
         $out = [];
@@ -1731,50 +1030,38 @@ class AttendanceController extends Controller
             $out[] = $entry;
             if ($type === 'in') $lastIn = $when; else $lastIn = null;
         }
-        // Strip the internal timestamp hint we used for break computation.
         foreach ($out as &$row) unset($row['_outTs']);
         return $out;
     }
 
-  
     private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, ?string $weeklyOffLabel, string $from, string $to, array $holidaySet = [], array $leaveDaySet = [], ?string $joinIso = null, ?string $exitIso = null): array
     {
-       
         $byIso = [];
         foreach ($rows as $r) {
             $iso = \Carbon\Carbon::parse($r->attendance_date)->toDateString();
-          
+
             $r->setRelation('employee', $emp);
             $byIso[$iso] = $r;
         }
 
         $shift = (string) ($emp->shift ?: '—');
-       
+
         $shiftEndLabel = $emp->resolveShiftWindow()[1] ?: '18:30';
         $todayLocal = self::todayLocal();
-       
+
         $startIso = $joinIso ?? $this->attendanceStartIso($emp);
         $owes     = $this->owesAttendance($emp);
         $out = [];
-       
+
         $cursor = \Carbon\Carbon::parse($to);
         $start  = \Carbon\Carbon::parse($from);
         while ($cursor->greaterThanOrEqualTo($start)) {
             $iso = $cursor->toDateString();
-           
+
             if ($iso > $todayLocal) { $cursor->subDay(); continue; }
-           
+
             if ($startIso !== null && $iso < $startIso && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
-            /* Not onboarded yet — no synthesised absences at all, only real
-               rows. Payroll will not pay them below stage 6 either. (QA #218) */
             if (!$owes && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
-            /* And days AFTER they left, for the same reason from the same
-               direction (#91). Auditing a leaver's history is the whole point
-               of showing them here, so the log must stop where their
-               employment did: synthesising "Absent" for every day since would
-               bury the record being audited under weeks of fiction. A real
-               punch dated after the last working day is still emitted — like
-               the pre-joining case, that is a data problem HR needs to see. */
             if ($exitIso !== null && $iso > $exitIso && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
             $r   = $byIso[$iso] ?? null;
             $isWO = \App\Support\WeekOff::isOff($weeklyOffLabel, $cursor);
@@ -1783,35 +1070,17 @@ class AttendanceController extends Controller
 
             if ($r) {
                 $status  = $r->status ?: ($isWO ? 'Weekly Off' : 'Absent');
-                /* A punched rest day is a worked day here too (#90).
-                   Without this the log row kept the stamped 'Holiday' while the
-                   Updated Record panel above it — which resolves through
-                   resolveDayStatus — already said Late/Present, so one screen
-                   described the same date two ways. */
                 $workedRestDay = $this->workedARestDay($status, $r);
                 if ($workedRestDay) $status = 'Present';
 
                 $firstIn = $r->check_in_at  ? $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i')  : '—';
                 $lastOut = $r->check_out_at ? $r->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : '—';
                 $worked  = (int) floor(((int) $r->total_worked_seconds) / 60);
-                // Promote Present → Late when first-in is significantly
-                // after shift start (mirrors resolveDayStatus()). The
-                // face-clock flow always writes 'Present' on first punch
-                // and doesn't know about shifts, so the heuristic has to
-                // run at read time.
-                // Applies to a worked rest day too — see resolveDayStatus():
-                // the late-mark KPI counts the STORED status, so promoting the
-                // display costs nothing and #90 asks for Late where it applies.
-                // Per-row shift, so a reassignment cannot re-mark past days
-                // late. (#216)
                 $rowShift = $r->shiftWindow()[0] ?: $shiftStart;
                 if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $rowShift
                     && $this->minutesBetween($rowShift, $firstIn) > Attendance::LATE_GRACE_MINUTES) {
                     $status = 'Late';
                 }
-                // Missing checkout: a PAST day with a check-in but no check-out
-                // is a missing punch (the face-clock flow leaves status as
-                // Present/Late). Today is exempt — the person may still be in.
                 if (!$isFuture && $iso < $todayLocal
                     && $r->check_in_at && !$r->check_out_at
                     && in_array(strtolower($status), ['present', 'late'], true)) {
@@ -1830,28 +1099,12 @@ class AttendanceController extends Controller
                     if ($p->direction === 'in') {
                         $openIn = $hf;
                     } elseif ($p->direction === 'out' && $openIn !== null) {
-                        // 6dp, not 2 — the UI turns these decimal hours back into
-                        // HH:MM:SS, and 2dp rounded a 09:35 punch to 9.58 which
-                        // printed as "09:34:48 AM".
                         $segments[] = ['start' => round($openIn, 6), 'end' => round($hf, 6)];
                         $openIn = null;
                     }
                 }
-                // An in-punch with no matching out (still clocked in today, or a
-                // forgotten check-out on a past day) used to produce NO segment
-                // at all — the visual bar drew nothing and the day popover hid
-                // its punch list entirely, even though the row showed real
-                // effective hours. Emit an open-ended segment so the in time is
-                // always visible; `open` tells the UI to print MISSING in place
-                // of the out time. It runs to "now" on today's row (matching the
-                // live effective-hours reading) and to the shift end on a past
-                // day, so the bar has something to draw.
                 if ($openIn !== null) {
                     $nowLocal = \Carbon\Carbon::now(self::DISPLAY_TZ);
-                    // Today: run to "now" so the bar matches the live effective
-                    // hours. A past day: we genuinely don't know when they left,
-                    // so the segment stays zero-length rather than inventing a
-                    // span — the popover still lists the in time with MISSING.
                     $endHf = $iso === $todayLocal
                         ? max($openIn, $nowLocal->hour + $nowLocal->minute / 60)
                         : $openIn;
@@ -1862,7 +1115,6 @@ class AttendanceController extends Controller
                     ];
                 }
             } else {
-                // No Attendance row for this day — synthesise it.
                 $status  = $isFuture ? 'Absent' : ($isWO ? 'Weekly Off' : 'Absent');
                 $firstIn = '—';
                 $lastOut = '—';
@@ -1870,38 +1122,26 @@ class AttendanceController extends Controller
                 $segments = [];
             }
 
-        
-            /* The holiday is a fact about the DATE, so it is reported whenever
-               the date is one — not only when nobody worked. An employee who
-               punches in on a declared holiday stays Present and the holiday
-               rides alongside, which is exactly the case the screen has to
-               show: worked, on a holiday (#102).
-               holidaySet value is the holiday's name (see holidayDatesForGroups). */
             $holidayName = $isHoliday && is_string($holidaySet[$iso] ?? null)
                 ? $holidaySet[$iso]
                 : null;
 
-            /* The STATUS only becomes Holiday when there is nothing else to
-               call the day. Someone who worked is Present first; overwriting
-               that would lose the fact that they turned up. */
             if ($isHoliday && in_array(strtolower((string) $status), ['absent', 'weekly off'], true)) {
                 $status = 'Holiday';
             }
 
-           
             $leaveInfo   = $leaveDaySet[$iso] ?? null;
             $leaveKind   = null;
             $leavePortion = null;
             if ($leaveInfo) {
                 $leaveKind    = strcasecmp((string) ($leaveInfo['paid'] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
                 $leavePortion = (string) ($leaveInfo['portion'] ?? 'full');
-               
+
                 if (in_array(strtolower((string) $status), ['absent', 'leave'], true)) {
                     $status = $leaveKind === 'Unpaid' ? 'Unpaid Leave' : 'Paid Leave';
                 }
             }
 
-           
             $dayOpen = (bool) ($r && $r->check_in_at && !$r->check_out_at);
 
             $deviation = '—';
@@ -1913,13 +1153,11 @@ class AttendanceController extends Controller
             }
 
             $lateMin = 0;
-            // Same per-row shift the status promotion above uses. (#216)
             $lateShift = ($r ? $r->shiftWindow()[0] : null) ?: $shiftStart;
             if ($firstIn !== '—' && $lateShift) {
                 $lateMin = max(0, $this->minutesBetween($lateShift, $firstIn));
             }
 
-        
             $grossMin = $worked;
             if ($r && $r->check_in_at && $r->check_out_at) {
                 $span = (int) floor(abs($r->check_out_at->diffInSeconds($r->check_in_at)) / 60);
@@ -1932,12 +1170,6 @@ class AttendanceController extends Controller
                 'weekday'          => $cursor->format('D'),
                 'status'           => $status,
                 'holidayName'      => $holidayName,
-                /* The day's own stamped shift — name AND window. Days with no
-                   attendance row keep the employee's current shift; there is no
-                   recorded history on them to contradict. The window travels
-                   with the name because the UI shows both together, and sending
-                   only the name left the popover captioned with the day's real
-                   shift over the CURRENT shift's timings. (#35) */
                 'shift'            => ($r?->shiftNameForDay()) ?: $shift,
                 'shiftStart'       => self::displayShiftWindow($r, $shiftStart, $shiftEndLabel)[0],
                 'shiftEnd'         => self::displayShiftWindow($r, $shiftStart, $shiftEndLabel)[1],
@@ -1961,13 +1193,10 @@ class AttendanceController extends Controller
         return $out;
     }
 
-  
     private function facePunch(Request $request, string $expected)
     {
         $data = $request->validate([
             'descriptor'   => 'required|array|size:' . self::DESCRIPTOR_LEN,
-            // A7: face-api descriptors are normalised floats (~[-1,1]); bound them
-            // generously so crafted extreme/garbage vectors are rejected up front.
             'descriptor.*' => 'required|numeric|between:-5,5',
             'label'        => 'nullable|string|max:50',
             'lat'          => 'nullable|numeric|between:-90,90',
@@ -1976,9 +1205,6 @@ class AttendanceController extends Controller
 
         $employee = $this->callerEmployee($request);
 
-        // A terminated / inactive employee (whose login still works) must not be
-        // able to keep clocking in — mirrors the enrolment guard in
-        // FaceBiometricController and the eligibility filter in dailyView.
         if ($employee->isDisabled()) {
             return response()->json([
                 'message'  => 'Your employee record is not active. Please contact HR.',
@@ -1986,8 +1212,6 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        // Attendance cannot be marked before the employee's joining date (bug
-        // #19). Covers both clock-in and clock-out since they share facePunch().
         if ($employee->date_of_joining) {
             $joinDate = \Carbon\Carbon::parse($employee->date_of_joining)->toDateString();
             if (self::todayLocal() < $joinDate) {
@@ -2021,11 +1245,8 @@ class AttendanceController extends Controller
             $today = self::todayLocal();
             $punchService = app(\App\Services\AttendancePunchService::class);
 
-            // Lock the day's row so a double-tap on the SPA can't race two
-            // punches into the same direction.
             $attendance = $punchService->findOrCreateDay($employee, $today);
 
-            // Resolve the actual next direction from history (server-truth).
             $nextDir = $punchService->nextDirection($attendance);
 
             if ($expected !== $nextDir) {
@@ -2038,15 +1259,11 @@ class AttendanceController extends Controller
                 ], 422);
             }
 
-            // Default the label by direction if the SPA didn't pick one —
-            // simplified to just Check In / Check Out.
             $label = trim((string) ($data['label'] ?? ''));
             if ($label === '') {
                 $label = $nextDir === 'in' ? 'Check In' : 'Check Out';
             }
 
-            // Persist the punch + recompute the daily summary via the shared
-            // service (identical mechanics to the eSSL device-import path).
             $punch = $punchService->appendPunch($attendance, $employee, [
                 'punched_at'     => now(),
                 'direction'      => $nextDir,
@@ -2070,16 +1287,10 @@ class AttendanceController extends Controller
         });
     }
 
- 
     private function recomputeSummary(Attendance $attendance): void
     {
-        // Delegated to the shared service so the eSSL device-import path and
-        // the face clock-in recompute the daily summary identically.
-        // See docs/ESSL_ATTENDANCE_INTEGRATION.md §6 (Phase 0).
         app(\App\Services\AttendancePunchService::class)->recomputeSummary($attendance);
     }
-
-    
 
     private function callerEmployee(Request $request): Employee
     {
@@ -2100,5 +1311,4 @@ class AttendanceController extends Controller
         }
         return sqrt($sum);
     }
-    
 }

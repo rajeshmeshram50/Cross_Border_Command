@@ -7,18 +7,13 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Append-only log of every quantity change on a PO line against its PI line.
- * The audit trail only — pending quantity is always computed from the live
- * lines, never summed from this table.
- */
 class PoItemQtyHistory extends Model
 {
     use BelongsToTenant;
 
     protected $table = 'p2p_po_item_qty_histories';
 
-    public const UPDATED_AT = null;   // rows are never edited
+    public const UPDATED_AT = null;
 
     public const EVENTS = ['added', 'updated', 'removed', 'cancelled', 'deleted'];
 

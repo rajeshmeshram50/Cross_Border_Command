@@ -14,6 +14,7 @@ import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { ClmSkeletonRows, TruncCell, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 import { lazyPage } from '../../../utils/lazyPage';
+import { useLocation } from 'react-router-dom';
 
 export type Kyc = { id: number; code: string; name: string; authority: string; authority_names?: string; status: 'active'|'inactive'; in_use?: boolean; used_in?: string[] };
 export type Authority = { id: number; code: string; name: string };
@@ -28,6 +29,9 @@ export default function ClmKycPage() {
   const [booted, setBooted]     = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]     = useState('');
+  /* Opened from the Master Control Center (/master/...): one Bulk Data Import/Export
+     button with a guided popup. The CLM menu keeps the three toolbar buttons. */
+  const inMasterCenter = useLocation().pathname.startsWith('/master/');
   const [page, setPage]         = useState(1);
   const [rpp, setRpp]           = useState(PER_PAGE);
   const autoFitRef              = useRef(true);
@@ -75,7 +79,7 @@ export default function ClmKycPage() {
   }, []);
 
   const start = (page - 1) * rpp;
-  const isEmpty = !loading && rows.length === 0;
+  /* booted, not !loading: during a search reload the last answer stays on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty = booted && rows.length === 0;
 
   const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
@@ -148,6 +152,7 @@ export default function ClmKycPage() {
             samples={[{ name: 'PAN Card', validity: 'N/A' }, { name: 'GST Certificate', validity: '1 Year' }]}
             search={debouncedSearch}
             onImported={reload}
+            variant={inMasterCenter ? 'bulk' : undefined}
           />
         </div>
 
@@ -158,8 +163,8 @@ export default function ClmKycPage() {
                 own scrollbar inside it — a second scrollbar that no other CLM
                 list has. The page scrolls instead now, as it does everywhere
                 else in the module. */}
-            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-              <table className="clm-table">
+            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
+              <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>KYC ID</th>
@@ -168,8 +173,8 @@ export default function ClmKycPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ClmSkeletonRows cols={5} />}
-                  {!loading && rows.map((r, i) => (
+                  {loading && !booted && <ClmSkeletonRows cols={5} />}
+                  {booted && rows.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -184,7 +189,7 @@ export default function ClmKycPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bKyc}</div>
@@ -192,7 +197,7 @@ export default function ClmKycPage() {
                   <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add KYC Document to create the first record.'}</div>
                 </div>
               )}
-              {!loading && count > 0 && (
+              {booted && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>

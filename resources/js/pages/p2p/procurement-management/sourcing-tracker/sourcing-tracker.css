@@ -1,10 +1,10 @@
 /* ─────────────────────────────────────────────────────────────────────────
- * Sourcing Management Tracker — list page. DESIGN BUILD.
+ * Sourcing Management Tracker — list page.
  *
  * Every number here is the Figma's own: taken from the computed styles of the
  * Figma prototype (Kryptone_Service Master.html → Sourcing Management
  * Tracker) rendered at 1920px, so the page matches it pixel for pixel.
- * Everything is scoped to .sct-page; nothing here touches another screen.
+ * Page rules are scoped to .sct-page; the few popup-state rules use the module's own prefixes.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* The page fills the screen below the menu; the table scrolls inside the card. */
@@ -155,7 +155,7 @@
   padding: 0 20px;
   border: 0;
   border-radius: 12px;
-  font-size: 12px;
+  font-size: 12.5px; /* every text button in the module: 12.5px */
   font-weight: 700;
   letter-spacing: .24px;
   line-height: 12px;
@@ -452,31 +452,21 @@
   overscroll-behavior: contain;
 }
 
-.sct-scroll::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
-}
-
 /* Mouse ignored while scrolling (class set by the page for 150ms), so rows
    gliding under the pointer do not fire hovers. Child combinator on purpose:
    toggling the class restyles only this one element, never the whole page. */
-.sct-scroll.is-scrolling>[role="table"] {
+.sct-scroll.is-scrolling>.sct-grid {
   pointer-events: none;
-}
-
-.sct-scroll::-webkit-scrollbar-thumb {
-  background: #bfe3ec;
-  border-radius: 8px;
 }
 
 /* At 1920px the flexible tracks come out 250 / 250 / 300 / 300, the Figma's. */
 .sct-row {
   display: grid;
   grid-template-columns:
-    40px 106px 120px 110px minmax(150px, 1fr) minmax(150px, 1fr) minmax(190px, 1.2fr) 96px minmax(210px, 1.2fr) 210px;
+    40px 106px 120px 110px minmax(150px, 1fr) minmax(150px, 1fr) minmax(190px, 1.2fr) 96px minmax(210px, 1.2fr) 244px;
   gap: 8px;
   align-items: center;
-  min-width: 1482px;
+  min-width: 1516px;
   padding: 5px 14px;
   border-bottom: 1px solid #eff5f8;
   font-size: 11px;
@@ -822,8 +812,11 @@
   gap: 6px;
 }
 
+/* The Action column (244px) fits Edit + "Sourcing Target Report" whole: 40 + 6 + about 190.
+   A narrower window scrolls the table sideways instead of pushing the buttons over Progress. */
 .sct-edit,
 .sct-report {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -845,7 +838,7 @@
 .sct-report {
   gap: 4px;
   padding: 0 10px;
-  font-size: 10.5px;
+  font-size: 12.5px; /* every text button in the module: 12.5px */
   font-weight: 700;
   letter-spacing: .1px;
   white-space: nowrap;
@@ -858,6 +851,22 @@
   transform: translateY(-2px);
   filter: brightness(1.07);
   box-shadow: 0 8px 20px -4px rgba(8, 145, 178, .6), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+
+/* Edit on a target someone else created: same place, muted, no lift (only the creator may edit). */
+.sct-edit.is-off,
+.sct-edit.is-off:hover {
+  background: #e2e8f0;
+  color: #94a3b8;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  cursor: not-allowed;
+}
+[data-bs-theme="dark"] .sct-edit.is-off,
+[data-bs-theme="dark"] .sct-edit.is-off:hover {
+  background: rgba(148, 163, 184, .14);
+  color: #64748b;
 }
 
 /* Empty state */
@@ -892,7 +901,7 @@
   color: #0c4a6e;
 }
 
-.sct-empty span {
+.sct-empty > span:not(.sct-empty__ico) {
   max-width: 430px;
   font-size: 12px;
   font-weight: 500;
@@ -900,33 +909,34 @@
   color: #64748b;
 }
 
+/* Retry on the "Couldn't load" state — a small teal outline button. */
+.sct-retry {
+  margin-top: 8px;
+  height: 40px; /* every text button in the module: 40px / 12.5px */
+  padding: 0 16px;
+  border: 1.5px solid #a5e4f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #0e7490;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color .15s, border-color .15s;
+}
+.sct-retry:hover { background: #ecfeff; border-color: #22d3ee; }
+.sct-retry:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+[data-bs-theme="dark"] .sct-retry { background: transparent; border-color: rgba(34, 211, 238, .45); color: #67e8f9; }
+[data-bs-theme="dark"] .sct-retry:hover { background: rgba(34, 211, 238, .12); }
+
 /* ── Pager: the app's shared WorklistPager (teal) ─────────────────────────
    Only fitted into the card here: no gap above it, square bottom corners
-   (the card rounds them), and 40px controls like the other P2P lists. */
+   (the card rounds them). Its controls keep the shared pager's own sizes
+   (range pill ~28px, Rows per page ~36px), the same as every other list. */
 .sct-page .wl-pager {
   flex-shrink: 0;
   margin-top: 0;
   border-radius: 0;
-}
-
-.sct-page .tc-wl-btn {
-  width: 40px;
-  height: 40px;
-}
-
-.sct-page .tc-wl-rows,
-.sct-page .tc-wl-info,
-.sct-page .tc-wl-range {
-  display: inline-flex;
-  align-items: center;
-  height: 40px;
-  box-sizing: border-box;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.sct-page .tc-wl-rows-btn {
-  height: 100%;
 }
 
 /* ── Dark mode (the Figma is light-only; this keeps the page readable) ─── */
@@ -963,6 +973,10 @@
   border-color: rgba(34, 211, 238, .18);
 }
 
+[data-bs-theme="dark"] .sct-card {
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, .5);
+}
+
 [data-bs-theme="dark"] .sct-tabs {
   background: rgba(6, 182, 212, .08);
   border-color: rgba(34, 211, 238, .2);
@@ -975,6 +989,24 @@
 
 [data-bs-theme="dark"] .sct-tab:not(.is-active):hover {
   background: rgba(34, 211, 238, .08);
+}
+
+/* Dark, the selected main tab (CS-2215): the rule above out-ranked .sct-tab.is-active (same weight,
+   later), so its text turned pale blue on the bright light-mode gradient. A deeper teal for the dark
+   page, with white text, icon tile and count. */
+[data-bs-theme="dark"] .sct-tab.is-active {
+  color: #fff;
+  background: linear-gradient(120deg, #0b4f63, #0e7490 60%, #0891b2);
+  box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+[data-bs-theme="dark"] .sct-tab.is-active .sct-tab__ico {
+  background: rgba(255, 255, 255, .14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
+}
+[data-bs-theme="dark"] .sct-tab.is-active .sct-tab__c {
+  color: #fff;
+  background: rgba(255, 255, 255, .16);
+  border-color: rgba(255, 255, 255, .28);
 }
 
 [data-bs-theme="dark"] .sct-tab__c {
@@ -998,7 +1030,7 @@
 }
 
 [data-bs-theme="dark"] .sct-subtab {
-  color: #64748b;
+  color: #94a3b8;   /* 4.5:1+ on the dark card */
 }
 
 [data-bs-theme="dark"] .sct-subtab.is-active {
@@ -1022,26 +1054,8 @@
 
 /* The card's white inner shine is a light-mode touch; on a dark card it drew
    a white line down both sides of the table. */
-[data-bs-theme="dark"] .sct-card {
-  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, .5);
-}
-
-/* A dark scrollbar, so the table's edge does not show a light track. */
 [data-bs-theme="dark"] .sct-scroll {
   border-top-color: rgba(148, 163, 184, .14);
-  scrollbar-color: rgba(34, 211, 238, .28) transparent;
-}
-
-[data-bs-theme="dark"] .sct-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-[data-bs-theme="dark"] .sct-scroll::-webkit-scrollbar-thumb {
-  background: rgba(34, 211, 238, .28);
-}
-
-[data-bs-theme="dark"] .sct-scroll::-webkit-scrollbar-corner {
-  background: transparent;
 }
 
 [data-bs-theme="dark"] .sct-row:not(.sct-row--head):hover {
@@ -1084,6 +1098,10 @@
   color: #2dd4bf;
 }
 
+[data-bs-theme="dark"] .sct-tat--atrisk .sct-tat__date {
+  color: #fbbf24;
+}
+
 [data-bs-theme="dark"] .sct-tat--overdue .sct-tat__date {
   color: #f87171;
 }
@@ -1112,6 +1130,10 @@
 
 [data-bs-theme="dark"] .sct-empty b {
   color: #e2e8f0;
+}
+
+[data-bs-theme="dark"] .sct-empty > span:not(.sct-empty__ico) {
+  color: #94a3b8;
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────────
@@ -1160,9 +1182,9 @@
 @media (max-width: 1600px) {
   .sct-row {
     grid-template-columns:
-      34px 96px 112px 100px minmax(116px, 1fr) minmax(116px, 1fr) minmax(150px, 1.2fr) 72px minmax(160px, 1.2fr) 210px;
+      34px 96px 112px 100px minmax(116px, 1fr) minmax(116px, 1fr) minmax(150px, 1.2fr) 72px minmax(160px, 1.2fr) 244px;
     gap: 6px;
-    min-width: 1230px;
+    min-width: 1264px;
     padding-left: 12px;
     padding-right: 12px;
   }
@@ -1263,4 +1285,245 @@
   .sct-strip__sub {
     line-height: 1.35;
   }
+}
+/* App dropdown (MasterSelect) in teal on this page and its popups, like the PO pages (.ord-page)
+   and CredVault (.cvx): the shared MasterSelect.css only turns its teal theme on for those, so the
+   open border, search focus and picked row here fell back to the default indigo. Same values,
+   keyed to .sct-page; the menus render on <body>, which is why the selector starts at body. */
+body:has(.sct-page) .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(8, 145, 178, .55);
+  box-shadow: 0 2px 6px rgba(8, 145, 178, .08);
+}
+body:has(.sct-page) .master-select-wrap.show .master-select-toggle {
+  border-color: #0891b2 !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .15), 0 4px 12px rgba(8, 145, 178, .12) !important;
+}
+body:has(.sct-page) .master-select-wrap.show .master-select-chev { color: #0891b2; }
+body:has(.sct-page) .master-select-search-input:focus { border-color: #0891b2; box-shadow: 0 0 0 2px rgba(34, 211, 238, .18); }
+body:has(.sct-page) .master-select-item:hover,
+body:has(.sct-page) .master-select-item:focus { background: rgba(8, 145, 178, .08) !important; }
+body:has(.sct-page) .master-select-item.active { background: rgba(8, 145, 178, .10) !important; color: #0e7490 !important; }
+[data-bs-theme="dark"] body:has(.sct-page) .master-select-wrap.show .master-select-toggle { border-color: #22d3ee !important; }
+[data-bs-theme="dark"] body:has(.sct-page) .master-select-wrap.show .master-select-chev { color: #67e8f9; }
+[data-bs-theme="dark"] body:has(.sct-page) .master-select-search-input:focus { border-color: #22d3ee; }
+[data-bs-theme="dark"] body:has(.sct-page) .master-select-item:hover,
+[data-bs-theme="dark"] body:has(.sct-page) .master-select-item:focus { background: rgba(34, 211, 238, .18) !important; }
+[data-bs-theme="dark"] body:has(.sct-page) .master-select-item.active { background: rgba(34, 211, 238, .16) !important; color: #67e8f9 !important; }
+
+/* RFQ (Create RFQ button + RFQ Management tab) is out of scope here (BR 1.2): frozen —
+   visible but muted, no hover lift, not clickable. The wrapper carries the "coming soon" tooltip. */
+.sct-frozen-wrap {
+  display: inline-flex;
+  cursor: not-allowed;
+}
+.sct-page .is-frozen,
+.sct-page .is-frozen:hover {
+  opacity: .5;
+  filter: grayscale(.35);
+  transform: none;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+/* Dark: the search clear (×) hover and the empty-state icon tile were light-only. */
+[data-bs-theme="dark"] .sct-search__clear:hover {
+  background: rgba(244, 63, 94, .18);
+  color: #fb7185;
+}
+[data-bs-theme="dark"] .sct-empty__ico {
+  background: rgba(34, 211, 238, .12);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .28);
+  color: #67e8f9;
+}
+/* Dark: the active sub-tab's count chip (its light rule outranks the general dark one) and the
+   page-icon status dot's light ring. */
+[data-bs-theme="dark"] .sct-subtab.is-active .sct-subtab__c {
+  color: #a5f3fc;
+  border-color: rgba(34, 211, 238, .5);
+  background: rgba(34, 211, 238, .22);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .sct-strip__dot {
+  border-color: #0c2f3b;
+}
+
+/* Mapped Suppliers badge: 0 is a grey, non-clickable badge (CS-2219 V-T82). */
+.sct-pcount.is-zero {
+  color: #94a3b8;
+  background: #f1f5f9;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+  cursor: default;
+}
+/* Dark: the solid light-mode green glared on the dark table — a translucent green tile with a
+   light-green figure instead (the module's translucent dark recipe). */
+button.sct-pcount:hover {
+  filter: brightness(1.06);
+}
+[data-bs-theme="dark"] .sct-pcount {
+  color: #86efac;
+  background: rgba(34, 197, 94, .16);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, .42);
+}
+[data-bs-theme="dark"] button.sct-pcount:hover {
+  background: rgba(34, 197, 94, .26);
+}
+[data-bs-theme="dark"] .sct-pcount.is-zero {
+  color: #64748b;
+  background: rgba(255, 255, 255, .04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+}
+
+/* Dark: the Created By / Assigned To initials and the Total Products "+N" pill were the solid
+   light-mode cyan; translucent teal with a light-cyan label, like the ID pill and source badge. */
+[data-bs-theme="dark"] .sct-av {
+  color: #a5f3fc;
+  background: rgba(34, 211, 238, .16);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .4);
+}
+[data-bs-theme="dark"] .sct-prod__more {
+  color: #a5f3fc;
+  background: rgba(34, 211, 238, .18);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .42);
+}
+[data-bs-theme="dark"] .sct-prod:hover .sct-prod__more {
+  background: rgba(34, 211, 238, .28);
+}
+
+/* ── Scrollbars: one thin style for every scroller on this page and its popups ──────────
+   Each scroll area carries .sct-scroller (list table, Assign/Edit body + Product List + picker,
+   clarity, Map Supplier, Mapped Suppliers, report, Product List popup).
+   - app.css sets `* { scrollbar-width: thin; scrollbar-color }` on every element; while either is
+     non-auto, Chrome ignores ::-webkit-scrollbar and draws its own bar WITH arrow buttons. They are
+     reset to auto here, so Chrome / Edge use the 6px arrow-free style below.
+   - Firefox has no ::-webkit-scrollbar, so it gets the standard thin bar (@supports block).
+   `body .sct-scroller` outranks app.css's `*` and `[data-bs-theme="dark"] *`. */
+body .sct-scroller {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+body .sct-scroller::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+body .sct-scroller::-webkit-scrollbar-track,
+body .sct-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+body .sct-scroller::-webkit-scrollbar-thumb {
+  background: rgba(8, 145, 178, .32);
+  border-radius: 999px;
+}
+body .sct-scroller::-webkit-scrollbar-button {
+  display: none;
+}
+[data-bs-theme="dark"] body .sct-scroller::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, .3);
+}
+@supports not selector(::-webkit-scrollbar) {
+  body .sct-scroller {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(8, 145, 178, .32) transparent;
+  }
+  [data-bs-theme="dark"] body .sct-scroller {
+    scrollbar-color: rgba(34, 211, 238, .3) transparent;
+  }
+}
+
+/* Dark hovers: the light-mode hover inks (#0e7490 / #0891b2) were too dark on the dark table, and
+   the general dark .sct-subtab rule cancelled the sub-tab hover. Light cyan in dark instead. */
+[data-bs-theme="dark"] .sct-prod:hover .sct-prod__name {
+  color: #67e8f9;
+}
+[data-bs-theme="dark"] .sct-subtab:not(.is-active):hover {
+  color: #a5f3fc;
+}
+
+
+/* ── Saving (V-C01): spinner on the save button, form locked ─────────────────────────────
+   The popups put `inert` on their form body while saving (no typing / clicking / tabbing) and
+   disable × / Cancel / Back; this only shows it. Used by Assign / Update Target, Map Supplier and
+   Save Supplier. */
+.sct-spin {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, .4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: sct-spin .7s linear infinite;
+}
+@keyframes sct-spin { to { transform: rotate(360deg); } }
+/* The spinner on a light card ("Loading the products…" in the popups). In this always-loaded file
+   because the popups' own CSS loads only with the popup. */
+.sct-spin.sct-spin--dark {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 6px;
+  border-color: rgba(8, 145, 178, .25);
+  border-top-color: #0891b2;
+}
+/* Stacked popups (Report -> Mapped Suppliers -> Map Supplier -> Add Supplier): only the TOP overlay
+   blurs. Each lower overlay keeps its dark tint, but a full-screen blur under another full-screen blur
+   is invisible work that the browser redoes on every scroll frame, which made the Add Supplier form lag. */
+body:has(.stsv-overlay, .stmap-overlay, .avm-backdrop) .sta-overlay,
+body:has(.stmap-overlay, .avm-backdrop) .stsv-overlay,
+body:has(.avm-backdrop) .stmap-overlay {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* Retry after a popup's products could not be loaded (Report, Product List). */
+.str-retry {
+  margin-left: 8px;
+  height: 40px; /* every text button in the module: 40px / 12.5px */
+  padding: 0 14px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0e7490;
+  background: #fff;
+  border: 1.5px solid #a5e4f0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.str-retry:hover { background: #ecfeff; border-color: #22d3ee; }
+[data-bs-theme="dark"] .str-retry { background: transparent; color: #67e8f9; border-color: rgba(34, 211, 238, .45); }
+@media (prefers-reduced-motion: reduce) {
+  .sct-spin { animation-duration: 1.6s; }
+}
+.sta-modal.is-saving,
+.stmap-box.is-saving {
+  cursor: progress;
+}
+.sta-modal.is-saving .sta-body,
+.stmap-box.is-saving .stnf-body > :not(.stnf-foot) {
+  opacity: .6;
+  transition: opacity .15s;
+}
+/* The busy save button keeps its colour (the base disabled style would fade it). */
+.sta-modal.is-saving .sta-btn-primary:disabled,
+.stmap-box.is-saving .stmap-btn-primary:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+
+/* Skeleton rows (page open / tab switch): same grid and height as a real row, so nothing jumps
+   when the data arrives and the auto-fit page size counts them like real rows. */
+.sct-row--shim {
+  min-height: 70px;
+  pointer-events: none;
+}
+.sct-row--shim > span {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The list's empty / no-results state keeps the table area open. */
+.sct-empty--list {
+  min-height: 320px;
+}
+
+/* Popups take focus on open (focus management in usePopup); the dialog box itself needs no ring. */
+:is(.sta-modal, .stmap-box, .stsv-box, .stpl-box)[role="dialog"]:focus {
+  outline: none;
 }

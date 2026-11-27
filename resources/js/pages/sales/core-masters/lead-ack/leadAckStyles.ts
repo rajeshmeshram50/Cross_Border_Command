@@ -28,6 +28,10 @@ export const LEAD_ACK_CSS = `
   font-size: 13.5px;
 }
 .lam-root *, .lam-root *::before, .lam-root *::after { box-sizing: border-box; }
+/* Header insets as on the CLM pages and the Master list: 12px sides plus 6px
+   before the icon. */
+.lam-root .spi-head { padding: 0 12px; }
+.lam-root .spi-head-left { padding-left: 6px; }
 
 /* ─── No-access placeholder ─── */
 .lam-no-access {
@@ -258,6 +262,23 @@ export const LEAD_ACK_CSS = `
    global rule bleeds -16px into a padded wrap; this card has no padding, so
    pin the band flush inside the rounded card (same reset as SalesCustomers). */
 .lam-table-card .tc-wl-pag { margin: 0; }
+.lam-table-card {
+  --tcwl-accent: #7c3aed;
+  --tcwl-text: #6d28d9;
+  --tcwl-border: #ddd6fe;
+  --tcwl-band: #f5f3ff;
+  --tcwl-range-bg: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #6d28d9 100%);
+  --tcwl-glow: rgba(124, 58, 237, .4);
+}
+[data-bs-theme="dark"] .lam-table-card {
+  --tcwl-text-dark: #c4b5fd;
+  --tcwl-border-dark: rgba(167, 139, 250, .35);
+}
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-btn { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu { background: #1a1530; border-color: rgba(167, 139, 250, .35); }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu button { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu button:hover { background: rgba(124, 58, 237, .22); color: #fff; }
+[data-bs-theme="dark"] .lam-table-card .tc-wl-rows-menu button.is-on { background: #7c3aed; color: #fff; }
 
 /* ─── Modals (opp selector + form) — overlay scrolls when the
    modal body taller than the viewport (long forms on small
@@ -550,7 +571,7 @@ export const LEAD_ACK_CSS = `
 .lam-modal-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 24px;
-  background: #fff;
+  background: #faf7ff; /* the body's colour, so body and footer read as one panel */
   border-top: 1px solid #ede9fe;
   flex-shrink: 0;
 }
@@ -648,7 +669,7 @@ export const LEAD_ACK_CSS = `
 [data-bs-theme="dark"] .lam-modal { background: #1a1530; box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 4px 24px rgba(0,0,0,.30); }
 [data-bs-theme="dark"] .lam-modal-body { background: #221a3a; }
 [data-bs-theme="dark"] .lam-modal-helper { color: #9aa0b4; }
-[data-bs-theme="dark"] .lam-modal-footer { background: #1a1530; border-top-color: rgba(167,139,250,.20); }
+[data-bs-theme="dark"] .lam-modal-footer { background: #221a3a; border-top-color: rgba(167,139,250,.20); }
 
 [data-bs-theme="dark"] .lam-textarea,
 [data-bs-theme="dark"] .lam-select {
@@ -755,25 +776,25 @@ export const LEAD_ACK_CSS = `
    — the icon, input and clear button all sit inside that field. */
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search {
   position: relative;
-  min-height: 48px;
-  padding: 3px 14px 3px 38px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  border: 0;
+  background: transparent;
   border-radius: 11px;
   box-shadow: none;
 }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, box-shadow .16s;
 }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search > * { position: relative; z-index: 1; }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search .dt-search-icon { position: absolute; }
-.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
-[data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
 
 
@@ -809,3 +830,19 @@ export const LEAD_ACK_CSS = `
 /* 8px between the buttons, as in the Customers actions column (gap-2). */
 .lam-table .lam-actions { gap: 8px; }
 `;
+
+const TEAL_MAP: [RegExp, string][] = [
+  [/#7c3aed/gi, '#0891b2'], [/#6d28d9/gi, '#0e7490'], [/#5b21b6/gi, '#155e75'], [/#4c1d95/gi, '#164e63'],
+  [/#8b5cf6/gi, '#06b6d4'], [/#a78bfa/gi, '#22d3ee'], [/#c4b5fd/gi, '#67e8f9'], [/#ddd6fe/gi, '#a5f3fc'],
+  [/#ede9fe/gi, '#cffafe'], [/#f5f3ff/gi, '#ecfeff'], [/#faf7ff/gi, '#f4fdff'], [/#faf5ff/gi, '#f4fdff'],
+  [/#f3e8ff/gi, '#e0f7fb'], [/#efe9fb/gi, '#e3f4f8'], [/#e2d8f7/gi, '#d4f3f9'], [/#e2d4fa/gi, '#c2ecf3'],
+  [/#1a1530/gi, '#0f1b2d'], [/#14101d/gi, '#0b1626'], [/#221a3a/gi, '#10233a'], [/#241c3a/gi, '#112640'], [/#322750/gi, '#1e3a52'],
+  [/rgba\(\s*124\s*,\s*58\s*,\s*237/gi, 'rgba(8,145,178'], [/rgba\(\s*167\s*,\s*139\s*,\s*250/gi, 'rgba(34,211,238'],
+  [/rgba\(\s*139\s*,\s*111\s*,\s*232/gi, 'rgba(8,145,178'], [/rgba\(\s*139\s*,\s*92\s*,\s*246/gi, 'rgba(6,182,212'],
+  [/rgba\(\s*76\s*,\s*29\s*,\s*149/gi, 'rgba(22,78,99'], [/rgba\(\s*196\s*,\s*181\s*,\s*253/gi, 'rgba(103,232,249'],
+  [/rgba\(\s*216\s*,\s*180\s*,\s*254/gi, 'rgba(165,243,252'],
+];
+
+export const toLeadAckTeal = (css: string) => TEAL_MAP.reduce((s, [re, to]) => s.replace(re, to), css);
+
+export const LEAD_ACK_CSS_TEAL = toLeadAckTeal(LEAD_ACK_CSS);

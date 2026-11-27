@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
+import FullPageLoader from './ui/FullPageLoader';
 import { useAnchoredPopover } from '../hooks/useAnchoredPopover';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
@@ -1379,6 +1380,8 @@ function AdvanceConfirmModal({
             )}
           </button>
         </div>
+        {/* QA 250 — the house loader while the decision posts. */}
+        {submitting && <FullPageLoader label={isApprove ? 'Approving request…' : 'Rejecting request…'} />}
       </div>
     </div>,
     document.body,

@@ -366,7 +366,9 @@ export default function ClientForm({ onBack, editId }: Props) {
   // string values like 'USA' / 'UK' were used before the master table existed,
   // so we map them to their full ISO names so existing rows still render.
   const countryOptions = useMemo(
-    () => countries.map(c => ({ label: c.name, value: c.name })),
+    () => countries
+      .filter(c => String(c.status ?? 'Active').toLowerCase() === 'active') // active only
+      .map(c => ({ label: c.name, value: c.name })),
     [countries]
   );
 
@@ -1459,7 +1461,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Organization Logo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>PNG, JPG, WebP &middot; Recommended 200&times;400 px &middot; Max 2 MB</small>
               </Col>
@@ -1467,7 +1469,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Favicon</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {faviconPreview && <img src={faviconPreview} alt="favicon" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/x-icon,image/png,image/jpeg,image/svg+xml,image/webp,.ico" onChange={e => handleFaviconChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/x-icon,image/png,image/jpeg,image/svg+xml,image/webp,.ico" onChange={e => handleFaviconChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>ICO, PNG, JPG, SVG, WebP &middot; Recommended 32&times;32 or 64&times;64 px &middot; Max 512 KB</small>
               </Col>
@@ -1475,7 +1477,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Profile Photo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>JPG, PNG — Max 2MB</small>
               </Col>
@@ -1527,9 +1529,10 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <button
                   type="button"
                   onClick={onBack}
-                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  className="btn d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
                   style={{
-                    padding: '7px 16px',
+                    height: 40,
+                    padding: '0 16px',
                     fontSize: 12.5,
                     background: 'var(--vz-secondary-bg)',
                     color: 'var(--vz-body-color)',
@@ -1545,9 +1548,10 @@ export default function ClientForm({ onBack, editId }: Props) {
                   <button
                     type="button"
                     onClick={handleReset}
-                    className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                    className="btn d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
                     style={{
-                      padding: '7px 16px',
+                      height: 40,
+                      padding: '0 16px',
                       fontSize: 12.5,
                       background: 'rgba(245,158,11,0.10)',
                       color: '#f59e0b',
@@ -1573,10 +1577,11 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  className="btn d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
                   style={{
-                    padding: '7px 20px',
-                    fontSize: 13,
+                    height: 40,
+                    padding: '0 20px',
+                    fontSize: 12.5,
                     background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
                     color: '#fff',
                     border: 'none',

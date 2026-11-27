@@ -5,30 +5,6 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Inventory · Wipe the product flags and lay the platform defaults down fresh.
- *
- * DESTRUCTIVE, and separate from InventoryProductFlagSeeder for that reason:
- * that one only ever ADDS what is missing and is safe to run anywhere, while
- * this empties the table first. Two names, so nobody reaches for the wrong one
- * by habit.
- *
- * What it is for: testing the platform-level seed from a clean slate, where
- * the per-branch rows from the earlier approach are still lying around and the
- * ids need to start at 1 again so "Cold Chain is id 1 everywhere" is actually
- * visible.
- *
- * TRUNCATE ... RESTART IDENTITY, not DELETE: a plain delete leaves the
- * sequence where it was, so the "fresh" rows would come back as 10, 11, 12 and
- * the thing being tested would be hidden by the thing that caused the bug.
- *
- * REFUSES OUTSIDE LOCAL. Box items store flag ids in a json column with no
- * foreign key to stop this, so emptying the table on a real database would
- * leave every packed carton pointing at flags that no longer exist — and
- * nothing would complain. Local only, and it still checks first.
- *
- *   php artisan db:seed --class=InventoryProductFlagResetSeeder
- */
 class InventoryProductFlagResetSeeder extends Seeder
 {
     public function run(): void
@@ -38,8 +14,6 @@ class InventoryProductFlagResetSeeder extends Seeder
             return;
         }
 
-        /* Boxes point at flag ids through a json column, so nothing in the
-           database would stop this leaving them dangling. Check by hand. */
         $inUse = DB::table('p2p_spi_box_items')
             ->whereNotNull('flags')
             ->pluck('flags')

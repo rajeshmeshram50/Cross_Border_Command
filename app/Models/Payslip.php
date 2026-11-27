@@ -6,10 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Self-contained snapshot of one employee's pay for one run. Reproducible by
- * design — nothing here is recomputed from live employee data on read.
- */
 class Payslip extends Model
 {
     use SoftDeletes;

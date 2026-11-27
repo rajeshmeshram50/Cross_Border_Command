@@ -22,6 +22,8 @@ interface Props {
   confirmingLabel?: string;
   /** Icon class for the confirm button glyph. Defaults to "ri-delete-bin-line". */
   confirmIcon?: string;
+  /** Shown over the popup while `loading` (e.g. the masters' saving overlay). */
+  loadingOverlay?: React.ReactNode;
 }
 
 export default function DeleteConfirmModal({
@@ -30,6 +32,7 @@ export default function DeleteConfirmModal({
   confirmLabel = 'Delete',
   confirmingLabel = 'Deleting...',
   confirmIcon = 'ri-delete-bin-line',
+  loadingOverlay,
 }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !loading) onClose(); };
@@ -263,6 +266,7 @@ export default function DeleteConfirmModal({
               )}
             </button>
           </div>
+          {loading && loadingOverlay}
         </div>
       </div>
     </>,

@@ -10,42 +10,10 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
-/**
- * Single source of truth for the "payment success → invoice PDF + mail" flow.
- *
- * Lives in a service (rather than as a private method on PaymentController)
- * because three different controllers terminate on payment success and ALL of
- * them must trigger the same invoice mail:
- *
- *   - PaymentController::store              (super-admin manual payment entry)
- *   - SubscriptionController::activatePlan  (customer self-checkout, post-verify)
- *   - RazorpayWebhookController::activateFromWebhook  (async webhook arrival)
- *
- * The previous version only fired from PaymentController, so customers paying
- * through the actual Razorpay flow never received an invoice in their inbox —
- * a billing/audit gap the QA team caught.
- */
 class InvoiceMailer
 {
-    /**
-     * Generate the invoice PDF (idempotent — only writes if missing) and
-     * dispatch the invoice mail to the org email plus, if different, the
-     * client_admin's user email. Failures are LOGGED but NEVER re-thrown:
-     * a transient SMTP / PDF hiccup must not roll back a successful payment.
-     */
     public function sendForPayment(Payment $payment): void
     {
-        // Invoice is TRANSACTIONAL — every successful payment must produce
-        // an invoice in the customer's inbox. We honour ONLY the master
-        // `emailNotif` kill-switch (explicit nuclear option for admins who
-        // disable ALL platform mail) — we deliberately do NOT gate on the
-        // `payAlerts` category. That toggle is reserved for non-transactional
-        // payment alerts (e.g. "card expiring soon"), so an admin who turns
-        // off "Payment Alerts" doesn't silently break invoicing — which would
-        // be a billing/audit compliance gap.
-        //
-        // PDF is generated regardless of mail outcome so super_admin can
-        // always download it from the Payments page even when SMTP is down.
         try {
             $payment->loadMissing(['client', 'plan']);
 
@@ -85,11 +53,6 @@ class InvoiceMailer
         }
     }
 
-    /**
-     * Render and persist the invoice PDF if it isn't already on disk. Stores
-     * the relative path on the Payment row so subsequent fetches can short-
-     * circuit. Returns the absolute filesystem path.
-     */
     public function ensureInvoicePdf(Payment $payment): string
     {
         $invoicesDir = storage_path('app/invoices');

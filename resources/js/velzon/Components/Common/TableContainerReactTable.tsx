@@ -16,6 +16,7 @@ import {
 } from '@tanstack/react-table';
 
 import { rankItem } from '@tanstack/match-sorter-utils';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 
 // Column Filter
 const Filter = ({
@@ -298,9 +299,7 @@ const TableContainer = ({
             <div className="tc-wl-right">
               <span className="tc-wl-rows">
                 Rows per page:
-                <select value={pageSize} onChange={e => setPageSize(parseInt(e.target.value, 10))}>
-                  {[...new Set([pageSize, ...pageSizeOptions])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <RowsPerPageSelect pageSize={pageSize} options={pageSizeOptions} onChange={setPageSize} />
               </span>
               <span className="tc-wl-range">{pageIndex + 1} / {pages}</span>
               <div className="tc-wl-nav">

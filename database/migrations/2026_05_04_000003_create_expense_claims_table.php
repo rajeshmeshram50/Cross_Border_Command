@@ -4,7 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-
 return new class extends Migration
 {
     public function up(): void
@@ -15,16 +14,11 @@ return new class extends Migration
             $table->unsignedBigInteger('branch_id')->nullable()->index();
             $table->string('claim_no', 50)->nullable();
 
-            // Owner — the employee who raised the claim.
             $table->unsignedBigInteger('employee_id');
-            // Reporting manager at the time of submission. Snapshotted so a
-            // later change to the employee's manager doesn't reroute existing
-            // claims.
             $table->unsignedBigInteger('manager_id')->nullable();
 
-            // Form payload
             $table->unsignedBigInteger('category_id')->nullable();
-            $table->string('category_name', 255)->nullable(); // denormalized for legacy mock rows
+            $table->string('category_name', 255)->nullable();
             $table->string('currency', 8)->default('INR');
             $table->string('project', 64)->nullable();
             $table->string('payment_method', 64)->nullable();
@@ -35,7 +29,6 @@ return new class extends Migration
             $table->text('purpose')->nullable();
             $table->json('attachments')->nullable();
 
-            // Two-stage approval
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
             $table->enum('manager_status', ['pending', 'approved', 'rejected'])->default('pending');
             $table->timestamp('manager_acted_at')->nullable();

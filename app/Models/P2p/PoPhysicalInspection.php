@@ -6,10 +6,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Physical inspection verdict for one PO line. The sign-off (note, who, when)
- * sits on the PO header. Reached only through its tenant-scoped PO.
- */
 class PoPhysicalInspection extends Model
 {
     protected $table = 'p2p_po_physical_inspections';

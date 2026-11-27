@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import FullPageLoader from './ui/FullPageLoader';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { markExpenseChanged } from '../utils/expenseBus';
@@ -2115,7 +2116,9 @@ export default function ExpenseSettlementModal({
                       </div>
                       )}
                       {alreadySettled && (
-                        <div className="esm-sumrow is-grand" style={{ marginTop: existingSettleItems.length > 0 ? 12 : 0, borderRadius: 8, padding: '10px 14px', background: summary?.settle_type === 'reimburse' ? '#ede9fe' : summary?.settle_type === 'return' ? '#fde8c4' : '#d6f4e3', color: summary?.settle_type === 'reimburse' ? '#5a3fd1' : summary?.settle_type === 'return' ? '#a4661c' : '#108548' }}>
+                        <div
+                          className={`esm-sumrow is-grand esm-settled esm-settled--${summary?.settle_type === 'reimburse' ? 'reimburse' : summary?.settle_type === 'return' ? 'return' : 'equal'}`}
+                          style={{ marginTop: existingSettleItems.length > 0 ? 12 : 0 }}>
                           <span>{summary?.settle_type === 'reimburse' ? 'To reimburse (used more)' : summary?.settle_type === 'return' ? 'To return (used less)' : 'Fully settled (equal)'} · Total used {inr(summary?.settle_actual_amount ?? 0)}</span>
                           <span>{inr(summary?.settle_balance ?? 0)}</span>
                         </div>
@@ -3061,15 +3064,10 @@ export default function ExpenseSettlementModal({
  * ALSO disabled individually, because an overlay does not stop the keyboard —
  * a textarea that already holds focus keeps accepting input underneath it.
  */
+/* One shim over the house loader, so the four call sites below keep reading
+   the same while the look comes from the system component (QA 250). */
 function BusyVeil({ label }: { label: string }) {
-  return (
-    <div className="esm-veil" aria-live="polite" aria-busy="true">
-      <div className="esm-veil-box">
-        <i className="ri-loader-4-line ri-spin" />
-        <span>{label}</span>
-      </div>
-    </div>
-  );
+  return <FullPageLoader label={label} />;
 }
 
 /* Loading skeleton (QA #147 / #148). "View payment history" / "View history"
@@ -3586,6 +3584,15 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-sumrow{background:#17142c;color:#cbd5e1;}
 .esm-sumrow.is-grand{background:linear-gradient(120deg,#7c5cfc,#a78bfa);color:#fff;font-weight:800;font-size:13.5px;}
 .esm-sumrow.is-grand.is-bad{background:linear-gradient(120deg,#e11d48,#f43f5e);}
+/* Settlement outcome: a flat tint, not the grand gradient. Every selector
+   keeps .esm-sumrow so it outweighs .esm-sumrow.is-grand above. */
+.esm-sumrow.esm-settled{border-radius:8px;padding:10px 14px;}
+.esm-sumrow.esm-settled--equal{background:#d6f4e3;color:#108548;}
+.esm-sumrow.esm-settled--reimburse{background:#ede9fe;color:#5a3fd1;}
+.esm-sumrow.esm-settled--return{background:#fde8c4;color:#a4661c;}
+[data-bs-theme="dark"] .esm-sumrow.esm-settled--equal{background:#10291e;color:#6ee7b7;}
+[data-bs-theme="dark"] .esm-sumrow.esm-settled--reimburse{background:#1d1640;color:#c4b5fd;}
+[data-bs-theme="dark"] .esm-sumrow.esm-settled--return{background:#2d2110;color:#fcd34d;}
 .esm-payrow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px dashed #e2e8f0;}
 /* Adjustment reason — clamp to 3 lines; the untruncated text lives in the
    row's title tooltip. min-width:0 lets the flex child shrink so the clamp

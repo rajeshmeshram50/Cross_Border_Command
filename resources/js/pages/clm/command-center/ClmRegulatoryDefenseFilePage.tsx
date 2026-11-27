@@ -477,8 +477,10 @@ function Party({ name, grad, code }: { name: string; grad: string; code?: string
 }
 
 const SCOPED_CSS = `
-.rdf-root { font-family: var(--font-sans); background:#f8fafc; padding:14px 18px 26px; margin:-1rem -0.75rem; min-height:calc(100vh - 70px); color:#0f172a; display:flex; flex-direction:column; gap:13px; }
+.rdf-root { font-family: var(--font-sans); background:#f8fafc; padding:14px 18px 8px; margin:-1rem -0.75rem; min-height:calc(100vh - 142px); color:#0f172a; display:flex; flex-direction:column; gap:13px; }
 .rdf-root *,.rdf-root *::before,.rdf-root *::after { box-sizing:border-box; }
+/* Root ends at the app footer (100vh - 102px header - 40px footer); the last card stretches so it stops 8px above it. */
+.rdf-root > .rdf-card:last-child { flex: 1 0 auto; }
 
 .rdf-head { position:relative; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; padding:10px 18px; border-radius:13px; overflow:hidden; background:linear-gradient(110deg,#e0f9fd 0%,#cef8ff 18%,#d0f4f9 45%,#baeef7 75%,#a0e8f2 100%); border:1px solid rgba(6,182,212,.2); box-shadow:0 2px 12px rgba(8,145,178,.08); }
 .rdf-head-accent { position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,#22d3ee,#0891b2,#0e7490); }

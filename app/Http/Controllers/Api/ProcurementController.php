@@ -9,27 +9,9 @@ use App\Models\Procurement;
 use App\Models\ProcurementProduct;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-
 
 class ProcurementController extends Controller
 {
-    /* ─────────────────────────────────────────────────────────────────
-     *  POST /procurements
-     *
-     *  Multipart body shape (mirrors IDIMS):
-     *    lead_id              (nullable, exists:leads,id)
-     *    procurement_date     (nullable, date)
-     *    assign_id            (nullable, exists:users,id)
-     *    status               (nullable, in:inprogress,done)
-     *    attachments[]        (file)
-     *    products[]
-     *      [n][product_id]         required, exists:products,id
-     *      [n][lead_product_id]    nullable, exists:lead_products,id
-     *      [n][qty]                nullable, numeric ≥0
-     *      [n][target_price]       nullable, numeric ≥0
-     *      [n][attachment][]       file
-     * ───────────────────────────────────────────────────────────────── */
     public function store(Request $request)
     {
         $user = $request->user();
@@ -45,29 +27,17 @@ class ProcurementController extends Controller
             'status'                        => 'nullable|in:inprogress,done',
             'notes'                         => 'nullable|string|max:2000',
             'attachments'                   => 'nullable|array',
-            // B36: magic_mime checks the actual file signature, NOT the
-            // client-supplied Content-Type (which a forged upload can lie
-            // about). See AppServiceProvider for the rule definition.
             'attachments.*'                 => 'file|magic_mime:jpg,jpeg,png,webp,pdf|max:5120',
             'products'                      => 'required|array|min:1',
             'products.*.product_id'         => 'required|integer|exists:products,id',
             'products.*.lead_product_id'    => 'nullable|integer|exists:lead_products,id',
-            // Recorded supplier for this line (real vendor⇄procurement link).
-            // Optional: when omitted, auto-set to the product's sole mapped vendor
-            // if unambiguous — so Fresh/Recurring + the vault deal matrix reflect
-            // the actual sourced supplier instead of a shared-product guess.
             'products.*.vendor_id'          => 'nullable|integer|exists:vendors,id',
-            // B10/B11: zero qty / zero target_price are nonsensical for
-            // procurement (you can't "buy 0 units" or "buy at ₹0"). The
-            // earlier `min:0` permitted them. Use `gt:0` so an explicit
-            // null is the only way to leave the field blank.
             'products.*.qty'                => 'nullable|numeric|gt:0',
             'products.*.target_price'       => 'nullable|numeric|gt:0',
             'products.*.attachment'         => 'nullable|array',
             'products.*.attachment.*'       => 'file|magic_mime:jpg,jpeg,png,webp,pdf|max:5120',
         ]);
 
-        // Tenant gate — if a lead is provided it must belong to the same client.
         if (!empty($data['lead_id'])) {
             $belongs = Lead::where('id', $data['lead_id'])->where('client_id', $user->client_id)->exists();
             if (!$belongs) {
@@ -75,10 +45,6 @@ class ProcurementController extends Controller
             }
         }
 
-        // Cross-lead integrity: every products[].lead_product_id must belong
-        // to the same lead as the procurement. Without this, a salesperson
-        // could create a procurement that says "lead 144" but stitches in
-        // lead_product rows from lead 200, scrambling the Stage 3 view.
         $lpIds = array_filter(array_column($data['products'], 'lead_product_id'));
         if (!empty($lpIds)) {
             if (empty($data['lead_id'])) {
@@ -98,10 +64,6 @@ class ProcurementController extends Controller
             }
         }
 
-        // Tenant gate for explicitly-chosen suppliers: every products[].vendor_id
-        // must belong to this client. The validation rule is the global
-        // exists:vendors,id, so without this a caller could pin a foreign-tenant
-        // vendor onto their procurement line.
         $vendorIds = array_values(array_unique(array_filter(array_column($data['products'], 'vendor_id'))));
         if (!empty($vendorIds)) {
             $own = \App\Models\Vendor::whereIn('id', $vendorIds)->where('client_id', $user->client_id)->count();
@@ -113,7 +75,6 @@ class ProcurementController extends Controller
             }
         }
 
-        // Procurement-level attachments.
         $procAttachments = [];
         foreach ((array) $request->file('attachments') as $file) {
             $procAttachments[] = $file->storeAs(
@@ -135,10 +96,6 @@ class ProcurementController extends Controller
                 'created_by'       => $user->id,
             ]);
 
-            // Sole-vendor lookup for the lines without an explicit supplier:
-            // product_id => vendor_id only when that product has exactly one
-            // mapped vendor (null otherwise). Scoped to THIS client's vendors and
-            // live mappings only (vendor_product_mappings soft-deletes). One query.
             $soleVendor = DB::table('vendor_product_mappings as vpm')
                 ->join('vendors as v', 'v.id', '=', 'vpm.vendor_id')
                 ->where('v.client_id', $user->client_id)
@@ -163,7 +120,6 @@ class ProcurementController extends Controller
                     'procurement_id'  => $procurement->id,
                     'lead_product_id' => $p['lead_product_id'] ?? null,
                     'product_id'      => $p['product_id'],
-                    // Explicit pick wins; else auto-assign the sole mapped vendor.
                     'vendor_id'       => $p['vendor_id'] ?? ($soleVendor[(int) $p['product_id']] ?? null),
                     'qty'             => $p['qty']             ?? null,
                     'target_price'    => $p['target_price']    ?? null,
@@ -178,9 +134,6 @@ class ProcurementController extends Controller
         });
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  GET /procurements?lead_id=...&status=...
-     * ───────────────────────────────────────────────────────────────── */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -197,9 +150,6 @@ class ProcurementController extends Controller
         return response()->json(['status' => true, 'data' => $q->get()]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  GET /procurements/{id}
-     * ───────────────────────────────────────────────────────────────── */
     public function show(Request $request, int $id)
     {
         $user = $request->user();
@@ -215,8 +165,6 @@ class ProcurementController extends Controller
             ->where('client_id', $user->client_id)
             ->findOrFail($id);
 
-        // Vendor count across the procurement's products (product_vendor_maps)
-        // — shown in the Procurement Details modal's "Vendor Count" row.
         $vendorCount = \App\Models\ProductVendorMap::whereIn(
             'product_id',
             $proc->products->pluck('product_id')->filter()->unique()->values()
@@ -228,13 +176,6 @@ class ProcurementController extends Controller
         return response()->json(['status' => true, 'data' => $data]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  GET /procurements/next-number
-     *
-     *  Tenant-scoped — each client gets its own PROC-### sequence based
-     *  on the count of rows for that client. Approximate (race-prone
-     *  during burst create) but matches IDIMS's "preview only" intent.
-     * ───────────────────────────────────────────────────────────────── */
     public function nextNumber(Request $request)
     {
         $user = $request->user();

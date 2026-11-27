@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Zoho Books sync state for a COMPANY-advance payout. When HR records a payout
- * against an approved company advance, they can push it to Zoho Books as an
- * Expense (mirrors expense_claim_payments). `zoho_expense_id` is the created
- * expense so the row can deep-link "View in Zoho" and stay idempotent on retry.
- * Guarded so it's a no-op where a column already exists.
- */
 return new class extends Migration {
     public function up(): void
     {

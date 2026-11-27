@@ -9,9 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeOnboardingInvite extends Model
 {
-    /* Guarded on WRITE as well as read: this table is a source in the
-       'candidate' scope, so without the trait an invite could be created
-       for an address the scope would then refuse to a candidate. (#email-unique) */
     use EnforcesUniqueEmail;
     protected static string $emailScope   = 'candidate';
     protected static array  $emailColumns = ['invitee_email'];
@@ -19,8 +16,6 @@ class EmployeeOnboardingInvite extends Model
     protected $fillable = [
         'client_id', 'branch_id', 'created_by',
         'invitee_name', 'invitee_email',
-        // Set by HR when the link is generated — the candidate cannot choose
-        // what they are hired as. (CBC #24)
         'department_id', 'designation_id', 'primary_role_id', 'expected_join_date',
         'token', 'slug', 'expires_at',
         'status', 'completed_at', 'employee_id',
@@ -32,7 +27,6 @@ class EmployeeOnboardingInvite extends Model
         'completed_at'       => 'datetime',
     ];
 
-    /** True only when status is still `pending` AND the deadline hasn't passed. */
     public function isUsable(): bool
     {
         return $this->status === 'pending' && !$this->expires_at?->isPast();

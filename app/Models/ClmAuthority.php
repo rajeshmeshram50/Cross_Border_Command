@@ -6,19 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Central CLM → Authority master row.
- *
- * The CLM document masters (KYC / DD / Trade-License / QC) reference an
- * authority by its **id** (stored as a comma-joined list, since a document can
- * map to several authorities) and resolve the display name at read time — so
- * renaming an authority propagates automatically. The helpers below are the
- * single source of truth for converting between the stored id list and the
- * human-readable names, shared by every controller that touches the field.
- *
- * (The legacy vendor/customer document tables still store the authority by
- * name; those are kept in sync by ClmAuthorityController::cascadeRename.)
- */
 class ClmAuthority extends Model
 {
     public const STATUS_ACTIVE   = 'active';
@@ -32,16 +19,6 @@ class ClmAuthority extends Model
 
     public function client(): BelongsTo { return $this->belongsTo(Client::class); }
 
-    /**
-     * Map of authority id (as string) => current name, for one tenant.
-     *
-     * Pass `$onlyIds` to fetch just the authorities a page actually references.
-     * The document masters call this to resolve the names shown on ten rows,
-     * and without it the whole authority table is loaded to do that — ~235 ms
-     * on a tenant with 10k authorities, on every list request.
-     * Omitting it keeps the original "whole tenant" behaviour, which the
-     * segment-rule screen genuinely needs.
-     */
     public static function idNameMap(?int $clientId, ?array $onlyIds = null): array
     {
         if (!$clientId) return [];
@@ -51,25 +28,12 @@ class ClmAuthority extends Model
                 array_map('trim', $onlyIds),
                 fn ($t) => $t !== '' && ctype_digit((string) $t)
             )));
-            // No referenced ids at all — skip the query rather than ask for none.
             if (!$onlyIds) return [];
             $q->whereIn('id', $onlyIds);
         }
-        // pluck, not get(): same query and same id => name map, but without
-        // building an Eloquent model per row. On a 10k-authority tenant that
-        // is ~12 ms instead of ~160 ms, paid by every Evidence Vault load
-        // (QA #4, CLM Standard Documents 7-8 s).
         return $q->pluck('name', 'id')->all();
     }
 
-    /**
-     * Authority ids whose NAME matches a search term, for this tenant.
-     *
-     * The document masters let you search by authority name, but they store
-     * the authority by id — so a server-side search has to resolve the term to
-     * ids first and match those. Without this, moving search to SQL would
-     * silently drop a capability the client-side filter had.
-     */
     public static function idsMatchingName(?int $clientId, string $term): array
     {
         $term = trim($term);
@@ -79,14 +43,6 @@ class ClmAuthority extends Model
             ->pluck('id')->map(fn ($i) => (int) $i)->all();
     }
 
-    /**
-     * A WHERE clause matching any of `$ids` as an exact token inside a
-     * comma-joined id column.
-     *
-     * Token-anchored on purpose: a plain LIKE '%1%' also matches 10, 100 and
-     * 21, so an authority search would return documents that reference a
-     * completely different authority.
-     */
     public static function scopeStoredIdsIn($query, string $column, array $ids)
     {
         foreach ($ids as $id) {
@@ -95,7 +51,6 @@ class ClmAuthority extends Model
         return $query;
     }
 
-    /** Every authority id referenced across a set of stored id lists. */
     public static function idsReferencedIn(iterable $storedValues): array
     {
         $ids = [];
@@ -108,11 +63,6 @@ class ClmAuthority extends Model
         return array_keys($ids);
     }
 
-    /**
-     * Resolve a stored authority value (comma-joined ids) to a comma-joined
-     * display string of current names. Tokens that aren't a known id are passed
-     * through unchanged so legacy/unmatched text never disappears.
-     */
     public static function displayNames(?string $stored, array $idToName): string
     {
         if ($stored === null || trim($stored) === '') return '';
@@ -125,14 +75,6 @@ class ClmAuthority extends Model
         return implode(', ', $out);
     }
 
-    /**
-     * Like displayNames() but returns the resolved names as an ARRAY rather
-     * than a comma-joined string. Use this wherever the consumer must count or
-     * iterate the distinct authorities: a comma is NOT a safe delimiter to
-     * split the joined string back on, because authority names themselves may
-     * contain commas (e.g. "Aadhaar, Passport, Voter ID, Driving License").
-     * Splitting the joined string would over-count each such authority.
-     */
     public static function displayNamesList(?string $stored, array $idToName): array
     {
         if ($stored === null || trim($stored) === '') return [];
@@ -145,19 +87,6 @@ class ClmAuthority extends Model
         return $out;
     }
 
-    /**
-     * Normalize an incoming authority value (comma-joined ids and/or names) to
-     * a canonical, de-duplicated comma-joined list of authority IDS for this
-     * tenant. Names are matched case-insensitively; unknown tokens are dropped.
-     *
-     * Only the tokens ACTUALLY SUPPLIED are queried. This used to load every
-     * authority for the client — `get(['id','name'])` over the whole table —
-     * to resolve the one or two the user picked. On a tenant with 10k
-     * authorities that was ~300 ms of the save, on a form where the answer is
-     * two indexed lookups. It is called on every store() and every update()
-     * of the KYC, DD, QC and Trade Licence masters, so it sat in the middle of
-     * the reported 5–6 s saves.
-     */
     public static function normalizeIds(?string $input, ?int $clientId): string
     {
         if ($input === null || trim($input) === '' || !$clientId) return '';
@@ -168,8 +97,6 @@ class ClmAuthority extends Model
         ));
         if (!$tokens) return '';
 
-        // A token is either an id or a name; both forms are accepted because
-        // the picker sends ids while imported/legacy payloads send names.
         $ids   = array_values(array_filter($tokens, fn ($t) => ctype_digit($t)));
         $names = array_values(array_filter($tokens, fn ($t) => !ctype_digit($t)));
 
@@ -188,7 +115,6 @@ class ClmAuthority extends Model
             $byName[mb_strtolower(trim($a->name))] = (string) $a->id;
         }
 
-        // Input order is preserved and duplicates collapse, exactly as before.
         $out = [];
         foreach ($tokens as $tok) {
             $id = $byId[$tok] ?? $byName[mb_strtolower($tok)] ?? null;
@@ -197,11 +123,6 @@ class ClmAuthority extends Model
         return implode(', ', array_keys($out));
     }
 
-    /**
-     * A stored id list in canonical form — deduped and sorted — so "6, 5" and
-     * "5, 6" compare equal. Used by the name + authority uniqueness rule of
-     * the KYC / DD / Trade Licence masters.
-     */
     public static function canonicalIds(?string $stored): string
     {
         $ids = array_unique(array_filter(array_map('trim', explode(',', (string) $stored)), fn ($t) => $t !== ''));
@@ -209,13 +130,11 @@ class ClmAuthority extends Model
         return implode(',', $ids);
     }
 
-    /** True when two stored id lists hold the same set of authorities. */
     public static function sameIdSet(?string $a, ?string $b): bool
     {
         return static::canonicalIds($a) === static::canonicalIds($b);
     }
 
-    /** True when authority id appears as an exact token in a stored id list. */
     public static function storedContainsId(?string $stored, int $id): bool
     {
         if ($stored === null) return false;

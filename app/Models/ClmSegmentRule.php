@@ -13,9 +13,6 @@ class ClmSegmentRule extends Model
     public const REG_LESS   = 'less';
     public const REG_VALUES = [self::REG_HIGHLY, self::REG_LESS];
 
-    // Domestic vs International trade — a segment can hold one rule of each type,
-    // each with its own required-document set. Defaults to International (the
-    // column is NOT NULL DEFAULT 'international'; legacy rows were backfilled).
     public const DOC_DOMESTIC      = 'domestic';
     public const DOC_INTERNATIONAL = 'international';
     public const DOC_TYPE_VALUES   = [self::DOC_DOMESTIC, self::DOC_INTERNATIONAL];

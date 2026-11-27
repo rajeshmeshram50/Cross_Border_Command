@@ -1,34 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
-// Side-effect import: MasterMultiSelect (below) reuses .master-select-* classes,
-// so the dropdown CSS must load whenever this module is imported — even when
-// the consumer only pulls in MasterMultiSelect / MasterFileInput / MasterFormStyles.
 import '../../components/ui/MasterSelect.css';
 import SearchClear from '../../components/ui/SearchClear';
 
-// MasterSelect and MasterDatePicker live in components/ui as standalone,
-// reusable UI primitives. They are re-exported here so existing
-// `from './master/masterFormKit'` imports keep working unchanged.
 export { MasterSelect } from '../../components/ui/MasterSelect';
 export { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 
-/**
- * Multi-select sibling of `MasterSelect`. Mirrors the styling 1:1 so the
- * two read as a single visual family. The picker is fully controlled —
- * `value` is an array of selected values, `onChange` returns a new
- * array. Items toggle on click; the toggle pill shows a chip strip
- * with the selected labels (truncates with `+N more` when crowded).
- */
-/* The expanded chip strip scrolls horizontally but the scrollbar itself is
-   HIDDEN — the visible bar looked clunky inside the short field. Scrolling
-   still works via wheel / trackpad / drag, and the strip stays as clean as
-   the collapsed state. Self-contained so it applies without <MasterFormStyles/>. */
 const CHIPSTRIP_CSS = `
 .master-multi-chipstrip { scrollbar-width: none; -ms-overflow-style: none; }
 .master-multi-chipstrip::-webkit-scrollbar { width: 0; height: 0; display: none; }
-/* Dark mode — the chips' inline colours (#eef2ff bg / #4338ca text) read as
-   white stickers on the dark form. Override to a violet-tinted token with a
-   light label + subtle violet border (matches the rest of the dark UI). */
 [data-bs-theme="dark"] .master-multi-chip {
   background: transparent !important;
   color: #ddd6fe !important;
@@ -60,7 +40,6 @@ export function MasterMultiSelect({
   onOpen,
   menuClassName,
 }: {
-  /* Extra class on the portalled menu, so a caller can style just its own list. */
   menuClassName?: string;
   name?: string;
   value: string[];
@@ -70,41 +49,21 @@ export function MasterMultiSelect({
   invalid?: boolean;
   onChange?: (value: string[]) => void;
   maxChips?: number;
-  /* Optional per-option trailing badge(s), rendered at the right of each row in
-     the dropdown list (e.g. a segment's Domestic / International rule badges).
-     Return null for options that need none. */
   renderBadges?: (value: string) => React.ReactNode;
-  /* Selected values that can't be removed (× hidden, can't be unchecked) but
-     don't block adding others. Used e.g. for Supplier Segments that already
-     have documents uploaded against them. */
   lockedValues?: string[];
-  /* Options that stay VISIBLE in the list but can't be picked — greyed out and
-     click-inert. Used for segments with no Document Control Panel rule: the
-     user should see the segment exists while learning it isn't usable yet.
-     An already-selected value is never disabled (legacy data must stay
-     removable), so this only ever blocks NEW selections. */
   disabledValues?: string[];
-  /* Short reason appended to a disabled option's tooltip, e.g. "no document
-     rule defined yet". */
   disabledHint?: string;
   emptyText?: string;
-  /* Fired when the dropdown OPENS. Use it to re-fetch options that can go
-     stale while the form sits open — e.g. the free-asset list, where another
-     user may have claimed a device since this form was mounted. */
   onOpen?: () => void;
 }) {
   const lockedSet = new Set(lockedValues ?? []);
   const disabledSet = new Set(disabledValues ?? []);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  /* Clicking "+N more" flips this — the chip strip then shows every selected
-     chip in a single horizontal-scrolling row; "Show less" collapses it. */
   const [expanded, setExpanded] = useState(false);
   useEffect(() => { if (!open) setSearch(''); }, [open]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [dropDir, setDropDir] = useState<'up' | 'down'>('down');
-  // Mirror MasterSelect: track the trigger's width so the portalled menu
-  // can be sized to match it (otherwise it stretches to the body width).
   const [menuWidth, setMenuWidth] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (!open || !wrapRef.current) return;
@@ -118,14 +77,7 @@ export function MasterMultiSelect({
       setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
     };
     update();
-    // Resize (maximize/minimize/zoom) reflows the whole layout; the portalled
-    // fixed-position menu would otherwise strand away from its trigger. Close
-    // it on resize so it never shows mispositioned.
     const closeOnResize = () => setOpen(false);
-    /* Close the menu when the PAGE (or any ancestor) scrolls — the portalled
-     * fixed-position menu detaches from its trigger and floats mid-screen
-     * otherwise (QA #30). Scrolling INSIDE the menu's own option list must NOT
-     * close it, so ignore scroll events that originate within .master-select-menu. */
     const onScroll = (e: Event) => {
       const t = e.target as Node | null;
       if (t && t instanceof HTMLElement && t.closest?.('.master-select-menu')) return;
@@ -146,16 +98,14 @@ export function MasterMultiSelect({
     ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
     : options;
   const toggleVal = (v: string) => {
-    // Locked values can be added but never unchecked.
     if (selectedSet.has(v) && lockedSet.has(v)) return;
-    // Unusable option — selectable only in the sense that it's visible.
     if (!selectedSet.has(v) && disabledSet.has(v)) return;
     const next = selectedSet.has(v) ? value.filter(x => x !== v) : [...value, v];
     onChange?.(next);
   };
   const removeVal = (v: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (lockedSet.has(v)) return; // locked → can't remove
+    if (lockedSet.has(v)) return;
     onChange?.(value.filter(x => x !== v));
   };
 
@@ -167,8 +117,6 @@ export function MasterMultiSelect({
         toggle={() => {
           if (disabled) return;
           setOpen(v => {
-            // Fire onOpen on the OPENING edge only, so callers can refresh a
-            // list that may have gone stale since the form was mounted.
             if (!v) onOpen?.();
             return !v;
           });
@@ -181,17 +129,11 @@ export function MasterMultiSelect({
           type="button"
           disabled={disabled}
           className="master-select-toggle"
-          /* 12px right padding (was 30px) so the chevron sits flush near the
-             right edge like a normal select, instead of floating ~20px in. */
           style={{ minHeight: 38, padding: '4px 12px' }}
         >
           {selectedOptions.length === 0 ? (
             <span className="master-select-placeholder">{placeholder}</span>
           ) : (
-            // Collapsed: up to `maxChips` chips (truncated) + a "+N more" pill.
-            // Clicking "+N more" expands the strip to show EVERY selected chip
-            // in a single horizontal-scrolling row (thin scrollbar); "Show less"
-            // collapses it. The field stays one fixed-height row either way.
             <span
               className="d-inline-flex align-items-center gap-1"
               style={{ flexWrap: 'nowrap', overflow: 'hidden', maxWidth: '100%', minWidth: 0, flex: '1 1 auto' }}
@@ -199,9 +141,6 @@ export function MasterMultiSelect({
               <span
                 className={`d-inline-flex align-items-center gap-1${expanded ? ' master-multi-chipstrip' : ''}`}
                 style={{
-                  /* flex:1 so the chip strip fills the space and the "+N more" /
-                     "Show less" pill (flex-shrink:0) is pushed to the right,
-                     next to the dropdown chevron. */
                   flex: '1 1 auto',
                   flexWrap: 'nowrap', minWidth: 0,
                   overflowX: expanded ? 'auto' : 'hidden',
@@ -223,8 +162,6 @@ export function MasterMultiSelect({
                       fontWeight: 500,
                       maxWidth: expanded ? 200 : 130,
                       minWidth: 0,
-                      // Expanded chips keep full width and scroll; collapsed
-                      // chips shrink + ellipsis so the row never overflows.
                       flexShrink: expanded ? 0 : 1,
                     }}
                   >
@@ -281,12 +218,9 @@ export function MasterMultiSelect({
           className={`master-select-menu${menuClassName ? ` ${menuClassName}` : ''}`}
           container="body"
           strategy="fixed"
-          /* Pin the portalled menu to the viewport so it can never drift
-             off-screen or strand away from its trigger on resize/zoom. */
           modifiers={[
             { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8, altAxis: true } },
             { name: 'flip', options: { boundary: 'viewport', fallbackPlacements: ['top', 'bottom'] } },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ] as any}
           style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
         >
@@ -310,10 +244,6 @@ export function MasterMultiSelect({
               <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
           )}
-          {/* 203 = 5.5 rows at 37px each. Deliberately a half row: the sliced
-              option is the cue that the list continues below. The old 200
-              landed at 5.48 rows, so the peek row was a near-invisible sliver
-              and the list read as if it simply ended. */}
           <div className="master-select-list" style={{ maxHeight: 203 }}>
             {filtered.length === 0 ? (
               <div className="master-select-empty">
@@ -331,8 +261,6 @@ export function MasterMultiSelect({
                   disabled={locked || unusable}
                   onClick={() => toggleVal(opt.value)}
                   className="master-select-item d-flex align-items-center"
-                  /* Full label in the tooltip — the visible text truncates with an
-                     ellipsis, so long names are only readable on hover. */
                   title={locked
                     ? `${opt.label} — documents uploaded, can't be removed`
                     : unusable
@@ -340,17 +268,9 @@ export function MasterMultiSelect({
                       : opt.label}
                   style={unusable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
                 >
-                  {/* Classed, not inline-styled. The box used to carry its own
-                      colours in a style attribute, which no stylesheet can
-                      override -- so it stayed a white square on a dark
-                      dropdown however the theme changed. (QA #45) */}
                   <span className={`master-select-check${checked ? ' is-on' : ''}`}>
                     {checked && <i className="ri-check-line" />}
                   </span>
-                  {/* minWidth:0 is load-bearing — a flex child defaults to
-                      min-width:auto and refuses to shrink below its text, which
-                      pushed the row wider than the menu and left the hover/active
-                      background painting only part of it. */}
                   <span
                     style={{
                       flex: 1,
@@ -391,14 +311,6 @@ export function MasterMultiSelect({
   );
 }
 
-
-/**
- * Custom file input — replaces the native <input type="file"> (which renders
- * an ugly browser-default "Choose File / No file chosen" pair). Looks and
- * feels like the rest of the master-modal form: bordered pill-shaped frame
- * with a gradient "Choose File" button on the left, filename + size on the
- * right, and a clear (×) button once a file is selected.
- */
 export function MasterFileInput({
   name,
   accept,
@@ -493,12 +405,23 @@ export function MasterFileInput({
   );
 }
 
-/** Style block shared by every master-modal form (render once per page) */
 export function MasterFormStyles() {
   return <style>{MASTER_MODAL_CSS}</style>;
 }
 
 export const MASTER_MODAL_CSS = `
+  .mp-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border: 1px solid var(--vz-border-color); border-radius: 12px; background: var(--vz-light, #f3f6f9); }
+  .mp-seg__opt { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; margin: 0; padding: 0 12px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--vz-secondary-color); cursor: pointer; text-align: center; transition: background .15s, color .15s, box-shadow .15s; }
+  .mp-seg__opt input { position: absolute; opacity: 0; pointer-events: none; }
+  .mp-seg__opt:hover:not(.is-on):not(.is-disabled) { color: var(--vz-heading-color, var(--vz-body-color)); background: rgba(64, 81, 137, .06); }
+  .mp-seg__dot { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid #94a3b8; transition: border-color .15s, box-shadow .15s; }
+  .mp-seg__opt.is-on { color: #fff; background: linear-gradient(135deg, #405189, #5b73e8); box-shadow: 0 4px 12px -4px rgba(64, 81, 137, .55); }
+  .mp-seg__opt.is-on .mp-seg__dot { border-color: #fff; box-shadow: inset 0 0 0 3px #4a5fb3, inset 0 0 0 7px #fff; }
+  .mp-seg__opt.is-disabled { cursor: not-allowed; opacity: .65; }
+  .mp-seg__opt:has(input:focus-visible) { outline: 2px solid var(--vz-primary); outline-offset: 2px; }
+  [data-bs-theme="dark"] .mp-seg { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .12); }
+  [data-bs-theme="dark"] .mp-seg__opt:hover:not(.is-on):not(.is-disabled) { background: rgba(255, 255, 255, .06); }
+  [data-bs-theme="dark"] .mp-seg__dot { border-color: #64748b; }
   .master-modal .modal-content {
     border-radius: 20px !important;
     overflow: hidden;
@@ -530,7 +453,6 @@ export const MASTER_MODAL_CSS = `
     font-weight: 700;
     margin-left: 1px;
   }
-  /* Subtle blue tint on input backgrounds to match the branded modal header. */
   .master-modal .master-field .form-control,
   .master-modal .master-field .form-select {
     background: color-mix(in srgb, #6691e7 5%, var(--vz-card-bg)) !important;
@@ -549,29 +471,15 @@ export const MASTER_MODAL_CSS = `
   [data-layout-mode="dark"] .master-modal .master-field .form-select {
     background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg)) !important;
   }
-  /* A background of its OWN, before any ancestor gets a say.
-
-     The toggle renders as a bare <button>, and every rule that fills it is
-     scoped to some ancestor — .master-modal, .rec-form-modal, .hrexp-hero-
-     select. In a modal matching none of them it fell back to the browser's
-     ButtonFace, which is white: right by accident in light mode, wrong in
-     dark, and that is the Assign Assets modal (#110). Colour only — borders
-     stay with whatever rule owns them, so no existing field changes shape.
-
-     Every rule below overrides this one; none of them is weakened by it. */
   .master-select-toggle {
     background: var(--vz-card-bg, #fff);
     color: var(--vz-body-color);
   }
-  /* Disabled is a separate state because the ancestor rules all exclude it,
-     so it has never had a fill of its own either. */
   .master-select-toggle:disabled {
     background: var(--vz-secondary-bg, #f3f4f6);
     color: var(--vz-secondary-color);
   }
 
-  /* Dropdown triggers wear the same tinted fill + border as the text inputs,
-     so every field in the modal reads as one set. */
   .master-modal .master-select-toggle:not(:disabled) {
     background: color-mix(in srgb, #6691e7 5%, var(--vz-card-bg)) !important;
   }
@@ -583,12 +491,6 @@ export const MASTER_MODAL_CSS = `
     background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg)) !important;
   }
 
-  /* ── HRMS fields in dark mode ──
-     The module's own forms (employee onboarding) give the FIELD the card
-     background and sit it on a darker panel, so it reads as raised. HRMS
-     modals now do the same, with the same two variables, rather than
-     tinting the field to fake the difference against a panel of its own
-     colour. .hrms-modal carries the decision so Master keeps its own tint. */
   [data-bs-theme="dark"] .hrms-modal .modal-content,
   [data-layout-mode="dark"] .hrms-modal .modal-content {
     background: color-mix(in srgb, #000 24%, var(--vz-card-bg));
@@ -605,13 +507,11 @@ export const MASTER_MODAL_CSS = `
     border-color: var(--vz-border-color) !important;
     color: var(--vz-body-color) !important;
   }
-  /* Focus keeps its violet ring over the same fill. */
   [data-bs-theme="dark"] .hrms-modal .master-field .form-control:focus,
   [data-layout-mode="dark"] .hrms-modal .master-field .form-control:focus {
     background: var(--vz-card-bg) !important;
   }
 
-  /* Prefix-icon input groups */
   .master-field { position: relative; }
   .master-field .form-control,
   .master-field .form-select {
@@ -642,8 +542,6 @@ export const MASTER_MODAL_CSS = `
     transform: translateY(-50%) scale(1.08);
   }
 
-  /* Auto-generated fields (e.g. Designation Code) — visually flagged so the
-     user understands they can't edit it; the server fills it on save. */
   .master-field .form-control.master-field-auto {
     background: color-mix(in srgb, var(--vz-warning-rgb, 247, 184, 75) 12%, var(--vz-card-bg)) !important;
     color: var(--vz-warning, #f7b84b) !important;
@@ -657,7 +555,6 @@ export const MASTER_MODAL_CSS = `
     color: #ffd47a !important;
   }
 
-
   .master-modal .form-control,
   .master-modal .form-select {
     font-size: 13px;
@@ -665,10 +562,6 @@ export const MASTER_MODAL_CSS = `
     height: 38px;
     border-radius: 10px;
     background: var(--vz-card-bg);
-    /* Stronger default border so inputs/selects don't disappear into the
-     * card background in light mode — Velzon's default --vz-border-color
-     * is too pale (#e9ebec) and users reported they couldn't see where
-     * to type. Dark mode keeps the variable. */
     border: 1.5px solid #94a3b8;
     box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
     transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
@@ -711,9 +604,6 @@ export const MASTER_MODAL_CSS = `
 
   .master-modal-cancel {
     background: transparent;
-    /* Resting border bumped to a clearly visible grey — the themed
-       --vz-border-color was too faint to read against the modal footer
-       (HRMS-BUG-086). Hover still flips to the red treatment below. */
     border: 1.5px solid #ced4da;
     color: var(--vz-heading-color, var(--vz-body-color));
     font-weight: 600;
@@ -736,10 +626,6 @@ export const MASTER_MODAL_CSS = `
     box-shadow: 0 4px 12px rgba(0,0,0,0.40);
   }
 
-  /* Save / Update primary button — gradient pill that lifts on hover.
-     Used inside every master form modal so all masters get the same
-     interaction. Replaces the previous inline-style approach so a
-     :hover state can actually be defined. */
   .master-modal-save {
     background: linear-gradient(120deg, #405189 0%, #6691e7 100%) !important;
     color: #fff !important;
@@ -775,13 +661,6 @@ export const MASTER_MODAL_CSS = `
     box-shadow: 0 8px 22px rgba(0,0,0,0.55);
   }
 
-  /* NOTE: dark-mode styling for the individual selected chips lives in
-     CHIPSTRIP_CSS (.master-multi-chip). We intentionally do NOT style the
-     chip-strip *wrapper* span here — doing so painted a second tinted box
-     behind the whole chip group (a stray "background square"). The wrapper
-     stays transparent; only the chips themselves carry a background. */
-
-  /* "+N more" / "Show less" toggle — match the chip tinting in dark mode. */
   [data-bs-theme="dark"] .master-multi-more {
     background: rgba(124,58,237,0.22) !important;
     color: #ddd6fe !important;
@@ -793,12 +672,6 @@ export const MASTER_MODAL_CSS = `
   }
   .master-multi-more:hover { filter: brightness(.97); }
 
-  /* Chip strip — force a single horizontal row and scroll horizontally
-     when chips overflow, instead of wrapping to multiple rows. This
-     keeps the field exactly the same height as the surrounding inputs
-     no matter how many segments are selected or whether "Show less"
-     is expanded. Bootstrap's .flex-wrap utility uses !important so we
-     have to override with !important too. */
   .master-select-toggle > span.d-inline-flex.flex-wrap {
     flex-wrap: nowrap !important;
     max-width: 100%;
@@ -808,9 +681,6 @@ export const MASTER_MODAL_CSS = `
     scrollbar-width: thin;
     scrollbar-color: #c4b5fd transparent;
   }
-  /* Lock each chip so it never shrinks below its label width — without
-     this, flexbox would squish the chips to fit the row and the labels
-     would clip. */
   .master-select-toggle > span.d-inline-flex.flex-wrap > span { flex-shrink: 0; }
   .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar { height: 4px; }
   .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar-thumb {
@@ -822,4 +692,21 @@ export const MASTER_MODAL_CSS = `
   [data-bs-theme="dark"] .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar-thumb {
     background: rgba(167,139,250,0.45);
   }
+
+  .master-lock { position: absolute; inset: 0; z-index: 20; border-radius: inherit; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.6); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); cursor: progress; }
+  .master-lock__box { display: flex; flex-direction: column; align-items: center; gap: 12px; font-size: 13px; font-weight: 700; letter-spacing: .2px; color: #405189; }
+  .master-lock__spin { width: 40px; height: 40px; border-radius: 50%; border: 3.5px solid rgba(64,81,137,.2); border-top-color: #5562c4; animation: masterLockSpin .7s linear infinite; }
+  @keyframes masterLockSpin { to { transform: rotate(360deg); } }
+  [data-bs-theme="dark"] .master-lock { background: rgba(15,18,32,.62); }
+  [data-bs-theme="dark"] .master-lock__box { color: #c4b5fd; }
+  [data-bs-theme="dark"] .master-lock__spin { border-color: rgba(167,139,250,.22); border-top-color: #a78bfa; }
+  @media (prefers-reduced-motion: reduce) { .master-lock__spin { animation: none; } }
 `;
+
+export function MasterSavingLock({ label }: { label: string }) {
+  return (
+    <div role="status" aria-live="polite" aria-busy="true" className="master-lock">
+      <div className="master-lock__box"><span className="master-lock__spin" />{label}</div>
+    </div>
+  );
+}

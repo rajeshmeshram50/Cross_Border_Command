@@ -9,7 +9,6 @@ use League\Flysystem\AzureBlobStorage\AzureBlobStorageAdapter;
 use League\Flysystem\Filesystem;
 use MicrosoftAzure\Storage\Blob\BlobRestProxy;
 
-
 class AzureStorageServiceProvider extends ServiceProvider
 {
     public function boot(): void

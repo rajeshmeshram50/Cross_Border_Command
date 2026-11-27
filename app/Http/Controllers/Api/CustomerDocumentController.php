@@ -10,7 +10,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-
 class CustomerDocumentController extends Controller
 {
     public function index(Request $request, $customerId): JsonResponse
@@ -47,9 +46,6 @@ class CustomerDocumentController extends Controller
 
         $data['customer_id'] = $customer->id;
         $data['created_by']  = optional($request->user())->id;
-        // The validator can't see the file directly because Laravel's
-        // FileBag is separate from input — pull the upload and stash
-        // its path on the row.
         if ($request->hasFile('attachment')) {
             $data['attachment_path'] = $this->storeUpload($request->file('attachment'), $customer->id, 'doc');
         }
@@ -66,7 +62,6 @@ class CustomerDocumentController extends Controller
         $data = $this->validatePayload($request, $doc->id);
 
         if ($request->hasFile('attachment')) {
-            // Drop the previous file (best-effort) before replacing.
             if ($doc->attachment_path) {
                 Storage::disk('public')->delete($doc->attachment_path);
             }
@@ -95,12 +90,6 @@ class CustomerDocumentController extends Controller
         return response()->json(['id' => $doc->id, 'deleted' => true]);
     }
 
-    /**
-     * Push the current customer KYC into every same-as-customer
-     * consignee linked to this customer. Called after every create /
-     * update / delete so a mirror never drifts. Silent no-op when no
-     * mirrors exist (cheap).
-     */
     private function resyncMirrors(Customer $customer, Request $request): void
     {
         app(ConsigneeKycMirror::class)->resyncForCustomer(
@@ -108,8 +97,6 @@ class CustomerDocumentController extends Controller
             optional($request->user())->id
         );
     }
-
-    /* ── Helpers ──────────────────────────────────────────────────── */
 
     private function shape(CustomerDocument $d): array
     {
@@ -122,12 +109,6 @@ class CustomerDocumentController extends Controller
             'issue_date'        => optional($d->issue_date)->toDateString(),
             'expiry_date'       => optional($d->expiry_date)->toDateString(),
             'attachment_path'   => $d->attachment_path,
-            // Uses the project-wide file_url() helper (app/helpers.php),
-            // the same one HR Employees + Onboarding use for their docs.
-            // It strips legacy storage/ + public/ prefixes, falls back
-            // to a constructed URL when the disk has no `url` config,
-            // and collapses double slashes — so the View link works on
-            // every server configuration (local, Azure, prod).
             'attachment_url'    => file_url($d->attachment_path),
             'attachment_name'   => $d->attachment_path ? basename($d->attachment_path) : null,
             'description'       => $d->description,
@@ -147,10 +128,6 @@ class CustomerDocumentController extends Controller
             'expiry_date'       => 'nullable|date|after_or_equal:issue_date',
             'description'       => 'nullable|string|max:1000',
             'status'            => 'nullable|in:Active,Inactive',
-            // Attachment: 2 MB cap, restricted to safe document types
-            // (image / PDF / Office docs). Rejects executables, scripts,
-            // and archives (.php, .zip, .txt, .exe, etc.) at the server
-            // so even a manipulated client request can't slip them through.
             'attachment'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
         ], [
             'attachment.mimes' => 'Attachment must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
@@ -165,11 +142,6 @@ class CustomerDocumentController extends Controller
         return $file->storeAs("customer_documents/{$customerId}", $name, 'public');
     }
 
-    /**
-     * Resolve the parent customer with the same tenant rules used by
-     * CustomerController. Failing this aborts with 404 before any
-     * document touches happen.
-     */
     private function resolveCustomer(Request $request, $customerId, ?string $action = null): Customer
     {
         $customer = Customer::query()

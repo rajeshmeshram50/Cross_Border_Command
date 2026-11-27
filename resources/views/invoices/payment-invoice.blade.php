@@ -59,13 +59,6 @@
         $grandTotal = $taxableValue + $gstAmount - (float)($payment->discount ?? 0);
     }
 
-    /* "Total Value (in words)" — Indian English spell-out (lakhs / crores).
-     * Tries ext-intl first (\NumberFormatter::SPELLOUT). When ext-intl
-     * isn't installed on the prod server, the fallback used to just echo
-     * the digits back ("59000.00 Only"), which defeated the entire
-     * purpose of the field. The new fallback is a small in-line spell-
-     * out routine that handles paise + the Indian numbering system,
-     * so the invoice always shows readable words. */
     $rupees = (int) floor($grandTotal);
     $paise  = (int) round(($grandTotal - $rupees) * 100);
 
@@ -268,7 +261,6 @@
 
 <div class="page-wrap">
 
-    {{-- ═══════════════ HEADER ═══════════════ --}}
     <table class="header-row">
         <tr>
             <td style="width: 28%;">
@@ -289,7 +281,6 @@
         </tr>
     </table>
 
-    {{-- ═══════════════ COMPANY + META ═══════════════ --}}
     <table style="margin-bottom: 10px;">
         <tr>
             <td style="width: 58%; padding-right: 12px; vertical-align: top;">
@@ -343,7 +334,6 @@
         </tr>
     </table>
 
-    {{-- ═══════════════ BILL TO ═══════════════ --}}
     <table style="margin-bottom: 8px;">
         <tr>
             <td style="vertical-align: top;">
@@ -369,7 +359,6 @@
         </tr>
     </table>
 
-    {{-- ═══════════════ ITEMS TABLE ═══════════════ --}}
     <table class="items-table">
         <thead>
             <tr>
@@ -426,7 +415,6 @@
         </tbody>
     </table>
 
-    {{-- ═══════════════ BANK + QR + SUMMARY ═══════════════ --}}
     <table class="bank-qr-table">
         <tr>
             <td style="width: 55%; padding-right: 12px;">
@@ -491,7 +479,6 @@
                     </tr>
                     <tr>
                         <td class="lbl" style="vertical-align: top; padding-top: 6px;">Total Value (in words)</td>
-                        {{-- $amountInWords already starts with "Indian Rupees …", so the leading ₹ symbol that used to sit here would have produced "₹ Indian Rupees …". --}}
                         <td class="words" style="padding-top: 6px;">{{ $amountInWords }}</td>
                     </tr>
                 </table>
@@ -499,7 +486,6 @@
         </tr>
     </table>
 
-    {{-- ═══════════════ TERMS + SIGNATURE ═══════════════ --}}
     <div class="terms-box">
         <table>
             <tr>

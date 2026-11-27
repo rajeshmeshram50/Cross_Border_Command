@@ -9,7 +9,7 @@ class ActivityLog extends Model
 {
     protected $table = 'activity_logs';
 
-    public $timestamps = false; // only created_at, no updated_at
+    public $timestamps = false;
 
     protected $fillable = [
         'user_id',
@@ -37,8 +37,6 @@ class ActivityLog extends Model
             'created_at' => 'datetime',
         ];
     }
-
-    // ── Relationships ──
 
     public function user(): BelongsTo
     {

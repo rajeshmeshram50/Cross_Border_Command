@@ -14,14 +14,6 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Puts the proof uploaded against a PO payment into Zoho Books, on the BILL the
- * payment settles. Zoho Books has no attachment endpoint of its own for a vendor
- * payment, so the bill is where the evidence can live and still be found from
- * the transaction.
- *
- * Runs on the QUEUE and is best-effort: the payment is recorded either way.
- */
 class AttachPoPaymentProofToZoho implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -31,7 +23,6 @@ class AttachPoPaymentProofToZoho implements ShouldQueue
 
     public function __construct(public int $paymentId) {}
 
-    /** Wait between retries: 30s, then 2min. */
     public function backoff(): array
     {
         return [30, 120];
@@ -42,8 +33,6 @@ class AttachPoPaymentProofToZoho implements ShouldQueue
         $pay = PoPayment::withoutGlobalScope('tenant')->find($this->paymentId);
         if (!$pay || empty($pay->zoho_payment_id) || empty($pay->proof_path)) return;
 
-        // The bill lives on the PO for a PO-backed payment, or on the invoice
-        // itself for a Direct SPI payment (no purchase order).
         $billId = $pay->purchase_order_id
             ? PurchaseOrder::withoutGlobalScope('tenant')->find($pay->purchase_order_id)?->zoho_bill_id
             : SupplierInvoice::withoutGlobalScope('tenant')->find($pay->supplier_invoice_id)?->zoho_bill_id;
@@ -59,7 +48,6 @@ class AttachPoPaymentProofToZoho implements ShouldQueue
         }
 
         $name = $pay->proof_name ?: basename($pay->proof_path);
-        // Named by the payment, so several proofs on one bill stay tellable apart.
         $filename = 'PAY-' . $pay->id . '-' . preg_replace('/[^A-Za-z0-9._-]/', '_', $name);
 
         try {

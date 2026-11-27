@@ -83,6 +83,9 @@
 [data-bs-theme="dark"] .cvx .crd-pickbox .crd-search { background: rgba(15, 37, 48, .95); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 [data-bs-theme="dark"] .cvx .crd-pickbox .crd-search input { color: #e2f4f8; }
 [data-bs-theme="dark"] .cvx .crd-pickbox .crd-search kbd { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
+/* Type picker (My Vault and Critical Vault), dark: the search clear (x) kept its light pale-cyan fill - same teal as the "/" hint it replaces. */
+[data-bs-theme="dark"] .cvx .crd-pickbox .crd-search__clear { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .cvx .crd-pickbox .crd-search__clear:hover { color: #ecfeff; background: rgba(34, 211, 238, .22); border-color: rgba(103, 232, 249, .5); }
 
 .cvx .crd-pickbox--cv .crd-tile--c:has(.crd-tile__new) .crd-tile__row { padding-right: 26px; }
 
@@ -200,6 +203,60 @@
     border-color: rgba(34, 211, 238, .3) !important;
     color: #67e8f9 !important;
 }
+/* Critical Vault 2FA step, dark mode: the pieces above missed stayed light - the unpicked method's
+   icon tile and radio, Send code, the section divider, the Selected / Gmail-verified pills, the
+   linked state. The QR frame stays white on purpose (phones scan dark-on-light). */
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt:hover:not(:disabled) { border-color: rgba(103, 232, 249, .5) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt__i {
+    background: rgba(34, 211, 238, .12);
+    color: #67e8f9;
+    border: 1px solid rgba(103, 232, 249, .25);
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt.is-on .k2-opt__i {
+    background: linear-gradient(135deg, #0e7490, #22d3ee);
+    color: #fff;
+    border-color: transparent;
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt__r {
+    background: transparent;
+    border-color: rgba(103, 232, 249, .45);
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt.is-on .k2-opt__r {
+    background: #22d3ee;
+    border-color: #22d3ee;
+    box-shadow: inset 0 0 0 3px #0f2530;
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt--ro.is-off { background: rgba(255, 255, 255, .03) !important; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt--ro.is-off .k2-opt__i { background: rgba(148, 163, 184, .1); color: #7f98a6; border-color: rgba(148, 163, 184, .2); }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-opt__sel,
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-gm__ok {
+    background: rgba(16, 185, 129, .12);
+    border-color: rgba(52, 211, 153, .35);
+    color: #6ee7b7;
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-gm__ok b { color: #a7f3d0; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-chip.is-off {
+    background: rgba(148, 163, 184, .1) !important;
+    border-color: rgba(148, 163, 184, .3) !important;
+    color: #a9bcc7 !important;
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-sec { border-top-color: rgba(34, 211, 238, .22); }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-sec__t { color: #67e8f9; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .k2-note svg { color: #67e8f9; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-btn--ghost {
+    background: rgba(34, 211, 238, .1);
+    border-color: rgba(34, 211, 238, .35);
+    color: #67e8f9;
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-btn--ghost:hover:not(:disabled) {
+    background: rgba(34, 211, 238, .18);
+    border-color: rgba(103, 232, 249, .55);
+    color: #ecfeff;
+}
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-btn--ghost:disabled { opacity: .5; cursor: not-allowed; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-vcard__ico { box-shadow: none; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-linked b { color: #e2f4f8; }
+[data-bs-theme="dark"] .cvx #crd-host .crd-box .cp-linked span { color: #8fb3c2; }
 .master-select-menu.crd-dots .master-select-item {
   display: flex !important;
   align-items: center;

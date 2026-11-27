@@ -17,7 +17,7 @@ use App\Models\Quotation;
 use App\Models\Product;
 use App\Models\SegmentDocUpload;
 use App\Support\MasterVisibility;
-use Illuminate\Database\Eloquent\Model;
+use App\Support\SupplierPartyToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -27,7 +27,6 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
-use PhpOffice\PhpWord\Shared\Html;
 
 class ClmAgreementController extends Controller
 {
@@ -206,27 +205,47 @@ class ClmAgreementController extends Controller
         $rows->each(function ($r) use ($signedIds, $usedIds) {
             $r->setAttribute('is_signed', in_array((int) $r->id, $signedIds, true));
             $r->setAttribute('in_use', in_array((int) $r->id, $usedIds, true));
-            /* The list does not render the document — it shows title, type,
-               regulatory, segment and party — but `content` was 92.9% of this
-               response: 1,626,331 of 1,750,358 bytes across thirteen rows, one
-               of them a 959 kB agreement. The editor fetches the one row it
-               opens from libraryShow() below. */
             $r->makeHidden('content');
         });
 
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
-    /**
-     * One agreement, with its document body — what the editor opens.
-     *
-     * Scoped exactly as libraryIndex() scopes the list, NOT as libraryUpdate()
-     * scopes an edit. Those differ: the list passes the requested branch filter
-     * while an edit is pinned to the caller's own branch. Scoping this like an
-     * edit meant a row the user could see in the list came back 404 when they
-     * opened it. Whatever the list showed, this serves; whether it may then be
-     * SAVED is still libraryUpdate's decision.
-     */
+    public function libraryForParty(Request $request, $party)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+
+        $q = ClmAgreementLibrary::query()->orderBy('id', 'desc');
+        MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
+        $key = strtolower(trim((string) $party));
+
+        if ($key === 'buyer' || $key === 'customer') {
+            $q->where('party', 'like', '%Buyer%');
+        } elseif ($key === 'consignee') {
+            $q->where('party', 'like', '%Consignee%');
+        } elseif ($key === 'supplier') {
+            $token = SupplierPartyToken::forVendorTypeId(
+                $request->integer('vendor_type_id') ?: null,
+                (int) $user->client_id,
+            ) ?: SupplierPartyToken::forVendorTypeName($request->query('vendor_type'));
+
+            if ($token) {
+                SupplierPartyToken::applyToQuery($q, $token);
+            } else {
+                $q->where('party', 'like', '%Supplier-%');
+            }
+        } else {
+            $q->where('party', 'like', '%' . $party . '%');
+        }
+
+        $rows = $q->get()->each->makeHidden('content');
+
+        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+    }
+
     public function libraryShow(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -277,11 +296,6 @@ class ClmAgreementController extends Controller
                 'updated_by'     => $user->id,
             ]);
         });
-        /* Without content. The wizard just posted it and awaits this response
-           without reading it, so echoing the document back sends it a second
-           time for nothing — 1.5 MB on live for an agreement carrying an
-           imported Word document, which is most of the 42 s the save took.
-           Every other column still goes back. */
         return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
@@ -324,7 +338,6 @@ class ClmAgreementController extends Controller
             $data['docx_original_name'] = null;
         }
         $row->update($data);
-        // Without content — see libraryStore.
         return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
@@ -475,8 +488,6 @@ class ClmAgreementController extends Controller
             : null;
 
         $segmentsOut = [];
-        // Filled by segmentTradeDocs() on first use and reused for every segment:
-        // the party's trade-doc uploads do not depend on the segment (QA #15).
         $tdUploadsByOwner = null;
         foreach ($segments as $seg) {
             $name = $seg->name;
@@ -673,12 +684,6 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'saved' => count($data['items'])]);
     }
 
-    /**
-     * @param array|null $uploadsCache The party uploads, loaded on first use and
-     *        handed back so the caller's next segment reuses them. They depend on
-     *        the party only, so re-reading them per segment was N identical
-     *        queries per lead (QA #15: ~0.15 s each on live).
-     */
     private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = [], bool $buyerEqualsConsignee = false, ?array &$uploadsCache = null): array
     {
         $name = $seg->name;
@@ -1068,5 +1073,4 @@ class ClmAgreementController extends Controller
 
         return response($bytes, 200, $headers);
     }
-
 }

@@ -333,11 +333,12 @@ export default function Clients({ onNavigate }: Props) {
         /* Header strip — same shape/parts as the Customers (.smc-cstrip)
            header (rounded container, left accent strip, violet icon, gradient
            Add button) but on a plain white surface (no violet wash). */
+        /* Geometry is the HRMS strip's (.frm-cstrip.hr-cstrip in app.css) —
+           58px on 0 10px, 38px mark, 14.5px title. Colours stay as they were. */
         .cl-cstrip {
           position: relative; overflow: hidden;
-          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-          min-height: 70px; padding: 12px 18px;
-          /* Light violet wash — the left-strip violet (#7c3aed) at 8% opacity. */
+          display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+          min-height: 58px; padding: 0 10px;
           background: #ffffff;
           /* 1px violet border on all sides (the left accent strip stays). */
           border: 1px solid #c4b5fd;
@@ -346,32 +347,32 @@ export default function Clients({ onNavigate }: Props) {
           font-family: var(--font-sans);
         }
         .cl-cstrip-accent {
-          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          position: absolute; left: 0; top: 0; bottom: 0; width: 5px; z-index: 2;
           background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
           border-radius: 16px 0 0 16px;
         }
-        .cl-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .cl-cstrip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; position: relative; z-index: 1; min-width: 0; flex: 1; }
         .cl-cstrip-icon {
-          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          position: relative; width: 38px; height: 38px; border-radius: 12px;
           background: linear-gradient(135deg, #7c3aed, #5b21b6);
           display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-size: 22px; flex-shrink: 0;
+          color: #fff; font-size: 19px; flex-shrink: 0;
           box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
         }
         .cl-cstrip-icon::after {
-          content: ''; position: absolute; bottom: -2px; right: -2px;
-          width: 11px; height: 11px; border-radius: 50%;
+          content: ''; position: absolute; bottom: -1px; right: -1px;
+          width: 10px; height: 10px; border-radius: 50%;
           background: #22c55e; border: 2px solid #ffffff;
           box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 2px 5px rgba(34,197,94,0.45);
         }
-        .cl-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
-        .cl-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+        .cl-cstrip-title { font-size: 14.5px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .cl-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; max-width: 760px; }
         /* Primary "Add" button — same gradient pill as .smc-cstrip-add. */
         .cl-cstrip-add {
           position: relative; z-index: 1; overflow: hidden;
           display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-          padding: 0 22px; height: 44px; border: none; border-radius: 14px;
-          font-family: inherit; font-size: 13px; font-weight: 700; color: #fff;
+          padding: 0 22px; height: 40px; border: none; border-radius: 999px;
+          font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff;
           white-space: nowrap; cursor: pointer; flex-shrink: 0;
           background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
           box-shadow: 0 5px 16px rgba(124,58,237,.40), 0 2px 5px rgba(91,33,182,.25), 0 1px 0 rgba(255,255,255,.22) inset;
@@ -383,10 +384,10 @@ export default function Clients({ onNavigate }: Props) {
         /* Secondary "Export" button — outlined to pair with the gradient Add. */
         .cl-cstrip-export {
           display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-          padding: 0 18px; height: 44px; border-radius: 14px;
+          padding: 0 18px; height: 40px; border-radius: 999px;
           border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
           background: #fff; color: #6d28d9;
-          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          font-family: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
           transition: background .15s, border-color .15s, transform .15s;
         }
         .cl-cstrip-export:hover:not(:disabled) { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
@@ -588,7 +589,8 @@ export default function Clients({ onNavigate }: Props) {
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
                       boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                      padding: '16px 18px',
+                      padding: 11,
+                      minHeight: 82,
                       position: 'relative',
                       overflow: 'hidden',
                       height: '100%',
@@ -597,19 +599,19 @@ export default function Clients({ onNavigate }: Props) {
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
                       <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                        <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 6px' }}>
                           {k.label}
                         </p>
                         {loading ? (
                           <Shimmer width={72} height={26} radius={6} style={{ marginTop: 2 }} />
                         ) : (
-                          <h3 style={{ fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                          <h3 style={{ fontSize: 24, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                             {k.value.toLocaleString()}
                           </h3>
                         )}
                       </div>
-                      <div className="clients-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                      <div className="clients-kpi-icon" style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                        <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
                       </div>
                     </div>
                   </div>
@@ -624,7 +626,8 @@ export default function Clients({ onNavigate }: Props) {
                     borderRadius: 14,
                     border: '1px solid var(--vz-border-color)',
                     boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                    padding: '16px 18px',
+                    padding: 11,
+                    minHeight: 82,
                     position: 'relative',
                     height: '100%',
                   }}
@@ -643,10 +646,10 @@ export default function Clients({ onNavigate }: Props) {
 
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                      <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 6px' }}>
                         Plan Distribution
                       </p>
-                      <h3 style={{ fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                      <h3 style={{ fontSize: 24, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                         {stats.plans_count.toLocaleString()}
                       </h3>
                       <small style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>
@@ -655,14 +658,14 @@ export default function Clients({ onNavigate }: Props) {
                     </div>
 
                     {/* Donut with custom controlled tooltip */}
-                    {/* 44px, the size of the icon tile on the other three KPI cards. The
+                    {/* 38px, the size of the icon tile on the other three KPI cards. The
     donut was 76px — the cards all measure the same height, but an
     ornament nearly twice the size of its neighbours made this one
     read as the bigger card. Radii scale with it. */}
-                    <div style={{ width: 44, height: 44, flexShrink: 0, position: 'relative' }}>
+                    <div style={{ width: 38, height: 38, flexShrink: 0, position: 'relative' }}>
                       {stats.plan_breakdown.length === 0 ? (
                         <div style={{
-                          width: 44, height: 44, borderRadius: '50%',
+                          width: 38, height: 38, borderRadius: '50%',
                           border: '4px solid var(--vz-secondary-bg)',
                         }} />
                       ) : (
@@ -674,8 +677,8 @@ export default function Clients({ onNavigate }: Props) {
                               nameKey="plan_name"
                               cx="50%"
                               cy="50%"
-                              innerRadius={13}
-                              outerRadius={21}
+                              innerRadius={11}
+                              outerRadius={18}
                               paddingAngle={2}
                               stroke="none"
                               isAnimationActive
@@ -771,8 +774,13 @@ export default function Clients({ onNavigate }: Props) {
                   : `${clients.length} ${clients.length === 1 ? 'organization' : 'organizations'} on the platform`
               }
               minWidth={1400}
+              /* fillToFooter pins the card to 8px above the footer (no leftover
+                 gap below the rows); minAutoRows floors the fit at 10. Same fix
+                 the HRMS lists took. */
               fitToViewport
               autoFitRows
+              fillToFooter
+              minAutoRows={10}
               loading={loading}
               searchValue={searchInput}
               onSearchChange={setSearchInput}

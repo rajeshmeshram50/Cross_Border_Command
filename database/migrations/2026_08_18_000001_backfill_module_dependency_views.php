@@ -4,19 +4,6 @@ use App\Support\ModuleDependencies;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Repair permissions granted BEFORE the HRMS dependency matrix existed.
- *
- * PermissionController now expands every save with the modules a grant depends
- * on, but rows already in the table were written without that rule — those
- * users keep the half-broken screens (empty Department/Designation dropdowns,
- * 403s on lookup calls) until somebody happens to re-save their permissions.
- * This walks the existing grants once and adds the missing can_view rows.
- *
- * Only can_view is added, and only for modules the user doesn't already have —
- * no existing row is modified and no action flag is ever granted. Mirrors
- * 2026_06_04_000100_backfill_can_view_for_action_permissions.php.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -25,12 +12,11 @@ return new class extends Migration
         $idBySlug = DB::table('modules')->pluck('id', 'slug')->all();
         $flags = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
 
-        // ── per-user permissions ────────────────────────────────────────────
         $rows = DB::table('permissions')->get();
 
-        $active = [];   // user_id => [slug, …] (any flag set)
-        $viewed = [];   // user_id => [slug => true]
-        $meta   = [];   // user_id => tenant columns to copy onto new rows
+        $active = [];
+        $viewed = [];
+        $meta   = [];
         foreach ($rows as $r) {
             $slug = $slugById[$r->module_id] ?? null;
             if (!$slug) continue;
@@ -68,7 +54,6 @@ return new class extends Migration
             DB::table('permissions')->insert($chunk);
         }
 
-        // ── department permissions (these propagate to HODs) ────────────────
         if (!DB::getSchemaBuilder()->hasTable('department_permissions')) return;
 
         $deptRows = DB::table('department_permissions')->get();
@@ -106,7 +91,5 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Not reversible: the added rows are indistinguishable from grants an
-        // admin made by hand, and removing them would revoke real access.
     }
 };

@@ -12,7 +12,6 @@ use Illuminate\Validation\ValidationException;
 
 class PlanController extends Controller
 {
-  
     private function makeSlug(string $name): string
     {
         return trim(strtolower(preg_replace('/[^a-z0-9]+/i', '-', $name)), '-');
@@ -90,7 +89,6 @@ class PlanController extends Controller
                     'is_custom' => $request->boolean('is_custom'),
                 ]);
 
-                // Save modules
                 if ($request->modules) {
                     foreach ($request->modules as $mod) {
                         if ($mod['access_level'] === 'not_included') continue;
@@ -105,8 +103,6 @@ class PlanController extends Controller
                 return $plan;
             });
         } catch (UniqueConstraintViolationException $e) {
-            // Belt and suspenders: covers the race where two requests pass the
-            // pre-check above and only one wins the DB insert.
             throw ValidationException::withMessages([
                 'name' => 'A plan with this name already exists. Please choose a different name.',
             ]);
@@ -114,7 +110,6 @@ class PlanController extends Controller
 
         $plan->load('modules:id,name,slug,icon');
 
-        // Plans appear in the cached client form-bundle dropdown — refresh it.
         \App\Support\MasterBundleCache::bump();
 
         return response()->json(['message' => 'Plan created successfully', 'plan' => $plan], 201);
@@ -184,7 +179,6 @@ class PlanController extends Controller
                 'is_custom' => $request->boolean('is_custom'),
             ]);
 
-            // Replace modules
             PlanModule::where('plan_id', $plan->id)->delete();
             if ($request->modules) {
                 foreach ($request->modules as $mod) {

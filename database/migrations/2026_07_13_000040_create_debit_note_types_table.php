@@ -14,14 +14,13 @@ return new class extends Migration {
             $table->unsignedBigInteger('branch_id')->nullable()->index();
 
             $table->string('name', 128);
-            $table->string('status', 16)->default('active'); // active / inactive
+            $table->string('status', 16)->default('active');
 
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
             $table->softDeletes();
 
-            // Same name allowed across branches of one client (branch-scoped master).
             $table->unique(['client_id', 'branch_id', 'name'], 'debit_note_types_client_branch_name_uq');
         });
     }

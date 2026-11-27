@@ -14,8 +14,6 @@ return new class extends Migration
             $table->unsignedBigInteger('branch_id')->nullable()->index();
             $table->string('plan_name', 255)->nullable();
             $table->string('calendar_year', 20)->nullable();
-            // 'Calendar' = pick a fixed month (from_month is set).
-            // 'If Joining' = year starts from each employee's joining date.
             $table->enum('from_month_type', ['Calendar', 'If Joining'])->nullable();
             $table->enum('from_month', [
                 'January', 'February', 'March', 'April', 'May', 'June',

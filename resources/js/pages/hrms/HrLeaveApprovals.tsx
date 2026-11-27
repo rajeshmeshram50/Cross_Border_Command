@@ -6,6 +6,7 @@ import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } 
 import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 
 type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
 
@@ -146,7 +147,14 @@ export default function HrLeaveApprovals() {
     setLoading(true);
     try {
       const { data, total: n, counts } = await leaveRequestsApi.approvalsPage({
-        status: status === 'All' ? undefined : status,
+        /* Always sent, 'All' included. Omitting it does NOT mean "no filter":
+           Axios drops an undefined param, and the endpoint defaults a missing
+           status to 'Pending' — so the All tab asked for everything, was served
+           the Pending set, and sat next to a badge counting every status. That
+           is the count-vs-records mismatch, and the reason Approved/Rejected/
+           Cancelled rows never appeared under All. (QA #61)
+           HrLeave.tsx already sends it this way — same endpoint, same trap. */
+        status,
         search: debouncedSearch || undefined,
         page,
         per_page: perPage,
@@ -375,7 +383,7 @@ export default function HrLeaveApprovals() {
               onPageChange: (idx) => setPage(idx + 1),
               onPageSizeChange: setPerPage,
             }}
-            tabs={(['All', 'Pending', 'Approved', 'Rejected', 'Cancelled'] as StatusFilter[]).map(s => ({
+            tabs={(['All', 'Pending', 'Approved', 'Rejected'] as StatusFilter[]).map(s => ({
               key: s, label: s, count: statusCounts[s],
             }))}
             activeTab={status}
@@ -668,6 +676,10 @@ export default function HrLeaveApprovals() {
               </>
             )}
           </div>
+          {/* QA #164 — the house veil over the decision and the waiver, both
+              of which post and then refetch the list behind the modal. */}
+          {acting && <FullPageLoader label={acting === 'approve' ? 'Approving leave…' : 'Rejecting leave…'} />}
+          {waiving && <FullPageLoader label={detail?.sandwich_waived ? 'Re-applying policy…' : 'Waiving policy…'} />}
         </ModalBody>
       </Modal>
     </Row>

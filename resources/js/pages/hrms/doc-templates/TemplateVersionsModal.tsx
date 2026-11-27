@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Modal, Spinner } from 'reactstrap';
+import { Modal } from 'reactstrap';
 import api from '../../../api';
 import { SalaryModalStyles } from '../../../components/SalaryStructureModal';
+import FullPageLoader from '../../../components/ui/FullPageLoader';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Document template version history — every save a template has had, each
@@ -135,9 +136,12 @@ export default function TemplateVersionsModal({ open, onClose, template }: Props
 
         <div className="ssm-body tvm-body">
           {loading && (
-            <div className="text-center py-5">
-              <Spinner size="sm" /> <span className="ms-2 text-muted" style={{ fontSize: 12.5 }}>Loading history…</span>
-            </div>
+            <>
+              {/* Holds the popup at a stable height while the loader (portaled
+                  out of the body) is up, so the dialog doesn't collapse small. */}
+              <div style={{ minHeight: 320 }} />
+              <FullPageLoader label="Loading version history…" />
+            </>
           )}
 
           {!loading && error && (

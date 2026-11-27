@@ -79,11 +79,10 @@ export default function ClmSegmentPage() {
     ...(tab !== 'all' ? { regulatory_status: tab } : {}),
     ...(bcFilter !== 'all' ? { buyer_consignee: bcFilter } : {}),
   };
-  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta } =
+  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp, meta } =
     usePagedList<Segment, { counts: Counts }>('/clm/segments', reloadKey, params);
   const counts: Counts = meta.counts ?? { all: 0, highly: 0, less: 0 };
   const narrowed = !!search.trim() || bcFilter !== 'all';
-  const isEmpty = !loading && rows.length === 0;
 
   const [booted, setBooted] = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
@@ -99,7 +98,12 @@ export default function ClmSegmentPage() {
   const answeredTab = useRef(tab);
   useEffect(() => { if (!loading) answeredTab.current = tab; }, [loading, tab]);
 
-  const firstLoad  = loading && (rows.length === 0 || replacing || answeredTab.current !== tab);
+  /* Skeleton before the first answer and on a tab switch (the rows on screen
+     belong to the other tab). NOT on a search keystroke or a page move: the
+     last answer stays as it is until the new one lands, so the table does not
+     blank and jump on every letter typed. Undimmed, per the note below. */
+  const firstLoad  = loading && (!booted || answeredTab.current !== tab);
+  const isEmpty    = !firstLoad && rows.length === 0;
   /* There is deliberately no "refreshing" dim any more. A half-faded table
      reads as a rendering fault rather than a load, and it was what showed when
      the skeleton condition missed. Every in-flight state here shows the
@@ -339,8 +343,8 @@ export default function ClmSegmentPage() {
           </div>
 
           <div className="clm-tab-body has-data">
-              <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-                <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+              <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
+                <div className="clm-tscroll"><table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead><tr>
                     <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>
                     <th style={{ width: '12%', textAlign: 'center' }}>SEGMENT ID</th>
@@ -394,7 +398,7 @@ export default function ClmSegmentPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
                 {isEmpty && (
                   <div className="clm-empty" style={{ flex: 1 }}>
                     <div className="clm-empty-ico">{ICO.bSeg}</div>
@@ -408,7 +412,7 @@ export default function ClmSegmentPage() {
                     <div className="clm-empty-sub">{!narrowed && counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
                   </div>
                 )}
-                {!loading && total > 0 && (
+                {!firstLoad && (
                   <WorklistPager total={total} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
                 )}
               </div>
@@ -532,16 +536,13 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             {inUse && <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 4 }}>Segment name is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — renaming would break those records.</div>}
             {errors.name && (
               /already exists/i.test(errors.name) ? (
-                <div role="alert" style={{
+                <div role="alert" className="clm-dup-alert" style={{
                   marginTop: 6,
                   display: 'flex',
                   alignItems: 'flex-start',
                   gap: 8,
                   padding: '8px 10px',
                   borderRadius: 8,
-                  background: '#fef2f2',
-                  border: '1px solid #fecaca',
-                  color: '#b91c1c',
                   fontSize: 12,
                   lineHeight: 1.4,
                   minWidth: 0,

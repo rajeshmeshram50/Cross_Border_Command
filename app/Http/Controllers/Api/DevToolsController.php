@@ -14,36 +14,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Dev Tools — a read-only inspector for the Zoho Books data we STORE in our DB
- * but never surface in the normal UI (the Zoho ids / sync state stamped on each
- * entity after a sync). Grouped like Zoho's own entities so an admin can see
- * exactly what we pushed: Items, Vendors, Purchase Orders, Vendor Credits, Bills.
- *
- * Admin-only (super_admin / client_admin). Tenant-scoped: a client_admin sees
- * only their own client's rows; a super_admin (no client_id) sees across all
- * clients. Only rows that actually carry a Zoho id are returned — i.e. the ones
- * that have a matching entry in Zoho Books.
- */
 class DevToolsController extends Controller
 {
-    /**
-     * Same gate zoho() uses. Extracted so a second Dev Tools endpoint cannot
-     * drift from the first — a third copy is how one of them ends up open.
-     */
-    /**
-     * GET /dev/mail-preview/{template} — render a transactional email as a web
-     * page, for checking the design.
-     *
-     * Renders the blade and returns it. Nothing is sent, nothing is queued and
-     * no mail transport is touched, so it answers on a machine with no SMTP
-     * configured and leaves no row in the jobs table.
-     *
-     * LOCAL ONLY. It takes its sample data from the query string, so on a live
-     * host it would let anyone render a branded message with text of their
-     * choosing — a ready-made phishing page on your own domain. Hence the 404
-     * rather than a 403: outside local the route does not exist.
-     */
     public function mailPreview(Request $request, string $template)
     {
         abort_unless(app()->environment('local'), 404);
@@ -75,16 +47,10 @@ class DevToolsController extends Controller
     private function guardDevTools(Request $request): void
     {
         $this->guardPermission($request);
-        /* The password is a second gate, not a replacement for the first: the
-           page ships in the bundle and these endpoints answer on their own, so
-           a check in the browser alone would gate nothing. */
         $key = $this->unlockKey($request);
         if (!Cache::get($key)) {
             abort(423, 'Dev Tools is locked — enter the developer password to continue.');
         }
-        /* Slide the idle window forward. Using the module keeps it open; the
-           countdown only runs while nothing is being asked for, so stepping
-           away is what re-locks it, not the clock since you unlocked. */
         Cache::put($key, true, now()->addMinutes($this->idleMinutes()));
     }
 
@@ -93,7 +59,6 @@ class DevToolsController extends Controller
         return max(1, (int) config('devtools.idle_minutes'));
     }
 
-    /** Who may ask for the password at all. */
     private function guardPermission(Request $request): void
     {
         $user = $request->user();
@@ -109,8 +74,6 @@ class DevToolsController extends Controller
         }
     }
 
-    /* Per access token, not per user: unlocking on your laptop must not unlock
-       the session someone left open elsewhere. */
     private function unlockKey(Request $request): string
     {
         $user = $request->user();
@@ -118,13 +81,6 @@ class DevToolsController extends Controller
         return 'devtools:unlocked:' . $user->id . ':' . ($token->id ?? 'session');
     }
 
-    /**
-     * Does this answer match? Three sources, most specific first: a file on
-     * this server, a hash in config, then the plain password in config. The
-     * file lets one machine differ without a code change; the hash keeps the
-     * plaintext out of git. None set means nothing matches — a gate with no
-     * password must not read as a gate that is off.
-     */
     private function passwordMatches(string $given): bool
     {
         if ($given === '') return false;
@@ -142,7 +98,6 @@ class DevToolsController extends Controller
         return $plain !== '' && hash_equals($plain, $given);
     }
 
-    /** Whether anything at all can open the door — for the "not configured" notice. */
     private function passwordConfigured(): bool
     {
         $file = (string) config('devtools.password_file');
@@ -153,19 +108,11 @@ class DevToolsController extends Controller
         return filled(config('devtools.password_hash')) || filled(config('devtools.password'));
     }
 
-    /** Attempts are counted per user AND per IP, so neither alone is the way round it. */
     private function throttleKey(Request $request): string
     {
         return 'devtools:unlock:' . ($request->user()?->id ?? 'guest') . ':' . $request->ip();
     }
 
-    /**
-     * GET /api/dev-tools/lock-state
-     *
-     * Whether this session still needs the password, and how long any lockout
-     * has left. Answers for anyone who may ask — being told "locked" reveals
-     * nothing the menu item did not already.
-     */
     public function lockState(Request $request): JsonResponse
     {
         $this->guardPermission($request);
@@ -176,21 +123,12 @@ class DevToolsController extends Controller
             'unlocked'         => (bool) Cache::get($this->unlockKey($request)),
             'locked_out'       => $locked,
             'retry_in_seconds' => $locked ? $seconds : 0,
-            /* The instant the lockout ends, not a duration. A countdown that
-               decrements its own number drifts — browsers throttle timers in a
-               background tab — so the client ticks against this instead. */
             'retry_at'         => $locked ? now()->addSeconds($seconds)->toIso8601String() : null,
             'configured'       => $this->passwordConfigured(),
             'idle_minutes'     => $this->idleMinutes(),
         ]]);
     }
 
-    /**
-     * POST /api/dev-tools/unlock   { password }
-     *
-     * Three wrong answers and the door shuts for 30 minutes. The counter is
-     * server-side: a client-side one resets with the page.
-     */
     public function unlock(Request $request): JsonResponse
     {
         $this->guardPermission($request);
@@ -204,9 +142,6 @@ class DevToolsController extends Controller
             return $this->lockedOut($key);
         }
 
-        /* No password configured locks everyone out rather than letting
-           everyone in. A wrong answer costs an attempt either way, so the
-           response cannot be used to probe whether one is set. */
         if (!$this->passwordMatches((string) $request->input('password'))) {
             RateLimiter::hit($key, $lockout * 60);
             $left = $max - RateLimiter::attempts($key);
@@ -228,7 +163,6 @@ class DevToolsController extends Controller
         ]]);
     }
 
-    /** POST /api/dev-tools/lock — hand the key back early. */
     public function lock(Request $request): JsonResponse
     {
         $this->guardPermission($request);
@@ -241,22 +175,12 @@ class DevToolsController extends Controller
         $seconds = RateLimiter::availableIn($key);
         return response()->json([
             'status'  => false,
-            // The screen counts it down; the message only has to say what happened.
             'message' => 'Too many wrong passwords.',
             'retry_in_seconds' => $seconds,
             'retry_at'         => now()->addSeconds($seconds)->toIso8601String(),
         ], 429);
     }
 
-    /**
-     * GET /api/dev-tools/profile/{id}
-     *
-     * The full statement list for one profiled request, keyed by the
-     * X-Profile-Id header that request came back with. Kept out of the headers
-     * because a page firing 20 queries produces far more text than a header can
-     * hold — and out of the response body because the body has to stay identical
-     * to a normal call for the timings to mean anything.
-     */
     public function profileDetail(Request $request, string $id): JsonResponse
     {
         $this->guardDevTools($request);
@@ -274,14 +198,6 @@ class DevToolsController extends Controller
         return response()->json(['status' => true] + $data);
     }
 
-    /**
-     * GET /api/dev-tools/api-usage?path=/employees
-     *
-     * Every front-end call site for one endpoint, plus the controller action
-     * that serves it. Timing tells you an endpoint is expensive; this tells you
-     * what it would cost to change — an endpoint called from one screen and one
-     * called from nine are the same number on a chart and opposite decisions.
-     */
     public function apiUsage(Request $request): JsonResponse
     {
         $this->guardDevTools($request);
@@ -300,14 +216,6 @@ class DevToolsController extends Controller
         );
     }
 
-    /**
-     * GET /api/dev-tools/profile-targets
-     *
-     * The module → page → requests map behind Load Testing, plus the weight of
-     * each page's React component. The browser replays the requests itself with
-     * X-Profile: 1 rather than having the server call itself, so the timings
-     * include real network and auth cost instead of a loopback that skips both.
-     */
     public function profileTargets(Request $request): JsonResponse
     {
         $this->guardDevTools($request);
@@ -337,17 +245,11 @@ class DevToolsController extends Controller
         ]);
     }
 
-    /** GET /api/dev-tools/zoho/{type} — one Zoho entity type per tab. */
     public function zoho(Request $request, string $type): JsonResponse
     {
-        /* Was its own inline copy of the permission check, which is exactly the
-           drift guardDevTools() was extracted to prevent: the copy never
-           learned about the password, so this endpoint stayed open while every
-           other one was locked. */
         $this->guardDevTools($request);
         $user = $request->user();
 
-        // client_admin → own client only; super_admin (client_id null) → all clients.
         $clientId = $user->client_id ?: null;
         $scope = fn ($q) => $clientId ? $q->where('client_id', $clientId) : $q;
 
@@ -368,7 +270,6 @@ class DevToolsController extends Controller
         return response()->json(['status' => true, 'data' => $data, 'count' => count($data)]);
     }
 
-    /** Products synced to Zoho as Items (carry zoho_item_id). */
     private function items(callable $scope): array
     {
         return $scope(Product::query()->whereNotNull('zoho_item_id'))
@@ -385,7 +286,6 @@ class DevToolsController extends Controller
             ])->all();
     }
 
-    /** Vendors synced to Zoho as Contacts (carry zoho_contact_id). */
     private function vendors(callable $scope): array
     {
         return $scope(Vendor::query()->whereNotNull('zoho_contact_id'))
@@ -402,11 +302,8 @@ class DevToolsController extends Controller
             ])->all();
     }
 
-    /** Purchase Orders pushed to Zoho (carry zoho_purchaseorder_id). */
     private function purchaseOrders(callable $scope): array
     {
-        // P2P POs carry the supplier as vendor_id (no supplier_name copy) and
-        // keep no Zoho PDF path, so the name comes from the vendor and pdf is null.
         return $scope(PurchaseOrder::query()->whereNotNull('zoho_purchaseorder_id'))
             ->with('vendor:id,company_name')
             ->latest('id')->limit(500)
@@ -425,7 +322,6 @@ class DevToolsController extends Controller
             ])->all();
     }
 
-    /** Debit Notes pushed to Zoho as Vendor Credits (carry zoho_vendorcredit_id). */
     private function vendorCredits(callable $scope): array
     {
         return $scope(PoRefundAdjustment::query()->whereNotNull('zoho_vendorcredit_id'))
@@ -444,11 +340,8 @@ class DevToolsController extends Controller
             ])->all();
     }
 
-    /** Supplier Purchase Invoices pushed to Zoho as Bills (carry zoho_bill_id). */
     private function bills(callable $scope): array
     {
-        // Bills now hang off the P2P PO itself; it has no supplier invoice no,
-        // supplier_name copy or Zoho PDF path (see purchaseOrders()).
         return $scope(PurchaseOrder::query()->whereNotNull('zoho_bill_id'))
             ->with('vendor:id,company_name')
             ->latest('id')->limit(500)
@@ -467,15 +360,8 @@ class DevToolsController extends Controller
             ])->all();
     }
 
-    /**
-     * Payments actually POSTED to Zoho Books as vendor "Payments Made" against a
-     * bill — the po_payments / spi_payments rows that carry a zoho_payment_id.
-     * Unified across both payment tables, tagged with the PO/SPI they settled.
-     */
     private function payments(callable $scope): array
     {
-        /* One payment table now. The SPI half was dropped with that module, and
-           the legacy po_payments with the Purchase Order screen it belonged to. */
         $po = $scope(\App\Models\P2p\PoPayment::query()->whereNotNull('zoho_payment_id'))
             ->latest('id')->limit(500)
             ->get(['id', 'client_id', 'purchase_order_id', 'amount', 'bank_name', 'utr_cheque_number', 'utr_cheque_date', 'zoho_sync_status', 'zoho_payment_id', 'zoho_applied_amount']);

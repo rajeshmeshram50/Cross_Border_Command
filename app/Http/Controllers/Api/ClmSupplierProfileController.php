@@ -17,7 +17,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-
 class ClmSupplierProfileController extends Controller
 {
     private const CATS = ['kyc', 'dd', 'tl', 'td'];
@@ -33,7 +32,6 @@ class ClmSupplierProfileController extends Controller
         ];
         if (!$cid) return response()->json(['status' => true, 'data' => $empty]);
 
-        /* ── Segment masters. ── */
         $segments = ClmSegment::where('client_id', $cid)->get(['id', 'name', 'code', 'regulatory_status']);
         $segNameById = [];
         $segRegById  = [];
@@ -42,19 +40,16 @@ class ClmSupplierProfileController extends Controller
             $segRegById[(int) $s->id]  = (string) $s->regulatory_status;
         }
 
-        /* ── Segment rules → required-doc union per segment. ── */
         $rulesBySeg = [];
         foreach (ClmSegmentRule::where('client_id', $cid)->get(['segment_id', 'doc_selections']) as $r) {
             $rulesBySeg[(int) $r->segment_id] = is_array($r->doc_selections) ? $r->doc_selections : [];
         }
 
-        /* ── Uploaded docs grouped by owner. ── */
         $uploadsByOwner = [];
         foreach (SegmentDocUpload::where('client_id', $cid)->get(['uploadable_type', 'uploadable_id', 'category', 'doc_code']) as $u) {
             $uploadsByOwner[$u->uploadable_type . '#' . $u->uploadable_id][$u->category . '::' . $u->doc_code] = true;
         }
 
-        /* ── Active agreements + applicability per segment id. ── */
         $agreements = ClmAgreementLibrary::where('client_id', $cid)
             ->where('agr_status', 'Active')
             ->get(['id', 'segment', 'regulatory']);
@@ -71,7 +66,6 @@ class ClmSupplierProfileController extends Controller
             $agrIdsBySeg[(int) $s->id] = $list;
         }
 
-        /* ── Completed agreement signature requests, keyed by party. ── */
         $sigByParty = [];
         foreach (ClmSignatureRequest::where('client_id', $cid)
             ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
@@ -83,10 +77,8 @@ class ClmSupplierProfileController extends Controller
             }
         }
 
-        /* ── State id → name (for the supplier's State column). ── */
         $stateNameById = DB::table('master_states')->pluck('name', 'id')->all();
 
-        /* ── Vendor → product ids (VendorProductMapping). ── */
         $productsByVendor = [];
         foreach (VendorProductMapping::query()
             ->whereIn('vendor_id', Vendor::query()->forUser($user)->select('id'))
@@ -94,20 +86,16 @@ class ClmSupplierProfileController extends Controller
             $productsByVendor[(int) $m->vendor_id][] = (int) $m->product_id;
         }
 
-        /* ── Shipment classification chain.
-         *   leads with a shipment → product ids procured on those leads →
-         *   "shipped products"; plus a per-product shipment-count so we can
-         *   roll a count up to each vendor. ── */
-        $shipCountByLead = [];   // lead_id → number of shipment orders
-        $shipIdsByLead   = [];   // lead_id → [shipment_order_id, …] (transaction-wise)
+        $shipCountByLead = [];
+        $shipIdsByLead   = [];
         foreach (ShipmentOrder::where('client_id', $cid)->get(['id', 'lead_id']) as $so) {
             $lid = (int) $so->lead_id;
             $shipCountByLead[$lid] = ($shipCountByLead[$lid] ?? 0) + 1;
             $shipIdsByLead[$lid][] = (int) $so->id;
         }
         $procLeadById = Procurement::where('client_id', $cid)->pluck('lead_id', 'id')->all();
-        $leadsByProduct        = [];   // product_id → set(lead_id) that procured it
-        $procurementsByProduct = [];   // product_id → set(procurement_id) (transaction-wise)
+        $leadsByProduct        = [];
+        $procurementsByProduct = [];
         foreach (ProcurementProduct::query()
             ->whereIn('procurement_id', array_map('intval', array_keys($procLeadById)))
             ->whereNotNull('product_id')
@@ -117,7 +105,6 @@ class ClmSupplierProfileController extends Controller
             $procurementsByProduct[(int) $pp->product_id][(int) $pp->procurement_id] = true;
         }
 
-        /* ── Closures. ── */
         $unionFor = function (array $segIds) use ($rulesBySeg): array {
             $u = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => []];
             foreach ($segIds as $sid) {
@@ -149,22 +136,23 @@ class ClmSupplierProfileController extends Controller
             foreach ($ids as $aid) if (isset($signedSet[$aid])) $d++;
             return ['d' => $d, 't' => count($ids)];
         };
-        // Map a supplier-type name → one of the three buckets.
-        $bucketForType = function (?string $name): string {
-            $n = mb_strtolower(trim((string) $name));
+        $bucketForType = function ($vendorType): string {
+            $kind = is_string($vendorType) ? null : ($vendorType->kind ?? null);
+            if ($kind === 'material')  return 'material';
+            if ($kind === 'logistics') return 'logistic';
+            if ($kind === 'services')  return 'services';
+
+            $n = mb_strtolower(trim((string) (is_string($vendorType) ? $vendorType : ($vendorType->name ?? ''))));
             if ($n === 'material')  return 'material';
             if ($n === 'logistic' || $n === 'logistics') return 'logistic';
-            return 'services';   // Tech / Advisory / Risk Services + anything else
+            return 'services';
         };
-        // Segment regulatory tier → the Reg. Status pill value used by the
-        // transaction-wise tables ('highly' → High, everything else → Low).
         $regFor = function (int $segId) use ($segRegById): string {
             return mb_strtolower((string) ($segRegById[$segId] ?? '')) === 'highly' ? 'High' : 'Low';
         };
 
-        /* ── Vendors. ── */
         $vendors = Vendor::query()->forUser($user)
-            ->with(['vendorType:id,name', 'primaryAddress:id,vendor_id,state_id'])
+            ->with(['vendorType:id,name,kind', 'primaryAddress:id,vendor_id,state_id'])
             ->orderBy('id')
             ->get();
 
@@ -181,7 +169,6 @@ class ClmSupplierProfileController extends Controller
             $prog    = $progressFor($unionFor($segIds), Vendor::class . '#' . $v->id);
             $agr     = $agrProgress($segIds, $sigByParty['Vendor#' . $v->id] ?? []);
 
-            // Shipment roll-up across this vendor's mapped products.
             $vendorLeads = [];
             foreach ($productsByVendor[(int) $v->id] ?? [] as $pid) {
                 foreach (array_keys($leadsByProduct[$pid] ?? []) as $lid) $vendorLeads[$lid] = true;
@@ -208,22 +195,17 @@ class ClmSupplierProfileController extends Controller
                 'ship'  => $ship,
             ];
 
-            $bucket = $bucketForType(optional($v->vendorType)->name);
+            $bucket = $bucketForType($v->vendorType);
             if ($bucket === 'services') {
                 $row['sr'] = ++$counters['wos_svc']; $out['wos_svc'][] = $row;
             } elseif ($bucket === 'material') {
                 if ($withShipment) { $row['sr'] = ++$counters['ws_mat'];  $out['ws_mat'][]  = $row; }
                 else               { $row['sr'] = ++$counters['wos_mat']; $out['wos_mat'][] = $row; }
-            } else { // logistic
+            } else {
                 if ($withShipment) { $row['sr'] = ++$counters['ws_logi'];  $out['ws_logi'][]  = $row; }
                 else               { $row['sr'] = ++$counters['wos_logi']; $out['wos_logi'][] = $row; }
             }
 
-            /* ── Transaction-wise rows: one per (procurement, supplier) where
-             *    this supplier's product was procured. With/without shipment is
-             *    decided per-procurement by its lead's shipment orders.
-             *    Services suppliers never carry a shipment (mirrors party-wise).
-             *    PO / Supplier Tax Invoice have no source field → '—'. ── */
             $vendorProcs = [];
             foreach ($productsByVendor[(int) $v->id] ?? [] as $pid) {
                 foreach (array_keys($procurementsByProduct[$pid] ?? []) as $procId) $vendorProcs[$procId] = true;
@@ -256,7 +238,7 @@ class ClmSupplierProfileController extends Controller
                     } else {
                         $out['txn_wos_mat'][] = array_merge(['sr' => ++$tc['txn_wos_mat'], 'procId' => $procCode], $txnBase);
                     }
-                } else { // logistic
+                } else {
                     if ($hasShip) {
                         $shpCode = 'SHP-' . str_pad((string) $shipIds[0], 3, '0', STR_PAD_LEFT);
                         $out['txn_ws_logi'][] = array_merge(['sr' => ++$tc['txn_ws_logi'], 'shpId' => $shpCode, 'procId' => $procCode], $txnBase);
@@ -270,7 +252,6 @@ class ClmSupplierProfileController extends Controller
         return response()->json(['status' => true, 'data' => $out]);
     }
 
-    /** Case-insensitive token membership in a comma-separated string. */
     private function csvHasToken(?string $csv, string $token): bool
     {
         $token = mb_strtolower(trim($token));

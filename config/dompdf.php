@@ -8,13 +8,6 @@ return [
     'convert_entities' => true,
 
     'options' => [
-        /* In the SYSTEM temp dir, not storage/. dompdf writes a .ufm per
-           @font-face font on first render, and the cache filename is
-           md5(absolute font path) — so it is per-server and must be writable,
-           never shipped. storage/framework/cache is created by the deploy user
-           and php-fpm often cannot write into it (the 500 on sticker download);
-           sys_get_temp_dir() is writable by whatever user runs PHP, the same
-           dir temp_dir already relies on. Ensured in AppServiceProvider::boot. */
         'font_dir' => sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cbc-dompdf-fonts',
         'font_cache' => sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cbc-dompdf-fonts',
         'temp_dir' => sys_get_temp_dir(),
@@ -27,22 +20,6 @@ return [
         ],
         'artifactPathValidation' => null,
         'log_output_file' => null,
-        /*
-         * Embed only the glyphs a document actually uses, not the whole
-         * font file. (#4)
-         *
-         * This was the package default, and it made every generated PDF
-         * carry a complete copy of each DejaVu face it touched. A live
-         * template preview of two paragraphs came out at 911 KB, of which
-         * ~880 KB was font: the browser had to download that and pdf.js had
-         * to parse it before anything appeared, on every debounced keystroke.
-         * With subsetting the same preview is 49 KB — 18x smaller.
-         *
-         * Safe for the base-14 families (Helvetica, Times, Courier) because
-         * those are never embedded at all; it only affects the DejaVu faces
-         * the PDF blades fall back to for Unicode. Verified that the subset
-         * still carries the non-ASCII glyphs those templates use.
-         */
         'enable_font_subsetting' => true,
         'pdf_backend' => 'CPDF',
         'default_media_type' => 'screen',
@@ -54,17 +31,6 @@ return [
         'enable_javascript' => true,
         'enable_remote' => true,
         'allowed_remote_hosts' => null,
-        /*
-         * Socket timeout for the remote fetches 'enable_remote' permits.
-         *
-         * Unset, dompdf falls back to php's default_socket_timeout (60s) PER
-         * remote asset. One <img> pointing at a slow or unreachable host --
-         * an off-site logo, an image pasted into a template from the web --
-         * therefore stalled the whole render for up to a minute, which is the
-         * live PDF preview sitting on "Rendering preview...". Five seconds is
-         * far longer than any asset we legitimately fetch needs, and a miss
-         * now degrades to a missing image instead of a hung request.
-         */
         'http_context' => [
             'http' => ['timeout' => 5, 'follow_location' => false],
         ],

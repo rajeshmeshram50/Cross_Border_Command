@@ -53,10 +53,12 @@ export function usePager(total: number, initialSize = 10) {
   };
 }
 
-export default function TablePager({
-  total, page, pageSize, onPage, onPageSize,
-  pageSizeOptions = [10, 25, 50, 100],
-}: TablePagerProps) {
+/** The system's "Rows per page" picker: the styled button + menu, not a native <select>. */
+export function RowsPerPageSelect({ pageSize, options, onChange }: {
+  pageSize: number;
+  options: number[];
+  onChange: (size: number) => void;
+}) {
   const [sizeOpen, setSizeOpen] = useState(false);
   const sizeRef = useRef<HTMLSpanElement>(null);
 
@@ -72,20 +74,7 @@ export default function TablePager({
     return () => document.removeEventListener('mousedown', away);
   }, [sizeOpen]);
 
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const from = total === 0 ? 0 : page * pageSize + 1;
-  const to = Math.min(page * pageSize + pageSize, total);
-
   return (
-    <div className="tc-wl-pag">
-      <span className="tc-wl-info">
-        {total === 0
-          ? 'No records'
-          : <>Showing <span className="tc-wl-hl">{from}–{to}</span> of <span className="tc-wl-hl">{total}</span></>}
-      </span>
-      <div className="tc-wl-right">
-        <span className="tc-wl-rows">
-          Rows per page:
           <span className="tc-wl-rows-sel" ref={sizeRef}>
             <button
               type="button"
@@ -100,14 +89,14 @@ export default function TablePager({
             </button>
             {sizeOpen && (
               <span className="tc-wl-rows-menu" role="listbox" aria-label="Rows per page">
-                {[...new Set([pageSize, ...pageSizeOptions])].sort((a, b) => a - b).map(n => (
+                {[...new Set([pageSize, ...options])].sort((a, b) => a - b).map(n => (
                   <button
                     key={n}
                     type="button"
                     role="option"
                     aria-selected={n === pageSize}
                     className={n === pageSize ? 'is-on' : undefined}
-                    onClick={() => { onPageSize(n); setSizeOpen(false); }}
+                    onClick={() => { onChange(n); setSizeOpen(false); }}
                   >
                     {n}
                   </button>
@@ -115,6 +104,28 @@ export default function TablePager({
               </span>
             )}
           </span>
+  );
+}
+
+export default function TablePager({
+  total, page, pageSize, onPage, onPageSize,
+  pageSizeOptions = [10, 25, 50, 100],
+}: TablePagerProps) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : page * pageSize + 1;
+  const to = Math.min(page * pageSize + pageSize, total);
+
+  return (
+    <div className="tc-wl-pag">
+      <span className="tc-wl-info">
+        {total === 0
+          ? 'No records'
+          : <>Showing <span className="tc-wl-hl">{from}–{to}</span> of <span className="tc-wl-hl">{total}</span></>}
+      </span>
+      <div className="tc-wl-right">
+        <span className="tc-wl-rows">
+          Rows per page:
+          <RowsPerPageSelect pageSize={pageSize} options={pageSizeOptions} onChange={onPageSize} />
         </span>
         <span className="tc-wl-range">{page + 1} / {pageCount}</span>
         <div className="tc-wl-nav">

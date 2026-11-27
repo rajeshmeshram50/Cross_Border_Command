@@ -468,9 +468,9 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
     render: (style: CSSProperties | undefined) => (
       <div className="mapsup-ffield" style={style}>
         <Lbl text={lbl} badge={<span className="mapsup-lock"><Svg icon="lock" size={9} sw={2.6} /> Auto</span>} />
-        <div className={`mapsup-inputwrap is-frozen${inCritical ? '' : ' is-inert'}`}>
+        <div className="mapsup-inputwrap is-frozen is-inert">
           <span className="mapsup-input-ico"><Svg icon={ico} size={13} /></span>
-          <input className="mapsup-finput has-ico" type="text" value={value} readOnly tabIndex={inCritical ? undefined : -1} aria-readonly="true" />
+          <input className="mapsup-finput has-ico" type="text" value={value} readOnly tabIndex={-1} aria-readonly="true" />
           <span className="mapsup-freeze-ico"><Svg icon="lock" size={9} sw={2.6} /></span>
         </div>
       </div>
@@ -959,7 +959,8 @@ export default function CredentialForm({ meta, T, detail, init, preview = false,
 
     setSaving(true);
     try {
-      const r = editing ? await cvApi.update(detail!.id, payload, inCritical) : await cvApi.create(payload, inCritical);
+      // light: every onSaved() caller reloads its own list, and only code / name / health are read here.
+      const r = editing ? await cvApi.update(detail!.id, payload, inCritical, true) : await cvApi.create(payload, inCritical, true);
       toast.success(`${r.data.code} · ${r.data.name} ${editing ? 'updated' : 'added'}`, r.message);
       onSaved(r.data);
     } catch (e) {

@@ -29,6 +29,7 @@ import {
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 import LeaveSummaryPanel from './LeaveSummaryPanel';
@@ -599,7 +600,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [uploadedLoading, setUploadedLoading] = useState(false);
 
   useEffect(() => {
-    if (tab !== 'vault' || !employeeId) return;
+    // Also load on the Payroll tab: its Identity status reads these uploaded docs.
+    if ((tab !== 'vault' && tab !== 'payroll') || !employeeId) return;
     let cancelled = false;
 
     /* BOTH loaders go up here, synchronously, before the first await. (#43)
@@ -1971,12 +1973,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   const handleCropConfirm = (blob: Blob) => {
     const file = new File([blob], `profile-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    setProfilePhotoFile(file);
     const r = new FileReader();
     r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
     r.readAsDataURL(blob);
     setCropOpen(false);
     setCropSrc(null);
+    // Saving the crop is the upload — no separate "Save" step in the tile.
+    uploadProfilePhoto(file);
   };
 
   const resolveEmployeeUploadId = async (): Promise<number | string> => {
@@ -1992,12 +1995,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   const handleSaveProfilePhoto = async () => {
     if (!profilePhotoFile) return;
+    await uploadProfilePhoto(profilePhotoFile);
+  };
+
+  const uploadProfilePhoto = async (file: File) => {
     setSavingPhoto(true);
     try {
       const uploadEmployeeId = await resolveEmployeeUploadId();
       const fd = new FormData();
       fd.append('document_key', 'photo');
-      fd.append('file', profilePhotoFile);
+      fd.append('file', file);
       const res = await api.post(`/employees/${encodeURIComponent(String(uploadEmployeeId))}/documents`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -2163,7 +2170,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const advancesFetch = useRef({ key: '', at: 0, busy: false });
   /** When the last focus/visibility resync ran — see the resync effect. */
   const lastResync = useRef(0);
-  const expenseKey = `${profileEmpCode ?? ''}|${profileEmpIdNum ?? ''}|${isOwnProfile ? 1 : 0}`;
+  /* The employee these tabs are ABOUT, as a real primary key.
+     profileEmpIdNum is only set when the route slug happens to be all
+     digits; the HR list links with the encrypted id, so on a colleague's
+     profile it is null and the old fallback sent that encrypted blob as
+     `employee_code`, which matches no row. empDetail was fetched BY the
+     slug, so its id is the resolved one. (QA #64) */
+  const profileEmployeeId: number | null =
+    (empDetail?.id != null ? Number(empDetail.id) : null) ?? profileEmpIdNum;
+  /* The id is in the key, so the fetch re-runs once the record resolves —
+     without it the first attempt (id still null) would be cached as fresh. */
+  const expenseKey = `${profileEmpCode ?? ''}|${profileEmployeeId ?? ''}|${isOwnProfile ? 1 : 0}`;
 
   const refreshClaims = async (opts?: { force?: boolean }) => {
     if (tab !== 'expense' || !profileEmpCode) return;
@@ -2177,8 +2194,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       const mineRes = await api.get('/expense-claims', {
         params: {
           scope: 'mine',
-          ...(profileEmpIdNum !== null
-            ? { employee_id: profileEmpIdNum }
+          ...(profileEmployeeId !== null
+            ? { employee_id: profileEmployeeId }
             : { employee_code: profileEmpCode }),
         },
       });
@@ -2203,7 +2220,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     refreshClaims();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, profileEmpIdNum, isOwnProfile]);
+  }, [tab, profileEmployeeId, isOwnProfile]);
 
   // ── Advance Requests — same shape as the expense-claim lists above.
   // `apiAdvances` = the profile owner's advances (mine scope, optionally
@@ -2235,8 +2252,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       const mineRes = await api.get('/advance-requests', {
         params: {
           scope: 'mine',
-          ...(profileEmpIdNum !== null
-            ? { employee_id: profileEmpIdNum }
+          ...(profileEmployeeId !== null
+            ? { employee_id: profileEmployeeId }
             : { employee_code: profileEmpCode }),
         },
       });
@@ -2257,7 +2274,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     refreshAdvances();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, profileEmpIdNum, isOwnProfile]);
+  }, [tab, profileEmployeeId, isOwnProfile]);
 
   /* Documents this employee's CURRENT department + designation call for.
    *
@@ -2373,7 +2390,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       document.removeEventListener('visibilitychange', catchUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, profileEmpIdNum, isOwnProfile]);
+  }, [tab, profileEmployeeId, isOwnProfile]);
 
   /** Dispatcher for inline Approve / Reject buttons on advance-request
    *  rows. Same shape as `actOnClaim`, just a different REST collection. */
@@ -2760,8 +2777,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Pre-compute counts and the filtered list from API rows. The list source
   // depends on the active sub-tab: "mine" → claims this employee raised,
   // "team" → claims where the current user is the assigned reporting manager.
+  /* The Team strip only renders on your OWN profile, but the sub-tab selection
+     survives navigating to somebody else's — so landing there with Team still
+     active listed the viewer's teammates under that employee's name, with no
+     visible tab saying so (QA #64). Ownership decides the source, not just the
+     strip's visibility. */
   const activeClaimsSource: ApiClaim[] =
-    expenseSubTab === 'team' ? teamClaims : apiClaims;
+    (expenseSubTab === 'team' && isOwnProfile) ? teamClaims : apiClaims;
   const expenseCounts = {
     all:      activeClaimsSource.length,
     approved: activeClaimsSource.filter(c => c.status === 'approved').length,
@@ -2795,7 +2817,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // table. `activeAdvancesSource` follows the My/Team sub-tab selection
   // the same way `activeClaimsSource` does for expenses.
   const baseAdvancesSource: AdvanceRequestRow[] =
-    advanceSubTab === 'team' ? teamAdvances : apiAdvances;
+    (advanceSubTab === 'team' && isOwnProfile) ? teamAdvances : apiAdvances;
   // Used-For tab counts (from the My/Team source, before the status filter).
   const advUsedForCounts = {
     self:    baseAdvancesSource.filter(a => (a.used_for || 'self') === 'self').length,
@@ -4270,7 +4292,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     )}
                     {advTenureExceeds && (
                       <Col md={12}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fff1f2', border: '1px solid #fecdd3', color: '#9f1239', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
+                        <div className="ep-adv-note ep-adv-note--danger">
                           <i className="ri-error-warning-line" style={{ fontSize: 16, marginTop: 1 }} />
                           <span>This advance <strong>can’t be granted</strong> — at your available EMI headroom <strong>₹{advEmiCap.toLocaleString('en-IN')}</strong> it would take <strong>{advInstalmentsNeeded} instalments</strong> (over the {ADV_MAX_INSTALMENTS} limit). Reduce the amount, or <strong>clear your existing advances</strong> first.</span>
                         </div>
@@ -4280,7 +4302,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 )}
                 {/* Single Lump = one payroll deduction — needs salary to cover it. */}
                 {advUsedFor !== 'company' && advRecoveryMode === 'lumpsum' && (
-                  <div className="mb-3" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: advSingleLumpOk ? '#f0fbff' : '#fff7ed', border: `1px solid ${advSingleLumpOk ? '#cdeef6' : '#fed7aa'}`, color: advSingleLumpOk ? '#0e7490' : '#9a3412', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
+                  <div className={`ep-adv-note mb-3 ${advSingleLumpOk ? 'ep-adv-note--info' : 'ep-adv-note--warn'}`}>
                     <i className={advSingleLumpOk ? 'ri-information-line' : 'ri-error-warning-line'} style={{ fontSize: 16, marginTop: 1 }} />
                     <span>
                       {advEmiCap > 0 ? <>EMI headroom <strong>₹{advEmiCap.toLocaleString('en-IN')}</strong>{advEmiInfo && advEmiInfo.ongoing_emi > 0 ? <> (70% of ₹{advMonthlySalary.toLocaleString('en-IN')} − ₹{advEmiInfo.ongoing_emi.toLocaleString('en-IN')} ongoing)</> : ''}. </> : null}
@@ -4668,6 +4690,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </button>
           </div>
         </div>
+        {/* Full "Saving…" loader while the claim submits — blocks the whole
+            screen, same as the Revise Salary save. */}
+        {claimSubmitting && <FullPageLoader label="Saving…" />}
       </EpModal>
       <EpModal open={pwOpen} onClose={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }} size="sm">
         {/* Header — gradient banner so the dialog reads as a distinct

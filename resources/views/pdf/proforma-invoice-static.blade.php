@@ -1,22 +1,3 @@
-{{--
-    STATIC Proforma Invoice — a hand-editable copy of the rendered PI.
-
-    Every value here is HARDCODED from the sample document; nothing is bound to
-    a model. It exists to be edited directly (copy, layout, wording, styling)
-    without touching proforma-invoice.blade.php, which is the live, data-driven
-    template the app actually sends.
-
-    Render it from a throwaway route while working on it, e.g.
-
-        Route::get('/pi-static', fn () => Pdf::loadView('pdf.proforma-invoice-static')
-            ->setPaper('a4')->stream('pi.pdf'));
-
-    DOMPDF NOTES (the renderer this project uses):
-      - Lay out with tables, not flexbox/grid — neither is supported.
-      - Images need an absolute path or a data URI; a relative src renders blank.
-      - `page-break-before: always` on a block starts a new page.
-      - Keep a bottom @page margin so the fixed footer never sits over content.
---}}
 <!DOCTYPE html>
 <html>
 
@@ -24,7 +5,6 @@
     <meta charset="utf-8" />
     <title>PROFORMA INVOICE — PI/2026-27/1254</title>
     <style>
-        /* Bottom band reserved for the fixed footer. */
         @page { margin: 26px 26px 48px 26px; }
 
         body {
@@ -37,7 +17,6 @@
         table { border-collapse: collapse; width: 100%; }
         td, th { vertical-align: top; }
 
-        /* ── Masthead ─────────────────────────────────────────────────────── */
         .masthead {
             background: #f3f4f6;
             border-radius: 14px;
@@ -58,12 +37,10 @@
             padding-top: 6px;
         }
 
-        /* ── Seller block + QR ────────────────────────────────────────────── */
         .seller { font-size: 10px; line-height: 1.55; }
         .seller-name { font-weight: bold; font-size: 11px; }
         .qr { width: 96px; height: 96px; }
 
-        /* ── Section headings ─────────────────────────────────────────────── */
         .section-title {
             font-size: 11.5px;
             font-weight: bold;
@@ -71,7 +48,6 @@
             padding: 18px 0 6px 2px;
         }
 
-        /* ── Bordered label / value grid ──────────────────────────────────── */
         .grid td {
             border: 1px solid #d1d5db;
             padding: 7px 9px;
@@ -80,7 +56,6 @@
         .grid .k { width: 17%; color: #4b5563; }
         .grid .v { width: 33%; color: #111827; }
 
-        /* ── Buyer / consignee ────────────────────────────────────────────── */
         .party td {
             border: 1px solid #d1d5db;
             padding: 8px 9px;
@@ -91,7 +66,6 @@
         .party b { color: #111827; }
         .party a { color: #2563eb; }
 
-        /* ── Line items ───────────────────────────────────────────────────── */
         .items th {
             background: #fde68a;
             border: 1px solid #d1d5db;
@@ -111,9 +85,6 @@
         .items .rate,
         .items .amt { text-align: right; width: 90px; }
 
-        /* ── Totals ───────────────────────────────────────────────────────── */
-        /* Right-aligned by an empty spacer cell — dompdf honours no
-           margin-left:auto on tables. */
         .totals td {
             border: 1px solid #d1d5db;
             padding: 9px 12px;
@@ -128,7 +99,6 @@
             color: #111827;
         }
 
-        /* ── Bank / signatory ─────────────────────────────────────────────── */
         .foot-box td {
             border: 1px solid #d1d5db;
             padding: 11px 12px;
@@ -140,7 +110,6 @@
         .words { font-weight: bold; font-size: 10.5px; padding-bottom: 14px; }
         .sign-for { font-weight: bold; padding-bottom: 26px; }
 
-        /* ── Fixed page footer ────────────────────────────────────────────── */
         .pdf-footer {
             position: fixed;
             left: 0; right: 0; bottom: 0;
@@ -151,7 +120,6 @@
             color: #6b7280;
         }
 
-        /* ── Terms & conditions pages ─────────────────────────────────────── */
         .tnc-page { page-break-before: always; }
         .tnc-title {
             text-align: center;
@@ -172,15 +140,12 @@
 
 <body>
 
-    {{-- Repeats on every page. Swap in a barcode / page counter if needed. --}}
     <div class="pdf-footer">Purvee Enterprises &bull; Proforma Invoice</div>
 
-    {{-- ══ Masthead ═══════════════════════════════════════════════════════ --}}
     <div class="masthead">
         <table>
             <tr>
                 <td style="width:96px;">
-                    {{-- Absolute path or data URI only. --}}
                     <img class="masthead-logo" src="{{ public_path('images/logo-purvee.png') }}" alt="" />
                 </td>
                 <td>
@@ -191,7 +156,6 @@
         </table>
     </div>
 
-    {{-- ══ Seller + QR ════════════════════════════════════════════════════ --}}
     <table>
         <tr>
             <td class="seller">
@@ -212,7 +176,6 @@
         </tr>
     </table>
 
-    {{-- ══ Transaction details ════════════════════════════════════════════ --}}
     <div class="section-title">Transaction Details</div>
     <table class="grid">
         <tr>
@@ -247,7 +210,6 @@
         </tr>
     </table>
 
-    {{-- ══ Buyer / consignee ══════════════════════════════════════════════ --}}
     <div class="section-title">Buyer / Consignee</div>
     <table class="party">
         <tr>
@@ -268,7 +230,6 @@
         </tr>
     </table>
 
-    {{-- ══ Line items ═════════════════════════════════════════════════════ --}}
     <div class="section-title">Product / Service Details</div>
     <table class="items">
         <tr>
@@ -280,7 +241,6 @@
             <th class="rate">Rate</th>
             <th class="amt">Amount</th>
         </tr>
-        {{-- One <tr> per line. Duplicate this block to add rows. --}}
         <tr>
             <td class="num">1</td>
             <td>QuantiFERON-TB Gold Plus(QFT- Plus)</td>
@@ -292,10 +252,8 @@
         </tr>
     </table>
 
-    {{-- ══ Totals ═════════════════════════════════════════════════════════ --}}
     <table style="margin-top:14px;">
         <tr>
-            {{-- Spacer pushes the totals to the right edge. --}}
             <td style="border:0;"></td>
             <td style="width:350px; border:0;">
                 <table class="totals">
@@ -316,7 +274,6 @@
         </tr>
     </table>
 
-    {{-- ══ Bank details / signatory ═══════════════════════════════════════ --}}
     <table class="foot-box" style="margin-top:16px;">
         <tr>
             <td class="bank">
@@ -334,13 +291,11 @@
             <td>
                 <div class="words">Amount in Words- USD Fifteen Thousand Five Hundred</div>
                 <div class="sign-for">For Purvee Enterprises</div>
-                {{-- Signature image goes here, above the caption. --}}
                 <div>Authorized Signatory</div>
             </td>
         </tr>
     </table>
 
-    {{-- ══ Terms &amp; conditions — page 2 ════════════════════════════════ --}}
     <div class="tnc-page tnc">
         <div class="tnc-title">TERMS AND CONDITIONS:</div>
 
@@ -410,7 +365,6 @@
             Restriction is lifted, subject to continued availability.</p>
     </div>
 
-    {{-- ══ Terms &amp; conditions — page 3 ════════════════════════════════ --}}
     <div class="tnc-page tnc">
         <p><span class="lead">11. Indemnification:</span> The Purchaser shall unconditionally defend, indemnify, and hold
             harmless the Company, its affiliates, successors, assigns, directors, officers, shareholders, and employees
@@ -488,7 +442,6 @@
             Company.</p>
     </div>
 
-    {{-- ══ Acknowledgement — page 4 ═══════════════════════════════════════ --}}
     <div class="tnc-page tnc">
         <p style="font-weight:bold;">ACKNOWLEDGEMENT</p>
         <p>By accepting the Company's quotation or Proforma Invoice whether by signature, stamp, email confirmation,

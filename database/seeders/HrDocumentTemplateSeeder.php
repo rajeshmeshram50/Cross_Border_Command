@@ -5,15 +5,6 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Seeds one active HR document template into every Category × Role tab of
- * Document Template Management (client 1 / branch 3) so each tab has data.
- *
- * Categories: IT · Non-IT · Legal.  Roles: Director/CEO · HOD · Team Leader ·
- * Executive · Employee · Intern/Trainee (18 combos). Idempotent — a combo that
- * already has a template is skipped, so the existing four are left untouched.
- * Run:  php artisan db:seed --class=HrDocumentTemplateSeeder
- */
 class HrDocumentTemplateSeeder extends Seeder
 {
     private int $clientId = 1;
@@ -31,11 +22,9 @@ class HrDocumentTemplateSeeder extends Seeder
             'Intern / Trainee'         => 'INT',
         ];
 
-        // Split each tab's templates across trigger points: 5 Onboarding + 5 Exit.
         $onboardingId = DB::table('master_trigger_points')->where('module_name', 'Onboarding')->value('id');
         $exitId       = DB::table('master_trigger_points')->where('module_name', 'Exit Management')->value('id');
         $triggers = [
-            // label => [code prefix, trigger_point_id, 5 document names]
             'Onboarding' => ['ON', $onboardingId, ['Onboarding Letter', 'Offer Letter', 'Appointment Letter', 'Confirmation Letter', 'Probation Letter']],
             'Exit'       => ['EX', $exitId,       ['Relieving Letter', 'Experience Letter', 'Exit Clearance', 'Full & Final Settlement', 'No-Objection Certificate']],
         ];
@@ -53,8 +42,6 @@ class HrDocumentTemplateSeeder extends Seeder
         $content = '<p>This letter is issued to {{EmployeeName}} ({{EmployeeCode}}) for the '
             . '{{RoleType}} role.</p><p>&nbsp;</p><p>{{Signer1Name}} {{Signer1Date}} {{Signer1Sign}}</p>';
 
-        // Clean this seeder's own prior rows so re-running gives a fresh 5+5 split
-        // (identified by the description tag; the real templates are untouched).
         DB::table('hr_document_templates')
             ->where('client_id', $this->clientId)
             ->where('description', 'like', 'Seeded template%')
@@ -64,7 +51,7 @@ class HrDocumentTemplateSeeder extends Seeder
         foreach ($categories as $cat => $catCode) {
             foreach ($roles as $role => $roleCode) {
                 foreach ($triggers as $trgLabel => [$trgCode, $trgId, $names]) {
-                    if (!$trgId) continue; // trigger point not configured
+                    if (!$trgId) continue;
                     for ($i = 1; $i <= $perTrigger; $i++) {
                         DB::table('hr_document_templates')->insert([
                             'client_id' => $this->clientId, 'branch_id' => $this->branchId,

@@ -6,11 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Per-branch work shifts. Stored as JSON: [{ name, start, end }, ...].
-     * Feeds the Employee form's Shift dropdown so each branch runs its own
-     * shift list instead of a hardcoded global one.
-     */
     public function up(): void
     {
         Schema::table('branches', function (Blueprint $table) {

@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Support\Concerns\EnforcesUniqueEmail;
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -16,14 +15,10 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class User extends Authenticatable
 {
-    /* Email uniqueness — the rule itself lives in
-       config/email_uniqueness.php; these two lines only say which
-       identity this model belongs to. (#email-unique) */
     use EnforcesUniqueEmail;
     protected static string $emailScope   = 'login';
     protected static array  $emailColumns = ['email'];
 
-    /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
     protected $fillable = [
@@ -37,9 +32,6 @@ class User extends Authenticatable
         'branch_id',
         'department_id',
         'status',
-        // Email-slot key: true = active account (its email is taken), false = the
-        // person has EXITED and the email is freed for reuse (see the dup-email
-        // check in EmployeeController::validatePayload).
         'email_active',
         'must_reset_password',
         'avatar',
@@ -56,9 +48,6 @@ class User extends Authenticatable
 
     protected $hidden = [
         'password',
-        // Never serialize the encrypted-mirror password through normal model
-        // serialization — ClientController::show() explicitly decrypts and
-        // adds it to the payload only when the caller is a super_admin.
         'password_encrypted',
         'remember_token',
         'device_token',
@@ -73,35 +62,11 @@ class User extends Authenticatable
             'login_count' => 'integer',
             'email_active' => 'boolean',
             'must_reset_password' => 'boolean',
-            // Deliberately NOT in $fillable: these are stamped only by
-            // PasswordHistory::recordPasswordHistory(), never mass-assigned
-            // from a request — a client that could set them could fake the
-            // audit trail the password screen reads.
             'password_change_count' => 'integer',
             'password_changed_at' => 'datetime',
         ];
     }
 
-    /**
-     * A password change kills every OTHER session for that user.
-     *
-     * Sanctum tokens are independent of the password: rotating the hash leaves
-     * existing tokens valid, so an employee whose password was reset stayed
-     * signed in indefinitely — a refresh did not help, because the old token
-     * still authenticated. That is the whole point of a reset when it is done
-     * because credentials leaked or someone left.
-     *
-     * This lives on the model rather than at each call site because there are
-     * four places that write a password (self-change, HR reset, the Branch form
-     * and the Client form) and every one of them had forgotten to revoke. A
-     * hook cannot be forgotten by the next one.
-     *
-     * The token making the request survives, so changing your own password does
-     * not sign you out of the tab you are typing in — but it does drop your
-     * other devices. When an ADMIN resets someone else's password the acting
-     * token belongs to the admin, so none of the target's tokens match and all
-     * of them go.
-     */
     protected static function booted(): void
     {
         static::updated(function (self $user) {
@@ -114,8 +79,6 @@ class User extends Authenticatable
         });
     }
 
-    // ── Relationships ──
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
@@ -126,7 +89,6 @@ class User extends Authenticatable
         return $this->belongsTo(Branch::class);
     }
 
-   
     public function effectiveClient(): ?Client
     {
         if ($this->client_id && $this->client) {
@@ -148,38 +110,11 @@ class User extends Authenticatable
         return $this->hasOne(UserDetail::class);
     }
 
-    /** The employee record this login belongs to, if any. */
     public function employee(): HasOne
     {
         return $this->hasOne(Employee::class, 'user_id');
     }
 
-    /**
-     * The id of the employee record behind this login, or null.
-     *
-     * There is NO `employee_id` column on `users` — the link lives the other
-     * way round, on `employees.user_id`. Three call sites nevertheless read
-     * `$user->employee_id` directly, and without this accessor Eloquent simply
-     * returned null for all of them:
-     *
-     *   · PayrollController::ownsRow / employeePayslips / history — the
-     *     employee tier's self-guard compared `$slip->employee_id` against
-     *     `(int) null` = 0, which matches nothing. The guard was written to let
-     *     an employee see their OWN payslip and no one else's; instead it
-     *     locked them out of their own (404 on the payslip, its PDF and the
-     *     email, 403 on the salary history, and an empty payroll history).
-     *   · HrDocumentSignatureController / MyTeamController — same read, same
-     *     silent null. MyTeamController::myTeam had already worked around it
-     *     with an inline `?: Employee::where('user_id', ...)` fallback, which
-     *     is exactly the lookup below.
-     *
-     * Solved on the model so the next call site inherits it rather than having
-     * to remember the workaround. Memoised because the payslip guard runs once
-     * per row on a listing.
-     *
-     * `employee_code` is the secondary route: logins created before the
-     * `user_id` back-link was populated only carry the code.
-     */
     public function getEmployeeIdAttribute(): ?int
     {
         if (array_key_exists('employee_id', $this->attributes)) {
@@ -223,8 +158,6 @@ class User extends Authenticatable
         return $this->hasMany(ApprovalQueue::class, 'approved_by');
     }
 
-    // ── Helpers ──
-
     public function isSuperAdmin(): bool
     {
         return $this->user_type === 'super_admin';
@@ -245,7 +178,6 @@ class User extends Authenticatable
         return $this->user_type === 'branch_user';
     }
 
-    /** A staff login paired to an `employees` row (the bottom tier). */
     public function isEmployee(): bool
     {
         return $this->user_type === 'employee';

@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, loadFailed, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, loadFailed, PER_PAGE, paginate, clmFillHeight } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ClmSubHead as SubHead, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, TruncCell } from '../shared/clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
@@ -34,7 +34,14 @@ export function deriveShortCode(name: string): string {
 }
 
 type Cat = { id: number; code: string; name: string };
-type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; content: string | null };
+type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; content: string | null;
+  /* Set by the API: the Proforma Invoices / Purchase Orders that print this entry (first 5 codes) - it can't be deleted then. */
+  in_use?: boolean; used_count?: number; used_in?: string[] };
+
+/* Segment names are cut at 15 characters with an ellipsis, the full name in a
+   tooltip - in the column chip and in the +N popover alike. */
+const SEG_CUT = 15;
+const cutSeg = (s: string) => (s.length > SEG_CUT ? `${s.slice(0, SEG_CUT)}…` : s);
 /* One per document category. `id` is null until something is written against it. */
 type GlobalTnc = {
   category_id: number; category_code: string; category: string;
@@ -171,17 +178,19 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     // Not observing the page root: the "What We Are Doing Here" box animates its
     // height on expand/collapse, so observing the root fired this recompute every
     // animation frame and visibly disturbed the layout. Recompute only on mount
     // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   // Document categories are read-only — they're owned by the Quotation &
@@ -213,8 +222,8 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
               up with it, leaving the page empty underneath. The band is the
               lesser fault — and it is inherent, since the auto-fit sizes the
               page to the viewport and a two-record table cannot fill it. */}
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-            <table className="clm-table">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
+            <div className="clm-tscroll"><table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 130, textAlign: 'center' }}>CATEGORY ID</th>
@@ -234,7 +243,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bTnc}</div>
@@ -242,7 +251,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
                 <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Document categories are set up for your Quotation & Proforma Invoice documents.'}</div>
               </div>
             )}
-            {!loading && filtered.length > 0 && (
+            {!loading && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -303,13 +312,15 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   // A global entry exists per document category and no further: once all six are
@@ -367,8 +378,8 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
             it is the shortest list in the master and the one where the blank
             above the pager shows most; the alternative, a card ending halfway
             up the screen, looked worse. */}
-        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-          <table className="clm-table">
+        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
+          <div className="clm-tscroll"><table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
               {/* 170, not 130: the column was sized for "T&C ID" and the
@@ -411,7 +422,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
           {isEmpty && (
             <div className="clm-empty" style={{ flex: 1 }}>
               <div className="clm-empty-ico">{ICO.bTnc}</div>
@@ -419,7 +430,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
               <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Add one per document category — it prints on every document of that category.'}</div>
             </div>
           )}
-          {!loading && filtered.length > 0 && (
+          {!loading && (
             <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
           )}
         </div>
@@ -483,23 +494,29 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      const fh = clmFillHeight(el);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    /* Re-measured as the page settles, as useAutoFitRows does: the strips above the card finish loading after mount, and an empty list never changes length to trigger a second measure - so the first, too-tall height stuck and the page scrolled (QA #56). */
+    const settle = [120, 350, 800, 1600].map(ms => window.setTimeout(recompute, ms));
     // Not observing the page root: the "What We Are Doing Here" box animates its
     // height on expand/collapse, so observing the root fired this recompute every
     // animation frame and visibly disturbed the layout. Recompute only on mount
     // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); settle.forEach(window.clearTimeout); };
   }, [filtered.length]);
 
   const onDelete = async () => {
     if (!pendingDelete) return;
     try { await api.delete(`/clm/tnc-library/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.category); setPendingDelete(null); reload(); }
-    catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    catch (e: any) {
+      toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete');
+      // 409 = it became used since the list loaded: close and reload so the row shows locked.
+      if (e?.response?.status === 409) { setPendingDelete(null); reload(); }
+    }
   };
 
   // Segments with their regulatory tier — drives the wizard's tier-filtered
@@ -513,7 +530,15 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <SubHead title="Terms and Conditions Entries" count={rows.length}
-          sub="Segment-wise Terms &amp; Conditions, matched to a product's segment." />
+          sub="Segment-wise Terms &amp; Conditions, matched to a product's segment."
+          tabs={[
+            { key: 'highly', label: 'Highly Regulatory', count: rows.filter(r => r.regulatory !== 'less').length,
+              icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> },
+            { key: 'less', label: 'Less Regulatory', count: rows.filter(r => r.regulatory === 'less').length,
+              icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> },
+          ]}
+          active={statusFilter}
+          onTab={(k) => { setStatusFilter(k as 'all' | 'highly' | 'less'); setPage(1); }} />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search Terms and Conditions library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -521,7 +546,8 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         </div>
         {/* 214, not 190: the funnel takes about 22px of the label's room and
             "Highly Regulatory" needs all of it. */}
-        <div className="clm-filter-ms" style={{ width: 214, flex: '0 0 auto' }}>
+        {/* Hidden on the Master Control Center, where the tabs above replace it. */}
+        <div className="clm-filter-ms clm-status-dd" style={{ width: 214, flex: '0 0 auto' }}>
           <svg className="clm-filter-ico" width="14" height="14" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
@@ -548,12 +574,14 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       <div className="clm-tab-body has-data">
           {/* Stretched, as the sibling panes are — see the note on the
               Document Category pane. */}
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-            <table className="clm-table">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
+            <div className="clm-tscroll"><table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 170, textAlign: 'center' }}>Terms and Conditions ID</th>
-                <th style={{ width: 150, textAlign: 'center' }}>SEGMENT</th>
+                {/* Left, header and cells: the chips differ in width, and centred
+                    they started at a different x on every row (QA #45). */}
+                <th style={{ width: 150, textAlign: 'left' }}>SEGMENT</th>
                 <th style={{ width: 150, textAlign: 'center' }}>STATUS</th>
                 <th>DOCUMENT CATEGORY</th>
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
@@ -568,15 +596,15 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         <span className="clm-code-pill">{r.code}</span>
                       </Tooltip>
                     </td>
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'left' }}>
                       {(() => {
                         const list = (r.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
                         if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
                         const extra = list.length - 1;
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-start' }}>
                             <Tooltip label={`Segment scope · ${list[0]}`}>
-                              <span className="clm-badge clm-badge-teal" style={{ display: 'inline-block', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{list[0]}</span>
+                              <span className="clm-badge clm-badge-teal" style={{ display: 'inline-block', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{cutSeg(list[0])}</span>
                             </Tooltip>
                             {extra > 0 && (
                               <Tooltip label="View all segments">
@@ -618,15 +646,24 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         <Tooltip label={`Edit Terms and Conditions — ${r.category}`}>
                           <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                         </Tooltip>
-                        <Tooltip label={`Delete Terms and Conditions — ${r.category}`}>
-                          <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        {/* Locked once Proforma Invoices print it, as Authority / DD lock theirs. The
+                            click still answers (a toast) instead of being a dead button. */}
+                        <Tooltip label={r.in_use
+                          ? `Used by ${r.used_count ?? 0} document${r.used_count === 1 ? '' : 's'} (${(r.used_in ?? []).slice(0, 3).join(', ')}${(r.used_count ?? 0) > 3 ? '…' : ''}) — can't delete`
+                          : `Delete Terms and Conditions — ${r.category}`}>
+                          <button className="clm-act clm-act-del" aria-label="Delete"
+                            style={r.in_use ? { opacity: 0.32, cursor: 'not-allowed' } : undefined}
+                            onClick={() => {
+                              if (r.in_use) { toast.warning('Terms and Conditions locked', `${r.code} is printed on ${r.used_count ?? 0} document${r.used_count === 1 ? '' : 's'} (Proforma Invoices / Purchase Orders), so it can't be deleted.`); return; }
+                              setPendingDelete(r);
+                            }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                         </Tooltip>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bTnc}</div>
@@ -634,7 +671,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                 <div className="clm-empty-sub">{search.trim() || statusFilter !== 'all' ? 'No results match the current search.' : 'Click + Add Terms and Conditions to create the first record.'}</div>
               </div>
             )}
-            {!loading && filtered.length > 0 && (
+            {!loading && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -646,11 +683,16 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       {segPop && createPortal(
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.flipUp ? undefined : segPop.y, bottom: segPop.flipUp ? (window.innerHeight - segPop.y) : undefined, zIndex: 601, width: 210, maxHeight: segPop.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          {/* overflowX hidden and every name cut at 15 characters (full name in
+              the tooltip): a long segment name used to widen its pill past the
+              210px card and put a horizontal scrollbar under the list. */}
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.flipUp ? undefined : segPop.y, bottom: segPop.flipUp ? (window.innerHeight - segPop.y) : undefined, zIndex: 601, width: 210, maxHeight: segPop.maxH, overflowY: 'auto', overflowX: 'hidden', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
-              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, minWidth: 0 }}>
+                <Tooltip label={name} position="top" zIndex={700} disabled={name.length <= SEG_CUT}>
+                  <span className="clm-badge clm-badge-teal" style={{ whiteSpace: 'nowrap' }}>{cutSeg(name)}</span>
+                </Tooltip>
               </div>
             ))}
           </div>
@@ -663,6 +705,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         existing={editing}
         cats={cats}
         segments={segOpts}
+        library={rows}
         nextCode={editing?.code ?? nextTncCode}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}

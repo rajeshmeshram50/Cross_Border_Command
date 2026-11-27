@@ -387,7 +387,7 @@ export default function TemplateEditor({
                           that appears straight away beats the OS box that waits
                           a second and ignores dark mode. Carries the FULL label
                           and token, since both may be truncated on screen. */}
-                      <Tooltip label={`${f.label} — ${f.token}${tokenPreviews?.[f.token] ? ` → ${tokenPreviews[f.token]}` : ''}`}>
+                      <Tooltip label={`Click to insert, or drag into the document — ${f.token}`}>
                         <button
                           type="button"
                           className="tpl-token-btn"
@@ -404,7 +404,10 @@ export default function TemplateEditor({
                             e.dataTransfer.setData('text/plain', f.token + ' ');
                             e.dataTransfer.effectAllowed = 'copy';
                           }}
-                          title={`Click to insert, or drag into the document — ${f.token}`}
+                          /* No native `title`: the <Tooltip> wrapper above already
+                             shows a pill, and a title made the native-title bridge
+                             render a SECOND pill that collided with it over the
+                             variable list. */
                         >
                           <span className="tpl-token-label">{f.label}</span>
                           <span className="tpl-token-pill">{f.token}</span>

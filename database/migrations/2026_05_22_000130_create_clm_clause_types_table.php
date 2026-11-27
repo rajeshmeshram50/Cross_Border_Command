@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Central CLM → Clause Library · Types tab.
- *
- * 8 clause-type buckets in the prototype (Core Legal, Commercial,
- * Financial, Risk, Regulatory, Operational, IP & Confidentiality, Dispute
- * & Arbitration). Library rows tag themselves with one of these names.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -20,11 +13,8 @@ return new class extends Migration
 
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
 
-            $table->string('code', 16);          // CLT-001
+            $table->string('code', 16);
             $table->string('name', 255);
-            /* Description was dropped from the Clause Type modal in the
-             * redesign — kept on the schema for backward compatibility
-             * but now nullable so the API can omit it. */
             $table->string('description', 500)->nullable();
 
             $table->string('status', 16)->default('active');

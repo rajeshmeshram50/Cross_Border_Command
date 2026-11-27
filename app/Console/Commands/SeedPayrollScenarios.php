@@ -4,24 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
-/**
- * Seeds the 14 payroll QA scenarios for a branch and month.
- *
- * Run it ON THE SERVER. It uses the app's own database connection, so there
- * are no credentials in this file and no cross-internet round trips — seeding
- * from a laptop meant ~1,000 statements over a 250 ms link, which timed out
- * halfway through more than once.
- *
- * Idempotent: it clears the target month for these employees before writing,
- * so running it twice reproduces the same state rather than doubling it.
- * Everything is bounded by client + branch + month; nothing else is touched.
- *
- *   php artisan payroll:seed-scenarios                 # dry run, prints the plan
- *   php artisan payroll:seed-scenarios --apply
- *   php artisan payroll:seed-scenarios --apply --client=2 --branch=6 --month=2026-08
- */
 class SeedPayrollScenarios extends Command
 {
     protected $signature = 'payroll:seed-scenarios
@@ -32,7 +15,6 @@ class SeedPayrollScenarios extends Command
 
     protected $description = 'Seed the 14 payroll QA scenarios (attendance, punches, leave, shifts, holiday) for a branch + month';
 
-    /** Shift windows. General is corrected from the stored 09:30–06:30 typo. */
     private array $shifts = [
         ['name' => 'General Shift',    'start' => '09:30', 'end' => '18:30'],
         ['name' => 'Morning Shift',    'start' => '07:00', 'end' => '16:00'],
@@ -41,8 +23,6 @@ class SeedPayrollScenarios extends Command
         ['name' => 'Rotational Shift', 'start' => '09:30', 'end' => '18:30'],
     ];
 
-    /** [emp_code, scenario, shift, weekly_off] — weekly_off is chosen to make
-     *  the scenario reproducible; scenarios 5-7 are ABOUT that pattern. */
     private array $spec = [
         ['EMP-004', 'Correct On Time',                               'General Shift',    'Sunday Only'],
         ['EMP-014', '4 Days Late 30 min + 30 min Late Out',          'Morning Shift',    'Sunday Only'],
@@ -74,7 +54,6 @@ class SeedPayrollScenarios extends Command
         $win = [];
         foreach ($this->shifts as $s) $win[$s['name']] = [$s['start'], $s['end']];
 
-        // Resolve employees
         $emp = [];
         foreach ($this->spec as [$code, , , ]) {
             $r = DB::table('employees')->where('emp_code', $code)
@@ -84,7 +63,6 @@ class SeedPayrollScenarios extends Command
             $emp[$code] = $r;
         }
 
-        // A company holiday inside the month, needed by the sandwich scenario.
         $holiday = ['date' => sprintf('%04d-%02d-15', $y, $m), 'name' => 'Independence Day'];
 
         [$plans, $leaves] = $this->buildPlans($win, $first, $last, $holiday['date']);
@@ -104,8 +82,6 @@ class SeedPayrollScenarios extends Command
             foreach ($this->spec as [$code, , $shift, $wo]) {
                 DB::table('employees')->where('id', $emp[$code]->id)->update([
                     'shift' => $shift, 'weekly_off' => $wo,
-                    // Joining date sat on the LAST day of the month, which would
-                    // put the whole period before employment and blank it.
                     'date_of_joining' => sprintf('%04d-01-01', (int) substr($first, 0, 4)),
                     'attendance_tracking' => true, 'updated_at' => now(),
                 ]);
@@ -129,7 +105,6 @@ class SeedPayrollScenarios extends Command
             DB::table('leave_requests')->where('client_id', $client)->where('branch_id', $branch)
                 ->whereIn('employee_id', $ids)->where('from_date', '<=', $last)->where('to_date', '>=', $first)->delete();
 
-            // Attendance, batched.
             $rows = [];
             foreach ($this->spec as [$code, , , ]) {
                 foreach ($plans[$code] as $iso => $d) {
@@ -146,7 +121,6 @@ class SeedPayrollScenarios extends Command
             }
             foreach (array_chunk($rows, 200) as $c) DB::table('attendances')->insert($c);
 
-            // Punches, matched back by (employee, date) rather than insert order.
             $map = DB::table('attendances')->where('client_id', $client)->where('branch_id', $branch)
                 ->whereIn('employee_id', $ids)->whereBetween('attendance_date', [$first, $last])
                 ->get(['id', 'employee_id', 'attendance_date', 'check_in_at', 'check_out_at']);
@@ -178,7 +152,6 @@ class SeedPayrollScenarios extends Command
         return 0;
     }
 
-    /** Weekly-off test mirroring App\Support\WeekOff. */
     private function isOff(string $pattern, string $iso): bool
     {
         $dow = (int) date('w', strtotime($iso));
@@ -191,7 +164,6 @@ class SeedPayrollScenarios extends Command
         return false;
     }
 
-    /** @return array{0: array<string,array>, 1: array<string,array>} */
     private function buildPlans(array $win, string $first, string $last, string $holiday): array
     {
         $all = [];
@@ -242,8 +214,8 @@ class SeedPayrollScenarios extends Command
                 case 'EMP-011':
                     $t3 = array_slice($wd, 5, 3);
                     foreach ($t3 as $iso) unset($plan[$iso]);
-                    $lv[] = [$t3[0], $t3[1], 2, 'full', 3];   // paid
-                    $lv[] = [$t3[2], $t3[2], 1, 'full', 5];   // unpaid
+                    $lv[] = [$t3[0], $t3[1], 2, 'full', 3];
+                    $lv[] = [$t3[2], $t3[2], 1, 'full', 5];
                     break;
                 case 'EMP-002':
                     foreach ([$day(7), $day(8)] as $iso) unset($plan[$iso]);

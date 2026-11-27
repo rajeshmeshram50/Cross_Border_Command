@@ -3,24 +3,14 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Pre-upload-fix rows have `blob:http://localhost:.../<uuid>` strings
- * baked into `primary_image` and `secondary_images`. Those URLs only ever
- * existed in the browser session that created them and now serve no
- * purpose — strip them so the URL accessors stop emitting
- * `/storage/blob:...` garbage.
- */
 return new class extends Migration
 {
     public function up(): void
     {
-        // Null out blob:* primary images.
         DB::table('products')
             ->where('primary_image', 'like', 'blob:%')
             ->update(['primary_image' => null]);
 
-        // Secondary images is a JSON column — re-encode per row, removing
-        // any blob: entries.
         DB::table('products')
             ->whereNotNull('secondary_images')
             ->orderBy('id')
@@ -45,6 +35,5 @@ return new class extends Migration
 
     public function down(): void
     {
-        // No-op: the stripped values were unrecoverable garbage.
     }
 };

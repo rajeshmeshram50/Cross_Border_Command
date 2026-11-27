@@ -9,23 +9,8 @@ use App\Models\Product;
 use App\Support\SegmentGuard;
 use Illuminate\Http\JsonResponse;
 
-/**
- * Shared Quotation / PI guard for the segment "Buyer ≠ Consignee" rule.
- *
- * Each business segment carries a `buyer_consignee` flag (`allowed` /
- * `not_allowed`). When a quoted / invoiced product belongs to a segment that
- * is `not_allowed`, the buyer and consignee MUST be the same party — so a
- * distinct consignee (one that isn't flagged Same-as-Customer) is rejected.
- */
 trait EnforcesSegmentBuyerConsignee
 {
-    /**
-     * Returns a 422 JsonResponse when one of the doc's products belongs to a
-     * segment that forbids a different Buyer and Consignee while a distinct
-     * consignee is mapped — otherwise null (allowed).
-     *
-     * @param  array<int,int|string|null>  $productIds  product ids on the items
-     */
     protected function segmentPartyBlockResponse(int $clientId, array $productIds, ?int $consigneeId): ?JsonResponse
     {
         $productIds = array_values(array_unique(array_filter($productIds)));
@@ -33,8 +18,6 @@ trait EnforcesSegmentBuyerConsignee
             return null;
         }
 
-        // The rule can only be violated by a DISTINCT consignee. With no
-        // consignee, or a Same-as-Customer one, buyer == consignee already.
         if (!$consigneeId) {
             return null;
         }
@@ -43,7 +26,6 @@ trait EnforcesSegmentBuyerConsignee
             return null;
         }
 
-        // Products → their segments, then the segments that forbid B ≠ C.
         $segmentIds = Product::where('client_id', $clientId)
             ->whereIn('id', $productIds)
             ->whereNotNull('segment_id')
@@ -74,23 +56,6 @@ trait EnforcesSegmentBuyerConsignee
         ], 422);
     }
 
-    /**
-     * Returns a 422 JsonResponse when one of the lead's mapped products belongs
-     * to a segment that the customer is NOT in — otherwise null (allowed).
-     *
-     * The product segment (via `products.segment_id` → clm_segments.name) must
-     * be one of the customer's segments (the comma-joined `customers.segment`
-     * list of names). This is the "Customer ↔ Product segment must match" rule
-     * enforced at mapping time, regardless of the order the two were mapped:
-     *   • mapping a product after a customer is set → product checked here, and
-     *   • setting/changing the customer with products already mapped → all
-     *     mapped products checked here.
-     *
-     * When either side has no segment, the rule can't be evaluated and we allow
-     * (null) — the comparison is only meaningful when both carry a segment.
-     *
-     * @param  array<int,int|string|null>  $productIds  product ids to check
-     */
     protected function segmentCustomerProductMismatchResponse(int $clientId, array $productIds, ?int $customerId): ?JsonResponse
     {
         $productIds = array_values(array_unique(array_filter($productIds)));
@@ -103,10 +68,9 @@ trait EnforcesSegmentBuyerConsignee
             return null;
         }
 
-        // Match on segment IDS: "Sugar" (Less) and "Sugar" (Highly) are different segments.
         $customerIds = SegmentGuard::idsOf($customer);
         if (empty($customerIds)) {
-            return null; // no segment on the customer → nothing to match against
+            return null;
         }
         $customerNames = array_map(fn ($r) => self::segmentWithStatus($r['name'], $r['regulatory_status']), SegmentGuard::rowsFor($customerIds));
 
@@ -119,7 +83,7 @@ trait EnforcesSegmentBuyerConsignee
         $mismatches = [];
         foreach ($products as $p) {
             if (!$p->segment) {
-                continue; // segment row missing → can't evaluate, allow
+                continue;
             }
             if (!in_array((int) $p->segment_id, $customerIds, true)) {
                 $label = $p->product_code ? "{$p->name} ({$p->product_code})" : $p->name;
@@ -149,7 +113,6 @@ trait EnforcesSegmentBuyerConsignee
         ], 422);
     }
 
-    /** "Sugar (High Reg)" — names alone cannot tell same-named segments apart. */
     private static function segmentWithStatus(string $name, ?string $status): string
     {
         $tag = $status === 'highly' ? 'High Reg' : ($status === 'less' ? 'Low Reg' : null);

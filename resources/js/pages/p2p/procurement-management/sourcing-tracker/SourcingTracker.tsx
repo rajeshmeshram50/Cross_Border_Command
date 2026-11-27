@@ -1,22 +1,50 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { Shimmer } from '../../../../components/ui/Shimmer';
+import FullPageLoader from '../../../../components/ui/FullPageLoader';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
+import api from '../../../../api';
+// Type-only: the Add Supplier form itself stays lazy-loaded (below).
+import type { SupplierPrefill, VendorPayload } from '../../p2p-master-management/supplier-management/AddVendorModal';
+import { apiErrorMessage } from './apiError';
+import type { MapEdit } from './MapSupplierModal';
 import {
-  DUMMY_TARGETS, ME, TODAY, isComplete, progressPct, type SourcingTarget,
+  fromApi, progressOf, tatState, type ApiTargetRow, type SourcingTarget,
 } from './data';
-import AssignTargetModal from './AssignTargetModal';
+import type { ReportProduct } from './targetProducts';
+import { dmy, initials } from './format';
 import './sourcing-tracker.css';
+import { IcoBars, IcoClock, IcoEdit, IcoPen, IcoPlus, IcoSearch, IcoUser, IcoX, Svg } from './icons';
+
+/* Every popup is lazy-loaded: each opens only on a click, so it (and its CSS) downloads the first
+   time it is opened instead of with the page. Add Supplier (Convert to Supplier) is the big one,
+   ~139 KB, and is only used for a New Supplier conversion. */
+const AssignTargetModal = lazy(() => import('./AssignTargetModal'));
+const SourcingTargetReport = lazy(() => import('./SourcingTargetReport'));
+const ProductList = lazy(() => import('./ProductList'));
+const MapSupplierModal = lazy(() => import('./MapSupplierModal'));
+const loadAddVendorModal = () => import('../../p2p-master-management/supplier-management/AddVendorModal');
+const AddVendorModal = lazy(loadAddVendorModal);
+
+/* Convert to Supplier, between the click and the form (CS-2222): the report has closed, the
+   prefill is loading and the form's code may still be downloading. Without this the bare list
+   sat there with nothing happening. No delay: the report is already gone. */
+const ConvertOpening = ({ name }: { name?: string }) => (
+  <FullPageLoader delayMs={0} label={name ? `Opening Add Supplier — loading ${name}'s details…` : 'Opening Add Supplier…'} />
+);
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sourcing Management Tracker — Procure to Pay (P2P) · Procurement Management.
- * Route: /p2p/sourcing-tracker. DESIGN BUILD on dummy data (./data.ts).
+ * Route: /p2p/sourcing-tracker.
  *
  * The markup follows the Figma prototype element for element, and
- * sourcing-tracker.css carries the Figma's computed values, so the page
- * matches it pixel for pixel. The API is wired in after the design is
- * signed off. Bulk Sourcing is untouched.
+ * sourcing-tracker.css carries the Figma's computed values. The list is
+ * GET /p2p/sourcing-targets?tab=all|created|assigned: the server does the
+ * tab, search and paging; data.counts fills the three badges. Bulk Sourcing
+ * reads the same targets and is untouched.
  * ───────────────────────────────────────────────────────────────────────── */
 
 type MainTab = 'targets' | 'rfq';
@@ -26,15 +54,11 @@ type RowAction = 'edit' | 'report' | 'products';
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 /* ── Icons (the Figma's own glyphs) ─────────────────────────────────────── */
-const Svg = ({ size, sw = 2.2, children }: { size: number; sw?: number; children: ReactNode }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-);
 const IcoStrip = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><polyline points="8 11 10 13 14 9" />
   </svg>
 );
-const IcoPlus = () => <Svg size={13} sw={2.8}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Svg>;
 const IcoTarget = () => <Svg size={15}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" /></Svg>;
 const IcoRfq = () => (
   <Svg size={15}>
@@ -42,102 +66,117 @@ const IcoRfq = () => (
     <path d="M9.5 13a2.5 2.5 0 1 1 3.2 2.4c-.5.2-.7.6-.7 1.1" /><line x1="12" y1="19" x2="12.01" y2="19" />
   </Svg>
 );
-const IcoSearch = () => <Svg size={15}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></Svg>;
-const IcoX = () => <Svg size={13} sw={2.4}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Svg>;
 const IcoGrid = () => (
   <Svg size={14}>
     <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
     <rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
   </Svg>
 );
-const IcoPen = () => <Svg size={14}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></Svg>;
-const IcoUser = () => <Svg size={14}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Svg>;
-const IcoClock = () => <Svg size={12} sw={2.4}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></Svg>;
-const IcoEdit = () => (
-  <Svg size={15} sw={2.4}>
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" />
-  </Svg>
-);
-const IcoBars = () => <Svg size={12} sw={2.4}><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /><path d="M3 20h18" /></Svg>;
 
 const SUB_TABS: { key: SubTab; label: string; icon: ReactNode }[] = [
   { key: 'all', label: 'All Sourcing Targets', icon: <IcoGrid /> },
-  { key: 'created', label: 'Sourcing Target Created by Me', icon: <IcoPen /> },
-  { key: 'assigned', label: 'Sourcing Target Assigned to Me', icon: <IcoUser /> },
+  { key: 'created', label: 'Sourcing Target Created by Me', icon: <IcoPen size={14} /> },
+  { key: 'assigned', label: 'Sourcing Target Assigned to Me', icon: <IcoUser size={14} /> },
 ];
 
-/* ── Helpers ────────────────────────────────────────────────────────────── */
-/** 2026-03-31 → 31/03/2026, the Figma's date format. */
-const dmy = (iso: string) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
-const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+/** RFQ Management is frozen (out of scope, BR 1.2); its count is a placeholder until it is built. */
+const RFQ_COUNT = 129;
 
-/** On track / at risk (due within 7 days) / overdue — a finished target is always on track. */
-function tatState(r: SourcingTarget): 'ontrack' | 'atrisk' | 'overdue' {
-  if (isComplete(r)) return 'ontrack';
-  const days = Math.round((Date.parse(r.dueDate) - Date.parse(TODAY)) / 86400000);
-  if (days < 0) return 'overdue';
-  return days <= 7 ? 'atrisk' : 'ontrack';
-}
+/* ── Loading ──────────────────────────────────────────────────────────────
+   While a page is fetched the table shows skeleton rows in its own grid (same .sct-row class, so
+   the header stays and the auto-fit page size keeps measuring). */
+
+/** Typing in the search waits this long before asking the server. */
+const SEARCH_DEBOUNCE_MS = 300;
+
+type ListResponse = {
+  data?: {
+    rows?: ApiTargetRow[];
+    counts?: Partial<Record<SubTab, number>>;
+    pagination?: { page?: number; total?: number };
+  };
+};
+
+/* One thin, even bar per column (like the CLM lists): calm while loading, and every column keeps
+   its place so nothing jumps when the rows arrive. Widths are fixed per column, not random. */
+const SKELETON_WIDTHS = ['45%', '70%', '75%', '70%', '80%', '80%', '75%', '45%', '85%', '85%'];
+
+const SkeletonRows = memo(function SkeletonRows({ n }: { n: number }) {
+  return (
+    <>
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} className="sct-row sct-row--shim" aria-hidden>
+          {SKELETON_WIDTHS.map((w, c) => <span key={c}><Shimmer width={w} height={12} radius={6} /></span>)}
+        </div>
+      ))}
+    </>
+  );
+});
 
 /* ── Row ────────────────────────────────────────────────────────────────── */
-const TargetRow = memo(function TargetRow({ row, sr, onAction }: {
-  row: SourcingTarget; sr: number; onAction: (a: RowAction, row: SourcingTarget) => void;
+const TargetRow = memo(function TargetRow({ row, sr, canEdit, onAction }: {
+  row: SourcingTarget; sr: number;
+  /** Only the target's creator may edit it (the API answers 403 to anyone else). */
+  canEdit: boolean;
+  onAction: (a: RowAction, row: SourcingTarget) => void;
 }) {
   const tat = tatState(row);
-  const done = Math.min(row.completedProducts, row.totalProducts);
-  const pending = row.totalProducts - done;
-  const pct = progressPct(row);
-  const full = isComplete(row);
+  const { done, pending, pct, full } = progressOf(row);
   const more = row.totalProducts - 1;
 
   return (
     <div className="sct-row" role="row">
-      <span className="sct-sr">{sr}</span>
-      <span>
+      <span role="cell" className="sct-sr">{sr}</span>
+      <span role="cell">
         <span className="sct-idcell">
           <span className="sct-idpill">{row.code}</span>
           <span className="sct-idcell__date">{dmy(row.startDate)}</span>
         </span>
       </span>
-      <span className="sct-srcs">
+      <span role="cell" className="sct-srcs">
         {row.sources.map(s => (
           <span key={s} className={`sct-src${s === 'Manual Entry' ? ' sct-src--manual' : ''}`}>{s}</span>
         ))}
       </span>
-      <span className="sct-c">
+      <span role="cell" className="sct-c">
         <span className={`sct-tat sct-tat--${tat}`}>
-          <span className="sct-tat__date"><IcoClock />{dmy(row.dueDate)}</span>
+          <span className="sct-tat__date"><IcoClock size={12} sw={2.4} />{dmy(row.dueDate)}</span>
           {tat === 'overdue' && <span className="sct-tat__overdue">Overdue</span>}
         </span>
       </span>
-      <span className="sct-person">
+      <span role="cell" className="sct-person">
         <span className="sct-av">{initials(row.createdBy)}</span>
         <span className="sct-person__name">{row.createdBy}</span>
       </span>
-      <span className="sct-person">
+      <span role="cell" className="sct-person">
         <span className="sct-av">{initials(row.assignedTo)}</span>
         <span className="sct-person__name">{row.assignedTo}</span>
       </span>
-      <span>
+      <span role="cell">
         <Tooltip label="View Products">
-          <button type="button" className="sct-prod" onClick={() => onAction('products', row)}>
+          <button type="button" className="sct-prod" aria-label={`${row.firstProduct}${more > 0 ? ` and ${more} more` : ''}: view products of ${row.code}`}
+            onClick={() => onAction('products', row)}>
             <span className="sct-prod__name">{row.firstProduct}</span>
             {more > 0 && <span className="sct-prod__more">+{more}</span>}
           </button>
         </Tooltip>
       </span>
-      <span className="sct-c">
-        <Tooltip label="View Sourcing Target Report">
-          <button type="button" className="sct-pcount" onClick={() => onAction('report', row)}>{row.mappedSuppliers}</button>
-        </Tooltip>
+      <span role="cell" className="sct-c">
+        {/* 0 mapped: a grey badge, not clickable (CS-2219 V-T82). */}
+        {row.mappedSuppliers > 0 ? (
+          <Tooltip label="View Sourcing Target Report">
+            <button type="button" className="sct-pcount" aria-label={`${row.mappedSuppliers} mapped suppliers: view report of ${row.code}`}
+              onClick={() => onAction('report', row)}>{row.mappedSuppliers}</button>
+          </Tooltip>
+        ) : <span className="sct-pcount is-zero"><span aria-hidden>0</span><span className="visually-hidden">No suppliers mapped</span></span>}
       </span>
-      <span className="sct-c">
+      <span role="cell" className="sct-c">
         <span className="sct-prog">
           <span className="sct-prog__head">
             <span className={`sct-st${full ? ' sct-st--done' : ''}`}><span className="sct-st__dot" />{full ? 'Completed' : 'In Progress'}</span>
             <span className={`sct-prog__pct${full ? ' is-done' : ''}`}>{pct}%</span>
           </span>
-          <span className={`sct-bar${full ? ' is-done' : ''}`} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <span className={`sct-bar${full ? ' is-done' : ''}`} role="progressbar" aria-label="Sourcing progress" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
             <span className="sct-bar__fill" style={{ width: `${pct}%` }} />
           </span>
           <span className="sct-legend">
@@ -146,16 +185,26 @@ const TargetRow = memo(function TargetRow({ row, sr, onAction }: {
           </span>
         </span>
       </span>
-      <span className="sct-c">
+      <span role="cell" className="sct-c">
         <span className="sct-actions">
-          <Tooltip label="Edit Sourcing Target">
-            <button type="button" className="sct-edit" aria-label={`Edit ${row.code}`} onClick={() => onAction('edit', row)}><IcoEdit /></button>
-          </Tooltip>
+          {canEdit ? (
+            <Tooltip label="Edit Sourcing Target">
+              <button type="button" className="sct-edit" aria-label={`Edit ${row.code}`} onClick={() => onAction('edit', row)}><IcoEdit size={15} sw={2.4} /></button>
+            </Tooltip>
+          ) : (
+            // Kept in place (the column does not shift) but off: a disabled button gets no hover,
+            // so the tooltip sits on a wrapper.
+            <Tooltip label="Only the creator can edit this target">
+              <span className="sct-frozen-wrap">
+                <button type="button" className="sct-edit is-off" disabled aria-label={`Edit ${row.code} — only the creator can edit`}><IcoEdit size={15} sw={2.4} /></button>
+              </span>
+            </Tooltip>
+          )}
           {/* On tablet and phone the label hides and the button is icon-only;
               the tooltip and aria-label still name it. */}
           <Tooltip label="Sourcing Target Report">
             <button type="button" className="sct-report" aria-label={`Sourcing Target Report — ${row.code}`} onClick={() => onAction('report', row)}>
-              <IcoBars /><span className="sct-report__lbl">Sourcing Target Report</span>
+              <IcoBars size={12} sw={2.4} /><span className="sct-report__lbl">Sourcing Target Report</span>
             </button>
           </Tooltip>
         </span>
@@ -166,53 +215,68 @@ const TargetRow = memo(function TargetRow({ row, sr, onAction }: {
 
 const HEAD = (
   <div className="sct-row sct-row--head" role="row">
-    <span>Sr No</span>
-    <span>Sourcing Target ID</span>
-    <span>I Want to Source To</span>
-    <span className="sct-c">Sourcing TAT</span>
-    <span>Created By</span>
-    <span>Assigned To</span>
-    <span>Total Products</span>
-    <span className="sct-c">Mapped Suppliers</span>
-    <span className="sct-c">Sourcing Progress Status</span>
-    <span className="sct-c">Action</span>
+    <span role="columnheader">Sr No</span>
+    <span role="columnheader">Sourcing Target ID</span>
+    <span role="columnheader">I Want to Source To</span>
+    <span role="columnheader" className="sct-c">Sourcing TAT</span>
+    <span role="columnheader">Created By</span>
+    <span role="columnheader">Assigned To</span>
+    <span role="columnheader">Total Products</span>
+    <span role="columnheader" className="sct-c">Mapped Suppliers</span>
+    <span role="columnheader" className="sct-c">Sourcing Progress Status</span>
+    <span role="columnheader" className="sct-c">Action</span>
   </div>
 );
 
 /* ── Page ───────────────────────────────────────────────────────────────── */
 export default function SourcingTracker() {
   const toast = useToast();
+  const { user } = useAuth();
+  const myId = user?.id != null ? String(user.id) : null;
   const [mainTab, setMainTab] = useState<MainTab>('targets');
   const [sub, setSub] = useState<SubTab>('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [targets, setTargets] = useState<SourcingTarget[]>(DUMMY_TARGETS);
+  // The current page of the current tab, as the server returned it.
+  const [pageRows, setPageRows] = useState<SourcingTarget[]>([]);
+  /** The rows on screen, for the fetch effect (read without making it re-run on every change). */
+  const pageRowsRef = useRef<SourcingTarget[]>(pageRows);
+  pageRowsRef.current = pageRows;
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<SubTab, number>>({ all: 0, created: 0, assigned: 0 });
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  // Bumped to fetch the same page again (Retry, after a save).
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey(k => k + 1), []);
   const [assignOpen, setAssignOpen] = useState(false);
   const [editing, setEditing] = useState<SourcingTarget | null>(null);
+  const [reportRow, setReportRow] = useState<SourcingTarget | null>(null);
+  // Total Products → the read-only Product List popup ("View More").
+  const [productsRow, setProductsRow] = useState<SourcingTarget | null>(null);
+  /* Convert to Supplier (CS-2222): 1. GET /p2p/new-suppliers/{id}/convert pre-fills the real Add
+     Supplier form (Supplier Management); 2. that form saves the supplier as usual; 3. POST
+     /p2p/new-suppliers/{id}/convert { vendor_id } links it, and its mappings become Supplier Master
+     rows. The report closes while the form is open (FR-2222-02) and comes back after. */
+  const [converting, setConverting] = useState<{
+    supplierId: number; name: string; row: SourcingTarget | null;
+    scope: 'domestic' | 'international'; prefill: SupplierPrefill;
+  } | null>(null);
+  const [converted, setConverted] = useState<ReadonlySet<string>>(() => new Set());
+  /** Convert to Supplier clicked, form not up yet: the name shown on the loader. */
+  const [convertOpening, setConvertOpening] = useState<string | null>(null);
+  const [mapTarget, setMapTarget] = useState<{ row: SourcingTarget; product: ReportProduct; edit?: MapEdit } | null>(null);
 
-  /* As the Figma: "All" = created by me, then assigned to me, each target once.
-     Built once — the dummy data is in memory, so there is no load to wait for
-     (no fake delay). The loading skeleton is added with the API step. */
-  const { lists, counts } = useMemo(() => {
-    const created = targets.filter(r => r.createdBy === ME);
-    const assigned = targets.filter(r => r.assignedTo === ME);
-    const seen = new Set<string>();
-    const all = [...created, ...assigned].filter(r => (seen.has(r.code) ? false : (seen.add(r.code), true)));
-    return {
-      lists: { all, created, assigned },
-      counts: { all: all.length, created: created.length, assigned: assigned.length } as Record<SubTab, number>,
-    };
-  }, [targets]);
-
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return lists[sub];
-    return lists[sub].filter(r => [
-      r.code, r.sources.join(' '), r.createdBy, r.assignedTo, r.firstProduct,
-      isComplete(r) ? 'completed' : 'in progress', tatState(r) === 'overdue' ? 'overdue' : '',
-      dmy(r.startDate), dmy(r.dueDate),
-    ].join(' ').toLowerCase().includes(q));
-  }, [lists, sub, query]);
+  // Search goes to the server (q) once typing pauses.
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    // A new search starts on page 1; the page resets with the search itself, so typing fires no extra request.
+    const t = window.setTimeout(() => {
+      const next = query.trim();
+      setQ(prev => { if (prev !== next) setPage(1); return next; });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [query]);
 
   /* Rows per page fit the table area, as on every app list (useFitPageSize):
      no row is cut off at the bottom. The user's own pick in the pager sticks. */
@@ -223,7 +287,6 @@ export default function SourcingTracker() {
     headSelector: '.sct-row--head',
     deps: [mainTab, sub],
   });
-  useEffect(() => { if (rows.length) refit(); }, [rows.length, refit]);
 
   /* While the table scrolls, rows sliding under the mouse must not fire their
      hovers (buttons lifting, row tint, tooltips) — that is what made the
@@ -241,21 +304,163 @@ export default function SourcingTracker() {
   }, []);
   useEffect(() => () => window.clearTimeout(scrollTimer.current), []);
 
-  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safePage = Math.min(page, pages);
-  const start = (safePage - 1) * pageSize;
-  const pageRows = rows.slice(start, start + pageSize);
+  /* One request per tab / page / page size / search. A newer request wins: the answer of an older
+     one that arrives late is dropped, so a fast tab switch never shows the wrong tab's rows. */
+  const reqSeq = useRef(0);
+  // What the last answer covered: when only the page size grows and that answer already held every
+  // row, there is nothing new to ask for (the auto-fit re-measures once the real rows are in).
+  // Only while every row still FITS the new size: shrinking 25 → 10 must ask again, or the 25-row
+  // answer stays on screen under a "10 per page" pager.
+  const lastServed = useRef<{ key: string; complete: boolean; total: number } | null>(null);
+  /* What the rows on screen were asked for (tab, search, reload and page — NOT the page size). The
+     first answer is followed by an auto-fit of the page size to the screen; that second request used
+     to bring the shimmer back, so the rows appeared, blinked to the skeleton and came back (CS-2215).
+     When only the page size changed and rows are already showing, they stay on screen and are
+     replaced in place when the answer arrives. */
+  const shownFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (mainTab !== 'targets') return;
+    const key = `${sub}|${q}|${reloadKey}`;
+    const held = lastServed.current;
+    if (page === 1 && held?.key === key && held.complete && pageSize >= held.total) { setLoading(false); return; }
+    const seq = ++reqSeq.current;
+    const view = `${key}|${page}`;
+    const quiet = shownFor.current === view && pageRowsRef.current.length > 0;
+    if (!quiet) setLoading(true);
+    setFailed(false);
+    // A short wait folds the quick page-size changes of the first layout into one request.
+    const t = window.setTimeout(() => {
+      api.get<ListResponse>('/p2p/sourcing-targets', {
+        params: { tab: sub, page, per_page: pageSize, ...(q ? { q } : {}) },
+      })
+        .then(res => {
+          if (seq !== reqSeq.current) return;
+          const d = res.data?.data;
+          const list = d?.rows ?? [];
+          const all = d?.pagination?.total ?? 0;
+          setPageRows(list.map(fromApi));
+          shownFor.current = view;
+          setTotal(all);
+          setCounts({ all: d?.counts?.all ?? 0, created: d?.counts?.created ?? 0, assigned: d?.counts?.assigned ?? 0 });
+          // The server clamps a page past the end (e.g. after the page size grew); follow it.
+          const served = d?.pagination?.page ?? page;
+          lastServed.current = { key, complete: served === 1 && list.length >= all, total: all };
+          if (served !== page) setPage(served);
+        })
+        .catch(() => {
+          if (seq !== reqSeq.current) return;
+          lastServed.current = null;
+          shownFor.current = null;
+          setPageRows([]); setTotal(0); setFailed(true);
+        })
+        .finally(() => { if (seq === reqSeq.current) setLoading(false); });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [mainTab, sub, page, pageSize, q, reloadKey]);
 
-  const switchMain = (t: MainTab) => { setMainTab(t); setPage(1); setQuery(''); };
-  const switchSub = (t: SubTab) => { setSub(t); setPage(1); setQuery(''); };
+  // The badges read 0 only until the first answer arrives.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => { if (!loading && !booted) setBooted(true); }, [loading, booted]);
+  const start = (page - 1) * pageSize;
+  // Re-fit on the real rows once the skeleton is gone (it has its own row height).
+  useEffect(() => { if (!loading && pageRows.length) refit(); }, [loading, pageRows.length, refit]);
+  const switchMain = (t: MainTab) => { if (t === mainTab) return; setMainTab(t); setPage(1); setQuery(''); setQ(''); };
+  const switchSub = (t: SubTab) => { if (t === sub) return; setSub(t); setPage(1); setQuery(''); setQ(''); };
 
-  // The popups are the next design steps; until then each button says so.
+  // Row actions open the popups. Callbacks are stable (useCallback) so a page re-render does not
+  // re-run the popups' Esc and scroll-lock effects.
   const onAction = useCallback((a: RowAction, row: SourcingTarget) => {
-    if (a === 'edit') { setEditing(row); return; }
-    const what = a === 'edit' ? 'Edit Sourcing Target' : a === 'report' ? 'Sourcing Target Report' : 'Product list';
-    toast.info(`${what} — ${row.code}`, 'This popup is designed in the next step.');
-  }, [toast]);
-  const soon = (what: string) => toast.info(what, 'This popup is designed in the next step.');
+    if (a === 'edit') setEditing(row);
+    else if (a === 'report') setReportRow(row);
+    else setProductsRow(row);
+  }, []);
+  const closeAssign = useCallback(() => { setAssignOpen(false); setEditing(null); }, []);
+  const closeProducts = useCallback(() => setProductsRow(null), []);
+  const closeReport = useCallback(() => setReportRow(null), []);
+  const closeMap = useCallback(() => setMapTarget(null), []);
+  // Cancelled: the supplier stays a New Supplier with its mapping (V-T46); the report comes back.
+  const closeConvert = useCallback(() => {
+    if (converting?.row) setReportRow(converting.row);
+    setConverting(null);
+  }, [converting]);
+  const openMap = useCallback((row: SourcingTarget, product: ReportProduct) => setMapTarget({ row, product }), []);
+  // Edit a mapped New Supplier: the same Map Supplier popup, opened on its form with the saved values.
+  const openEditSupplier = useCallback((row: SourcingTarget, product: ReportProduct, edit: MapEdit) => setMapTarget({ row, product, edit }), []);
+  // Saved on the server: Add switches to Created by Me (the new target is on top); then the list is
+  // fetched again so it shows what the server holds.
+  const saveTarget = useCallback((r: { code: string; count: number; assignee: string; isEdit: boolean }) => {
+    if (r.isEdit) {
+      toast.success(`${r.code} updated`, `${r.count} product(s) on this target.`);
+    } else {
+      setSub('created'); setPage(1); setQuery(''); setQ('');
+      toast.success(`${r.code} created`, `${r.count} product(s) assigned to ${r.assignee || 'the team member'}.`);
+    }
+    setAssignOpen(false); setEditing(null);
+    reload();
+  }, [toast, reload]);
+  // After a supplier is mapped the open report and the list load again (counts and status change).
+  const [reportRefresh, setReportRefresh] = useState(0);
+  const finishMap = useCallback((supplier: string) => {
+    if (mapTarget) {
+      if (mapTarget.edit) toast.success('Supplier updated', `${supplier} on ${mapTarget.product.name} is updated.`);
+      else toast.info('Supplier mapped', `${supplier} mapped to ${mapTarget.product.name}.`);
+    }
+    setMapTarget(null);
+    setReportRefresh(n => n + 1);
+    reload();
+  }, [mapTarget, toast, reload]);
+  const finishConvert = useCallback(async (payload: VendorPayload) => {
+    const c = converting;
+    setConverting(null);
+    if (!c) return;
+    const back = () => { if (c.row) setReportRow(c.row); };
+    if (!payload.vendorId) {
+      toast.error('Supplier saved, not linked', `${payload.companyName || c.name} was saved, but its id did not come back. Open Convert to Supplier again to link it.`);
+      back();
+      return;
+    }
+    try {
+      const r = await api.post<{ data?: { message?: string } }>(`/p2p/new-suppliers/${c.supplierId}/convert`, { vendor_id: payload.vendorId });
+      setConverted(prev => new Set(prev).add(`new-${c.supplierId}`));
+      toast.success('Converted to Supplier', r.data?.data?.message || `${payload.companyName || c.name} is now in the Supplier Master.`);
+      setReportRefresh(n => n + 1);
+      reload();
+    } catch (e) {
+      toast.error('Supplier saved, not linked', apiErrorMessage(e, 'The supplier was saved but could not be linked. Please try again.'));
+    }
+    back();
+  }, [converting, toast, reload]);
+  // FR-2222-02: the Mapped Suppliers popup and the report close, then the Add Supplier form opens.
+  const startConvert = useCallback(async (supplierId: number, name: string) => {
+    const row = reportRow;
+    setConvertOpening(name);
+    setReportRow(null);
+    try {
+      // The response is the shared Add Supplier prefill (the same one Bulk Sourcing uses), plus `converted`.
+      // The form's code downloads at the same time, so it opens the moment the prefill is in.
+      const [r] = await Promise.all([
+        api.get<{ data: Partial<SupplierPrefill> & { converted?: boolean } }>(`/p2p/new-suppliers/${supplierId}/convert`),
+        loadAddVendorModal(),
+      ]);
+      const d = r.data?.data ?? {};
+      if (d.converted) {
+        toast.info(`${name} is already in the Supplier Master`, 'Its mappings show it as Master.');
+        setReportRefresh(n => n + 1);
+        if (row) setReportRow(row);
+        return;
+      }
+      const origin = d.origin === 'international' ? 'international' : 'domestic';
+      setConverting({
+        supplierId, name, row, scope: origin,
+        prefill: { origin, identity: { ...d.identity, company_name: d.identity?.company_name ?? name }, address: d.address ?? {} },
+      });
+    } catch (e) {
+      toast.error('Couldn’t open Convert to Supplier', apiErrorMessage(e, 'Please try again.'));
+      if (row) setReportRow(row);
+    } finally {
+      setConvertOpening(null);
+    }
+  }, [reportRow, toast]);
 
   const isTargets = mainTab === 'targets';
 
@@ -276,11 +481,17 @@ export default function SourcingTracker() {
         </div>
         <div className="sct-strip__right">
           <button type="button" className="sct-strip__btn" onClick={() => setAssignOpen(true)}>
-            <span className="sct-strip__btn-sheen" /><IcoPlus />Assign Sourcing Target
+            <span className="sct-strip__btn-sheen" /><IcoPlus size={13} sw={2.8} />Assign Sourcing Target
           </button>
-          <button type="button" className="sct-strip__btn" onClick={() => soon('Create RFQ')}>
-            <span className="sct-strip__btn-sheen" /><IcoPlus />Create RFQ
-          </button>
+          {/* RFQ is out of scope for Sourcing Target Management (BR 1.2): frozen until its own build.
+              A disabled button gets no hover, so the tooltip sits on a wrapper. */}
+          <Tooltip label="RFQ Management — coming soon">
+            <span className="sct-frozen-wrap">
+              <button type="button" className="sct-strip__btn is-frozen" disabled aria-disabled="true">
+                <span className="sct-strip__btn-sheen" /><IcoPlus size={13} sw={2.8} />Create RFQ
+              </button>
+            </span>
+          </Tooltip>
         </div>
       </div>
 
@@ -288,17 +499,22 @@ export default function SourcingTracker() {
         <div className="sct-mainrow">
           <div className="sct-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={isTargets} className={`sct-tab${isTargets ? ' is-active' : ''}`} onClick={() => switchMain('targets')}>
-              <span className="sct-tab__ico"><IcoTarget /></span>Sourcing Target Management<span className="sct-tab__c">{counts.all}</span>
+              <span className="sct-tab__ico"><IcoTarget /></span>Sourcing Target Management<span className="sct-tab__c">{booted ? counts.all : 0}</span>
             </button>
-            <button type="button" role="tab" aria-selected={!isTargets} className={`sct-tab${!isTargets ? ' is-active' : ''}`} onClick={() => switchMain('rfq')}>
-              <span className="sct-tab__ico"><IcoRfq /></span>Request for Quotation (RFQ) Management<span className="sct-tab__c">129</span>
-            </button>
+            {/* Frozen with Create RFQ (out of scope, BR 1.2): the tab shows but cannot be opened. */}
+            <Tooltip label="RFQ Management — coming soon">
+              <span className="sct-frozen-wrap">
+                <button type="button" role="tab" aria-selected={false} aria-disabled="true" disabled className="sct-tab is-frozen">
+                  <span className="sct-tab__ico"><IcoRfq /></span>Request for Quotation (RFQ) Management<span className="sct-tab__c">{RFQ_COUNT}</span>
+                </button>
+              </span>
+            </Tooltip>
           </div>
           <div className="sct-search">
-            <IcoSearch />
-            <input type="text" autoComplete="off" value={query} placeholder="Search by ID, person, source or status..."
-              aria-label="Search sourcing targets" onChange={e => { setQuery(e.target.value); setPage(1); }} />
-            {query && <button type="button" className="sct-search__clear" aria-label="Clear search" onClick={() => { setQuery(''); setPage(1); }}><IcoX /></button>}
+            <IcoSearch size={15} />
+            <input type="text" autoComplete="off" value={query} placeholder="Search by ID, product, person, TAT date or status..."
+              aria-label="Search sourcing targets" onChange={e => setQuery(e.target.value)} />
+            {query && <button type="button" className="sct-search__clear" aria-label="Clear search" onClick={() => setQuery('')}><IcoX size={13} sw={2.4} /></button>}
           </div>
         </div>
 
@@ -308,14 +524,14 @@ export default function SourcingTracker() {
               {SUB_TABS.map(t => (
                 <button key={t.key} type="button" role="tab" aria-selected={sub === t.key}
                   className={`sct-subtab${sub === t.key ? ' is-active' : ''}`} onClick={() => switchSub(t.key)}>
-                  <span className="sct-subtab__ico">{t.icon}</span>{t.label}<span className="sct-subtab__c">{counts[t.key]}</span>
+                  <span className="sct-subtab__ico">{t.icon}</span>{t.label}<span className="sct-subtab__c">{booted ? counts[t.key] : 0}</span>
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        <div className="sct-scroll" ref={scrollRef} onScroll={onTableScroll}>
+        <div className="sct-scroll sct-scroller" ref={scrollRef} onScroll={onTableScroll}>
           {!isTargets ? (
             <div className="sct-empty">
               <span className="sct-empty__ico"><IcoRfq /></span>
@@ -323,17 +539,27 @@ export default function SourcingTracker() {
               <span>Requests for Quotation raised to the suppliers mapped on a sourcing target will be tracked here.</span>
             </div>
           ) : (
-            <div role="table" aria-label="Sourcing targets">
+            <div className="sct-grid" role="table" aria-label="Sourcing targets" aria-busy={loading || undefined}>
               {HEAD}
-              {pageRows.length === 0
+              {loading ? <SkeletonRows n={pageSize} />
+              : failed
                 ? (
-                  <div className="sct-empty" style={{ minHeight: 320 }}>
-                    <span className="sct-empty__ico"><IcoSearch /></span>
-                    <b>{query ? 'No results found' : 'No sourcing targets yet'}</b>
-                    <span>{query ? 'Try a different search term.' : 'Use “Assign Sourcing Target” to create the first one.'}</span>
+                  <div className="sct-empty sct-empty--list" role="row">
+                    <span className="sct-empty__ico" aria-hidden><IcoX size={15} /></span>
+                    <b role="cell">Couldn’t load sourcing targets</b>
+                    <span role="cell">Check your connection and try again.</span>
+                    <button type="button" className="sct-retry" onClick={reload}>Retry</button>
                   </div>
                 )
-                : pageRows.map((r, i) => <TargetRow key={r.code} row={r} sr={start + i + 1} onAction={onAction} />)}
+              : pageRows.length === 0
+                ? (
+                  <div className="sct-empty sct-empty--list" role="row">
+                    <span className="sct-empty__ico" aria-hidden><IcoSearch size={15} /></span>
+                    <b role="cell">{q ? 'No results found' : 'No sourcing targets yet'}</b>
+                    <span role="cell">{q ? 'Try a different search term.' : 'Use “Assign Sourcing Target” to create the first one.'}</span>
+                  </div>
+                )
+                : pageRows.map((r, i) => <TargetRow key={r.code} row={r} sr={start + i + 1} canEdit={!!myId && r.createdById === myId} onAction={onAction} />)}
             </div>
           )}
         </div>
@@ -341,8 +567,8 @@ export default function SourcingTracker() {
         {isTargets && (
           <WorklistPager
             className="wl-teal"
-            total={rows.length}
-            page={safePage}
+            total={total}
+            page={page}
             pageSize={pageSize}
             onPage={setPage}
             onPageSize={n => { choosePageSize(n); setPage(1); }}
@@ -351,24 +577,60 @@ export default function SourcingTracker() {
         )}
       </div>
 
+      {/* One Suspense per popup: a popup whose chunk is still loading must not hide one that is
+          already open (Map Supplier opens on top of the Report). */}
       {(assignOpen || editing) && (
-        <AssignTargetModal
-          existing={targets}
-          initial={editing ?? undefined}
-          onClose={() => { setAssignOpen(false); setEditing(null); }}
-          onSave={t => {
-            if (editing) {
-              setTargets(prev => prev.map(r => (r.code === t.code ? t : r)));
-              toast.info(`${t.code} updated`, `${t.totalProducts} product(s) on this target.`);
-            } else {
-              setTargets(prev => [{ ...t, createdBy: ME }, ...prev]);
-              setSub('created'); setPage(1); setQuery('');
-              toast.info(`${t.code} created`, `${t.totalProducts} product(s) assigned to ${t.assignedTo}.`);
-            }
-            setAssignOpen(false); setEditing(null);
-          }}
-        />
+        <Suspense fallback={null}>
+          <AssignTargetModal
+            initial={editing ?? undefined}
+            onClose={closeAssign}
+            onSaved={saveTarget}
+          />
+        </Suspense>
       )}
+      {productsRow && (
+        <Suspense fallback={null}><ProductList row={productsRow} onClose={closeProducts} /></Suspense>
+      )}
+      {reportRow && (
+        <Suspense fallback={null}>
+          <SourcingTargetReport
+            row={reportRow}
+            onClose={closeReport}
+            onMapSupplier={openMap}   // the report stays open behind
+            onEditSupplier={openEditSupplier}
+            converted={converted}
+            onConvert={startConvert}
+            /* The creator and the assignee both map suppliers; only the creator edits the target. */
+            canMap={!!myId && (reportRow.assigneeId === myId || reportRow.createdById === myId)}
+            refreshKey={reportRefresh}
+          />
+        </Suspense>
+      )}
+      {convertOpening && <ConvertOpening name={convertOpening} />}
+      {converting && (
+        <Suspense fallback={<ConvertOpening name={converting.name} />}>
+          <AddVendorModal
+            scope={converting.scope}
+            prefill={converting.prefill}
+            convertSupplierId={converting.supplierId}   // the server knows this New Supplier's email is not a duplicate
+            canMapProducts={false}
+            onClose={closeConvert}   // cancelled: stays New Supplier with its mapping (V-T46)
+            onSubmit={p => { void finishConvert(p); }}
+          />
+        </Suspense>
+      )}
+      {mapTarget && (
+        <Suspense fallback={null}>
+          <MapSupplierModal
+            targetCode={mapTarget.row.code}
+            product={mapTarget.product}
+            edit={mapTarget.edit}
+            onClose={closeMap}
+            onMapped={finishMap}
+          />
+        </Suspense>
+      )}
+
     </div>
   );
 }

@@ -9,13 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Stage 02 · one SPI line and the 3-way match behind it: what the PI promised
- * (qty_pi), what the PO ordered (qty_po), what the supplier billed (qty_spi).
- * They differ, and that difference IS the match.
- *
- * No client_id of its own — always reached through its tenant-scoped invoice.
- */
 class SupplierInvoiceItem extends Model
 {
     use SoftDeletes;
@@ -48,26 +41,12 @@ class SupplierInvoiceItem extends Model
         'line_total'     => 'decimal:2',
     ];
 
-    /**
-     * Same-row arithmetic, so it rides along in every JSON response and the
-     * frontend never recomputes it. NOT an aggregate — nothing here queries
-     * another table, which is why this one belongs on the model.
-     */
     protected $appends = ['missing_qty'];
 
-    /**
-     * Ordered but not billed. Derived, never stored: qty_po is already a
-     * snapshot taken at save time, so this stays correct even after the PO is
-     * revised. Its opposite, extra_qty, IS stored — nothing else records
-     * over-supply.
-     */
     public function getMissingQtyAttribute(): float
     {
-        /* A PO-backed line falls short of its order; a Direct SPI line falls
-           short of the proforma invoice it bills. It used to answer 0 either
-           way, so a standalone invoice always claimed to match. */
         $ordered = $this->qty_po ?? $this->qty_pi;
-        if ($ordered === null) return 0.0;   // neither: nothing to fall short of
+        if ($ordered === null) return 0.0;
 
         return max(0, round((float) $ordered - (float) $this->qty_spi, 3));
     }
@@ -78,17 +57,11 @@ class SupplierInvoiceItem extends Model
     public function product(): BelongsTo  { return $this->belongsTo(Product::class); }
     public function boxItems(): HasMany   { return $this->hasMany(SpiBoxItem::class, 'supplier_invoice_item_id'); }
 
-    /**
-     * Billed a product the PO never ordered — or billed on a standalone
-     * invoice. Either way it consumes no PO quantity and writes no row to
-     * p2p_spi_po_fulfilments.
-     */
     public function isUnmapped(): bool
     {
         return $this->po_item_id === null;
     }
 
-    /** Short by this much against the PO. Negative means over-billed. */
     public function variance(): ?float
     {
         return $this->qty_po === null ? null : round((float) $this->qty_spi - (float) $this->qty_po, 3);

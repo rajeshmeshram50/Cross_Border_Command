@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Masters\Countries;
 use App\Models\Masters\States;
+use App\Support\MasterBundleCache;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -13,7 +14,6 @@ class VendorAddress extends Model
         'vendor_id', 'address_type',
         'address_line', 'country_id', 'state_id', 'state_code',
         'city', 'pincode',
-        // Google Maps link for the premises — see the 2026_08_25 migration.
         'google_location',
         'contact_name', 'designation', 'contact_no', 'email',
         'whatsapp_enabled',
@@ -25,6 +25,12 @@ class VendorAddress extends Model
         'whatsapp_enabled' => 'boolean',
         'is_primary'       => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => MasterBundleCache::bump());
+        static::deleted(fn () => MasterBundleCache::bump());
+    }
 
     public function vendor(): BelongsTo
     {

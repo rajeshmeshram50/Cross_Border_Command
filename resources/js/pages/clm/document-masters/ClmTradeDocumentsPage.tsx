@@ -12,12 +12,13 @@ import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
 const TD_NAMES_URL   = '/clm/trade-doc-names';
 const TD_LIBRARY_URL = '/clm/trade-doc-library';
 import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf, SimpleNameModal, TruncCell } from '../shared/clmCommon';
+import { ClmSkeletonRows, DeleteConf, SimpleNameModal, TruncCell, PopName } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 import { saveApiBlob } from '../../../utils/downloadFile';
 import SearchClear from '../../../components/ui/SearchClear';
 import useDismissPopover from '../shared/useDismissPopover';
+import { PARTY_LABELS } from './tradeDocParty';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
@@ -25,18 +26,9 @@ type TdName = { id: number; code: string; name: string; in_use?: number };
 type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; regulatory?: 'highly'|'less'; segment?: string | null; file_path: string | null; content: string | null; is_signed?: boolean };
 type Seg    = { id: number; name: string; regulatory_status: 'highly' | 'less' };
 
-/* The Applicable-Party field stores internal values ("Buyer", "Supplier-Material")
-   but the form picks by label ("Customer", "Material"). Map stored values back to
-   their display labels so the column shows what the user selected. */
-const PARTY_LABELS: Record<string, string> = {
-  'Buyer': 'Customer',
-  'Consignee': 'Consignee',
-  'Supplier-Material': 'Material',
-  'Supplier-Logistic': 'Logistic',
-  'Supplier-Tech': 'Tech',
-  'Supplier-Advisory': 'Advisory',
-  'Supplier-Strategic Risk': 'Strategic Risk',
-};
+/* The Applicable-Party field stores internal values ("Buyer", "Supplier-Trackable")
+   but the form picks by label ("Customer", "Trackable Services"). PARTY_LABELS
+   (tradeDocParty.ts) maps stored values back so the column shows what was selected. */
 const LIST_VIEW = { view: 'list' } as const;
 
 const partyLabels = (party: string): string[] =>
@@ -121,7 +113,7 @@ export default function ClmTradeDocumentsPage() {
 
 function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<TdName>(TD_NAMES_URL, reloadKey);
   const [editing, setEditing] = useState<TdName | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -136,7 +128,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
   const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_NAMES_URL);
-  const isEmpty    = !loading && slice.length === 0;
+  /* booted, not !loading: a search reload keeps the last answer on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty    = booted && slice.length === 0;
 
   const onSave = async (name: string, id?: number) => {
     try {
@@ -173,8 +165,8 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-            <table className="clm-table">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 130, textAlign: 'center' }}>DOC NAME ID</th>
@@ -182,8 +174,8 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <ClmSkeletonRows cols={4} />}
-                {!loading && slice.map((r, i) => (
+                {loading && !booted && <ClmSkeletonRows cols={4} />}
+                {booted && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -224,7 +216,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bTrade}</div>
@@ -232,7 +224,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Add Trade Document Type to create the first record.'}</div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -248,7 +240,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
 
 function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; segments: Seg[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<TdLib>(TD_LIBRARY_URL, reloadKey, LIST_VIEW);
   const [editing, setEditing] = useState<TdLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -350,8 +342,9 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   // the "Rows per page" dropdown we respect their choice.
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_LIBRARY_URL);
-  const isEmpty    = !loading && slice.length === 0;
+  // 49: these rows hold the 40px Download Draft button - see useAutoFitRows.
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_LIBRARY_URL, 49, 5);
+  /* booted, not !loading: a search reload keeps the last answer on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty    = booted && slice.length === 0;
 
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -393,8 +386,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-            <table className="clm-table">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>TRADE DOC ID</th>
@@ -411,8 +404,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <ClmSkeletonRows cols={10} />}
-                {!loading && slice.map((r, i) => (
+                {loading && !booted && <ClmSkeletonRows cols={10} />}
+                {booted && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -565,7 +558,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bTrade}</div>
@@ -573,7 +566,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                 <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Draft New Trade Document to create the first record.'}</div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -585,11 +578,11 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: segOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: segOpen.maxH, overflowY: 'auto', overflowX: 'hidden', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
+                <span className="clm-badge clm-badge-teal"><PopName text={name} /></span>
               </div>
             ))}
           </div>
@@ -601,11 +594,11 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
       {partyOpen && createPortal(
         <>
           <div onClick={() => setPartyOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.flipUp ? undefined : partyOpen.y, bottom: partyOpen.flipUp ? (window.innerHeight - partyOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: partyOpen.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.flipUp ? undefined : partyOpen.y, bottom: partyOpen.flipUp ? (window.innerHeight - partyOpen.y) : undefined, zIndex: 601, width: 210, maxHeight: partyOpen.maxH, overflowY: 'auto', overflowX: 'hidden', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applicable Party ({partyOpen.names.length})</div>
             {partyOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
+                <span className="clm-badge clm-badge-teal"><PopName text={name} /></span>
               </div>
             ))}
           </div>

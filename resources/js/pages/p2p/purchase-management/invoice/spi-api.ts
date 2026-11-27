@@ -469,6 +469,15 @@ export type SpiZohoTracker = {
 export const putId = (code: string | null | undefined): string =>
   !code ? '' : /^B-\d+$/i.test(code) ? `PUT-${code}` : code;
 
+/* The warehouse master. Held for a minute rather than the whole session: a
+   warehouse added in another tab should appear without a reload, and the point
+   of this is to cover repeat form opens, not the working day. */
+let warehouseCache: Promise<StorageWarehouse[]> | null = null;
+let warehouseCachedAt = 0;
+const WAREHOUSE_TTL_MS = 60_000;
+/** Product flags, per branch. Same reasoning as the warehouse cache below. */
+const flagCache = new Map<string, { at: number; p: Promise<ProductFlagOption[]> }>();
+
 export const spiApi = {
   boxes: (spiId: number) =>
     call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`), (b) => {
@@ -528,8 +537,12 @@ export const spiApi = {
     call('SPI packing summary', () => api.get(`/p2p/spi/${spiId}/packing-summary`),
       (b) => (b as { data?: { totals?: SpiPackingTotals } } | null)?.data?.totals ?? null),
 
-  warehouses: () =>
-    call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
+  /* The warehouse master, read on every SPI form open and unchanged between
+     them. Cached per session; a warehouse added elsewhere needs a reload. */
+  warehouses: () => {
+    if (warehouseCache && Date.now() - warehouseCachedAt > WAREHOUSE_TTL_MS) warehouseCache = null;
+    warehouseCachedAt = warehouseCache ? warehouseCachedAt : Date.now();
+    return (warehouseCache ??= call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
       ((b as { data?: Array<{
         id: number; wh_code: string | null; wh_name: string | null; wh_type: string;
         location: string | null; address?: string | null; pincode?: string | null;
@@ -547,7 +560,9 @@ export const spiApi = {
           areaSqft: w.area_sqft != null ? Number(w.area_sqft) : undefined,
           kind: w.wh_type,
           addedOn: w.created_at ?? undefined,
-        }))),
+        })))
+      .catch((e) => { warehouseCache = null; throw e; }));
+  },
 
   /** Change the invoice's warehouse; null is a Third Party warehouse. Refused once Stage 03 is complete. */
   setWarehouse: (spiId: number, warehouseId: number | null) =>
@@ -638,10 +653,21 @@ export const spiApi = {
         return { rack: Number(m?.rack ?? 0), norack: Number(m?.norack ?? 0) };
       }),
 
-  productFlags: (branchId?: number | null) =>
-    call('Product flags', () => api.get('/inventory/product-flags/options',
+  /* Master data, read on every SPI form open at Stage 02 and beyond and
+     unchanged between them — and the slowest call on that open. Cached per
+     branch for a minute, like the warehouse list above. */
+  productFlags: (branchId?: number | null) => {
+    const key = String(branchId ?? 0);
+    const hit = flagCache.get(key);
+    if (hit && Date.now() - hit.at < WAREHOUSE_TTL_MS) return hit.p;
+    const p = call('Product flags', () => api.get('/inventory/product-flags/options',
       branchId ? { params: { branch_id: branchId } } : undefined),
-      (b) => ((b as { data?: ProductFlagOption[] } | null)?.data ?? [])),
+      (b) => ((b as { data?: ProductFlagOption[] } | null)?.data ?? []));
+    // A failed read must not be remembered as the answer for a minute.
+    p.catch(() => flagCache.delete(key));
+    flagCache.set(key, { at: Date.now(), p });
+    return p;
+  },
 
   product: (id: number) =>
     call('Product detail', () => api.get(`/products/${id}`), (b) => {
@@ -662,7 +688,10 @@ export const spiApi = {
     }),
 
   vendorDetail: (vendorId: number) =>
-    call('Supplier detail', () => api.get(`/vendors/${vendorId}`), (b) => {
+    /* lite: the SPI form reads the supplier's own columns only. Without it
+       the server also builds the compliance payload (uploads, PO/SPI locks,
+       per-segment doc keys) that only the Add/Edit Supplier form reads. */
+    call('Supplier detail', () => api.get(`/vendors/${vendorId}`, { params: { lite: 1 } }), (b) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const v = ((b as { data?: Record<string, any> } | null)?.data ?? {}) as Record<string, any>;
       const a = (v.primary_address ?? {}) as Record<string, any>;
@@ -699,8 +728,10 @@ export const spiApi = {
       return { detail, scrutiny };
     }),
 
+  /* lite too: this reads one array off the response, and the PO-backed path
+     fires it beside poLookupApi.supplier() on every Step 1 open. */
   vendorScrutiny: (vendorId: number) =>
-    call('Supplier GST scrutiny', () => api.get(`/vendors/${vendorId}`),
+    call('Supplier GST scrutiny', () => api.get(`/vendors/${vendorId}`, { params: { lite: 1 } }),
       (b) => ((b as { data?: { gst_scrutiny?: GstScrutinyRow[] } } | null)?.data?.gst_scrutiny ?? [])),
 
   show: (id: number) =>

@@ -8,12 +8,6 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * CredVault · Critical Vault email 2-step code.
- *
- *   purpose setup   linking email 2-step to a credential in the Add / Edit form
- *   purpose unlock  the code step of an access request
- */
 class CredVaultOtpMail extends Mailable
 {
     use Queueable, SerializesModels;

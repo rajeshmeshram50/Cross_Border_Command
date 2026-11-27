@@ -6,13 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * One notice-period recovery payment submitted by an exiting employee.
- *
- * Raised from the employee's own Payroll Details tab, verified and approved by
- * HR on the exit wizard's Notice Period Payment stage. Approving a row is what
- * settles the recovery — see ExitNoticePaymentController.
- */
 class ExitNoticePayment extends Model
 {
     use SoftDeletes;

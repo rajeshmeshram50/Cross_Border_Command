@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
-import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
+import { Col, Row, Modal, ModalBody } from 'reactstrap';
+import FullPageLoader from '../../components/ui/FullPageLoader';
+import BusyLabel from '../../components/ui/BusyLabel';
 import * as XLSX from 'xlsx';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -12,6 +14,10 @@ import TruncText from '../../components/ui/TruncText';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import SearchClear from '../../components/ui/SearchClear';
 import '../../../css/recruitment.css';
+import '../../../css/holiday-teal.css';
+import { tealize } from '../../utils/tealize';
+
+const HolTealCtx = createContext(false);
 
 type HolidayType = 'Public' | 'Restricted' | 'Company' | 'Regional' | 'Optional';
 
@@ -101,7 +107,13 @@ function weekdayName(raw: any): string {
   return WEEKDAYS[d.getDay()];
 }
 
-export default function HrHoliday() {
+export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' | 'teal' } = {}) {
+  const teal = variant === 'teal';
+  useEffect(() => {
+    if (!teal) return;
+    document.body.classList.add('hol-teal');
+    return () => document.body.classList.remove('hol-teal');
+  }, [teal]);
   const toast = useToast();
   const confirmDialog = useConfirm();
 
@@ -260,10 +272,6 @@ export default function HrHoliday() {
       meta: { width: 176, align: 'center' },
       cell: info => {
         const r = info.row.original;
-        /* The badge is a 176px column and the group name is free text, so a
-           long one ran straight out of its pill and across the cells beside
-           it. 18 here rather than the 30 used in the popup: this is a pill in
-           a narrow column, not a name in a table cell. (Holiday #5) */
         return r.holiday_group_id
           ? (
             <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', maxWidth: '100%' }}>
@@ -421,13 +429,13 @@ export default function HrHoliday() {
   };
 
   return (
-    <>
+    <HolTealCtx.Provider value={teal}>
       <MasterFormStyles />
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFilePicked} />
       <Row>
         <Col xs={12}>
           <div className="rec-page holiday-page">
-            <style>{`
+            <style>{(teal ? tealize : (c: string) => c)(`
 
               .holiday-page .rec-list-frame{
                 background: linear-gradient(180deg,#ffffff 0%, #fcfbff 100%);
@@ -499,7 +507,7 @@ export default function HrHoliday() {
                 color: #c4b5fd;
                 border-color: rgba(167,139,250,.28);
               }
-            `}</style>
+            `)}</style>
             <div className="frm-cstrip hr-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -525,7 +533,7 @@ export default function HrHoliday() {
                 </Tooltip>
                 <Tooltip label="Import holidays from a filled-in Excel template — download the template first if you have not">
                   <button type="button" className="cand-pill-btn cand-pill-btn--green" onClick={() => fileRef.current?.click()} disabled={importing}>
-                    {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
+                    <BusyLabel busy={importing} icon="ri-file-excel-2-line" busyText="Importing…">Import Excel</BusyLabel>
                   </button>
                 </Tooltip>
                 <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
@@ -547,12 +555,20 @@ export default function HrHoliday() {
               data={rows}
               columns={columns}
               serial
-              accent="violet"
+              accent={teal ? 'teal' : 'violet'}
 
-              /* No viewport stretch: the card hugs its rows so the pager sits
-                 directly under the last one. Stretching left a band of empty
-                 table between the rows and the pagination whenever the page
-                 was not full. (#125) */
+              /* Fill to the footer with real rows, like Employees and Leave:
+                 the page size becomes however many the height holds (QA #71),
+                 floored at 10 so a short window shows 10 rows (card runs past
+                 the fold, page scrolls) instead of collapsing to a few.
+                 fillToFooter stretches the card to 8px above the footer instead
+                 of stopping at the row count — the leftover gap the fitted
+                 height left below it is gone; a near-full last row may sit just
+                 under the footer, which is fine. */
+              fitToViewport
+              autoFitRows
+              fillToFooter
+              minAutoRows={10}
               minWidth={1395}
               loading={loading}
               serverPagination={{
@@ -604,7 +620,7 @@ export default function HrHoliday() {
         yearOptions={years.map(y => ({ value: y, label: y }))}
         onApply={(f) => { setGroupFilter(f.group); setTypeFilter(f.type); setYearFilter(f.year); setPage(0); }}
       />
-    </>
+    </HolTealCtx.Provider>
   );
 }
 
@@ -730,6 +746,7 @@ function HolidayModal({
           </div>
         </div>
 
+        {saving && <FullPageLoader label="Saving…" />}
         <div style={{ padding: '18px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
           <Row className="g-3">
             <Col md={6}>
@@ -777,7 +794,7 @@ function HolidayModal({
 
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? <Spinner size="sm" /> : <i className="ri-save-line" />}{editing ? 'Update Holiday' : 'Save Holiday'}
+            <BusyLabel busy={saving} icon="ri-save-line">{editing ? 'Update Holiday' : 'Save Holiday'}</BusyLabel>
           </button>
         </div>
       </ModalBody>
@@ -793,6 +810,7 @@ function ManageGroupsModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const teal = useContext(HolTealCtx);
   const toast = useToast();
   const confirmDialog = useConfirm();
   const [editing, setEditing] = useState<HolidayGroup | null>(null);
@@ -987,7 +1005,7 @@ function ManageGroupsModal({
             title="Groups"
             subtitle="Each one holds its own holiday list"
             serial={{ header: 'Sr No' }}
-            accent="violet"
+            accent={teal ? 'teal' : 'violet'}
             minWidth={620}
             emptyMessage="No groups yet — click “Add Group” to create one."
           />
@@ -1007,6 +1025,7 @@ function ManageGroupsModal({
                 </button>
               </div>
             </div>
+            {saving && <FullPageLoader label="Saving…" />}
             <div style={{ padding: '18px 20px' }}>
               <Row className="g-3">
                 <Col md={12}>
@@ -1026,7 +1045,7 @@ function ManageGroupsModal({
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="rec-btn-ghost" onClick={closeForm} disabled={saving}>Cancel</button>
               <button type="button" className="rec-btn-primary" onClick={save} disabled={saving}>
-                {saving ? <Spinner size="sm" /> : <i className={editing ? 'ri-save-line' : 'ri-add-line'} />}{editing ? 'Update Group' : 'Save Group'}
+                <BusyLabel busy={saving} icon={editing ? 'ri-save-line' : 'ri-add-line'}>{editing ? 'Update Group' : 'Save Group'}</BusyLabel>
               </button>
             </div>
           </ModalBody>
@@ -1077,6 +1096,7 @@ export function HolidayFilterModal({
   typeOptions: { value: string; label: string }[];
   yearOptions: { value: string; label: string }[];
 }) {
+  const teal = useContext(HolTealCtx);
   const [active, setActive] = useState<HolidayFacetKey>('group');
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<HolidayFilterValues>(initial);
@@ -1142,7 +1162,7 @@ export function HolidayFilterModal({
 
   return createPortal((
     <div className="lfm-backdrop lfm-purple">
-      <style>{LFM_CSS}</style>
+      <style>{teal ? tealize(LFM_CSS) : LFM_CSS}</style>
       <div className="lfm-modal">
         <div className="lfm-head">
           <div className="lfm-head-left">

@@ -73,15 +73,6 @@ class ClmQcController extends Controller
         ]);
     }
 
-    /**
-     * The shared sets plus QC's own: which product QC records name which
-     * document. Cached for a minute for the same reason the shared sets are —
-     * the products scan is a joined read of product_qc_records plus two
-     * schema lookups, identical for every row on the page, and it is what
-     * left this endpoint at 23 queries when the other three masters had come
-     * down to 6. Staleness only delays a delete button greying out; destroy()
-     * checks live.
-     */
     private function usageSets(int $clientId): array
     {
         $build = fn (): array => $this->buildUsageSets($clientId);

@@ -13,22 +13,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use RuntimeException;
 
-/**
- * Database backup email (super-admin only).
- *
- * The scheduler auto-sends a gzip-compressed pg_dump every 15 days
- * (see App\Console\Commands\SendDatabaseBackupEmail + routes/console.php).
- * These endpoints expose that same pipeline to the admin UI:
- *  - GET  /backup/email/status  → when it last went out + when it's next due.
- *  - POST /backup/email/send    → generate + email a backup right now (on demand,
- *                                 ignores the 15-day gate) and re-stamp the marker.
- *
- * The heavy lifting (pg_dump, env, restrict-key) lives in DatabaseBackupService
- * so the console command and this controller stay in lockstep.
- */
 class BackupController extends Controller
 {
-    /** Keep in step with SendDatabaseBackupEmail::INTERVAL_DAYS. */
     private const INTERVAL_DAYS = 15;
 
     private function markerPath(): string
@@ -36,7 +22,6 @@ class BackupController extends Controller
         return storage_path('app/backups/.last_email_backup');
     }
 
-    /** Read the last-sent timestamp from the marker file, or null. */
     private function lastSentAt(): ?Carbon
     {
         $marker = $this->markerPath();
@@ -50,12 +35,6 @@ class BackupController extends Controller
         }
     }
 
-    /**
-     * Resolve recipients: explicit override, else BACKUP_EMAIL_RECIPIENTS,
-     * else MAIL_FROM_ADDRESS. Trimmed, lowercased, de-duped, validated.
-     *
-     * @return list<string>
-     */
     private function recipients(string $override = ''): array
     {
         $raw = $override !== ''
@@ -70,7 +49,6 @@ class BackupController extends Controller
             ->all();
     }
 
-    /** GET /backup/email/status — last send + next due + configured recipients. */
     public function status(Request $request): JsonResponse
     {
         $this->authorizeAdmin($request);
@@ -89,7 +67,6 @@ class BackupController extends Controller
         ]);
     }
 
-    /** POST /backup/email/send — generate + email a backup now (on demand). */
     public function send(Request $request, DatabaseBackupService $service): JsonResponse
     {
         $this->authorizeAdmin($request);
@@ -105,7 +82,6 @@ class BackupController extends Controller
             ], 422);
         }
 
-        // --- Generate ---------------------------------------------------
         try {
             $dump = $service->generate();
         } catch (RuntimeException $e) {
@@ -113,7 +89,6 @@ class BackupController extends Controller
             return response()->json(['message' => 'Backup generation failed: ' . $e->getMessage()], 500);
         }
 
-        // --- Compress for email (streamed — never held in memory) --------
         try {
             $gz = $service->compress($dump['path'], $dump['filename']);
         } catch (RuntimeException $e) {
@@ -125,7 +100,6 @@ class BackupController extends Controller
         $connection = config('database.default');
         $dbName     = (string) config("database.connections.$connection.database");
 
-        // --- Send -------------------------------------------------------
         try {
             Mail::to($recipients)->send(new DatabaseBackupMail(
                 databaseName: $dbName,
@@ -143,7 +117,6 @@ class BackupController extends Controller
 
         File::delete($gz['path']);
 
-        // Stamp success so the scheduled 15-day clock restarts from now too.
         File::put($this->markerPath(), now()->toIso8601String());
 
         $sizeKb = (int) round($gz['size'] / 1024);
@@ -157,11 +130,10 @@ class BackupController extends Controller
         ]);
     }
 
-    /** Only super-admins may generate/email full database dumps. */
     private function authorizeAdmin(Request $request): void
     {
         $user = $request->user();
         abort_unless($user && $user->user_type === 'super_admin', 403,
             'Only administrators can send database backups.');
     }
-} 
+}

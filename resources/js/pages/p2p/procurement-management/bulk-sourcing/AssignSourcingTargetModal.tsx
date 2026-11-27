@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
 import { type ReportRow } from './SourcingReportModal';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
@@ -54,7 +55,8 @@ function ClarityCell({ clarity, onEdit, onRemovePdf, onUpdate }: { clarity?: Cla
   const pdfs = clarity.type === 'pdf' && clarity.val ? clarity.val.split('\n').filter(Boolean) : [];
   return (
     <div className="ast-clarity-cell">
-      <Tooltip label="Edit clarity"><button type="button" className="ast-clarity-edit" onClick={onEdit}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></button></Tooltip>
+      {/* Content first, Edit after it: the cell reads as "what the clarity is,
+          then the action on it" rather than leading with the pencil. */}
       {clarity.type === 'pdf' ? (
         /* First PDF as a chip; when there are more, a "+N" opens a popover
            listing every PDF with Download / View / Delete. */
@@ -112,6 +114,7 @@ function ClarityCell({ clarity, onEdit, onRemovePdf, onUpdate }: { clarity?: Cla
           </span>
         </Tooltip>
       )}
+      <Tooltip label="Edit clarity"><button type="button" className="ast-clarity-edit" onClick={onEdit}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></button></Tooltip>
     </div>
   );
 }
@@ -129,6 +132,7 @@ const LockIco = () => <svg width="9" height="9" viewBox="0 0 24 24" fill="none" 
 
 export default function AssignSourcingTargetModal({ editRow = null, onClose, onSaved }: { editRow?: ReportRow | null; onClose: () => void; onSaved?: () => void }) {
   const toast = useToast();
+  const { user } = useAuth();
   const isEdit = !!editRow;
   const { pulse, guardOverlay } = useModalGuard();
   const [autoCode, setAutoCode] = useState('');
@@ -248,15 +252,32 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     const has = clType === 'pdf' ? !!clVal : !!clVal.trim();
     const c: Clarity = has ? { type: clType, val: clVal } : null;
     const target = clarity;
-    // Brief loader so the save reads as a deliberate action, then confirm.
-    setClSaving(true);
-    setTimeout(() => {
+    const apply = () => {
       if (target.kind === 'master') setMasterRows(rows => rows.map((x, i) => i === target.idx ? { ...x, clarity: c } : x));
       else setManualRows(rows => rows.map((x, i) => i === target.idx ? { ...x, clarity: c } : x));
+    };
+    const row = target.kind === 'master' ? masterRows[target.idx] : manualRows[target.idx];
+    setClSaving(true);
+    // Editing a saved product: write the clarity to the database now, so it is
+    // not lost when the popup is closed without "Update Target".
+    if (isEdit && editRow && row?.id) {
+      api.put(`/p2p/sourcing-targets/${editRow.id}/products/${row.id}/clarity`, { clarity_type: c?.type ?? null, clarity_value: c?.val ?? null })
+        .then(() => {
+          apply();
+          setClarity(null);
+          toast.success(c ? 'Clarity saved' : 'Clarity cleared', c ? 'Saved to this product.' : 'Removed the clarity from this product.');
+        })
+        .catch((e: any) => toast.error('Save failed', e?.response?.data?.message ?? 'Could not save the clarity.'))
+        .finally(() => setClSaving(false));
+      return;
+    }
+    // New product / new target: kept on the row and saved with the target.
+    setTimeout(() => {
+      apply();
       setClSaving(false);
       setClarity(null);
-      toast.success(c ? 'Clarity saved' : 'Clarity cleared', c ? `${c.type.charAt(0).toUpperCase() + c.type.slice(1)} added to the product.` : 'Removed the clarity from this product.');
-    }, 500);
+      toast.success(c ? 'Clarity added' : 'Clarity cleared', c ? `It is saved when you ${isEdit ? 'click Update Target' : 'assign the target'}.` : 'Removed the clarity from this product.');
+    }, 300);
   };
   // Upload a clarity PDF and keep its /storage/... path in clVal (saveClarity
   // then stores it on the row). Previously only the filename was kept, so the
@@ -304,7 +325,16 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
       const rest = (x.clarity.val || '').split('\n').filter(p => p && p !== path);
       return { ...x, clarity: rest.length ? { type: 'pdf' as const, val: rest.join('\n') } : null };
     });
-    if (kind === 'master') setMasterRows(upd); else setManualRows(upd);
+    const row = kind === 'master' ? masterRows[idx] : manualRows[idx];
+    const apply = () => { if (kind === 'master') setMasterRows(upd); else setManualRows(upd); };
+    if (isEdit && editRow && row?.id && row.clarity?.type === 'pdf') {
+      const rest = (row.clarity.val || '').split('\n').filter(p => p && p !== path);
+      api.put(`/p2p/sourcing-targets/${editRow.id}/products/${row.id}/clarity`, { clarity_type: rest.length ? 'pdf' : null, clarity_value: rest.length ? rest.join('\n') : null })
+        .then(() => { apply(); toast.success('File removed', 'Saved to this product.'); })
+        .catch((e: any) => toast.error('Remove failed', e?.response?.data?.message ?? 'Could not update the clarity.'));
+      return;
+    }
+    apply();
   };
   // Persist a single product's clarity to the DB straight away (the popover's
   // "Update" button) — no need to re-save the whole target. Edit-mode only: a
@@ -328,6 +358,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const clarityTitle = clarity ? (clarity.kind === 'master' ? `${masterRows[clarity.idx]?.code} — ${masterRows[clarity.idx]?.name}` : manualRows[clarity.idx]?.name) : '';
 
   const teamList = teamMembers.filter(m => { const q = teamSearch.toLowerCase(); return !q || (m.name + ' ' + m.role).toLowerCase().includes(q); });
+  // Marks the creator's own row with "(You)"; self-assign is permitted.
+  const isSelf = (id: string) => !!user && id === String(user.id);
   const openTeam = () => { setTeamPick(teamMembers.find(m => m.name === team)?.id ?? null); setTeamSearch(''); setTeamOpen(true); };
   const togglePick = (code: string) => setPicks(p => p.includes(code) ? p.filter(c => c !== code) : [...p, code]);
   const addMaster = () => {
@@ -646,13 +678,18 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               <SearchClear show={teamSearch} onClear={() => { setTeamSearch(''); }} />
             </div>
             <div className="astp-body">
-              {teamList.length === 0 ? <div className="astp-empty">No team members match your search.</div> : teamList.map(m => (
-                <button type="button" key={m.id} className={`astp-row ${teamPick === m.id ? 'is-sel' : ''}`} onClick={() => setTeamPick(p => p === m.id ? null : m.id)}>
+              {teamList.length === 0 ? <div className="astp-empty">No team members match your search.</div> : teamList.map(m => {
+                // Self-assign is allowed; the creator's own row is marked "(You)".
+                const self = isSelf(m.id);
+                return (
+                <button type="button" key={m.id} className={`astp-row ${teamPick === m.id ? 'is-sel' : ''}`}
+                  onClick={() => setTeamPick(p => p === m.id ? null : m.id)}>
                   <span className="astp-av">{tInit(m.name)}</span>
-                  <span className="astp-main"><span className="astp-name">{m.name}</span><span className="astp-role">{m.role}</span></span>
+                  <span className="astp-main"><span className="astp-name">{m.name}{self ? ' (You)' : ''}</span><span className="astp-role">{m.role}</span></span>
                   <span className="astp-check">{teamPick === m.id ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="16 9 11 14 8.5 11.5" /></svg> : <span className="astp-radio" />}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
             <div className="astp-foot">
               <button className="ast-btn ast-btn-ghost" onClick={() => setTeamOpen(false)} disabled={teamAssigning}>Cancel</button>

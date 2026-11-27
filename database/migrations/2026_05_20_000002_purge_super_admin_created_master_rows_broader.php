@@ -6,23 +6,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Follow-up cleanup — the previous purge migration only targeted rows
- * with `client_id IS NULL` AND `branch_id IS NULL`. Some super-admin-
- * seeded rows can carry a tenant context (e.g. when the seeder ran
- * against a logged-in super-admin who also had a default client), so
- * those didn't get caught.
- *
- * This pass is broader: delete from every master EXCEPT
- *   • organization_types
- *   • countries
- *   • states
- *   • state_codes
- * any row whose `created_by` points to ANY super_admin user, regardless
- * of client_id / branch_id.
- *
- * Reversal is a no-op; rerun MasterDataSeeder to restore globals.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -45,7 +28,6 @@ return new class extends Migration
                 continue;
             }
             try {
-                /** @var \Illuminate\Database\Eloquent\Model $instance */
                 $instance = new $class();
                 $table = $instance->getTable();
 
@@ -76,6 +58,5 @@ return new class extends Migration
 
     public function down(): void
     {
-        // No-op — rerun MasterDataSeeder if you want the globals back.
     }
 };

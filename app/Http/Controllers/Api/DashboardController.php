@@ -24,7 +24,6 @@ use App\Models\LeaveRequest;
 use App\Models\Module;
 use App\Models\Payment;
 use App\Models\Permission;
-use App\Models\Plan;
 use App\Models\Product;
 use App\Models\ProformaInvoice;
 use App\Models\Quotation;
@@ -39,35 +38,17 @@ class DashboardController extends Controller
 {
     public function adminStats()
     {
-        // Server-side cache (60-second TTL) — admin-stats is global and
-        // every super_admin viewing it sees the same numbers, so a single
-        // shared cache entry serves all of them without per-user fanout.
-        // 60-second TTL matches the frontend sessionStorage TTL so the
-        // server-cache window roughly aligns with the browser-cache window
-        // and the stale-data divergence stays bounded.
         return response()->json(Cache::remember('dashboard:admin-stats', now()->addSeconds(60), function () {
             return $this->computeAdminStats();
         }));
     }
 
-    /**
-     * Compute the admin-stats payload. Extracted so Cache::remember can
-     * wrap the heavy work without changing the response shape — handlers
-     * that need bypass-cache paths can call this directly.
-     */
     private function computeAdminStats(): array
     {
-        // Core counts
         $totalClients = Client::count();
         $activeClients = Client::where('status', 'active')->count();
         $inactiveClients = Client::where('status', '!=', 'active')->count();
         $totalUsers = User::count();
-        /* Exclude the auto-provisioned "Head Office" placeholder (code='HO')
-         * from the branches KPI — every Client is seeded with one HO row
-         * on creation that doesn't represent a real operational branch.
-         * Counting it inflated the KPI by one per client and contradicted
-         * the Branches page (which already filters HO out). Mirrors the
-         * branches_count subquery used for the Recent Clients block. */
         $totalBranches = Branch::query()
             ->where(function ($q) {
                 $q->where('code', '!=', 'HO')
@@ -75,32 +56,22 @@ class DashboardController extends Controller
             })
             ->count();
 
-        // Revenue
         $totalRevenue = (float) Payment::where('status', 'success')->sum('total');
         $monthlyRevenue = (float) Payment::where('status', 'success')
             ->where('created_at', '>=', now()->startOfMonth())
             ->sum('total');
 
-        // Payments — "Transactions" KPI excludes failed rows so it reads
-        // as "completed-or-in-flight transactions" and lines up with the
-        // revenue figures next to it. Previously this counted every
-        // Payment row regardless of status, so a tenant with several
-        // failed retries saw the Transactions tile inflate while
-        // revenue stayed flat. failedPayments stays surfaced separately
-        // for the dedicated Failed tile.
         $totalPayments = Payment::whereIn('status', ['success', 'pending'])->count();
         $successPayments = Payment::where('status', 'success')->count();
         $pendingPayments = Payment::where('status', 'pending')->count();
         $failedPayments = Payment::where('status', 'failed')->count();
 
-        // Plan distribution
         $planDistribution = Client::select('plan_type', DB::raw('count(*) as count'))
             ->groupBy('plan_type')
             ->get()
             ->mapWithKeys(fn($item) => [$item->plan_type => $item->count])
             ->toArray();
 
-        // Plan breakdown by name
         $planBreakdown = Client::leftJoin('plans', 'clients.plan_id', '=', 'plans.id')
             ->select(DB::raw("COALESCE(plans.name, 'Free') as plan_name"), DB::raw('count(*) as count'))
             ->groupBy('plan_name')
@@ -108,7 +79,6 @@ class DashboardController extends Controller
             ->get()
             ->toArray();
 
-        // Monthly revenue trend (last 6 months)
         $revenueTrend = [];
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
@@ -128,7 +98,6 @@ class DashboardController extends Controller
             ];
         }
 
-        // Client growth (last 6 months)
         $clientGrowth = [];
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
@@ -141,15 +110,12 @@ class DashboardController extends Controller
             ];
         }
 
-        // User type distribution
         $userTypes = User::select('user_type', DB::raw('count(*) as count'))
             ->groupBy('user_type')
             ->get()
             ->mapWithKeys(fn($item) => [$item->user_type => $item->count])
             ->toArray();
 
-        // Recent clients (top 5) — exclude the auto-created "Head Office"
-        // placeholder so the branch count matches the Branches page.
         $recentClients = Client::with('plan:id,name')
             ->withCount([
                 'branches as branches_count' => function ($q) {
@@ -162,21 +128,13 @@ class DashboardController extends Controller
             ])
             ->orderByDesc('created_at')
             ->limit(5)
-            /* `profile_photo` selected so the appended `profile_photo_url`
-             * accessor resolves to a real URL — that drives the new logo
-             * thumb on the Super Admin → Recent Clients card. Without
-             * this the accessor only saw a null and the dashboard kept
-             * falling back to gradient initials even when a client had
-             * uploaded a logo. */
             ->get(['id', 'org_name', 'email', 'status', 'plan_id', 'plan_type', 'created_at', 'profile_photo']);
 
-        // Recent payments (top 5)
         $recentPayments = Payment::with(['client:id,org_name', 'plan:id,name'])
             ->orderByDesc('created_at')
             ->limit(5)
             ->get(['id', 'client_id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'created_at']);
 
-        // Top clients by revenue
         $topClients = Payment::where('status', 'success')
             ->select('client_id', DB::raw('SUM(total) as total_revenue'), DB::raw('COUNT(*) as payments_count'))
             ->groupBy('client_id')
@@ -185,30 +143,25 @@ class DashboardController extends Controller
             ->with('client:id,org_name')
             ->get();
 
-        // Org type distribution
         $orgTypes = Client::select('org_type', DB::raw('count(*) as count'))
             ->groupBy('org_type')
             ->orderByDesc('count')
             ->get()
             ->toArray();
 
-        // ── SaaS subscription metrics — the platform-owner view: MRR / ARR /
-        // ARPU, active subscriptions, signups, and renewal health. Plan
-        // prices are normalised to a monthly figure so mixed billing cycles
-        // sum into a single comparable MRR. ──────────────────────────────────
         $toMonthly = function ($price, $period): float {
             $price = (float) $price;
             $p = strtolower((string) $period);
             if (str_contains($p, 'year') || str_contains($p, 'annual')) return $price / 12;
             if (str_contains($p, 'quarter')) return $price / 3;
             if (str_contains($p, 'week')) return $price * 4.345;
-            return $price; // monthly / default
+            return $price;
         };
         $now = now();
         $mrr = 0.0;
         $payingClients = 0;
-        $expiringSoon = 0;   // active sub expiring within 30 days
-        $expiredSubs = 0;    // plan end date already past
+        $expiringSoon = 0;
+        $expiredSubs = 0;
         $mrrByPlan = [];
         Client::with('plan:id,name,price,period')
             ->where('status', 'active')
@@ -240,7 +193,6 @@ class DashboardController extends Controller
             ? (int) round((($newThisMonth - $newLastMonth) / $newLastMonth) * 100)
             : ($newThisMonth > 0 ? 100 : 0);
 
-        // Rough churn proxy — expired subscriptions as a share of all clients.
         $churnRate = $totalClients > 0 ? round(($expiredSubs / $totalClients) * 100, 1) : 0;
 
         $mrrByPlanRows = [];
@@ -302,20 +254,10 @@ class DashboardController extends Controller
             return response()->json(['message' => 'No client associated'], 422);
         }
 
-        // Resolve & validate branch_id filter (always scoped within this
-        // user's client). We do the validation HERE — before building the
-        // cache key — so the cache key reflects the actual data slice being
-        // computed. If a user passes a cross-tenant branch_id=99 it gets
-        // normalised to null before keying, preventing a "data for null"
-        // payload from being cached under ':branch:99'.
         $branchId = $request->integer('branch_id') ?: null;
         if ($branchId && !Branch::where('client_id', $clientId)->where('id', $branchId)->exists()) {
             $branchId = null;
         }
-        // Sub-branch user lock — overrides the caller-supplied branch_id
-        // so the cache key matches the data the user is actually allowed
-        // to see. Sentinel value -1 (no rows match) prevents the cache from
-        // ever storing the "no userBranch" case under a real branch id.
         $userBranch = null;
         if ($user->user_type === 'branch_user') {
             $userBranch = $user->branch_id
@@ -324,18 +266,10 @@ class DashboardController extends Controller
             if (!$userBranch) {
                 $branchId = -1;
             } else {
-                // Every branch is an isolated peer — a branch user is always
-                // pinned to their own branch.
                 $branchId = $user->branch_id;
             }
         }
 
-        // Server-side cache (60-second TTL) — key includes the canonical
-        // client_id + validated branch_id + user_type so different tenants,
-        // branches, and role views each get their own cache entry. The
-        // user_type segment in the key matters because $canViewPayments
-        // differs between client admins and branch users, so caching
-        // across roles would leak revenue numbers to branch users.
         $cacheKey = 'dashboard:client-stats:' . $clientId
             . ':branch:' . ($branchId ?? 'all')
             . ':role:' . $user->user_type;
@@ -344,43 +278,20 @@ class DashboardController extends Controller
         }));
     }
 
-    /**
-     * Compute the client-stats payload. Extracted so Cache::remember can
-     * wrap the heavy work and downstream tests / preview tooling can
-     * bypass the cache by calling this directly. $branchId and $userBranch
-     * are already validated by the caller — see clientStats().
-     */
     private function computeClientStats(Request $request, int $clientId, ?int $branchId, ?Branch $userBranch): array
     {
         $user = $request->user();
 
-        // Payment data is billing-level info — only the client admin should
-        // see actual amounts and history. Branch users get zeros / empty so
-        // the dashboard doesn't leak revenue / invoice numbers across the org
-        // (every branch is an isolated peer).
         $canViewPayments = $user->user_type !== 'branch_user';
 
         $client = Client::with('plan')->find($clientId);
 
-        // Branches — always count via the actual query so a non-existent / sentinel id (-1) returns 0.
-        // Exclude the auto-created Head Office branch (code='HO') so the KPI
-        // shows only user-created branches (matches Clients list + show()).
         $branchesBase = fn() => Branch::where('client_id', $clientId)
             ->where('code', '!=', 'HO')
             ->when($branchId, fn($q) => $q->where('id', $branchId));
         $totalBranches = $branchesBase()->count();
         $activeBranches = $branchesBase()->where('status', 'active')->count();
 
-        // Users — scoped by branch when filter active.
-        //
-        // Total counts include soft-deleted rows so deactivating a branch
-        // (which cascades soft-deletes onto its users) doesn't make the
-        // KPI silently drop. "Active" stays strict — only rows that are
-        // alive AND status=active are counted, which mirrors who can
-        // actually sign in. Without `withTrashed()` on totals, a tenant
-        // that had 10 users would visibly lose them all the moment a
-        // branch was deactivated, which is what surfaced as "the KPI
-        // doesn't count after inactivating a branch".
         $usersBase = fn() => User::withTrashed()->where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
         $totalUsers = $usersBase()->count();
@@ -389,9 +300,6 @@ class DashboardController extends Controller
             ->where('status', 'active')
             ->count();
 
-        // Payments are subscription-level (per client, not per branch). Show client-level
-        // counts to client admins only — branch users get zeros so we don't
-        // leak finance data through the dashboard.
         if ($canViewPayments) {
             $totalPayments = Payment::where('client_id', $clientId)->count();
             $successPayments = Payment::where('client_id', $clientId)->where('status', 'success')->count();
@@ -404,13 +312,11 @@ class DashboardController extends Controller
             $totalPaid = 0.0;
         }
 
-        // Plan info
         $planName = $client?->plan?->name ?? 'Free';
         $planExpiry = $client?->plan_expires_at;
         $daysRemaining = $planExpiry ? max(0, (int) now()->diffInDays($planExpiry, false)) : null;
         $planStatus = $planExpiry ? ($planExpiry->isPast() ? 'expired' : 'active') : 'no_plan';
 
-        // Recent payments — restricted to roles allowed to see billing
         $recentPayments = $canViewPayments
             ? Payment::with('plan:id,name')
             ->where('client_id', $clientId)
@@ -419,13 +325,6 @@ class DashboardController extends Controller
             ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at'])
             : collect();
 
-        // Branches list — full list when no filter, single-branch when filtered.
-        // Excludes the auto-provisioned Head Office placeholder (code='HO')
-        // so the Client Admin's dashboard list stays in sync with the
-        // KPI count + the Branches page (both already filter HO out).
-        // Previously this query returned HO so the list showed an extra
-        // "— Head Office" row that didn't correspond to a real branch
-        // anyone could open.
         $branches = Branch::where('client_id', $clientId)
             ->where('code', '!=', 'HO')
             ->when($branchId, fn($q) => $q->where('id', $branchId))
@@ -433,12 +332,6 @@ class DashboardController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'code', 'status', 'city', 'state', 'email', 'phone']);
 
-        // Payment trend (last 6 months) — same gating as recent payments.
-        // For restricted users we still emit month buckets with 0 amounts so
-        // the chart axes render, but no revenue numbers leak through.
-        /* One grouped query instead of six — see monthlyBuckets(). A restricted
-           user still gets six zero buckets, so the axis renders without any
-           revenue figure passing through. */
         $payMonths = $canViewPayments
             ? $this->monthlyBuckets(
                 Payment::where('client_id', $clientId)->where('status', 'success'),
@@ -456,7 +349,6 @@ class DashboardController extends Controller
             ];
         }
 
-        // User role breakdown — scoped to branch when filtered
         $userRoles = User::where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->select('user_type', DB::raw('count(*) as count'))
@@ -465,19 +357,9 @@ class DashboardController extends Controller
             ->mapWithKeys(fn($item) => [$item->user_type => $item->count])
             ->toArray();
 
-        // ── Employee analytics ──────────────────────────────────────────
-        // Scope mirrors the user/branch counts above: a branch user is
-        // pinned to their own branch (via the $branchId rewrite up top), a
-        // client admin sees the whole client unless they pick a branch.
-        // Count LIVE employees only (no withTrashed). A soft-deleted employee
-        // is no longer current staff, so counting them — and worse, counting a
-        // soft-deleted "Active" row as active — inflates the KPI and makes it
-        // disagree with the per-branch headcount donut. Live-only keeps every
-        // employee figure (total, active, status donut, by-branch) consistent.
         $empBase = fn() => Employee::where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
-        // Status counts (enum values are Title-Case in the migration).
         $empStatusRows = $empBase()
             ->select('status', DB::raw('count(*) as count'))
             ->groupBy('status')
@@ -496,7 +378,6 @@ class DashboardController extends Controller
         $noticeEmployees   = (int) ($empStatusRows['Notice Period'] ?? 0);
         $exitedEmployees   = (int) (($empStatusRows['Resigned'] ?? 0) + ($empStatusRows['Terminated'] ?? 0));
 
-        // Hiring activity windows.
         $newJoinersMonth = (int) $empBase()
             ->whereNotNull('date_of_joining')
             ->where('date_of_joining', '>=', now()->startOfMonth())
@@ -506,7 +387,6 @@ class DashboardController extends Controller
             ->where('date_of_joining', '>=', now()->subDays(30)->toDateString())
             ->count();
 
-        // Gender split.
         $empGenderRows = $empBase()
             ->whereNotNull('gender')
             ->select('gender', DB::raw('count(*) as count'))
@@ -519,11 +399,6 @@ class DashboardController extends Controller
             ['name' => 'Other',  'value' => (int) ($empGenderRows['Other']  ?? 0)],
         ];
 
-        // Department headcount — top 8 by count, joined to master_departments
-        // for the readable name. Employees with no department are folded into
-        // an "Unassigned" bucket so they don't disappear from the total.
-        // Tenant filters must be qualified because master_departments also
-        // carries client_id / branch_id columns (multi-tenant masters).
         $empByDeptRows = Employee::query()
             ->leftJoin('master_departments', 'employees.department_id', '=', 'master_departments.id')
             ->where('employees.client_id', $clientId)
@@ -536,10 +411,6 @@ class DashboardController extends Controller
             ->map(fn($r) => ['name' => $r->name, 'count' => (int) $r->count])
             ->toArray();
 
-        // Designation top 5 — useful "who's most of the org" signal.
-        // INNER join + non-null name filter: orphaned designation_id FKs or
-        // master rows with blank names just drop out of this chart rather
-        // than rendering as "null".
         $empByDesigRows = Employee::query()
             ->join('master_designations', 'employees.designation_id', '=', 'master_designations.id')
             ->where('employees.client_id', $clientId)
@@ -554,10 +425,6 @@ class DashboardController extends Controller
             ->map(fn($r) => ['name' => $r->name, 'count' => (int) $r->count])
             ->toArray();
 
-        // Joining trend (last 6 months) — count rows whose date_of_joining
-        // falls in each month bucket. Pre-seed all 6 buckets so the chart
-        // axis is stable even for months with no hires.
-        // One grouped query instead of six — see monthlyBuckets().
         $joinMonths = $this->monthlyBuckets(
             $empBase()->whereNotNull('date_of_joining'),
             'date_of_joining',
@@ -572,8 +439,6 @@ class DashboardController extends Controller
             ];
         }
 
-        // Tenure buckets — driven by date_of_joining vs today. Skip rows
-        // with no joining date so the buckets sum to "joined" not "all".
         $tenureBuckets = ['<1 yr' => 0, '1-3 yr' => 0, '3-5 yr' => 0, '5-10 yr' => 0, '10+ yr' => 0];
         $tenureRows = $empBase()
             ->whereNotNull('date_of_joining')
@@ -591,7 +456,6 @@ class DashboardController extends Controller
             ->values()
             ->toArray();
 
-        // Age buckets — driven by date_of_birth.
         $ageBuckets = ['18-25' => 0, '26-35' => 0, '36-45' => 0, '46-55' => 0, '56+' => 0];
         $ageRows = $empBase()
             ->whereNotNull('date_of_birth')
@@ -609,8 +473,6 @@ class DashboardController extends Controller
             ->values()
             ->toArray();
 
-        // Average tenure (years) — uses the same population as the buckets
-        // so empty/missing joining dates don't drag the average to zero.
         $avgTenureYears = 0.0;
         if ($tenureRows->isNotEmpty()) {
             $sum = 0.0;
@@ -620,17 +482,12 @@ class DashboardController extends Controller
             $avgTenureYears = round($sum / $tenureRows->count(), 1);
         }
 
-        // Face-biometric enrollment progress.
         $facesRegistered = (int) $empBase()->whereNotNull('face_registered_at')->count();
 
-        // Upcoming birthdays + work anniversaries in the next 30 days.
-        // Same logic the employee dashboard uses — kept inline so this
-        // endpoint stays self-contained.
         $today = Carbon::now();
         $rangeEnd = $today->copy()->addDays(30);
         $upcomingEvents = collect();
         $eventRows = $empBase()
-            // Only active staff — exclude inactive / exited (resigned / terminated).
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
             ->whereNotNull(DB::raw('COALESCE(date_of_birth, date_of_joining)'))
             ->get(['id', 'display_name', 'emp_code', 'date_of_birth', 'date_of_joining']);
@@ -654,7 +511,7 @@ class DashboardController extends Controller
                             'years'       => $kind === 'anniversary' ? max(0, $years) : null,
                         ]);
                     }
-                } catch (\Throwable $e) { /* skip bad dates */
+                } catch (\Throwable $e) {
                 }
             }
         }
@@ -683,12 +540,6 @@ class DashboardController extends Controller
             'upcoming_events'  => $upcomingEvents,
         ];
 
-        // ── Sales / pipeline analytics ───────────────────────────────────
-        // The branch's core business: leads → quotations → proforma invoices.
-        // Scoped to client_id + branch_id exactly like the employee analytics
-        // above (a sub-branch user is already pinned to their branch via the
-        // $branchId rewrite in clientStats()). Quotations / PIs / Leads all
-        // carry branch_id, so the same filter applies cleanly.
         $leadBase = fn() => Lead::where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
         $qtBase = fn() => Quotation::where('client_id', $clientId)
@@ -696,28 +547,17 @@ class DashboardController extends Controller
         $piBase = fn() => ProformaInvoice::where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
-        // Lead KPIs. "Won" = reached the Victory stage (lead_stage_id 6) OR
-        // has won_at stamped (the two are set together, but OR-ing is robust
-        // against either being missing).
         $isWon = fn($w) => $w->whereNotNull('won_at')->orWhere('lead_stage_id', '>=', 6);
         $totalLeads     = (int) $leadBase()->count();
         $qualifiedLeads = (int) $leadBase()->where('qualified', true)->where('disqualified', false)->count();
         $disqLeads      = (int) $leadBase()->where('disqualified', true)->count();
         $wonLeads       = (int) $leadBase()->where($isWon)->count();
         $keyOpps        = (int) $leadBase()->where('key_opportunity', true)->count();
-        // Active = qualified, still open (not disqualified, not won/victory).
         $activeOpps     = (int) $leadBase()->where('qualified', true)->where('disqualified', false)
             ->whereNull('won_at')->where('lead_stage_id', '<', 6)->count();
-        // "Engaged" = leads that moved past the first stage (Inquiry Received)
-        // — a meaningful progression metric (qualified is near-always true so a
-        // qualified-ratio gauge would be a flat 100%).
         $engagedLeads   = (int) $leadBase()->where('lead_stage_id', '>', 1)->count();
         $newLeadsMonth  = (int) $leadBase()->where('created_at', '>=', now()->startOfMonth())->count();
 
-        // Dominant quotation currency → a display symbol. Values are stored
-        // inconsistently ("USD", "US – USD", …) and may mix currencies; we sum
-        // them and label with the most common one's symbol rather than a
-        // hardcoded ₹ (which mislabels USD figures).
         $curMode = $qtBase()->whereNotNull('currency')->where('currency', '!=', '')
             ->select('currency', DB::raw('count(*) c'))->groupBy('currency')->orderByDesc('c')->value('currency');
         $curUpper = strtoupper((string) $curMode);
@@ -727,16 +567,11 @@ class DashboardController extends Controller
                     : (str_contains($curUpper, 'AED') ? 'AED '
                         : '₹')));
 
-        // Pipeline funnel — count by lead_stage_id. The UI uses 1-4 then jumps
-        // to 6 (Quotation vs PI) and 8 (Victory).
         $stageRows = $leadBase()
             ->select('lead_stage_id', DB::raw('count(*) as count'))
             ->groupBy('lead_stage_id')
             ->pluck('count', 'lead_stage_id')
             ->toArray();
-        // Stage IDs are contiguous 1-6 (validated `between:1,6` in
-        // SalesLeadController; Stage4 advances to 5, Stage5 to 6). The earlier
-        // 6/8 mapping was wrong and dropped stage-5 leads from the funnel.
         $stageMap = [
             1 => 'Inquiry Received',
             2 => 'Acknowledgement',
@@ -750,28 +585,19 @@ class DashboardController extends Controller
             $pipeline[] = ['stage' => $label, 'count' => (int) ($stageRows[$id] ?? 0)];
         }
 
-        // Quotation KPIs — value excludes cancelled rows. Conversion = the share
-        // of quotations that became a PI.
         $totalQuotations     = (int) $qtBase()->count();
         $quotationValue      = (float) $qtBase()->where('status', '!=', 'cancelled')->sum('grand_total');
         $convertedQuotations = (int) $qtBase()->where('status', 'converted_to_pi')->count();
         $conversionRate      = $totalQuotations > 0 ? (int) round(($convertedQuotations / $totalQuotations) * 100) : 0;
 
-        // Proforma Invoice KPIs.
         $totalPis = (int) $piBase()->count();
         $piValue  = (float) $piBase()->where('status', '!=', 'cancelled')->sum('grand_total');
 
-        // Leads trend (last 6 months by created_at) — pre-seed every bucket.
-        // The same loop also collects the per-metric spark series (plain number
-        // arrays) that drive the mini trend charts inside the KPI tiles.
         $leadsTrend = [];
         $sparkLeads = [];
         $sparkQuotations = [];
         $sparkPis = [];
         $sparkValue = [];
-        /* Three grouped queries instead of eighteen — see monthlyBuckets().
-           The loop below still walks all six months so a month with no rows
-           keeps its zero bucket and the chart axis stays stable. */
         $leadMonths = $this->monthlyBuckets($leadBase(), 'created_at');
         $qtMonths   = $this->monthlyBuckets($qtBase(), 'created_at', 'grand_total');
         $piMonths   = $this->monthlyBuckets($piBase(), 'created_at');
@@ -790,7 +616,6 @@ class DashboardController extends Controller
             $sparkPis[] = (int) ($piMonths[$ym]->cnt ?? 0);
         }
 
-        // Recent opportunities — latest 6 leads with their stage + customer.
         $recentLeads = $leadBase()
             ->with('customer:id,company_name')
             ->orderByDesc('id')
@@ -807,7 +632,6 @@ class DashboardController extends Controller
                 'created_at'   => optional($l->created_at)->toDateString(),
             ]);
 
-        // Top customers by quotation value (cancelled excluded).
         $topCustomers = $qtBase()
             ->where('status', '!=', 'cancelled')
             ->whereNotNull('customer_id')
@@ -823,10 +647,6 @@ class DashboardController extends Controller
                 'quotations' => (int) $r->quotations,
             ]);
 
-        // ── Procurement & Vendors analytics ─────────────────────────────
-        // Product catalogue + supplier (vendor) onboarding, branch-scoped the
-        // same way. Both carry client_id + branch_id and a 4-step onboarding
-        // (step_completed 0-4) plus a draft/inactive/active status.
         $prodBase = fn() => Product::where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
         $venBase = fn() => Vendor::where('client_id', $clientId)
@@ -835,8 +655,6 @@ class DashboardController extends Controller
         $prodStatus = $prodBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
         $venStatus  = $venBase()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status')->toArray();
 
-        // Onboarding funnels — "reached at least step N" (step_completed is the
-        // highest step finished, so >= gives a clean descending funnel).
         $prodFunnel = [
             ['stage' => 'Core',    'count' => (int) $prodBase()->where('step_completed', '>=', 1)->count()],
             ['stage' => 'Sales',   'count' => (int) $prodBase()->where('step_completed', '>=', 2)->count()],
@@ -850,7 +668,6 @@ class DashboardController extends Controller
             ['stage' => 'Products',  'count' => (int) $venBase()->where('step_completed', '>=', 4)->count()],
         ];
 
-        // Top vendor types (joined to the master for readable names).
         $venByType = Vendor::query()
             ->leftJoin('master_vendor_types', 'vendors.vendor_type_id', '=', 'master_vendor_types.id')
             ->where('vendors.client_id', $clientId)
@@ -894,10 +711,6 @@ class DashboardController extends Controller
             ],
         ];
 
-        // ── CLM / Compliance analytics ──────────────────────────────────
-        // E-signature requests + segments are branch-scoped; the compliance
-        // LIBRARY masters (KYC/DD/QC/TL/agreements/trade-docs/clauses/T&Cs) are
-        // client-level only, so those are shown as client-wide catalogue sizes.
         $sigBase = fn() => ClmSignatureRequest::where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
 
@@ -923,7 +736,6 @@ class DashboardController extends Controller
             $sigByType[] = ['name' => $lbl, 'count' => (int) ($sigTypeRows[$k] ?? 0)];
         }
 
-        // Compliance library — client-level catalogue sizes (active rows only).
         $library = [
             ['name' => 'KYC Documents',       'count' => (int) ClmKycDocument::where('client_id', $clientId)->count(),     'icon' => 'kyc'],
             ['name' => 'Due Diligence',       'count' => (int) ClmDdDocument::where('client_id', $clientId)->count(),      'icon' => 'dd'],
@@ -935,7 +747,6 @@ class DashboardController extends Controller
             ['name' => 'Terms & Conditions',  'count' => (int) ClmTncLibrary::where('client_id', $clientId)->count(),      'icon' => 'tnc'],
         ];
 
-        // Segments (branch-aware) — total + highly-regulated count.
         $segBase = fn() => ClmSegment::where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
         $totalSegments     = (int) $segBase()->count();
@@ -958,10 +769,6 @@ class DashboardController extends Controller
             ],
         ];
 
-        // ── Per-branch breakdown (client-wide view only) ─────────────────
-        // The defining feature of a CLIENT dashboard vs a branch one: let the
-        // admin compare branches at a glance. Only computed when no branch
-        // filter is active — a branch / filtered view doesn't need it.
         $byBranch = [];
         if ($branchId === null) {
             $branchRows = Branch::where('client_id', $clientId)
@@ -979,15 +786,9 @@ class DashboardController extends Controller
                     'users'      => (int) User::where('client_id', $clientId)->where('branch_id', $b->id)->count(),
                 ];
             }
-            // Largest branch by users (login seats) first — this is a tenant
-            // view, so we rank by seats, then employees, not sales value.
             usort($byBranch, fn($a, $z) => ($z['users'] <=> $a['users']) ?: ($z['employees'] <=> $a['employees']));
         }
 
-        // ── Access & permissions overview — how many modules each user can
-        // reach (can_view), plus their edit/approve reach. Lets a client admin
-        // see "who has how much access" at a glance. Scoped by branch when a
-        // branch filter is active. ──────────────────────────────────────────
         $totalModules = (int) Module::count();
         $access = [];
         $permAgg = Permission::where('client_id', $clientId)
@@ -1020,8 +821,6 @@ class DashboardController extends Controller
                     'can_approve' => (int) $row->approve_count,
                 ];
             }
-            // Most-privileged users first. Return a generous slice so the
-            // frontend can paginate (5 per page) rather than just a top-N.
             usort($access, fn($a, $z) => $z['modules'] <=> $a['modules']);
             $access = array_slice($access, 0, 60);
         }
@@ -1047,7 +846,6 @@ class DashboardController extends Controller
             'leads_trend'   => $leadsTrend,
             'recent_leads'  => $recentLeads,
             'top_customers' => $topCustomers,
-            // Per-metric 6-month series for the KPI-tile mini sparklines.
             'spark' => [
                 'leads'      => $sparkLeads,
                 'quotations' => $sparkQuotations,
@@ -1102,17 +900,6 @@ class DashboardController extends Controller
         ];
     }
 
-    /**
-     *  Employee Dashboard — personal snapshot for the logged-in employee.
-     *  Returns the user's own profile + KPIs, their pending/recent expense
-     *  claims, any approvals waiting on them as a manager, peers in their
-     *  department, active announcements, upcoming birthdays/anniversaries
-     *  and (if still onboarding) wizard progress.
-     *
-     *  Falls back gracefully when the User has no Employee row attached:
-     *  `me` returns minimal fields, lists return empty arrays. The frontend
-     *  shows "Profile not yet set up" rather than crashing.
-     */
     public function employeeStats(Request $request)
     {
         $user = $request->user();
@@ -1120,8 +907,6 @@ class DashboardController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        // Locate the Employee row paired with this login. Eager-load the
-        // bits we display in the hero so we don't N+1 the relations.
         $emp = Employee::with(['department', 'designation', 'reportingManager', 'photoDocument'])
             ->where('user_id', $user->id)
             ->first();
@@ -1130,7 +915,6 @@ class DashboardController extends Controller
         $branchId = $user->branch_id;
         $employeeId = $emp?->id;
 
-        // ── Profile hero ────────────────────────────────────────────────
         $manager = $emp?->reportingManager;
         $me = [
             'employee_id'     => $employeeId,
@@ -1149,7 +933,6 @@ class DashboardController extends Controller
             'profile_completion_pct' => $this->profileCompletion($emp),
         ];
 
-        // ── Expense KPIs (mine) + recent + pending approvals ────────────
         $myExpensesPending = 0;
         $myExpensesApproved = 0;
         $myExpensesRejected = 0;
@@ -1158,7 +941,6 @@ class DashboardController extends Controller
         $approvalsPending = 0;
 
         if ($employeeId) {
-            // Counts on claims I filed
             $myExpensesPending = ExpenseClaim::where('employee_id', $employeeId)
                 ->where(function ($w) {
                     $w->where('manager_status', 'pending')->orWhere('hr_status', 'pending');
@@ -1176,7 +958,6 @@ class DashboardController extends Controller
                 })
                 ->count();
 
-            // Last 5 of mine
             $recentExpenses = ExpenseClaim::where('employee_id', $employeeId)
                 ->orderByDesc('expense_date')
                 ->orderByDesc('id')
@@ -1193,7 +974,6 @@ class DashboardController extends Controller
                     'status'       => $this->rollupExpenseStatus($c->manager_status, $c->hr_status),
                 ]);
 
-            // Pending approvals where I'm the manager
             $approvalsPending = ExpenseClaim::where('manager_id', $employeeId)
                 ->where('manager_status', 'pending')
                 ->count();
@@ -1216,12 +996,6 @@ class DashboardController extends Controller
                 ]);
         }
 
-        // ── Analytics blocks for the dashboard charts ───────────────────
-        //   · expense status split + total claimed + 6-month spend trend
-        //   · attendance this month (present / leave / absent / half-day)
-        //   · leave taken by type this year + request-status split
-        // Each is self-contained and degrades to empty/zero when the
-        // employee has no rows, so the frontend can hide empty charts.
         $expenseStatus      = ['approved' => $myExpensesApproved, 'pending' => $myExpensesPending, 'rejected' => $myExpensesRejected];
         $totalClaimedAmount = 0.0;
         $expenseTrend       = [];
@@ -1230,7 +1004,6 @@ class DashboardController extends Controller
         $leaveStatus        = ['approved' => 0, 'pending' => 0, 'rejected' => 0];
 
         if ($employeeId) {
-            // 6-month expense spend trend (sum of my claim amounts per month).
             $trendStart = Carbon::now()->startOfMonth()->subMonths(5);
             $buckets = [];
             for ($i = 0; $i < 6; $i++) {
@@ -1248,7 +1021,6 @@ class DashboardController extends Controller
             $expenseTrend = array_values($buckets);
             $totalClaimedAmount = (float) ExpenseClaim::where('employee_id', $employeeId)->sum('amount');
 
-            // Attendance this month — bucket each marked day by its status.
             $monthStart = Carbon::now()->startOfMonth();
             $present = $leaveDays = $absent = $halfDay = 0;
             Attendance::where('employee_id', $employeeId)
@@ -1261,12 +1033,6 @@ class DashboardController extends Controller
                     elseif (str_contains($s, 'absent'))     $absent++;
                     elseif (str_contains($s, 'present') || $a->check_in_at) $present++;
                 });
-            // Expected working days so far this month (Mon–Fri, counted from the
-            // joining date when it falls inside the month). This is the correct
-            // denominator for the attendance %: dividing by the days that merely
-            // happened to be MARKED made a single present day read as 100%. Now
-            // the % reflects "present out of the working days in the period", so
-            // it only reaches 100% when every working day is accounted for.
             $periodStart = ($emp && $emp->date_of_joining && Carbon::parse($emp->date_of_joining)->gt($monthStart))
                 ? Carbon::parse($emp->date_of_joining)->startOfDay()
                 : $monthStart->copy();
@@ -1285,14 +1051,10 @@ class DashboardController extends Controller
                 'leave'        => $leaveDays,
                 'absent'       => $absent,
                 'half_day'     => $halfDay,
-                // Days that actually have a record (drives the "X days marked" donut).
                 'total'        => $marked,
-                // Working days expected so far — the attendance-% denominator.
                 'working_days' => $workingDays,
             ];
 
-            // Leave this calendar year — taken days by type (approved) +
-            // overall request-status split.
             $yearStart = Carbon::now()->startOfYear();
             $byType = [];
             LeaveRequest::where('employee_id', $employeeId)
@@ -1316,24 +1078,10 @@ class DashboardController extends Controller
             usort($leaveByType, fn($a, $b) => $b['days'] <=> $a['days']);
         }
 
-        // ── My Team — pick the most-relevant cohort based on where the
-        // employee sits in the reporting tree:
-        //   1. If they have direct reports  → show those reports
-        //                                     (this is "their team" as
-        //                                     a manager).
-        //   2. Else if they have a manager → show fellow direct reports
-        //                                     under the same manager
-        //                                     (peer team).
-        //   3. Else fall back to department peers so the card still has
-        //                                     content for top-of-tree
-        //                                     individuals.
-        // `team_size` reflects whichever cohort was selected, so the
-        // subtitle on the dashboard stays consistent with the photos.
         $teamPeers = collect();
         $teamSize  = 0;
         $teamKind  = 'none';
         if ($emp) {
-            // 1. Direct reports of this employee.
             $reportsBase = Employee::where('reporting_manager_id', $employeeId)
                 ->where('client_id', $clientId)
                 ->where('id', '!=', $employeeId)
@@ -1349,7 +1097,6 @@ class DashboardController extends Controller
                     ->limit(6)
                     ->get(['id', 'emp_code', 'display_name', 'designation_id', 'reporting_manager_id']);
             } elseif ($emp->reporting_manager_id) {
-                // 2. Siblings — same reporting manager.
                 $siblingsBase = Employee::where('reporting_manager_id', $emp->reporting_manager_id)
                     ->where('client_id', $clientId)
                     ->where('id', '!=', $employeeId)
@@ -1362,7 +1109,6 @@ class DashboardController extends Controller
                     ->limit(6)
                     ->get(['id', 'emp_code', 'display_name', 'designation_id', 'reporting_manager_id']);
             } elseif ($emp->department_id) {
-                // 3. Department peers (top-of-tree fallback).
                 $deptBase = Employee::where('department_id', $emp->department_id)
                     ->where('client_id', $clientId)
                     ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
@@ -1386,17 +1132,8 @@ class DashboardController extends Controller
             ]);
         }
 
-        // ── Announcements (recent active, tenant-scoped) ────────────────
-        // AnnouncementController auto-flips Scheduled → Active when publish_at
-        // hits and Active → Expired past expires_at, so filtering by lowercase
-        // 'active' (the value the seed/migration writes) is enough here.
         $announcements = collect();
         if ($clientId) {
-            // Audience of the viewing employee — mirrors AnnouncementController's
-            // computeAudienceCount so the dashboard shows ONLY announcements
-            // actually targeted at this employee (a Designation-Based announcement
-            // must not reach other designations). Filtering happens BEFORE the
-            // take(5) so a relevant one isn't dropped by an irrelevant recent one.
             $viewerId = $emp && $emp->id ? (int) $emp->id : 0;
             $empDesig = ($emp && $emp->designation_id !== null) ? (int) $emp->designation_id : null;
             $empRoles = $emp ? array_values(array_unique(array_map('intval', array_filter(array_merge(
@@ -1406,11 +1143,6 @@ class DashboardController extends Controller
 
             $announcements = Announcement::query()
                 ->where('client_id', $clientId)
-                /* Branch scope (#38). This query filtered on client_id alone, so
-                   every branch's announcements reached every employee in the
-                   tenant — the Inbox was scoped (AnnouncementController::
-                   applyScope) but the dashboard card was not. A NULL branch_id
-                   means client-wide, same meaning as there. */
                 ->when($branchId, fn($q) => $q->where(function ($w) use ($branchId) {
                     $w->whereNull('branch_id')->orWhere('branch_id', $branchId);
                 }))
@@ -1418,7 +1150,6 @@ class DashboardController extends Controller
                 ->orderByDesc('created_at')
                 ->get(['id', 'title', 'description', 'created_at', 'audience_type', 'audience_role_ids', 'audience_designation_ids', 'exclude_employee_ids'])
                 ->filter(function ($a) use ($viewerId, $empDesig, $empRoles) {
-                    // Explicitly excluded employees never receive it.
                     $excl = is_array($a->exclude_employee_ids) ? array_map('intval', $a->exclude_employee_ids) : [];
                     if ($viewerId && in_array($viewerId, $excl, true)) return false;
 
@@ -1431,7 +1162,6 @@ class DashboardController extends Controller
                         $desigs = is_array($a->audience_designation_ids) ? array_map('intval', $a->audience_designation_ids) : [];
                         return $empDesig !== null && in_array($empDesig, $desigs, true);
                     }
-                    // all_employees (or any unrecognised type) → everyone in-tenant.
                     return true;
                 })
                 ->take(5)
@@ -1439,25 +1169,18 @@ class DashboardController extends Controller
                     'id'         => $a->id,
                     'title'      => $a->title,
                     'snippet'    => mb_strimwidth(strip_tags((string) $a->description), 0, 140, '…'),
-                    // Full body so clicking the dashboard card can open the complete
-                    // announcement without an extra (permission-gated) fetch.
                     'body'       => (string) $a->description,
                     'created_at' => optional($a->created_at)->toDateString(),
                 ])
                 ->values();
         }
 
-        // ── Upcoming events — birthdays + work anniversaries this month ─
-        // Compute "next occurrence within ±30 days" so end-of-month birthdays
-        // that fall a few days into next month still appear.
         $upcomingEvents = collect();
         if ($clientId) {
             $today = Carbon::now();
             $rangeEnd = $today->copy()->addDays(30);
             $teamRows = Employee::where('client_id', $clientId)
                 ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
-                // Only active staff — exclude inactive / exited (resigned /
-                // terminated) people from birthday / work-anniversary celebrations.
                 ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
                 ->whereNotNull(DB::raw('COALESCE(date_of_birth, date_of_joining)'))
                 ->get(['id', 'display_name', 'date_of_birth', 'date_of_joining']);
@@ -1480,14 +1203,13 @@ class DashboardController extends Controller
                                 'years'       => $kind === 'anniversary' ? max(0, $years) : null,
                             ]);
                         }
-                    } catch (\Throwable $e) { /* skip bad dates */
+                    } catch (\Throwable $e) {
                     }
                 }
             }
             $upcomingEvents = $upcomingEvents->sortBy('on')->take(6)->values();
         }
 
-        // ── Onboarding progress (only surface if incomplete) ───────────
         $onboarding = null;
         if ($emp && (int) $emp->onboarding_stage_completed < 4) {
             $stages = ['Basic Details', 'Job Details', 'Work Details', 'Compensation'];
@@ -1500,7 +1222,6 @@ class DashboardController extends Controller
             ];
         }
 
-        // ── Compensation tile — only if employee opted into payroll ────
         $compensation = null;
         if ($emp && $emp->enable_payroll) {
             $compensation = [
@@ -1512,9 +1233,6 @@ class DashboardController extends Controller
             ];
         }
 
-        // ── Tenure (days since joining) for the KPI row ────────────────
-        // Carbon 3 (Laravel 12) returns diffInDays() as a FLOAT (e.g. 131.404),
-        // so cast to int — "Days at Company" must read as a whole number.
         $daysSinceJoining = $emp?->date_of_joining
             ? max(0, (int) $emp->date_of_joining->diffInDays(Carbon::now()))
             : null;
@@ -1548,8 +1266,6 @@ class DashboardController extends Controller
         ]);
     }
 
-    /** Roll up the two-stage expense status into a single chip value. */
-
     private function monthlyBuckets($query, string $dateCol, ?string $sumCol = null, int $months = 6): array
     {
         $from = now()->subMonths($months - 1)->startOfMonth();
@@ -1573,12 +1289,6 @@ class DashboardController extends Controller
         return 'Pending';
     }
 
-    /**
-     *  Estimate how complete an Employee profile is, from a fixed set of
-     *  "would-show-on-the-business-card" fields. Lets the dashboard nudge
-     *  new joiners to finish their profile rather than reporting a flat
-     *  0%/100% based on `onboarding_stage_completed`.
-     */
     private function profileCompletion(?Employee $emp): int
     {
         if (!$emp) return 0;

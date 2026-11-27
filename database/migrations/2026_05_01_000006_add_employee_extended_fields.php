@@ -4,24 +4,11 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Extend the `employees` table to cover every wizard step end-to-end.
- *
- * Step 1 (basic + current address) and Step 2 (job + employment terms)
- * already persist; this migration backfills the rest of the wizard:
- *
- *   - Permanent address  — separate columns so it can differ from current.
- *   - Step 3 (Work Details) — leave / shift / attendance / asset slots.
- *   - Step 4 (Compensation) — payroll config + flags.
- *
- * All columns are nullable to keep existing rows valid.
- */
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::table('employees', function (Blueprint $table) {
-            // ── Permanent address ─────────────────────────────────────
             $table->string('perm_address_line1', 255)->nullable()->after('pincode');
             $table->string('perm_address_line2', 255)->nullable()->after('perm_address_line1');
             $table->string('perm_city', 100)->nullable()->after('perm_address_line2');
@@ -29,7 +16,6 @@ return new class extends Migration
             $table->unsignedBigInteger('perm_country_id')->nullable()->after('perm_state_id');
             $table->string('perm_pincode', 20)->nullable()->after('perm_country_id');
 
-            // ── Step 3: Leave & Attendance ────────────────────────────
             $table->string('leave_plan', 100)->nullable()->after('notice_period_days');
             $table->string('holiday_list', 100)->nullable()->after('leave_plan');
             $table->boolean('attendance_tracking')->default(true)->after('holiday_list');
@@ -41,14 +27,11 @@ return new class extends Migration
             $table->string('overtime', 50)->nullable()->after('penalization_policy');
             $table->string('expense_policy', 100)->nullable()->after('overtime');
 
-            // ── Step 3: Asset slots (alongside the existing JSON `assets`
-            // column — these are the named primary slots the wizard tracks).
             $table->string('laptop_assigned', 20)->nullable()->after('expense_policy');
             $table->string('laptop_asset_id', 50)->nullable()->after('laptop_assigned');
             $table->string('mobile_device', 100)->nullable()->after('laptop_asset_id');
             $table->string('other_assets', 255)->nullable()->after('mobile_device');
 
-            // ── Step 4: Compensation / Payroll ────────────────────────
             $table->boolean('enable_payroll')->default(true)->after('other_assets');
             $table->string('pay_group', 100)->nullable()->after('enable_payroll');
             $table->decimal('annual_salary', 14, 2)->nullable()->after('pay_group');

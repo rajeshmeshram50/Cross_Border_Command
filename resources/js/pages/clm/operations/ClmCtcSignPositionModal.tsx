@@ -577,8 +577,21 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
         <div style={{ flexShrink: 0, padding: '12px 18px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Drag boxes to position · sent securely via Zoho Sign</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => !sending && onClose()} disabled={sending} style={{ padding: '8px 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 10.5, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.45 : 1, fontFamily: 'inherit' }}>Cancel</button>
-            <button onClick={send} disabled={sending || loading} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 9, border: 'none', background: sending || loading ? '#C4B5FD' : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: sending || loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> {sending ? 'Sending…' : 'Send for Signature'}</button>
+            <button onClick={() => !sending && onClose()} disabled={sending} style={{ height: 40, padding: '0 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 12.5, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.45 : 1, fontFamily: 'inherit' }}>Cancel</button>
+            {/* Frozen until the preview is actually drawn (pdfReady), not just
+                downloaded - signature boxes are placed on that preview. */}
+            {(() => {
+              const frozen = sending || loading || !pdfReady;
+              const idle = frozen && !sending;
+              return (
+                <button onClick={send} disabled={frozen} title={idle ? 'Available once the preview has loaded' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 40, padding: '0 20px', borderRadius: 9, border: t.dark && idle ? '1.5px solid rgba(139,92,246,.35)' : '1.5px solid transparent', background: idle ? (t.dark ? 'rgba(124,58,237,.16)' : '#DDD6FE') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: idle ? (t.dark ? '#a78bfa' : '#7C3AED') : '#fff', fontSize: 12.5, fontWeight: 800, cursor: frozen ? 'not-allowed' : 'pointer', opacity: sending ? 0.85 : 1, fontFamily: 'inherit', boxShadow: idle ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>
+                  {sending
+                    ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                    : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+                  {sending ? 'Sending…' : 'Send for Signature'}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </div>

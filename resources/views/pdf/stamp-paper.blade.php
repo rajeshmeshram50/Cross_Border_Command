@@ -1,31 +1,9 @@
-{{--
-    Indian Non-Judicial Stamp Paper — visual reproduction for PDF (DomPDF).
-
-    Renders the classic e-stamp / non-judicial stamp-paper HEADER band
-    (Ashoka State Emblem, "INDIA NON JUDICIAL", the rupee denomination in
-    Hindi + English) over a blank body where agreement / deed text is laid.
-
-    Usage:
-        $pdf = Pdf::loadView('pdf.stamp-paper', [
-            'amount'      => 100,            // denomination (rupees)
-            'amountWords' => 'ONE HUNDRED',  // shown on the right
-            'amountHindi' => 'एक सौ रुपये',  // shown on the left (Devanagari)
-            'content'     => $agreementHtml, // body HTML (optional)
-        ]);
-
-    NOTE on fonts: the Devanagari (Hindi) strings only render if a
-    Devanagari-capable font is registered with DomPDF (e.g. Noto Sans
-    Devanagari). Without one, DomPDF draws boxes for those glyphs — the
-    English labels still render fine. Drop the emblem PNG at
-    public/images/india-emblem.png (transparent background) for the crest.
---}}
 @php
     $amount      = $amount      ?? 100;
     $amountWords = $amountWords ?? 'ONE HUNDRED';
     $amountHindi = $amountHindi ?? 'एक सौ रुपये';
     $content     = $content     ?? '';
 
-    // Embed the emblem as a data-URI when present so the PDF is self-contained.
     $emblemPath = public_path('images/india-emblem.png');
     $emblemSrc  = is_file($emblemPath)
         ? 'data:image/png;base64,' . base64_encode(file_get_contents($emblemPath))
@@ -45,16 +23,14 @@
             -webkit-print-color-adjust: exact;
         }
 
-        /* ── The stamp-paper header band ─────────────────────────────── */
         .sp-band {
             width: 100%;
             border-collapse: collapse;
-            background: #f3dce9;                 /* pale pink stamp tint   */
+            background: #f3dce9;
             border-bottom: 2px solid #8b2c5c;
         }
         .sp-band td { vertical-align: middle; padding: 6px 10px; }
 
-        /* Left + right denomination cells. */
         .sp-denom { width: 34%; }
         .sp-denom-hi   { font-size: 13px; font-weight: 700; line-height: 1.3; color: #8b2c5c; }
         .sp-denom-rs   { font-size: 20px; font-weight: 800; color: #8b2c5c; }
@@ -62,7 +38,6 @@
         .sp-denom-rs-r { font-size: 22px; font-weight: 800; color: #8b2c5c; text-align: right; }
         .sp-right { text-align: right; }
 
-        /* Centre — the State Emblem of India + the top Hindi title. */
         .sp-centre { width: 32%; text-align: center; }
         .sp-title-hi { font-size: 11px; font-weight: 700; color: #8b2c5c; margin-bottom: 2px; white-space: nowrap; }
         .sp-emblem { height: 46px; display: inline-block; }
@@ -72,7 +47,6 @@
             font-size: 8px; color: #8b2c5c; line-height: 46px; text-align: center;
         }
 
-        /* The "INDIA NON JUDICIAL" sub-band under the crest. */
         .sp-subband {
             width: 100%;
             background: #d9b8cd;
@@ -84,7 +58,6 @@
         .sp-subband-in { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: #5c1b3e; }
         .sp-subband-in .hi { font-weight: 700; }
 
-        /* ── Blank deed body where the agreement text is placed ──────── */
         .sp-body {
             min-height: 560px;
             padding: 28px 34px;
@@ -97,7 +70,6 @@
 </head>
 <body>
 
-    {{-- ── Top denomination band: Hindi (left) · Emblem (centre) · English (right) ── --}}
     <table class="sp-band">
         <tr>
             <td class="sp-denom">
@@ -123,12 +95,10 @@
         </tr>
     </table>
 
-    {{-- ── INDIA NON JUDICIAL sub-band ── --}}
     <div class="sp-subband">
         <span class="sp-subband-in"><span class="hi">भारत</span> INDIA &nbsp;·&nbsp; INDIA NON JUDICIAL</span>
     </div>
 
-    {{-- ── Deed body ── --}}
     <div class="sp-body">
         {!! \App\Support\PdfHighlight::fix($content) !!}
     </div>

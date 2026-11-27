@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import { cvApi, CvApiError, type CredentialRow, type PageMeta, type ShareRow } from '../cvApi';
+import { cvApi, CvApiError, type CredentialDetail, type CredentialRow, type PageMeta, type ShareRow } from '../cvApi';
 import UnlockModal from '../critical/UnlockModal';
 import CredentialFormModal from '../form/CredentialFormModal';
 import {
@@ -69,8 +69,12 @@ export default function MyVault() {
   const [tick, setTick] = useState(0);
   const reload = useCallback(() => setTick(t => t + 1), []);
   const seq = useRef(0);
+  // Tab badge counts change only with the search term or a data change (tick),
+  // never on a tab / page switch — so we refetch them only when this key moves
+  // and otherwise keep the set we already have.
+  const countsKey = useRef('');
 
-  const [form, setForm] = useState<{ credentialId?: number; prefillPassword?: string } | null>(null);
+  const [form, setForm] = useState<{ credentialId?: number; prefillPassword?: string; detail?: CredentialDetail } | null>(null);
   const [gen, setGen] = useState(false);
   const [viewId, setViewId] = useState<number | null>(null);
   const [shareId, setShareId] = useState<number | null>(null);
@@ -101,21 +105,26 @@ export default function MyVault() {
     const n = ++seq.current;
     setLoading(true);
     setFailed(null);
+    const key = `${dq}|${tick}`;
+    const wantCounts = countsKey.current !== key;
     (async () => {
       try {
         if (tab === 'sharedby') {
-          const [r, c] = await Promise.all([
-            cvApi.sharedByMe({ q: dq, page, per_page: perPage, ...(shareCred ? { credential_id: shareCred } : {}) }),
-            cvApi.vaultList(false, { tab: 'all', page: 1, per_page: 1 }),
-          ]);
+          const r = await cvApi.sharedByMe({ q: dq, page, per_page: perPage, ...(shareCred ? { credential_id: shareCred } : {}) });
           if (n !== seq.current) return;
           if (!r.data.length && page > 1 && r.meta.last_page < page) { setPage(Math.max(1, r.meta.last_page)); return; }
-          setShares(r.data); setPm(r.meta); setCounts(c.tabs);
+          setShares(r.data); setPm(r.meta);
+          if (wantCounts) {
+            const c = await cvApi.vaultList(false, { tab: 'all', page: 1, per_page: 1 });
+            if (n !== seq.current) return;
+            setCounts(c.tabs); countsKey.current = key;
+          }
         } else {
-          const r = await cvApi.vaultList(false, { tab, q: dq, page, per_page: perPage });
+          const r = await cvApi.vaultList(false, { tab, q: dq, page, per_page: perPage, with_counts: wantCounts ? 1 : 0 });
           if (n !== seq.current) return;
           if (!r.data.length && page > 1 && r.meta.last_page < page) { setPage(Math.max(1, r.meta.last_page)); return; }
-          setRows(r.data); setPm(r.meta); setCounts(r.tabs);
+          setRows(r.data); setPm(r.meta);
+          if (wantCounts && r.tabs) { setCounts(r.tabs); countsKey.current = key; }
         }
       } catch (e) {
         if (n !== seq.current) return;
@@ -175,7 +184,7 @@ export default function MyVault() {
           </>
         )} />
 
-      <CvBrief icon={IC.lock} label="My Vault" defaultOpen
+      <CvBrief icon={IC.lock} label="My Vault"
         sub="Saving your personal credentials securely, keeping them organised and strong, and sharing them only when needed."
         steps={STEPS} />
 
@@ -248,13 +257,13 @@ export default function MyVault() {
       </CvCard>
 
       {form && (
-        <CredentialFormModal credentialId={form.credentialId} prefillPassword={form.prefillPassword}
+        <CredentialFormModal credentialId={form.credentialId} prefillPassword={form.prefillPassword} initialDetail={form.detail}
           onClose={() => setForm(null)} onSaved={() => { setForm(null); reload(); }} />
       )}
       {gen && <GeneratorModal onClose={() => setGen(false)} onUse={pw => { setGen(false); setForm({ prefillPassword: pw }); }} />}
       {viewId != null && (
         <ViewDrawer fieldLabels key={viewId} credentialId={viewId} onClose={() => setViewId(null)} onChanged={reload}
-          onEdit={id => { setViewId(null); setForm({ credentialId: id }); }}
+          onEdit={(id, detail) => { setViewId(null); setForm({ credentialId: id, detail }); }}
           onShare={id => { setViewId(null); setShareId(id); }} />
       )}
       {shareId != null && <ShareModal saveLock credentialId={shareId} onClose={() => setShareId(null)} onShared={reload} />}

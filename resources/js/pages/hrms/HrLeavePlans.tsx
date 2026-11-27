@@ -16,6 +16,7 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import SearchClear from '../../components/ui/SearchClear';
 import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 
 
 type CalendarStart = 'fixed_month' | 'joining_date';
@@ -27,6 +28,7 @@ interface LeaveTypeRow {
   quotaLabel: string;
   endOfYearLabel: string;
   configured: boolean;
+  inactive?: boolean;
 }
 
 interface LeavePlan {
@@ -41,12 +43,18 @@ interface LeavePlan {
   employees: PlanEmployee[];
   leaveTypes: LeaveTypeRow[];
   unlocked?: boolean;
+  inactive?: boolean;
 }
 
 interface AccrualConfig {
   unit: 'days';
   unlimited: boolean;
   yearlyQuota: number;
+  /** Optional per-calendar-year quota overrides ({ "2026": 12, "2027": 15 }).
+   *  Years not listed fall back to `yearlyQuota`. */
+  quotaByYear?: Record<string, number>;
+  /** Years that are unlimited (no quota) — e.g. ["2027"]. */
+  unlimitedYears?: string[];
   mode: 'periodic' | 'attendance' | 'immediate';
   frequency: 'monthly' | 'quarterly' | 'half_yearly' | 'yearly';
   dayOfMonth: number;
@@ -140,7 +148,7 @@ interface LeaveTypeConfig {
 
 const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
   accrual: {
-    unit: 'days', unlimited: false, yearlyQuota: 12,
+    unit: 'days', unlimited: false, yearlyQuota: 12, quotaByYear: {}, unlimitedYears: [],
     // 'immediate' is the only allocation mode the UI can express (see
     // AccrualSectionView) — the whole yearly quota is available from day one.
     mode: 'immediate', frequency: 'monthly', dayOfMonth: 1,
@@ -208,6 +216,17 @@ function mergeWithDefaultConfig(raw: Partial<LeaveTypeConfig> | undefined | null
      with no option selected and re-saving clears the dead mode from the stored
      config. The whole yearly quota is available from day one either way. */
   if (accrual.mode !== 'immediate') accrual.mode = 'immediate';
+  // Unlimited is now row-wise: convert any legacy whole-type Unlimited into a
+  // current-year unlimited row, then always drive from the per-year table.
+  const curY = String(new Date().getFullYear());
+  if (accrual.unlimited) {
+    accrual.quotaByYear = { ...(accrual.quotaByYear ?? {}), [curY]: accrual.yearlyQuota || 0 };
+    accrual.unlimitedYears = Array.from(new Set([...(accrual.unlimitedYears ?? []), curY]));
+    accrual.unlimited = false;
+  }
+  if (!accrual.quotaByYear || Object.keys(accrual.quotaByYear).length === 0) {
+    accrual.quotaByYear = { [curY]: accrual.yearlyQuota || 0 };
+  }
   return {
     accrual,
     leaveApp:     { ...def.leaveApp,     ...(raw.leaveApp     ?? {}) },
@@ -297,6 +316,7 @@ function apiTypeToCatalog(api: ApiLeaveType): CatalogType {
     fg: tone.fg,
     accent: tone.color,
     group: api.type === 'Incident Based Leave' ? 'incidental' : 'regular',
+    inactive: String(api.status ?? '').toLowerCase() === 'inactive',
   };
 }
 
@@ -309,6 +329,7 @@ function apiTypeToAssigned(api: ApiLeaveType): LeaveTypeRow {
     quotaLabel: api.pivot?.quota_summary || 'Not Setup',
     endOfYearLabel: api.pivot?.eoy_summary || 'Not Setup',
     configured: !!api.pivot?.is_setup,
+    inactive: String(api.status ?? '').toLowerCase() === 'inactive',
   };
 }
 
@@ -355,6 +376,7 @@ function apiPlanToFrontend(api: ApiLeavePlan): LeavePlan {
     employees: (api.employees ?? []).map(apiEmployeeToPlanEmployee),
     leaveTypes: (api.leave_types ?? []).map(apiTypeToAssigned),
     unlocked: !!api.unlocked,
+    inactive: String(api.status ?? '').toLowerCase() === 'inactive',
   };
 }
 
@@ -404,6 +426,9 @@ export default function HrLeavePlans() {
   const [showAssignTypes, setShowAssignTypes] = useState(false);
   const [setupTypeId, setSetupTypeId] = useState<string | null>(null);
   const [typeConfigs, setTypeConfigs] = useState<Record<string, LeaveTypeConfig>>({});
+  // `planId::typeId` → years any employee has raised that type's leave in. The
+  // config UI refuses to drop a year that already has leave against it.
+  const [raisedYears, setRaisedYears] = useState<Record<string, number[]>>({});
   // Key (`planId::typeId`) of the Setup modal currently open. A background
   // loadPlans() re-seeds typeConfigs from the server; without preserving this
   // entry it would wipe the config the user is mid-way through editing, causing
@@ -416,6 +441,9 @@ export default function HrLeavePlans() {
   const [showGuide, setShowGuide] = useState(false);
   const [catalog, setCatalog] = useState<CatalogType[]>([]);
   const [loading, setLoading] = useState(true);
+  /* Make-default / delete / clone close the menu and then run for a second or
+     two with nothing on screen. Holds the veil's label while one is in flight. */
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   /* Server-side paging for the plan list. 10 is the default the other HR
      tables use; the footer's selector can raise it and the backend caps at 100.
@@ -469,13 +497,16 @@ export default function HrLeavePlans() {
       });
       setPlanTotal(total);
       const seeded: Record<string, LeaveTypeConfig> = {};
+      const seededRaised: Record<string, number[]> = {};
       detailed.forEach(p => {
         (p.leave_types ?? []).forEach(t => {
           if (t.pivot?.config_json) {
             seeded[`${p.id}::${t.id}`] = mergeWithDefaultConfig(t.pivot.config_json as Partial<LeaveTypeConfig>);
           }
+          if (t.pivot?.raised_years) seededRaised[`${p.id}::${t.id}`] = t.pivot.raised_years;
         });
       });
+      setRaisedYears(seededRaised);
       // Preserve the config the user is actively editing in an open Setup modal
       // so this (often background) reload doesn't reset the form mid-edit (#71).
       setTypeConfigs(prev => {
@@ -601,6 +632,7 @@ export default function HrLeavePlans() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
+    setActionBusy('Deleting leave type…');
     try {
       await leaveTypesApi.remove(Number(id));
       toast.success('Leave type deleted', `"${row ? row.name : 'Leave type'}" deleted successfully!`);
@@ -609,6 +641,8 @@ export default function HrLeavePlans() {
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
       toast.error('Delete failed', msg);
+    } finally {
+      setActionBusy(null);
     }
   };
   const onCloseTypeModal = () => {
@@ -618,12 +652,14 @@ export default function HrLeavePlans() {
 
   const onMakeDefault = async () => {
     if (!activePlanId) return;
+    setActionBusy('Setting the default plan…');
     try {
       await leavePlansApi.makeDefault(Number(activePlanId));
       await loadPlans();
     } catch (err) {
       console.error('[HrLeavePlans] make-default failed', err);
     } finally {
+      setActionBusy(null);
       setPlanMenuOpen(false);
     }
   };
@@ -641,6 +677,7 @@ export default function HrLeavePlans() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
+    setActionBusy('Deleting leave plan…');
     try {
       await leavePlansApi.remove(Number(activePlanId));
       const remaining = plans.filter(p => p.id !== activePlanId);
@@ -650,6 +687,8 @@ export default function HrLeavePlans() {
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Delete failed';
       toast.error('Delete failed', msg);
+    } finally {
+      setActionBusy(null);
     }
   };
 
@@ -657,6 +696,7 @@ export default function HrLeavePlans() {
     if (!activePlanId) return;
     const source = plans.find(p => p.id === activePlanId);
     if (!source) return;
+    setActionBusy('Duplicating leave plan…');
     try {
       const cloned = await leavePlansApi.clone(Number(activePlanId), `${source.name} (Copy)`);
       await loadPlans();
@@ -664,6 +704,7 @@ export default function HrLeavePlans() {
     } catch (err) {
       console.error('[HrLeavePlans] clone failed', err);
     } finally {
+      setActionBusy(null);
       setPlanMenuOpen(false);
     }
   };
@@ -713,7 +754,11 @@ export default function HrLeavePlans() {
 
   const isPlanLocked = (p?: LeavePlan | null): boolean =>
     !!p && !p.unlocked && p.leaveTypes.length > 0 && p.leaveTypes.every(t => t.configured);
-  const activePlanLocked = isPlanLocked(activePlan);
+  // A plan that employees are mapped to stays EDITABLE even when fully set up:
+  // per-year quota has to be managed on live plans (add next year, adjust a
+  // future quota). The lock (clone-to-change) now only guards configured plans
+  // that nobody is on yet.
+  const activePlanLocked = isPlanLocked(activePlan) && (activePlan?.employees.length ?? 0) === 0;
 
   const onSavePlan = async (
     plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>,
@@ -770,6 +815,7 @@ export default function HrLeavePlans() {
   return (
     <>
       <MasterFormStyles />
+      {actionBusy && <FullPageLoader label={actionBusy} />}
       <Row>
         <Col xs={12}>
           {/* Match the Leave Management layout: the shared header strip sits
@@ -847,7 +893,12 @@ export default function HrLeavePlans() {
                     />
                     <SearchClear show={planSearch} onClear={() => { setPlanSearch(''); }} />
                   </div>
-                  <div className="lp-section-label">LEAVE PLANS</div>
+                  <div className="lp-section-label">
+                    <span>LEAVE PLANS</span>
+                    {!hasMorePlans && planTotal > 0 && (
+                      <span className="lp-plan-count-note">{planTotal} {planTotal === 1 ? 'plan' : 'plans'}</span>
+                    )}
+                  </div>
                   <div className="lp-plan-list">
                     {filteredPlans.map(p => (
                       <button
@@ -858,8 +909,11 @@ export default function HrLeavePlans() {
                       >
                         <div className="d-flex align-items-center justify-content-between gap-2">
                           <PlanName name={p.name} className="lp-plan-name" />
-                          {p.isDefault && (
-                            <span className="lp-default-pill">DEFAULT</span>
+                          {(p.isDefault || p.inactive) && (
+                            <span className="d-inline-flex align-items-center gap-1 flex-shrink-0">
+                              {p.isDefault && <span className="lp-default-pill">DEFAULT</span>}
+                              {p.inactive && <span className="lp-inactive-pill" title="Marked Inactive in the Leave Plan master">INACTIVE</span>}
+                            </span>
                           )}
                         </div>
                         <div className="lp-plan-count">
@@ -880,13 +934,6 @@ export default function HrLeavePlans() {
                       </div>
                     )}
                   </div>
-                  {/* Only once the whole set is in hand — a count that keeps
-                      changing while more loads is noise. */}
-                  {!hasMorePlans && planTotal > 0 && (
-                    <div className="lp-plan-count-note">
-                      {planTotal} {planTotal === 1 ? 'plan' : 'plans'}
-                    </div>
-                  )}
                   {canAdd && (
                     <button
                       type="button"
@@ -910,6 +957,11 @@ export default function HrLeavePlans() {
                         <div className="min-w-0">
                           <h5 className="fw-bold mb-1 d-flex align-items-center gap-2 lp-main-title">
                             <PlanName name={activePlan.name} />
+                            {activePlan.inactive && (
+                              <span className="lp-inactive-pill lp-inactive-pill--lg" title="This plan is marked Inactive in the Leave Plan master">
+                                <i className="ri-forbid-2-line" /> Inactive
+                              </span>
+                            )}
                             {activePlanLocked && (
                               <span
                                 className="badge d-inline-flex align-items-center gap-1 lvp-locked-chip"
@@ -1017,6 +1069,8 @@ export default function HrLeavePlans() {
         isOpen={!!setupTypeId}
         readOnly={activePlanLocked}
         leaveType={activePlan?.leaveTypes.find(t => t.id === setupTypeId) ?? null}
+        raisedYears={setupTypeId && activePlan ? (raisedYears[`${activePlan.id}::${setupTypeId}`] ?? []) : []}
+        mapped={(activePlan?.employees.length ?? 0) > 0}
         config={
           setupTypeId && activePlan
             ? typeConfigs[`${activePlan.id}::${setupTypeId}`] ?? defaultLeaveTypeConfig()
@@ -1043,6 +1097,15 @@ export default function HrLeavePlans() {
             const q = Number(next.accrual.yearlyQuota);
             if (!Number.isFinite(q) || q < 0 || q > 365) {
               toast.error('Invalid leave quota', 'Yearly quota must be between 0 and 365 days.');
+              throw new Error('invalid-quota');
+            }
+            // Per-year rows must each be a valid 0..365 quota (unlimited years skip it).
+            const unY = next.accrual.unlimitedYears ?? [];
+            const badYear = Object.entries(next.accrual.quotaByYear ?? {}).find(
+              ([y, v]) => !unY.includes(y) && (!Number.isFinite(Number(v)) || Number(v) < 0 || Number(v) > 365),
+            );
+            if (badYear) {
+              toast.error('Invalid leave quota', `Quota for ${badYear[0]} must be between 0 and 365 days.`);
               throw new Error('invalid-quota');
             }
             // Attendance-based accrual threshold — "for every X days worked in
@@ -1141,6 +1204,7 @@ function ConfigurationTab({
           <div className="d-flex align-items-center gap-2">
             <span className="lp-type-dot" style={{ background: t.color }} />
             <span className="fw-semibold fs-13">{t.name}</span>
+            {t.inactive && <span className="lp-inactive-pill" title="Marked Inactive in the Leave Type master">INACTIVE</span>}
           </div>
         );
       },
@@ -1233,6 +1297,11 @@ function ConfigurationTab({
         subtitle="Quota and year-end rule for each leave type on this plan"
         accent="violet"
         minWidth={760}
+        /* Grow the rows to fill the panel height instead of hugging the data,
+           so a short list doesn't leave a big blank below the table. */
+        fitToViewport
+        autoFitRows
+        fillToFooter
         emptyMessage="No leave types yet — use “+ Assign Leave Type” to configure categories for this plan."
       />    </div>
   );
@@ -1249,6 +1318,7 @@ type CatalogType = {
   fg: string;
   accent: string;
   group: 'regular' | 'incidental';
+  inactive?: boolean;
 };
 
 function LeaveTypesTab({
@@ -1293,6 +1363,15 @@ function LeaveTypesTab({
           </div>
         );
       },
+    },
+    {
+      header: 'Status',
+      id: 'status',
+      accessorFn: (t: CatalogType) => (t.inactive ? 'Inactive' : 'Active'),
+      meta: { width: 110, align: 'center' },
+      cell: info => (info.row.original.inactive
+        ? <span className="lp-inactive-pill" title="Marked Inactive in the Leave Type master">INACTIVE</span>
+        : <span className="lp-active-pill">ACTIVE</span>),
     },
     {
       header: 'Type',
@@ -1402,6 +1481,8 @@ function LeaveBalancesTab() {
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('All');
   const [location, setLocation] = useState('All');
+  // Balances reset each calendar year; default to the current one, selectable.
+  const [year, setYear] = useState<number>(() => new Date().getFullYear());
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -1409,6 +1490,7 @@ function LeaveBalancesTab() {
       const resp = await leaveBalancesApi.fetch({
         location: location === 'All' ? undefined : location,
         search: search.trim() || undefined,
+        year,
       });
       setData(resp);
     } catch (err) {
@@ -1417,7 +1499,7 @@ function LeaveBalancesTab() {
     } finally {
       setLoading(false);
     }
-  }, [location, search]);
+  }, [location, search, year]);
 
   useEffect(() => { refetch(); }, [refetch]);
 
@@ -1557,6 +1639,12 @@ function LeaveBalancesTab() {
 
   const balancesToolbarActions = (
     <>
+      <MasterSelect
+        value={String(year)}
+        options={Array.from({ length: 5 }, (_, i) => new Date().getFullYear() + 1 - i).map(y => ({ value: String(y), label: String(y) }))}
+        onChange={v => setYear(Number(v))}
+        fitWidth
+      />
       <MasterFilterButton
         title="Filter Leave Balances"
         facets={balanceFacets}
@@ -2050,6 +2138,7 @@ function AddLeavePlanModal({
               <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-save-3-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {saving ? (editing ? 'Updating…' : 'Saving…') : (editing ? 'Update Plan' : 'Save Plan')}
             </button>
+            {saving && <FullPageLoader label={editing ? 'Updating leave plan…' : 'Saving leave plan…'} />}
           </div>
         </div>
       </ModalBody>
@@ -2303,6 +2392,7 @@ function AddLeaveTypeModal({
               <i className={saving ? 'ri-loader-4-line' : (editing ? 'ri-save-line' : 'ri-add-line')} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {saving ? (editing ? 'Updating…' : 'Saving…') : (editing ? 'Update Leave Type' : 'Save Leave Type')}
             </button>
+            {saving && <FullPageLoader label={editing ? 'Updating leave type…' : 'Saving leave type…'} />}
           </div>
         </div>
       </ModalBody>
@@ -2340,7 +2430,9 @@ function AssignLeaveTypesModal({
   const visibleSelectedCount = selected.size;
   useEffect(() => { if (isOpen) setSaving(false); }, [isOpen]);
 
-  const assignableTypes: AssignableType[] = useMemo(() => catalog.map(c => {
+  // Inactive leave types (frozen in the Leave Type master) must not be offered
+  // for assignment — they should not appear in this picker dropdown.
+  const assignableTypes: AssignableType[] = useMemo(() => catalog.filter(c => !c.inactive).map(c => {
     const category: AssignableType['category'] =
       c.type === 'Compensatory offs' ? 'compoff'
       : c.type === 'Incident based' ? 'incident'
@@ -2537,6 +2629,7 @@ function AssignLeaveTypesModal({
               <i className={saving ? 'ri-loader-4-line' : 'ri-save-3-line'} style={saving ? { animation: 'spin 1s linear infinite' } : undefined} />
               {saving ? 'Saving…' : `Save (${visibleSelectedCount})`}
             </button>
+            {saving && <FullPageLoader label="Assigning leave types…" />}
           </div>
         </div>
       </ModalBody>
@@ -2553,13 +2646,19 @@ const SETUP_SECTIONS: { key: SetupSection; label: string; icon: string; tone: st
 ];
 
 function LeaveTypeSetupModal({
-  isOpen, leaveType, config, onClose, onChange, onSave, readOnly,
+  isOpen, leaveType, config, onClose, onChange, onSave, readOnly, raisedYears = [], mapped = false,
 }: {
   isOpen: boolean;
   leaveType: LeaveTypeRow | null;
   config: LeaveTypeConfig;
   onClose: () => void;
   onChange: (next: LeaveTypeConfig) => void;
+  /** Years that already have leave raised against this type — the Yearly Quota
+   *  table blocks removing them. */
+  raisedYears?: number[];
+  /** The plan has employees on it — existing year rows become read-only (only
+   *  Add year / future years stay editable). */
+  mapped?: boolean;
   /** Persist the current config. `finalize` is true only for the wizard's last
    *  section (Save & Close) so is_setup is flipped once, not on every section.
    *  Resolves on success; rejects on failure so the modal keeps the spinner off
@@ -2702,7 +2801,7 @@ function LeaveTypeSetupModal({
                 disabled={readOnly}
                 style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto', ...(readOnly ? { pointerEvents: 'none' } : {}) }}
               >
-              {active === 'accrual'      && <AccrualSectionView      cfg={config.accrual}      update={updateAccrual} />}
+              {active === 'accrual'      && <AccrualSectionView      cfg={config.accrual}      update={updateAccrual} raisedYears={raisedYears} mapped={mapped} />}
               {active === 'leaveApp'     && <LeaveAppSectionView     cfg={config.leaveApp}     update={updateLeaveApp} />}
               {active === 'approval'     && <ApprovalSectionView     cfg={config.approval}     update={updateApproval} />}
               {active === 'yearEnd'      && <YearEndSectionView      cfg={config.yearEnd}      update={updateYearEnd} />}
@@ -2730,6 +2829,7 @@ function LeaveTypeSetupModal({
                       sectionIndex === SETUP_SECTIONS.length - 1 ? 'Save & Close' : 'Save & Next'
                     )}
                   </button>
+                  {saving && <FullPageLoader label={`Saving ${sectionMeta.label.toLowerCase()}…`} />}
                 </>
               )}
             </div>
@@ -2772,14 +2872,14 @@ function CheckRow({
   const inert = locked || disabled;
   return (
     <div className="lts-check-row" style={disabled ? { opacity: 0.55 } : undefined}>
-      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: inert ? 'default' : 'pointer' }}>
+      <label className={`d-flex gap-2 mb-0 ${sub ? 'align-items-start' : 'align-items-center'}`} style={{ cursor: inert ? 'default' : 'pointer' }}>
         <input
           type="checkbox"
-          className="form-check-input mt-1"
+          className={`form-check-input ${sub ? 'mt-1' : ''}`}
           checked={locked ? true : checked}
           disabled={inert}
           onChange={e => { if (!inert) onChange(e.target.checked); }}
-          style={{ accentColor: '#7c5cfc' }}
+          style={{ accentColor: '#7c5cfc', marginTop: sub ? undefined : 0, flexShrink: 0 }}
         />
         <div className="flex-grow-1 min-w-0">
           <div className="fw-semibold d-flex align-items-center gap-1" style={{ fontSize: 13 }}>
@@ -2817,50 +2917,151 @@ function RadioRow({
   );
 }
 
-function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: Partial<AccrualConfig>) => void }) {
+function AccrualSectionView({ cfg, update, raisedYears = [], mapped = false }: { cfg: AccrualConfig; update: (p: Partial<AccrualConfig>) => void; raisedYears?: number[]; mapped?: boolean }) {
+  const toast = useToast();
+  // Per-year quota table: { "2026": 12 }, with optional per-year "Unlimited"
+  // years. Years are auto-serial (current year + consecutive) — not editable;
+  // yearlyQuota is kept in sync with the current year's row.
+  const curYear = String(new Date().getFullYear());
+  const rawByYear = cfg.quotaByYear ?? {};
+  // Old data (saved before per-year quota) has no map — show the current year
+  // seeded from the legacy yearly quota so the table is never blank; an edit
+  // then persists it as a real row.
+  const byYear = Object.keys(rawByYear).length ? rawByYear : { [curYear]: Number(cfg.yearlyQuota) || 0 };
+  const unlimitedYears = cfg.unlimitedYears ?? [];
+  const setByYear = (next: Record<string, number>, nextUnlimited?: string[]) => {
+    const base = next[curYear] ?? Object.values(next)[0] ?? cfg.yearlyQuota;
+    update({ quotaByYear: next, yearlyQuota: Number(base) || 0, ...(nextUnlimited ? { unlimitedYears: nextUnlimited } : {}) });
+  };
+  // Add year = next consecutive year after the last one (serial, no picker).
+  const addYear = () => {
+    const yrs = Object.keys(byYear).map(Number).filter(n => !Number.isNaN(n));
+    const y = yrs.length ? Math.max(...yrs) + 1 : Number(curYear);
+    const base = byYear[curYear] ?? Object.values(byYear)[0] ?? cfg.yearlyQuota;
+    setByYear({ ...byYear, [y]: Number(base) || 0 });
+  };
+  const isRaised = (y: string) => raisedYears.includes(Number(y));
+  // On a LIVE plan (employees mapped) the quota/unlimited of a year employees
+  // already run on is frozen — the current & past years, and any year with leave
+  // raised against it. Only future years and Add year stay editable, so a live
+  // plan can set next year's quota without rewriting what people already have.
+  const lockedRow = (y: string) => isRaised(y) || (mapped && Number(y) <= Number(curYear));
+  // Delete is blocked on the current year, raised years, and (live plan) past
+  // years. A future year with no leave can still be removed to undo an Add.
+  const deleteLocked = (y: string) => y === curYear || isRaised(y) || (mapped && Number(y) < Number(curYear));
+  const removeYear = (y: string) => {
+    if (y === curYear) { toast.warning('You cannot remove the current year', 'The current calendar year must stay in the quota table.'); return; }
+    if (isRaised(y)) { toast.warning(`You cannot remove ${y}`, 'An employee has already raised leave for this year, so its quota must stay.'); return; }
+    if (mapped && Number(y) < Number(curYear)) { toast.warning(`You cannot remove ${y}`, 'This plan is assigned to employees — a past year can’t be removed.'); return; }
+    const next = { ...byYear }; delete next[y];
+    setByYear(next, unlimitedYears.filter(u => u !== y));
+  };
+  const setYearUnlimited = (y: string, on: boolean) => {
+    const set = new Set(unlimitedYears);
+    if (on) set.add(y); else set.delete(y);
+    update({ unlimitedYears: Array.from(set) });
+  };
   return (
     <>
       <h5 className="fw-bold mb-3">Accrual</h5>
 
       <SectionCard icon="ri-information-line" iconBg="#ece6ff" title="Yearly Quota">
-        {/* Leave is always calculated in days — the Days/Hours toggle and all
-            hours-based logic were removed. */}
-        <div className="d-flex align-items-center gap-3 flex-wrap">
-          <span className="text-muted" style={{ fontSize: 12.5, minWidth: 80 }}>Yearly quota</span>
-          <label className="d-flex align-items-center gap-2 mb-0" style={{ cursor: 'pointer' }}>
-            <input
-              type="radio"
-              className="form-check-input"
-              checked={!cfg.unlimited}
-              onChange={() => update({ unlimited: false })}
-              style={{ accentColor: '#7c5cfc' }}
-            />
-            <input
-              type="number"
-              className="lts-input"
-              style={{ width: 70 }}
-              min={0}
-              max={365}
-              value={cfg.yearlyQuota}
-              onChange={e => update({ yearlyQuota: Number(e.target.value) || 0, unlimited: false })}
-              disabled={cfg.unlimited}
-            />
-            <span className="text-muted" style={{ fontSize: 12.5 }}>days</span>
-          </label>
-          <label className="d-flex align-items-center gap-2 mb-0" style={{ cursor: 'pointer' }}>
-            <input
-              type="radio"
-              className="form-check-input"
-              checked={cfg.unlimited}
-              onChange={() => update({ unlimited: true })}
-              style={{ accentColor: '#7c5cfc' }}
-            />
-            <span style={{ fontSize: 13 }}>Unlimited</span>
-          </label>
-        </div>
-        {!cfg.unlimited && (cfg.yearlyQuota < 0 || cfg.yearlyQuota > 365) && (
+        {/* Row-wise quota table: each calendar year has its own quota, or is
+            marked Unlimited for that year. */}
+        {!cfg.unlimited && (
+          <div>
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <span className="text-muted" style={{ fontSize: 12.5 }}>Quota per calendar year</span>
+              <button type="button" className="rec-btn-primary" onClick={addYear} title="Add a year" style={{ padding: '7px 14px', fontSize: 12.5 }}>
+                <i className="ri-add-line" />Add year
+              </button>
+            </div>
+            {mapped && (
+              <div className="d-flex align-items-center gap-1 mb-2 text-muted" style={{ fontSize: 11.5 }}>
+                <i className="ri-lock-2-line" />
+                <span>This plan is assigned to employees — the current and past years are locked. You can add future years and set their quota.</span>
+              </div>
+            )}
+            <div style={{ border: '1px solid var(--vz-border-color)', borderRadius: 10, overflow: 'hidden' }}>
+              <div
+                className="d-flex align-items-center px-3 py-2"
+                style={{ background: 'rgba(124,92,252,0.06)', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)' }}
+              >
+                <div style={{ width: 60 }}>Sr No.</div>
+                <div style={{ width: 150 }}>Year</div>
+                <div style={{ width: 160 }}>Quota (days)</div>
+                <div style={{ flex: 1 }} />
+                <div style={{ width: 130 }}>Unlimited</div>
+                <div style={{ width: 70, textAlign: 'right' }}>Action</div>
+              </div>
+              {Object.entries(byYear).sort((a, b) => Number(a[0]) - Number(b[0])).map(([yr, q], i) => {
+                const un = unlimitedYears.includes(yr);
+                const locked = lockedRow(yr);
+                const lockTitle = isRaised(yr)
+                  ? `${yr} has leave raised against it — its quota is locked.`
+                  : 'This plan is assigned to employees — only future years can be edited.';
+                return (
+                  <div key={yr} className="d-flex align-items-center px-3 py-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+                    <div style={{ width: 60, fontSize: 12.5, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{i + 1}</div>
+                    <div style={{ width: 150, fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {yr}
+                      {yr === curYear && (
+                        <span className="badge" style={{ background: 'rgba(124,92,252,0.12)', color: '#7c5cfc', fontWeight: 600, fontSize: 10 }}>Current</span>
+                      )}
+                      {locked && yr !== curYear && (
+                        <i className="ri-lock-2-line text-muted" style={{ fontSize: 12 }} title={lockTitle} />
+                      )}
+                    </div>
+                    <div style={{ width: 160 }}>
+                      {un ? (
+                        <span className="text-muted d-inline-flex align-items-center" style={{ fontSize: 12.5 }}><i className="ri-infinity-line me-1" />Unlimited</span>
+                      ) : (
+                        <input
+                          type="number"
+                          className={`lts-input${(q < 0 || q > 365) ? ' is-invalid' : ''}`}
+                          style={{ width: 120 }}
+                          min={0}
+                          max={365}
+                          value={q}
+                          disabled={locked}
+                          title={locked ? lockTitle : undefined}
+                          onChange={e => setByYear({ ...byYear, [yr]: Number(e.target.value) || 0 })}
+                        />
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }} />
+                    <div style={{ width: 130 }}>
+                      <label className="d-flex align-items-center gap-2 mb-0" style={{ cursor: locked ? 'not-allowed' : 'pointer' }} title={locked ? lockTitle : undefined}>
+                        <input type="checkbox" className="form-check-input" checked={un} disabled={locked} onChange={e => setYearUnlimited(yr, e.target.checked)} style={{ accentColor: '#7c5cfc' }} />
+                        <span className="text-muted" style={{ fontSize: 12 }}>Unlimited</span>
+                      </label>
+                    </div>
+                    <div style={{ width: 70, textAlign: 'right' }}>
+                      {deleteLocked(yr) ? (
+                        <button
+                          type="button"
+                          className="lp-icon-btn"
+                          title={yr === curYear ? 'The current year cannot be removed' : isRaised(yr) ? `${yr} has leave raised against it and cannot be removed` : lockTitle}
+                          style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                          onClick={() => removeYear(yr)}
+                        >
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      ) : (
+                        <button type="button" className="lp-icon-btn" title="Remove year" onClick={() => removeYear(yr)}>
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {!cfg.unlimited && Object.entries(byYear).some(([yr, v]) => !unlimitedYears.includes(yr) && (v < 0 || v > 365)) && (
           <div className="text-danger mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12 }}>
-            <i className="ri-error-warning-line" /> Yearly quota must be between 0 and 365 days.
+            <i className="ri-error-warning-line" /> Quota must be between 0 and 365 days.
           </div>
         )}
       </SectionCard>

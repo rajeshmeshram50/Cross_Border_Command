@@ -233,10 +233,19 @@ export default function ExportModal({ selection, teamName, onClose, preview = fa
                     {!preview && <div className="mapsup-ffield" style={{ marginTop: 10 }}>
                       <label className="mapsup-flabel" htmlFor="tv-ex-pw">Account password<span className="req">*</span></label>
                       <div className="mapsup-inputwrap">
+                        {/* The browser fills a saved login's username into the nearest text box before a password
+                            field; without this hidden one it landed in the Team Details search (as in BackupModal). */}
+                        <input type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" className="ir-ac-trap" />
                         <input id="tv-ex-pw" type="password" className="mapsup-finput" autoComplete="current-password"
                           placeholder="Enter your login password to confirm" value={password}
                           onChange={e => setPassword(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') run(); }} />
                       </div>
+                      {/* QA #11: say WHICH password. The placeholder vanishes as soon as the browser autofills
+                          the saved login, leaving a filled box with no clue what it holds. */}
+                      <span style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 6, fontSize: 11.5, fontWeight: 500, lineHeight: 1.45, color: '#7f97a3' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                        This is your login password, the one you sign in to the app with, not a vault or credential password.
+                      </span>
                       {fieldErr('account_password') && <span className="cv-ferr">{fieldErr('account_password')}</span>}
                     </div>}
                   </>

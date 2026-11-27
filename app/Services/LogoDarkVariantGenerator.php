@@ -4,28 +4,8 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Generates a dark-mode "<base>-dark.png" variant beside an uploaded tenant
- * logo so the horizontal header (IdimsHeader) can adapt it for dark mode.
- *
- * Strategy (decided per image, because tenants upload anything — clean logos,
- * white-background exports, photos, solid-colour blocks):
- *   1. Build a stripped + recoloured candidate (near-white bg -> transparent,
- *      dark ink -> white, brand colours kept).
- *   2. If that leaves a healthy amount of transparency, it's a real logo with
- *      whitespace -> save it (blends on dark, no box).
- *   3. Otherwise it's effectively full-bleed:
- *        · light / photographic background  -> strip the light backdrop by
- *          luminance so the subject sits on the dark nav (no white box). The
- *          white logo-plate remains the UI fallback if no variant exists at all.
- *        · dark / saturated colour block     -> copy as-is (already reads on dark).
- *
- * Output keeps the original resolution (lossless PNG). Failure-safe: a bad image
- * must never break a logo upload.
- */
 class LogoDarkVariantGenerator
 {
-    /** Fraction of transparency above which the strip is treated as a real logo. */
     private const LOGO_TRANSPARENCY = 0.30;
 
     public static function generate(?string $relativePath): void
@@ -33,16 +13,14 @@ class LogoDarkVariantGenerator
         try {
             if (!$relativePath) return;
             $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
-            if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true)) return; // skip svg/gif
-            if (!function_exists('imagecreatefromstring')) return;             // GD unavailable
+            if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true)) return;
+            if (!function_exists('imagecreatefromstring')) return;
 
             $disk = Storage::disk('public');
             if (!$disk->exists($relativePath)) return;
 
             $src = @imagecreatefromstring($disk->get($relativePath));
             if (!$src) return;
-            // Indexed/palette PNGs return colour INDEXES from imagecolorat (not RGBA),
-            // which would make every pixel read garbage. Normalise to truecolor first.
             if (function_exists('imagepalettetotruecolor')) { imagepalettetotruecolor($src); }
             imagesavealpha($src, true);
 
@@ -52,7 +30,6 @@ class LogoDarkVariantGenerator
             $darkPath = self::darkPath($relativePath);
             $total = max(1, $w * $h);
 
-            // 1. Strip near-white background -> transparent, dark ink -> white.
             $out = imagecreatetruecolor($w, $h);
             imagealphablending($out, false);
             imagesavealpha($out, true);
@@ -62,34 +39,22 @@ class LogoDarkVariantGenerator
                 for ($x = 0; $x < $w; $x++) {
                     $c = imagecolorat($src, $x, $y);
                     $a = $hasAlpha ? (($c >> 24) & 0x7F) : 0;
-                    if ($a >= 120) { $transparent++; continue; }     // already transparent
+                    if ($a >= 120) { $transparent++; continue; }
                     $r = ($c >> 16) & 0xFF; $g = ($c >> 8) & 0xFF; $b = $c & 0xFF;
-                    if (min($r, $g, $b) >= 240) { $transparent++; continue; } // near-white -> clear
+                    if (min($r, $g, $b) >= 240) { $transparent++; continue; }
                     $chroma = max($r, $g, $b) - min($r, $g, $b);
                     $lum = 0.299 * $r + 0.587 * $g + 0.114 * $b;
                     if ($chroma < 40) {
-                        // Grayscale ink / anti-aliased edge (signatures, mono logos):
-                        // render as a crisp white alpha-mask so thin strokes stay sharp
-                        // instead of leaving dim grey fuzz. Light grey speckle -> clear.
                         if ($lum >= 210) { $transparent++; continue; }
                         $r = $g = $b = 255;
                         $a = $lum <= 110 ? 0 : (int) round(($lum - 110) / (210 - 110) * 110);
                     }
-                    // COLOURED pixels (chroma >= 40) are KEPT EXACTLY — the logo
-                    // must look the SAME in dark mode as in light mode (user:
-                    // "colour should not change, jo light mode me hai vahi dark me
-                    // ho"). We only strip the white background (above) and turn
-                    // grayscale/near-black ink into a white mask (chroma < 40
-                    // branch) — pure black/grey text has no hue to preserve and
-                    // would be invisible on the dark nav. No lightening / no
-                    // hue-shift: a dark purple stays exactly that purple.
                     $col = imagecolorallocatealpha($out, $r, $g, $b, $a);
                     imagesetpixel($out, $x, $y, $col);
                     imagecolordeallocate($out, $col);
                 }
             }
 
-            // 2. Healthy whitespace -> it's a real logo; keep the stripped variant.
             if ($transparent / $total >= self::LOGO_TRANSPARENCY) {
                 $disk->put($darkPath, self::toPng($out));
                 imagedestroy($src);
@@ -98,11 +63,8 @@ class LogoDarkVariantGenerator
             }
             imagedestroy($out);
 
-            // 3a. Light / photographic background -> strip the light backdrop by
-            //     luminance (soft ramp) so the subject sits on the dark nav with
-            //     no white box. Photo colours are kept (no ink recolouring).
             if (self::borderIsLight($src, $hasAlpha, $w, $h)) {
-                $hi = 224; $lo = 196; // L>=hi -> clear, <=lo -> opaque, ramp between
+                $hi = 224; $lo = 196;
                 $lit = imagecreatetruecolor($w, $h);
                 imagealphablending($lit, false);
                 imagesavealpha($lit, true);
@@ -114,7 +76,7 @@ class LogoDarkVariantGenerator
                         if ($a >= 120) continue;
                         $r = ($c >> 16) & 0xFF; $g = ($c >> 8) & 0xFF; $b = $c & 0xFF;
                         $lum = 0.299 * $r + 0.587 * $g + 0.114 * $b;
-                        if ($lum >= $hi) continue; // light backdrop -> transparent
+                        if ($lum >= $hi) continue;
                         $alpha = $lum <= $lo ? 0 : (int) round(($lum - $lo) / ($hi - $lo) * 127);
                         $col = imagecolorallocatealpha($lit, $r, $g, $b, $alpha);
                         imagesetpixel($lit, $x, $y, $col);
@@ -127,17 +89,15 @@ class LogoDarkVariantGenerator
                 return;
             }
 
-            // 3b. Dark / saturated full-bleed logo -> copy as-is (reads on dark).
             imagealphablending($src, false);
             imagesavealpha($src, true);
             $disk->put($darkPath, self::toPng($src));
             imagedestroy($src);
         } catch (\Throwable $e) {
-            report($e); // swallow — never block the upload
+            report($e);
         }
     }
 
-    /** Remove the dark variant beside a logo (call before deleting the logo). */
     public static function delete(?string $relativePath): void
     {
         try {
@@ -156,11 +116,6 @@ class LogoDarkVariantGenerator
         return preg_replace('/\.(png|jpe?g|webp)$/i', '-dark.png', $relativePath);
     }
 
-    /**
-     * True when the logo's border is mostly transparent or light (luminance >= 200).
-     * Samples an INSET ring (~5%) so a thin decorative frame around a photo doesn't
-     * masquerade as the real background.
-     */
     private static function borderIsLight($im, bool $hasAlpha, int $w, int $h): bool
     {
         $inX = max(1, (int) round($w * 0.05));

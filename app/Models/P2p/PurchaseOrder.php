@@ -15,10 +15,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * P2P · Create Purchase Order — the PO header.
- * Tenant-scoped through BelongsToTenant (client + branch from the request).
- */
 class PurchaseOrder extends Model
 {
     use BelongsToTenant, SoftDeletes;
@@ -29,7 +25,6 @@ class PurchaseOrder extends Model
     public const STATUS_SUBMITTED = 'submitted';
     public const STATUS_CANCELLED = 'cancelled';
 
-    /** Cancelled with money released: initiated until the refund is recovered, then closed. */
     public const CANCEL_INITIATED = 'initiated';
     public const CANCEL_CLOSED    = 'closed';
 
@@ -39,15 +34,12 @@ class PurchaseOrder extends Model
     public const LINK_TYPES = ['with_shipment', 'standalone'];
     public const TRANSPORT_MODES = ['Sea', 'Road', 'Air'];
     public const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
-    /** PO types that can be raised today; the others are listed but not open yet. */
     public const OPEN_PO_TYPES = ['material_goods'];
     public const PAYMENT_TYPES = ['Advanced Payment', 'Full Payment', 'Letter of Credit'];
-    /** What the list prints for each value — also what the search matches on. */
     public const PO_TYPE_LABELS = [
         'material_goods' => 'Material / Goods', 'services' => 'Services', 'ffd_transporter' => 'FFD / Transporter',
     ];
     public const DOC_TYPE_LABELS = ['domestic' => 'Domestics', 'international' => 'International'];
-    /** The supplier type (master_vendor_types.name) each PO type needs. */
     public const PO_TYPE_SUPPLIER_TYPE = [
         'material_goods'  => 'Material / Goods',
         'ffd_transporter' => 'FFD / Transporter',
@@ -145,7 +137,6 @@ class PurchaseOrder extends Model
         return $this->hasMany(PoGstApproval::class, 'purchase_order_id');
     }
 
-    /** The latest senior-approval request — the one that decides whether the PO may be submitted. */
     public function latestGstApproval(): HasOne
     {
         return $this->hasOne(PoGstApproval::class, 'purchase_order_id')->latestOfMany();
@@ -154,8 +145,6 @@ class PurchaseOrder extends Model
     public function vendor(): BelongsTo        { return $this->belongsTo(Vendor::class)->withTrashed(); }
     public function shipmentOrder(): BelongsTo { return $this->belongsTo(ShipmentOrder::class); }
     public function proformaInvoice(): BelongsTo { return $this->belongsTo(ProformaInvoice::class); }
-    /* lead_id was fillable but had no relation, so $po->lead read as null and
-       anything hanging off the opportunity resolved to nothing. */
     public function lead(): BelongsTo { return $this->belongsTo(\App\Models\Lead::class); }
     public function client(): BelongsTo        { return $this->belongsTo(Client::class); }
     public function branch(): BelongsTo        { return $this->belongsTo(Branch::class); }
@@ -163,23 +152,17 @@ class PurchaseOrder extends Model
 
     public function isCancelled(): bool { return $this->status === self::STATUS_CANCELLED; }
 
-    /** Payments have started: a pending / approved payment request, or money paid. The PO is then view-only. */
     public function paymentsStarted(): bool
     {
         return (float) $this->paid_amount > 0
             || $this->paymentRequests()->withoutGlobalScope('tenant')->whereIn('status', [PoPaymentRequest::STATUS_PENDING, PoPaymentRequest::STATUS_APPROVED])->exists();
     }
 
-    /** A document on it has gone out for signature, or come back signed. The
-        supplier is signing what was sent, so the PO must not change under it.
-        A declined / recalled / expired request puts its documents back to
-        pending (PoDocumentService::syncSignatures), which lifts this again. */
     public function signingStarted(): bool
     {
         return $this->documents()->whereIn('status', [PurchaseOrderDocument::STATUS_SENT, PurchaseOrderDocument::STATUS_SIGNED])->exists();
     }
 
-    /** Content is frozen once cancelled or once any document is out for signature / signed. */
     public function isLocked(): bool
     {
         return $this->isCancelled() || $this->signingStarted();

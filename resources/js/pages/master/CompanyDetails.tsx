@@ -195,10 +195,6 @@ export default function CompanyDetailsMaster() {
 
   return (
     <>
-      {/* Page header bar: title on left, Back + Add cluster on right —
-          uses the unified "Back to Master list" pill that every other
-          master now ships, so the action cluster stays visually
-          consistent across the master family. */}
       <Row className="align-items-center mb-3">
         <Col>
           <div>
@@ -248,7 +244,6 @@ export default function CompanyDetailsMaster() {
         </Col>
       </Row>
 
-      {/* Info Guide — collapsible stepper */}
       <Card className="shadow-sm border-0 mb-3 overflow-hidden">
         <CardHeader className="bg-light-subtle d-flex align-items-center justify-content-between border-0" onClick={() => setShowGuide(!showGuide)} style={{ cursor: 'pointer' }}>
           <div className="d-flex align-items-center gap-2">
@@ -271,7 +266,6 @@ export default function CompanyDetailsMaster() {
         <Collapse isOpen={showGuide}>
           <CardBody className="pt-4 pb-4">
             <div className="position-relative">
-              {/* horizontal dashed connector line behind the steps */}
               <div
                 className="d-none d-md-block position-absolute"
                 style={{
@@ -306,7 +300,6 @@ export default function CompanyDetailsMaster() {
         </Collapse>
       </Card>
 
-      {/* Job-dashboard style radial analytics cards */}
       <Row className="g-3 mb-3">
         <Col md={4}>
           <RadialStatCard
@@ -334,7 +327,6 @@ export default function CompanyDetailsMaster() {
         </Col>
       </Row>
 
-      {/* Table card */}
       <Card className="shadow-sm border-0">
         <CardHeader className="bg-body-tertiary border-0 pt-3 pb-0">
           <div className="d-flex align-items-center flex-wrap gap-2">
@@ -377,7 +369,6 @@ export default function CompanyDetailsMaster() {
         </CardBody>
       </Card>
 
-      {/* Add/Edit Modal — mirrors payment form pattern */}
       <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} size="xl" centered backdrop="static">
         <ModalHeader toggle={() => setModalOpen(false)}>
           {viewOnly ? 'View Company Detail' : editingId != null ? 'Edit Company Detail' : 'Add Company Detail'}
@@ -389,7 +380,6 @@ export default function CompanyDetailsMaster() {
               Legal identity is referenced on every export document — ensure GSTIN and PAN are accurate.
             </div>
             <Row className="g-3">
-              {/* Row 1 — 2 wide fields */}
               <Col md={8}>
                 <Label>Company Name <span className="text-danger">*</span></Label>
                 <Input name="company_name" required placeholder="e.g. Inorbvict Healthcare India Pvt Ltd"
@@ -401,7 +391,6 @@ export default function CompanyDetailsMaster() {
                   defaultValue={editing?.short_code || ''} disabled={viewOnly} />
               </Col>
 
-              {/* Row 2 — 4 fields */}
               <Col md={3}>
                 <Label>GSTIN <span className="text-danger">*</span></Label>
                 <Input name="gstin" required placeholder="27AADCI6120M1ZH"
@@ -423,7 +412,6 @@ export default function CompanyDetailsMaster() {
                   defaultValue={editing?.iec_code || ''} disabled={viewOnly} />
               </Col>
 
-              {/* Row 3 — 3 fields */}
               <Col md={4}>
                 <Label>Email</Label>
                 <Input type="email" name="email" placeholder="info@company.com"
@@ -443,7 +431,6 @@ export default function CompanyDetailsMaster() {
                 </Input>
               </Col>
 
-              {/* Row 4 — 3 fields (city, state, address) */}
               <Col md={3}>
                 <Label>City</Label>
                 <Input name="city" placeholder="Pune"
@@ -475,7 +462,6 @@ export default function CompanyDetailsMaster() {
         </Form>
       </Modal>
 
-      {/* Velzon delete confirmation modal */}
       <DeleteModal
         show={deleteId != null}
         onDeleteClick={confirmDelete}
@@ -485,7 +471,6 @@ export default function CompanyDetailsMaster() {
   );
 }
 
-/* ── Job-dashboard style radial stat card (SVG circular progress) ── */
 function RadialStatCard({
   label, value, percentage, color,
 }: {
@@ -514,7 +499,6 @@ function RadialStatCard({
         e.currentTarget.style.boxShadow = '';
       }}
     >
-      {/* Soft decorative wave in the background */}
       <svg
         className="position-absolute"
         style={{ top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: 0.35 }}

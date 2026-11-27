@@ -32,10 +32,10 @@ export function MasterDatePicker({
   invalid?: boolean;
   /** Extra class on the portalled popup so a host can re-theme it (e.g. teal). */
   popupClassName?: string;
-  /** When provided, min/max-blocked DAYS stay clickable (rendered greyed) and
-   *  fire this with the clicked date instead of being inert — lets a host show a
-   *  toast like "invoice date can't be before the PO date". Month/year cells are
-   *  unaffected. */
+  /** When provided, min/max-blocked DAYS, MONTHS and YEARS stay clickable
+   *  (rendered greyed) and fire this with the blocked date (day, or the 1st of
+   *  the blocked month/year) instead of being inert — lets a host show a toast
+   *  like "no quota is set up for this year". */
   onDisabledSelect?: (dateIso: string) => void;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
@@ -391,17 +391,22 @@ export function MasterDatePicker({
                 const isDisabled =
                   (!!minD && monthLast < minD) ||
                   (!!maxD && monthFirst > maxD);
+                const blockedClickable = isDisabled && !!onDisabledSelect;
                 const cls = [
                   'master-datepicker-cell',
                   isSelectedMonth && 'is-selected',
                   !isSelectedMonth && isCurrentView && 'is-today',
+                  blockedClickable && 'is-blocked',
                 ].filter(Boolean).join(' ');
                 return (
                   <button
                     key={m}
                     type="button"
-                    disabled={isDisabled}
-                    onClick={() => { setViewDate(new Date(year, i, 1)); setView('days'); }}
+                    disabled={isDisabled && !onDisabledSelect}
+                    onClick={() => {
+                      if (isDisabled) { onDisabledSelect?.(fmt(new Date(year, i, 1))); return; }
+                      setViewDate(new Date(year, i, 1)); setView('days');
+                    }}
                     className={cls}
                   >
                     {m}
@@ -426,17 +431,22 @@ export function MasterDatePicker({
                 const isDisabled =
                   (!!minD && yearLast < minD) ||
                   (!!maxD && yearFirst > maxD);
+                const blockedClickable = isDisabled && !!onDisabledSelect;
                 const cls = [
                   'master-datepicker-cell',
                   isSelectedYear && 'is-selected',
                   !isSelectedYear && isCurrentView && 'is-today',
+                  blockedClickable && 'is-blocked',
                 ].filter(Boolean).join(' ');
                 return (
                   <button
                     key={y}
                     type="button"
-                    disabled={isDisabled}
-                    onClick={() => { setViewDate(new Date(y, month, 1)); setView('months'); }}
+                    disabled={isDisabled && !onDisabledSelect}
+                    onClick={() => {
+                      if (isDisabled) { onDisabledSelect?.(fmt(new Date(y, 0, 1))); return; }
+                      setViewDate(new Date(y, month, 1)); setView('months');
+                    }}
                     className={cls}
                   >
                     {y}

@@ -9,14 +9,10 @@ class ModuleSeeder extends Seeder
 {
     public function run(): void
     {
-        // Top-level modules (parent_id = null)
-        // Keep original ones & add Master as new parent.
         $topLevel = [
             ['name' => 'Dashboard',   'slug' => 'dashboard',   'icon' => 'LayoutGrid',  'sort_order' => 1,  'is_default' => true],
             ['name' => 'Clients',     'slug' => 'clients',     'icon' => 'Building2',   'sort_order' => 2,  'is_default' => false, 'description' => 'Manage client organizations'],
             ['name' => 'Branches',    'slug' => 'branches',    'icon' => 'GitBranch',   'sort_order' => 3,  'is_default' => false, 'description' => 'Manage branches/companies'],
-            // Standalone "Employees" module removed — the single Employee
-            // permission now lives at HRMS → HR Core → Employee (hr.employee).
             ['name' => 'Plans',       'slug' => 'plans',       'icon' => 'CreditCard',  'sort_order' => 5,  'is_default' => false, 'description' => 'Subscription plans'],
             ['name' => 'Payments',    'slug' => 'payments',    'icon' => 'IndianRupee', 'sort_order' => 6,  'is_default' => false, 'description' => 'Payment transactions'],
             ['name' => 'Permissions', 'slug' => 'permissions', 'icon' => 'ShieldCheck', 'sort_order' => 7,  'is_default' => false, 'description' => 'Access control'],
@@ -26,20 +22,12 @@ class ModuleSeeder extends Seeder
             ['name' => 'CLM',         'slug' => 'clm',         'icon' => 'FileText',    'sort_order' => 11, 'is_default' => false, 'description' => 'Contract Lifecycle Management — operations, masters & analytics'],
             ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 12, 'is_default' => false, 'description' => 'System settings'],
             ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 13, 'is_default' => true],
-            // New top-level header modules — permission-gated, page-less for
-            // now (frontend renders a stub). P2P is promoted from a Sales
-            // Insights leaf to its own module; the rest are new placeholders.
             ['name' => 'Credentials Vault',            'slug' => 'credentials-vault', 'icon' => 'KeyRound',    'sort_order' => 14, 'is_default' => false, 'description' => 'Central store for tenant credentials, secrets & access keys'],
             ['name' => 'Project Navigator',            'slug' => 'project-navigator', 'icon' => 'Compass',     'sort_order' => 15, 'is_default' => false, 'description' => 'Cross-module project workspace'],
             ['name' => 'Procure to Pay (P2P)',         'slug' => 'p2p',               'icon' => 'ShoppingBag', 'sort_order' => 16, 'is_default' => false, 'description' => 'Procure-to-pay summary & operations'],
-            // Shipment 360 (slug stays 'developers' so existing permission grants
-            // survive the rename) sorts right after P2P — it reports on the
-            // shipment orders P2P's procurement flow feeds.
             ['name' => 'Shipment 360',                 'slug' => 'developers',        'icon' => 'Truck',       'sort_order' => 17, 'is_default' => false, 'description' => 'End-to-end shipment journey — order, dispatch, customs, transit & delivery'],
             ['name' => 'GTS (E-Docs)',                 'slug' => 'gts',               'icon' => 'Globe',       'sort_order' => 18, 'is_default' => false, 'description' => 'Global trade services & electronic trade documents'],
             ['name' => 'Inventory Management System',  'slug' => 'inventory',         'icon' => 'Boxes',       'sort_order' => 19, 'is_default' => false, 'description' => 'Stock, warehouse & movement tracking'],
-            // Dev Tools — read-only Zoho Books data inspector. Permission-gated
-            // (is_default false) so it only shows for users granted can_view.
             ['name' => 'Dev Tools',                    'slug' => 'dev-tools',         'icon' => 'Wrench',      'sort_order' => 20, 'is_default' => false, 'description' => 'Read-only Zoho Books data inspector (items, vendors, POs, vendor credits, bills, payments)'],
         ];
 
@@ -47,7 +35,6 @@ class ModuleSeeder extends Seeder
             Module::updateOrCreate(['slug' => $mod['slug']], $mod + ['parent_id' => null]);
         }
 
-        // Master category parents (level 2)
         $master = Module::where('slug', 'master')->first();
 
         $categories = [
@@ -58,7 +45,7 @@ class ModuleSeeder extends Seeder
             ['name' => 'Legal & Compliance',    'slug' => 'master.legal',        'icon' => 'Scale',       'description' => 'Licenses, risk, documents, hazards'],
             ['name' => 'Operations & Support',  'slug' => 'master.operations',   'icon' => 'Wrench',      'description' => 'Assets and asset categories'],
             ['name' => 'P2P Masters',           'slug' => 'master.p2p',          'icon' => 'Handshake',   'description' => 'Procure-to-pay configuration'],
-            ['name' => 'Warehouse Masters',     'slug' => 'master.warehouse',    'icon' => 'Warehouse',   'description' => 'Warehouse, zones, racks, freezers'],
+            ['name' => 'Inventory Master',       'slug' => 'master.warehouse',    'icon' => 'Warehouse',   'description' => 'Warehouse, zones, racks, freezers'],
             ['name' => 'Attendance Master Management', 'slug' => 'master.attendance', 'icon' => 'CalendarCheck', 'description' => 'Branch attendance configuration: leave types & leave plans'],
         ];
 
@@ -71,8 +58,6 @@ class ModuleSeeder extends Seeder
             $catIds[$cat['slug']] = $row->id;
         }
 
-        // Leaf masters (level 3) grouped by category slug.
-        // Slugs are prefixed with `master.` so they don't collide with existing top-level slugs.
         $leaves = [
             'master.identity' => [
                 ['name' => 'Organization Types', 'slug' => 'master.organization_types', 'icon' => 'Building',       'description' => 'Client organization categories (Business, Sports, NGO…)'],
@@ -81,8 +66,6 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Departments',       'slug' => 'master.departments',       'icon' => 'Building2',      'description' => 'Organizational units for staff assignment'],
                 ['name' => 'Roles',             'slug' => 'master.roles',             'icon' => 'UserCog',        'description' => 'Access roles for module control'],
                 ['name' => 'Designations',      'slug' => 'master.designations',      'icon' => 'BadgeCheck',     'description' => 'Job titles on HR docs and letters'],
-                // `master.employees` removed — merged into HRMS → HR Core →
-                // Employee (hr.employee), which now gates both API and UI.
                 ['name' => 'KPIs',              'slug' => 'master.kpis',              'icon' => 'Target',         'description' => 'KPI catalogue mapped to roles'],
             ],
             'master.geography' => [
@@ -102,6 +85,7 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Packaging Materials',   'slug' => 'master.packaging_material',  'icon' => 'Package',       'description' => 'Box, carton & wrapping types'],
                 ['name' => 'Product Conditions',    'slug' => 'master.conditions',          'icon' => 'Leaf',          'description' => 'Storage states: organic, fresh, frozen'],
                 ['name' => 'Incoterms',             'slug' => 'master.incoterms',           'icon' => 'Handshake',     'description' => 'Trade terms: FOB, CIF, EXW etc.'],
+                ['name' => 'Service Categories',    'slug' => 'master.service_categories',  'icon' => 'Tags',          'description' => 'Service categories for Soft / Digital & Other Operational services'],
             ],
             'master.party' => [
                 ['name' => 'Customer Types',          'slug' => 'master.customer_types',           'icon' => 'UserSquare',   'description' => 'Classify buyers: domestic/export'],
@@ -166,12 +150,6 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        // Back-fill grants for the newly-added Overtime (OT) Master by cloning
-        // whatever access each user already has to a sibling attendance master
-        // (Leave Type). This makes the OT master appear in the menu + be usable
-        // for exactly the same users/tiers who can already see the attendance
-        // masters, without anyone having to open the Permissions screen.
-        // Idempotent: updateOrCreate keys on (user_id, module_id).
         $otModuleId   = Module::where('slug', 'master.overtime_rates')->value('id');
         $sibModuleId  = Module::where('slug', 'master.leave_type')->value('id');
         if ($otModuleId && $sibModuleId) {
@@ -239,22 +217,11 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Templates',           'slug' => 'hr.templates',      'icon' => 'FileText',       'description' => 'Letter, contract & policy templates'],
                 ['name' => 'Policies',            'slug' => 'hr.policies',       'icon' => 'BookOpen',       'description' => 'Company policy library'],
                 ['name' => 'Broadcast Centre',    'slug' => 'hr.broadcast',      'icon' => 'Megaphone',      'description' => 'Push policies/notices to employees'],
-                // The "MASTERS" sub-section in the HR Document column — flattened
-                // here as direct leaves under hr.documents because the modules
-                // table is 3-level deep. Slugs include `doc_` for clarity.
                 ['name' => 'Document Category',       'slug' => 'hr.doc_category',  'icon' => 'FolderOpen',  'description' => 'Document category master'],
                 ['name' => 'Document Types',          'slug' => 'hr.doc_types',     'icon' => 'FileBadge',   'description' => 'Document type definitions'],
                 ['name' => 'Doc Generation Rules',    'slug' => 'hr.doc_gen_rules', 'icon' => 'Settings2',   'description' => 'Auto-generation rule sets'],
                 ['name' => 'Custom Fields',           'slug' => 'hr.custom_fields', 'icon' => 'PlusSquare',  'description' => 'Custom data fields for HR documents'],
-                // Document Templates — role-based document templates with
-                // lifecycle triggers + signing workflows. Backed by the
-                // dedicated HrDocumentTemplateController (not the generic
-                // master shell — too domain-specific for the 50-master mold).
                 ['name' => 'Document Templates',      'slug' => 'hr.doc_templates', 'icon' => 'FileText',    'description' => 'Role-based document templates — versions, variables & approval flows'],
-                // Trigger Point Master — defines lifecycle trigger modules
-                // (Onboarding, Offboarding, Event Based) used by the Doc
-                // Generation Rules engine. Uses `master.` prefix so the
-                // generic /master/:slug shell + MasterController back it.
                 ['name' => 'Trigger Point Master',    'slug' => 'master.trigger_point', 'icon' => 'Zap',     'description' => 'Define lifecycle trigger modules for document generation'],
             ],
         ];
@@ -273,11 +240,6 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        // Retired modules — removed from the product. Drop the module rows and
-        // their permission grants so they no longer surface in the Permissions
-        // matrix (/api/modules returns is_active=true rows). Idempotent: a
-        // no-op once the rows are gone. 'hr.calculation_master' removed
-        // 2026-06-04 (Calculation Master feature dropped).
         $retiredSlugs = ['hr.calculation_master'];
         $retiredIds = Module::whereIn('slug', $retiredSlugs)->pluck('id');
         if ($retiredIds->isNotEmpty()) {
@@ -285,12 +247,6 @@ class ModuleSeeder extends Seeder
             Module::whereIn('id', $retiredIds)->delete();
         }
 
-        // Sales Matrix tree — 3 grouping categories + 8 leaves. Matches the
-        // top-nav mega-menu (Sales Insights & Productivity / Sales Core
-        // Masters / Sales Matrix Operations). Permissions are explicit only:
-        // super_admin grants Sales perms to client_admin, who grants to
-        // branch_user, who grants to employees — same cascade the existing
-        // PermissionController enforces. No backfill copy from a peer module.
         $sales = Module::where('slug', 'sales')->first();
 
         $salesCategories = [
@@ -347,19 +303,6 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        // ─────────────────────────────────────────────────────────────
-        //  CENTRAL CLM TREE — 5 grouping categories + 16 leaves.
-        //
-        //  Categories mirror the SalesMatrix_v4_9 CLM landing page:
-        //    1. CLM Command Center          (analytics + diagnosis + resolution)
-        //    2. CLM Operations / With Ship  (buyer + supplier profile)
-        //    3. CLM Operations / Without    (case-to-case + agreements)
-        //    4. CLM Master / Compliance     (segment / authority / KYC / DD / licences)
-        //    5. CLM Master / Documents      (control panel / templates / clauses)
-        //
-        //  Permissions cascade follows the same super_admin → client_admin →
-        //  branch_user → employee chain enforced by PermissionController.
-        // ─────────────────────────────────────────────────────────────
         $clm = Module::where('slug', 'clm')->first();
 
         $clmCategories = [
@@ -425,13 +368,6 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        // ─────────────────────────────────────────────────────────────
-        //  Procure to Pay (P2P) — level 2 categories + level 3 leaves.
-        //  Mirrors the four-column header mega-menu (Intelligence Hub ·
-        //  Master Management · Procurement Management · Purchase Management).
-        //  Leaf slugs match the frontend leaf ids (p2p.analytics, …) so the
-        //  Permissions screen can grant them per-leaf.
-        // ─────────────────────────────────────────────────────────────
         $p2p = Module::where('slug', 'p2p')->first();
 
         $p2pCategories = [
@@ -463,6 +399,7 @@ class ModuleSeeder extends Seeder
             ],
             'p2p.procurement' => [
                 ['name' => 'Bulk Sourcing Management',           'slug' => 'p2p.bulk_sourcing', 'icon' => 'Activity', 'description' => 'Manage bulk sourcing requests'],
+                ['name' => 'Sourcing Management Tracker',        'slug' => 'p2p.sourcing_tracker', 'icon' => 'Search', 'description' => 'Assign sourcing targets and manage Requests for Quotation (RFQs)'],
                 ['name' => 'Case to Case Procurement Management', 'slug' => 'p2p.case_to_case', 'icon' => 'Activity', 'description' => 'Manage request-based sourcing'],
             ],
             'p2p.purchase' => [
@@ -488,11 +425,6 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        // ── Shipment 360 (level 2 category + level 3 leaves) ──
-        // OPT-IN module — NOT default. Like every other business module it must
-        // be granted per user from the Permissions screen; without that grant the
-        // Shipment 360 tab stays hidden. (Previously is_default=true force-locked
-        // its checkbox ON in the Permissions matrix, so everyone saw it.)
         $developers = Module::where('slug', 'developers')->first();
         $devCat = Module::updateOrCreate(
             ['slug' => 'developers.ops'],
@@ -518,12 +450,8 @@ class ModuleSeeder extends Seeder
                 'is_default' => false,
             ]
         );
-        // Top-level Developers parent is opt-in too.
         $developers->update(['is_default' => false]);
 
-        // Back-fill: grant the Developers modules to every existing CLIENT_ADMIN
-        // so they can immediately pass it down to branch users / employees from
-        // the Permissions screen (without waiting for a plan re-activation).
         $devModuleIds = [$developers->id, $devCat->id, $devShip->id];
         $clientAdmins = \App\Models\User::where('user_type', 'client_admin')->get();
         foreach ($clientAdmins as $admin) {

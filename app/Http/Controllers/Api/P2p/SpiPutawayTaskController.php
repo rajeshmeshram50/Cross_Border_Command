@@ -18,8 +18,6 @@ use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/* The scan API stores the refusal CODE and throws the sentence away, so the
-   history has to say it again. Anything not listed reads as its own code. */
 const PUTAWAY_REFUSALS = [
     'wrong_box'           => 'Wrong box for this task',
     'wrong_location'      => 'Wrong location for this task',
@@ -38,19 +36,6 @@ const PUTAWAY_REFUSALS = [
     'inactive'            => 'Run dropped after sitting idle',
 ];
 
-/**
- * P2P · Zebra verification tasks. /api/p2p/spi/{id}/putaway/... and /putaway/tasks
- *
- * Option 01 of Step 03. Where Manual Confirmation completes the put-away, this
- * hands the box to the warehouse floor and leaves it outstanding: the box is
- * placed only once a handheld scans the box QR and then the shelf QR.
- *
- * Nothing about the capacity changes here. The shelf was reserved when the
- * location was assigned, and it stays reserved for as long as the task is open
- * — including after the task is CANCELLED, because the screen goes straight
- * back to the same address offering manual confirmation, and letting go of the
- * shelf in between would hand it to somebody else mid-decision.
- */
 class SpiPutawayTaskController extends Controller
 {
     public function __construct(
@@ -60,7 +45,6 @@ class SpiPutawayTaskController extends Controller
         private SupplierInvoiceService $svc,
     ) {}
 
-    /** A 404 that names what was not found, rather than a framework trace. */
     private function missing(string $message): never
     {
         abort(response()->json(['status' => false, 'message' => $message], 404));
@@ -74,15 +58,6 @@ class SpiPutawayTaskController extends Controller
         return $user;
     }
 
-    /* ══════════════════════════ CREATE ══════════════════════════ */
-
-    /**
-     * POST /p2p/spi/{id}/putaway/{row}/scan-task — Option 01.
-     *
-     * The tick is required and is not decoration: the dialog tells the operator
-     * the shelf is locked for this box and cannot be changed, so the request
-     * carries their acknowledgement of it.
-     */
     public function store(Request $request, int $id, int $rowId)
     {
         $user = $this->tenantUser($request);
@@ -130,7 +105,6 @@ class SpiPutawayTaskController extends Controller
                 'zone_id'               => $row->zone_id,
                 'rack_id'               => $row->rack_id,
                 'shelf_id'              => $row->shelf_id,
-                // Box QR, then the shelf — or the zone, where there is no shelf.
                 'required_scans'        => 2,
                 'completed_scans'       => 0,
                 'status'                => SpiPutawayTask::PENDING,
@@ -147,9 +121,6 @@ class SpiPutawayTaskController extends Controller
                 'status'  => SpiPutaway::AWAITING_SCAN,
             ])->save();
 
-            /* The lock outlives the screen now. A handheld may take hours, so
-               the hold follows the task's deadline rather than the 30 idle
-               minutes a browser gets. */
             if ($lock = $this->locks->held($occ->locationType(), $occ->locationId())) {
                 $lock->forceFill([
                     'held_for_type' => 'putaway_task',
@@ -182,9 +153,6 @@ class SpiPutawayTaskController extends Controller
         }
     }
 
-    /* ══════════════════════════ READ ══════════════════════════ */
-
-    /** GET /p2p/spi/{id}/putaway/tasks — this invoice's queue, with its counts. */
     public function index(Request $request, int $id)
     {
         try {
@@ -216,7 +184,6 @@ class SpiPutawayTaskController extends Controller
         }
     }
 
-    /** GET /putaway/tasks — the branch-wide floor queue, open ones first. */
     public function queue(Request $request)
     {
         try {
@@ -239,14 +206,6 @@ class SpiPutawayTaskController extends Controller
         }
     }
 
-    /**
-     * GET /putaway/tasks/{task} — one task, as it stands right now.
-     *
-     * Separate from /activity on purpose. This answers "where is this box up
-     * to", which a screen may poll; that one answers "how did it get there"
-     * and carries every scan ever made against the task. Dragging dozens of
-     * log rows along to render a status chip is the wrong trade.
-     */
     public function show(Request $request, int $taskId)
     {
         $user = $this->tenantUser($request);
@@ -263,24 +222,11 @@ class SpiPutawayTaskController extends Controller
             'step_label' => $task->stepLabel(),
             'ready_to_complete' => $task->readyToComplete(),
             'attempts_left'     => max(0, SpiPutawayTask::MAX_FAILS - (int) $task->fail_count),
-            // What a status chip actually needs, already decided server-side.
             'is_open'    => $task->isOpen(),
             'is_done'    => $task->status === SpiPutawayTask::SCANNED,
         ]], 200);
     }
 
-    /**
-     * GET /putaway/tasks/{task}/activity — what happened, in order.
-     *
-     * The task row says WHERE it ended up; this says how it got there, and it
-     * is the only place the REFUSALS survive. A put-away that took four
-     * attempts and one wrong rack reads identically to a clean one on the task
-     * row alone — the difference lives here, and it is the difference worth
-     * reading when someone asks why a box took twenty minutes.
-     *
-     * Not on the handheld's device-authenticated routes: this is a back-office
-     * read, and the floor has no use for it mid-scan.
-     */
     public function activity(Request $request, int $taskId)
     {
         $user = $this->tenantUser($request);
@@ -293,21 +239,14 @@ class SpiPutawayTaskController extends Controller
 
         $log = PutawayActivityLog::where('task_id', $task->id)->orderBy('id')->get();
 
-        /* Two lookups, once each, instead of a users query per row — a task
-           with 40 scans was running 40 of them. */
         $names = $log->pluck('actor_id')->filter()->unique();
         $names = $names->isEmpty() ? collect()
             : DB::table('users')->whereIn('id', $names)->pluck('name', 'id');
 
-        /* WHICH handheld, not just its id. The task's own device_serial is
-           cleared when a run is released, so after a Clear box the log rows
-           are the only record of the device that held it. */
         $devs = $log->pluck('device_id')->filter()->unique();
         $devs = $devs->isEmpty() ? collect()
             : DB::table('scan_devices')->whereIn('id', $devs)->get(['id', 'serial', 'label'])->keyBy('id');
 
-        /* Which sticker each row scanned, and what it is called. A 60-char
-           signed URL names nothing a person can check against a carton. */
         $targets = $this->stickerTargets($log);
 
         $tries = [];
@@ -317,9 +256,6 @@ class SpiPutawayTaskController extends Controller
             $dev = $l->device_id ? $devs->get($l->device_id) : null;
             $val = is_array($l->meta) ? ($l->meta['value'] ?? null) : null;
 
-            /* The same sticker scanned four times is four rows that look
-               identical. Numbering them is what makes the repetition
-               readable: "attempt 3 of this label". */
             $try = null;
             if ($val !== null && $act === 'scan') {
                 $id = $targets[$val]['key'] ?? $val;
@@ -330,17 +266,11 @@ class SpiPutawayTaskController extends Controller
             return [
                 'id'         => (int) $l->id,
                 'at'         => optional($l->created_at)->toIso8601String(),
-                // Rows written before the constant was used read as their own event.
                 'event'      => $l->event === 'putaway.released' ? PutawayActivityLog::RELEASED : $l->event,
                 'ok'         => $l->event !== PutawayActivityLog::SCAN_FAILED,
-                /* A refused scan and the idle timeout are both filed as
-                   scan_failed, and they are not the same thing: one is an
-                   operator scanning the wrong label, the other is the server
-                   dropping a run nobody came back to. */
                 'kind'       => $act === 'stale_reset' ? 'stale_reset' : ($act === 'scan' ? 'scan' : 'lifecycle'),
                 'reason'       => is_array($l->meta) ? ($l->meta['reason'] ?? null) : null,
                 'reason_label' => $this->refusalLabel(is_array($l->meta) ? ($l->meta['reason'] ?? null) : null),
-                // Nth time THIS label was scanned on this task.
                 'attempt'    => $try,
                 'target'     => $val === null ? null : ($targets[$val] ?? null),
                 'actor_type' => $l->actor_type,
@@ -376,24 +306,18 @@ class SpiPutawayTaskController extends Controller
                 'device_serial'      => $task->device_serial,
             ],
             'timeline' => $rows,
-            /* One row per LABEL, not per scan. A sticker tried four times and
-               refused three reads as three unrelated failures in a timeline;
-               here it reads as one label somebody could not get accepted. */
             'stickers' => $stickers,
             'counts'   => [
                 'total'  => $rows->count(),
                 'passed' => $rows->where('kind', 'scan')->where('ok', true)->count(),
-                // Bad scans only. A stale reset is not an operator's mistake.
                 'failed' => $rows->where('kind', 'scan')->where('ok', false)->count(),
                 'resets' => $rows->where('kind', 'stale_reset')->count(),
                 'labels' => count($stickers),
-                // Labels that took more than one go.
                 'retried' => collect($stickers)->where('tries', '>', 1)->count(),
             ],
         ]], 200);
     }
 
-    /** The sentence the scan API threw away, back from the code it kept. */
     private function refusalLabel(?string $code): ?string
     {
         if ($code === null || $code === '') return null;
@@ -401,15 +325,6 @@ class SpiPutawayTaskController extends Controller
         return PUTAWAY_REFUSALS[$code] ?? ucfirst(str_replace('_', ' ', $code));
     }
 
-    /**
-     * Every distinct scanned value on a task, named.
-     *
-     * The stored value is the signed sticker URL. It identifies the box or the
-     * location exactly and tells a person nothing, so it is parsed back to the
-     * code printed on the label they are holding.
-     *
-     * @return array<string,array<string,mixed>>
-     */
     private function stickerTargets($log): array
     {
         $values = $log
@@ -420,7 +335,6 @@ class SpiPutawayTaskController extends Controller
 
         $kinds = ['BOX' => 'box', 'SHELF' => 'shelf', 'RACK' => 'rack', 'ZONE' => 'zone'];
 
-        // Parse first, then one lookup per KIND rather than one per sticker.
         $parsed = [];
         foreach ($values as $v) {
             $hit  = StickerKey::parse((string) $v);
@@ -430,9 +344,6 @@ class SpiPutawayTaskController extends Controller
 
             $parsed[$v] = [
                 'value'  => (string) $v,
-                /* One carton, one row. A DataWedge read sends the bare key
-                   and the camera sends the whole URL around it; both are the
-                   same sticker, so the thing it points at is the identity. */
                 'key'    => $kind && $id ? "{$kind}:{$id}" : trim((string) $v),
                 'kind'   => $kind,
                 'id'     => $id,
@@ -470,17 +381,6 @@ class SpiPutawayTaskController extends Controller
         return $parsed;
     }
 
-    /**
-     * The timeline folded by label: how many times each sticker was scanned,
-     * how many of those were refused, and for what.
-     *
-     * A carton whose label took four goes to accept is the single most useful
-     * thing in this history — a bad print, a worn sticker, or a picker at the
-     * wrong pallet — and in a flat timeline it is four rows that look like
-     * four unrelated failures.
-     *
-     * @return list<array<string,mixed>>
-     */
     private function stickerAttempts($rows): array
     {
         $out = [];
@@ -506,13 +406,10 @@ class SpiPutawayTaskController extends Controller
                 'accepted' => false,
             ];
 
-            // The most recent form the label arrived in, for a support query.
             $out[$key]['value'] = $r['target']['value'];
             $out[$key]['tries']++;
             $out[$key][$r['ok'] ? 'passed' : 'failed']++;
             $out[$key]['last_at'] = $r['at'];
-            /* The LAST word on a label. Refused three times then accepted is a
-               different story from accepted once and refused after. */
             $out[$key]['accepted'] = (bool) $r['ok'];
 
             if (!$r['ok'] && $r['reason']) {
@@ -524,8 +421,6 @@ class SpiPutawayTaskController extends Controller
             }
         }
 
-        // Reasons as a list, commonest first: a map keyed by code is awkward to
-        // render and loses its order on the way through JSON.
         foreach ($out as $key => $row) {
             arsort($row['reasons']);
             $out[$key]['reasons'] = collect($row['reasons'])
@@ -533,20 +428,9 @@ class SpiPutawayTaskController extends Controller
                 ->values()->all();
         }
 
-        // Worst first: the label nobody could get accepted is the one to read.
         return collect($out)->sortByDesc('failed')->values()->all();
     }
 
-    /* ══════════════════════════ CANCEL ══════════════════════════ */
-
-    /**
-     * POST /putaway/tasks/{task}/cancel
-     *
-     * Closes the task and nothing else. The occupancy stays reserved and the
-     * location stays locked, because the screen reopens on the same shelf with
-     * manual confirmation offered — releasing the space in between would let
-     * another operator take it out from under this one.
-     */
     public function cancel(Request $request, int $taskId)
     {
         $user = $this->tenantUser($request);
@@ -572,12 +456,9 @@ class SpiPutawayTaskController extends Controller
 
             $row = $task->putaway;
             if ($row && !$row->isPlaced()) {
-                // Back to a held-but-unconfirmed box: a draft, not a pending one.
                 $row->forceFill(['status' => SpiPutaway::DRAFT, 'task_id' => null])->save();
             }
 
-            /* The lock was following the task's deadline; hand it back to a
-               screen's idle timeout now that a person has it again. */
             if ($row && ($lock = $this->locks->held($row->shelf_id ? LocationLock::SHELF : LocationLock::ZONE,
                 (int) ($row->shelf_id ?: $row->zone_id)))) {
                 $this->locks->heartbeat($lock);
@@ -603,16 +484,6 @@ class SpiPutawayTaskController extends Controller
         }
     }
 
-    /* ══════════════════════════ HELPERS ══════════════════════════ */
-
-    /**
-     * ZT-YYYYMMDD-NNN, numbered per branch per day.
-     *
-     * Allocated under a lock on the branch row, the same way PO, SPI and the
-     * inventory codes are: two tasks raised in the same second must not read
-     * the same number, and a code a person quotes over a radio cannot be the
-     * row id.
-     */
     private function allocateCode(int $clientId, ?int $branchId): string
     {
         if ($branchId) {
@@ -633,7 +504,6 @@ class SpiPutawayTaskController extends Controller
         return $prefix . str_pad((string) $next, 3, '0', STR_PAD_LEFT);
     }
 
-    /** What the modal prints: "CAPACITY RESERVED 12.9% of SH-105". */
     private function reservedPct(LocationOccupancy $occ): ?float
     {
         if (!$occ->shelf_id) return null;
@@ -643,15 +513,6 @@ class SpiPutawayTaskController extends Controller
         return $cap > 0 ? round((float) $occ->weight_kg / $cap * 100, 2) : null;
     }
 
-    /**
-     * GET /{id}/putaway/boxes/{box}/activity — the box's FROZEN scan log.
-     *
-     * Box-scoped, not task-scoped: a box reaches its shelf by handheld scan OR
-     * by manual allocation, and only this table holds both (every row carries
-     * box_id). Read-only — nothing is written on view, so the log never changes
-     * once the placement is done. This is what the Scan Logs popover shows,
-     * instead of a log rebuilt from the current browser session.
-     */
     public function boxActivity(Request $request, int $id, int $boxId)
     {
         $user = $this->tenantUser($request);
@@ -683,8 +544,6 @@ class SpiPutawayTaskController extends Controller
                 'event'        => $l->event,
                 'ok'           => $l->event !== PutawayActivityLog::SCAN_FAILED,
                 'reason_label' => $this->refusalLabel($meta['reason'] ?? null),
-                // Which leg was scanned (box / shelf / zone / rack), so the log
-                // can name what was verified instead of a bare "Scan verified".
                 'slot'         => $meta['slot'] ?? null,
                 'location'     => $this->locationText($l->to_location),
                 'actor'        => $l->actor_id ? $names->get($l->actor_id) : null,
@@ -698,7 +557,6 @@ class SpiPutawayTaskController extends Controller
         ]], 200);
     }
 
-    /** A to_location snapshot → "WH → ZONE → RACK → SHELF" in codes. */
     private function locationText($snap): ?string
     {
         if (!is_array($snap)) return null;
@@ -707,7 +565,6 @@ class SpiPutawayTaskController extends Controller
             $snap['warehouse']['code'] ?? null,
             $snap['zone']['code'] ?? null,
             $snap['rack']['code'] ?? null,
-            // A shelf has no code — its rack code plus the level is its name.
             $shelf['level_no'] ?? null ? (($snap['rack']['code'] ?? 'RC') . '-SH-' . str_pad((string) $shelf['level_no'], 2, '0', STR_PAD_LEFT)) : null,
         ]);
         return $parts ? implode(' → ', $parts) : null;

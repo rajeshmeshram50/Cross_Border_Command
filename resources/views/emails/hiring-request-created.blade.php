@@ -17,21 +17,15 @@
 </head>
 <body style="margin:0;padding:0;background-color:#f3f4f6;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;color:#111827;">
 
-{{-- Preheader --}}
 <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f3f4f6;">
   New hiring request from {{ $creatorName }} &mdash; {{ $hr->title ?: 'Open Position' }}
 </div>
 
-{{-- ============ WRAPPER ============ --}}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;padding:40px 16px;">
 <tr><td align="center">
 
-{{-- ============ CONTAINER ============ --}}
 <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="max-width:620px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(17,24,39,0.06);">
 
-  {{-- ============ HEADER (stacked wordmark of CUSTOMER org) ============ --}}
-  {{-- Internal-only email FROM the customer's company, so the brand at top
-       is the customer's org (varies per client), NOT the platform vendor. --}}
   @php($_parts = explode(' ', $orgName, 2))
   @php($brandMain = strtoupper($_parts[0] ?? $orgName))
   @php($brandSub = strtoupper(trim($_parts[1] ?? '')))
@@ -48,7 +42,6 @@
     @endif
   </td></tr>
 
-  {{-- ============ HERO (centered: icon on top, headline below) ============ --}}
   <tr><td style="padding:28px 32px 14px;text-align:center;">
     <img src="{{ asset('images/email-icons/magnify-person.png') }}" alt="" width="120" height="120"
          style="display:inline-block;border:0;outline:none;width:120px;height:120px;margin-bottom:14px;" />
@@ -58,7 +51,6 @@
     </p>
   </td></tr>
 
-  {{-- ============ GREETING ============ --}}
   <tr><td style="padding:8px 32px 6px;">
     <p style="margin:0;font-size:14.5px;font-weight:700;color:#111827;">Hi {{ $managerName }},</p>
   </td></tr>
@@ -69,11 +61,9 @@
     </p>
   </td></tr>
 
-  {{-- ============ DETAILS CARD ============ --}}
   <tr><td style="padding:0 32px 18px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fafafa;border:1px solid #f3f4f6;border-radius:12px;overflow:hidden;">
 
-      {{-- Row config: each row has icon | label | value --}}
       @php($rows = [['icon' => 'clipboard', 'label' => 'Request Code', 'value' => $hr->code ?: ('HRQ-' . $hr->id), 'mono' => true], ['icon' => 'avatar-purple', 'label' => 'Title', 'value' => $hr->title ?: '—'], ['icon' => 'users-team', 'label' => 'Job Role', 'value' => $hr->job_role ?: '—'], ['icon' => 'building-purple', 'label' => 'Department', 'value' => optional($hr->department)->name ?: '—']])
 
       @foreach($rows as $i => $row)
@@ -87,13 +77,11 @@
       </tr>
       @endforeach
 
-      {{-- 3-COLUMN GRID: Openings · Employment · Urgency --}}
       @php($urgency = strtolower((string) ($hr->urgency ?? 'normal')))
       @php($urgencyDot = in_array($urgency, ['high', 'urgent']) ? '#ef4444' : ($urgency === 'medium' ? '#f59e0b' : '#10b981'))
       <tr><td colspan="3" style="padding:0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #f3f4f6;">
         <tr>
-          {{-- Openings --}}
           <td width="33%" valign="top" style="padding:14px 16px;border-right:1px solid #f3f4f6;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
               <td valign="middle"><img src="{{ asset('images/email-icons/avatar-purple.png') }}" alt="" width="18" height="18" style="display:inline-block;border:0;vertical-align:middle;" /></td>
@@ -104,7 +92,6 @@
               <span style="font-size:15px;font-weight:700;color:#111827;vertical-align:middle;">{{ $hr->openings ?? 1 }}</span>
             </div>
           </td>
-          {{-- Employment --}}
           <td width="34%" valign="top" style="padding:14px 16px;border-right:1px solid #f3f4f6;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
               <td valign="middle"><img src="{{ asset('images/email-icons/briefcase.png') }}" alt="" width="18" height="18" style="display:inline-block;border:0;vertical-align:middle;" /></td>
@@ -112,7 +99,6 @@
             </tr></table>
             <div style="margin-top:8px;font-size:14px;font-weight:700;color:#111827;">{{ $hr->employment_type ?: '—' }}</div>
           </td>
-          {{-- Urgency --}}
           <td width="33%" valign="top" style="padding:14px 16px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
               <td valign="middle"><img src="{{ asset('images/email-icons/alert-circle.png') }}" alt="" width="18" height="18" style="display:inline-block;border:0;vertical-align:middle;" /></td>
@@ -127,7 +113,6 @@
         </table>
       </td></tr>
 
-      {{-- TARGET JOIN DATE + business justification --}}
       @php($targetDate = $hr->target_join_date ? \Carbon\Carbon::parse($hr->target_join_date)->format('d M Y') : null)
       @if($targetDate || !empty($hr->business_justification))
       <tr><td colspan="3" style="padding:18px 20px 16px;border-top:1px solid #f3f4f6;">
@@ -147,7 +132,6 @@
     </table>
   </td></tr>
 
-  {{-- ============ CTA ============ --}}
   <tr><td style="padding:8px 32px 8px;text-align:center;">
     @php($hrUrl = config('app.url') . '/hiring-requests')
     <!--[if mso]>
@@ -168,7 +152,6 @@
     <p style="margin:10px 0 0;font-size:11.5px;color:#9ca3af;">You can view the full request on the HR portal.</p>
   </td></tr>
 
-  {{-- ============ FOOTER ============ --}}
   <tr><td style="padding:18px 32px 22px;text-align:center;border-top:1px solid #f3f4f6;">
     <p style="margin:14px 0 0;font-size:11px;color:#9ca3af;">
       &copy; {{ date('Y') }} <strong style="color:#111827;font-weight:700;">{{ $orgName }}</strong>. All rights reserved.
@@ -176,11 +159,9 @@
   </td></tr>
 
 </table>
-{{-- /Container --}}
 
 </td></tr>
 </table>
-{{-- /Wrapper --}}
 
 </body>
 </html>

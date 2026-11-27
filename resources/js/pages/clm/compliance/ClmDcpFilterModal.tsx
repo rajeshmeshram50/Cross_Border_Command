@@ -144,6 +144,10 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
       <style>{`
         .dcp-filter-scope .lfm-left { width: 230px; }
         @media (max-width: 640px) { .dcp-filter-scope .lfm-left { width: 100%; } }
+        /* Search clear (x) hover in dark: a soft wash of its own colour, not the
+           shared solid #cbd5e1 square (app.css) - same as the CLM pages. Scoped
+           to this DCP modal; the Sales modal that shares LFM_CSS is untouched. */
+        [data-bs-theme="dark"] .dcp-filter-scope .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent) !important; color: #f8fafc !important; }
       `}</style>
       <div className="lfm-modal">
         <div className="lfm-head">

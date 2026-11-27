@@ -7,6 +7,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import Tooltip from '../../../components/ui/Tooltip';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { MasterTimePicker } from '../../../components/ui/MasterTimePicker';
@@ -17,20 +18,6 @@ import {
   type ApiReminder, type ApiMeeting,
 } from './salesTodoApi';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Sales Matrix → To-Do (Productivity Tracker)
- *
- * Faithful port of the prototype's `#todoPage` (SalesMatrix_v4_9, line 9633) —
- * a teal-palette productivity page with two top tabs (Reminder, Meeting),
- * sub-status filters, search, add/edit modal, and a table per tab.
- *
- * Calendar view is scaffolded but defers to a "coming next" toast — the
- * prototype's calendar is rendered via a full-overlay component that's
- * non-trivial to port and not on the QA-critical path.
- *
- * Data is mock for now (seeded from prototype `TD_DATA`, line 22914).
- * Permission-gated on `sales.todo` — super_admin bypasses.
- * ──────────────────────────────────────────────────────────────────────── */
 
 type TopTab = 'reminder' | 'meeting';
 type MeetingSub = 'virtual' | 'physical';
@@ -40,29 +27,26 @@ type MeetingStatus = 'In Progress' | 'Done' | 'Postponed' | 'Cancelled';
 type Reminder = {
   id: number;
   oppId: string;
-  oppDate: string;     // dd/mm/yyyy
+  oppDate: string;
   subject: string;
-  setDate: string;     // dd/mm/yyyy
-  tat: string;         // '24 Hours', '48 Hours', '72 Hours', '1 Week'
+  setDate: string;
+  tat: string;
   remark: string;
   status: 'In Progress' | 'Done';
-  // Existing attachment metadata — populated from the API response so the
-  // edit modal can surface the previously-uploaded file. Empty when the
-  // reminder has no attachment.
   attachmentName?: string;
   attachmentUrl?: string;
 };
 
 type Meeting = {
   id: number;
-  code: string;        // M-001 / P-001
+  code: string;
   oppId: string;
   customer: string;
   email: string;
   contact: string;
-  platform: string;    // Zoom, Google Meet, Teams, Office Visit, Trade Fair, Client Site, Phone Call
-  date: string;        // dd/mm/yyyy
-  startTime: string;   // HH:mm
+  platform: string;
+  date: string;
+  startTime: string;
   endTime: string;
   link: string;
   venue: string;
@@ -71,32 +55,22 @@ type Meeting = {
   type: MeetingSub;
 };
 
-/* "Today" anchor for the "Today's Priority" filter. Computed at module load
- * in dd/mm/yyyy so it lines up with how reminders store set_date. */
 const TODAY_STR = (() => {
   const d = new Date();
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 })();
 
-/* Current wall-clock time as "HH:MM" — used to floor the meeting time pickers
- * so a meeting scheduled for TODAY can't be given a start/end in the past. */
 const hmNow = () => {
   const d = new Date();
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 };
 
-/* Add `mins` minutes to an "HH:MM" string, clamped to 23:59 so it never wraps
- * past midnight. Used to enforce the 15-min minimum meeting duration on the
- * End-Time picker floor. */
 const addHm = (hm: string, mins: number): string => {
   const [h, m] = hm.split(':').map(Number);
   const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
   return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
 };
 
-/* Convert API rows (snake_case + ISO dates) into the page's display shape
- * (camelCase + dd/mm/yyyy). Keeps the rendering code untouched even though
- * the data now flows from /api/sales/reminders. */
 const apiToReminder = (r: ApiReminder): Reminder => ({
   id: r.id,
   oppId: r.opp_id ?? '',
@@ -128,7 +102,6 @@ const apiToMeeting = (m: ApiMeeting): Meeting => ({
   type: m.type,
 });
 
-/* Seed arrays removed — data flows from /api/sales/reminders + /api/sales/meetings */
 
 
 const REMINDER_FILTERS: { key: ReminderFilter; label: string; icon: React.ReactNode }[] = [
@@ -146,52 +119,27 @@ const MEETING_FILTERS: { key: MeetingStatus; label: string; icon: React.ReactNod
 ];
 
 const TAT_OPTIONS  = ['24 Hours', '48 Hours', '72 Hours', '1 Week', '2 Weeks'];
-// Opportunity picker is fed by a live fetch of real leads (see the
-// `oppOptions` effect below) — code + company + real opportunity date. No
-// hard-coded placeholder list; an empty result simply shows no options.
-// 'Other' is always last so the user can capture a platform/venue type that
-// isn't in the predefined list (QA: "what if the meeting is scheduled on some
-// another platform"). Selecting it reveals a free-text input.
 const VIRTUAL_PLATFORMS  = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Phone Call', 'Other'];
 const PHYSICAL_PLATFORMS = ['Office Visit', 'Client Site', 'Trade Fair', 'Conference', 'Factory Visit', 'Port Visit', 'Other'];
-// Common ISD dialing codes for the Contact No dropdown. India first since it's
-// the primary market; the rest cover the app's frequent trade corridors.
-// FIXED rows-per-page options — the dropdown always offers exactly these
-// (QA #21: options must not change dynamically). The auto-fit snaps to one of
-// these so the selected value is always a listed option.
 const ROWS_OPTIONS = [5, 10, 25];
 
-/* Loose shape — the modal renders one of two field-sets at a time, so the
- * union of every possible field is the simplest accurate type. Using
- * Partial<Reminder & Meeting> would over-constrain `status` (the intersection
- * of the two literal-string unions). */
 type FormShape = {
   editId?: number | null;
-  // common
   oppId?: string;
   status?: string;
-  // reminder-only
   oppDate?: string;
   subject?: string;
   setDate?: string;
   tat?: string;
   remark?: string;
   attachmentName?: string;
-  // The actual File object — captured on input change and sent via FormData
-  // on save. Cleared after a successful save.
   attachmentFile?: File | null;
-  // Direct download URL for an EXISTING attachment (only populated when
-  // editing). When the user hasn't picked a new file, this URL drives the
-  // "currently attached" link in the dropzone.
   attachmentUrl?: string;
-  // meeting-only
   code?: string;
   customer?: string;
   email?: string;
   contact?: string;
-  // Country dialing code shown in a dropdown beside the Contact No input.
   platform?: string;
-  // Free-text platform name, only used when `platform === 'Other'`.
   platformOther?: string;
   date?: string;
   startTime?: string;
@@ -208,10 +156,6 @@ export default function SalesTodo() {
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perm = user?.permissions?.['sales.todo'];
-  // Sales Matrix rollout — mirrors the sidebar gate in Sidebar.canView so
-  // branch_user / employee accounts see the full UI (Add button + row actions)
-  // even before per-leaf permission rows are seeded. Once perms are wired up,
-  // delete the rollout branch and revert to strict perm flags.
   const isRolloutUser = user?.user_type === 'branch_user' || user?.user_type === 'employee';
   const canView = isSuperAdmin || isRolloutUser || perm?.can_view !== false;
   const canAdd  = isSuperAdmin || isRolloutUser || !!perm?.can_add;
@@ -221,14 +165,7 @@ export default function SalesTodo() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [meetings,  setMeetings]  = useState<Meeting[]>([]);
   const [loadingData, setLoadingData] = useState<boolean>(true);
-  /* Real opportunities for the picker (code + its opportunity date), so
-   * selecting an opportunity can auto-fill the Opportunity Date. Falls back
-   * to the static OPP_ID_OPTIONS list if the fetch fails / returns none. */
   const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string; customer: string; email: string; contact: string }[]>([]);
-  // Admins (super_admin / client_admin / client_user) see the whole tenant
-  // by default; everyone else (branch users + employees) sees their own rows.
-  // Mirrors the controller's applyScope() — the SPA just hints at which scope
-  // to ask for.
   const defaultScope: 'mine' | 'all' = (
     user?.user_type === 'super_admin' ||
     user?.user_type === 'client_admin' ||
@@ -236,12 +173,7 @@ export default function SalesTodo() {
   ) ? 'all' : 'mine';
   const [scope] = useState<'mine' | 'all'>(defaultScope);
 
-  // Tracks any in-flight mutation so the action buttons can show a spinner
-  // / suppress double-clicks without re-rendering the whole table.
   const savingRef = useRef(false);
-  // Mirrored as state purely so the save button can render a spinner / get
-  // visually disabled while a save is in flight. The ref is still the source
-  // of truth for the re-entrancy guard.
   const [saving, setSaving] = useState(false);
 
   const [tab, setTab]             = useState<TopTab>('reminder');
@@ -252,8 +184,6 @@ export default function SalesTodo() {
   const [page, setPage]           = useState(1);
   const [rpp, setRpp]             = useState(10);
 
-  // ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
-  // big screens don't leave a gap; picking a Rows-per-page value overrides it.
   const wrapRef    = useRef<HTMLDivElement>(null);
   const autoFitRef = useRef(true);
   useEffect(() => {
@@ -263,42 +193,26 @@ export default function SalesTodo() {
       if (!autoFitRef.current) return;
       const avail = el.clientHeight;
       if (avail <= 0) return;
-      /* Measured, not guessed (same fix as the other Sales lists): the real header
-         row and body row heights. +2 so sub-pixel rows don't cost a whole row. */
       const THEAD = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 36;
       const rowEl = el.querySelector('tbody td:not(.td-empty)')?.closest('tr') as HTMLElement | null;
       const ROW   = rowEl?.getBoundingClientRect().height || 40;
-      /* EXACT fit, like the Customers / Consignee lists: as many rows as the space
-         holds, so a last row that fits is shown instead of left as a gap. (This
-         replaced snapping to the nearest fixed option — QA #21 — at the user's
-         request.) Floor of 5 avoids a 1–2-row page on a very short window. */
       const fit = Math.max(5, Math.floor((avail - THEAD + 2) / ROW));
       setRpp(prev => (prev === fit ? prev : fit));
     };
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     recompute();
-    // Recompute after the flex layout settles (first paint can report a
-    // stale/zero height before the viewport-fill chain resolves).
     const raf = requestAnimationFrame(recompute);
     return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, []);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm]           = useState<FormShape>({});
-  // Validation errors are kept as a list so every failing field surfaces at
-  // once (QA: "multiple validation errors should be shown at a time") instead
-  // of the old one-error-at-a-time behaviour.
   const [formErrors, setFormErrors] = useState<string[]>([]);
-  // Per-field inline validation errors for the MEETING form — rendered right
-  // under each input (red highlight) instead of one lumped box at the bottom.
   const [mtgErr, setMtgErr] = useState<Record<string, string>>({});
   const clearMtgErr = (k: string) => setMtgErr(p => (p[k] ? { ...p, [k]: '' } : p));
-  // Read-only "view" modal for reminders — opened from the Actions column so
-  // the user can inspect details + the attachment without entering edit mode.
   const [viewReminder, setViewReminder] = useState<Reminder | null>(null);
 
-  // Calendar view state
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const todayDate = useMemo(() => {
     const [d, m, y] = TODAY_STR.split('/').map(n => parseInt(n, 10));
@@ -308,9 +222,6 @@ export default function SalesTodo() {
   const [calMonth, setCalMonth] = useState(todayDate.m);
   const [popover, setPopover]   = useState<{ dateKey: string; x: number; y: number } | null>(null);
 
-  // Scroll lock — while the Add/Edit form, the Reminder Details modal, or the
-  // calendar day-detail popover is open, lock BOTH <html> and <body> so the
-  // page behind can't scroll.
   useEffect(() => {
     const anyOpen = modalOpen || viewReminder !== null || popover !== null;
     if (!anyOpen) return;
@@ -321,7 +232,6 @@ export default function SalesTodo() {
     return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
   }, [modalOpen, viewReminder, popover]);
 
-  // Inject Google Fonts (DM Sans + Inter) once on mount.
   useEffect(() => {
     const id = 'sm-td-fonts';
     if (document.getElementById(id)) return;
@@ -331,9 +241,6 @@ export default function SalesTodo() {
     document.head.appendChild(link);
   }, []);
 
-  // Load both reminders + meetings once on mount. Two parallel fetches — the
-  // server returns at most a few hundred rows per scope, so we don't bother
-  // with pagination yet.
   useEffect(() => {
     let cancelled = false;
     setLoadingData(true);
@@ -355,32 +262,20 @@ export default function SalesTodo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
 
-  /* Opportunity picker — SERVER-PAGINATED. Instead of loading every
-   * opportunity up front, we page through /sales/leads 20 at a time: the
-   * dropdown loads page 1 on open, fetches the next page as the user scrolls
-   * to the bottom, and re-queries server-side (debounced) as they type. Each
-   * option carries the real company + opportunity date for the auto-fill. */
   const OPP_PER = 20;
   const [oppPage, setOppPage]               = useState(1);
   const [oppHasMore, setOppHasMore]         = useState(true);
   const [oppLoadingMore, setOppLoadingMore] = useState(false);
-  const oppSearchRef = useRef('');   // latest search term (for scroll-paging)
-  const oppReqIdRef  = useRef(0);    // guards against out-of-order responses
+  const oppSearchRef = useRef('');
+  const oppReqIdRef  = useRef(0);
 
   const mapOpp = (l: any) => {
     const raw = (l.query_time ?? l.created_at ?? '').slice(0, 10);
-    // Surface the opportunity's company so the picker shows real data
-    // ("OPP-0492 · HARI KRISHAN"), not just a bare code.
     const company = l.customer?.company_name || l.sender_company || l.sender_name || '';
     return {
       value: l.opp_code as string,
       label: company ? `${l.opp_code} · ${company}` : (l.opp_code as string),
       date: raw ? isoToDisplay(raw) : '',
-      // Selecting an opportunity auto-fills the meeting's PRIMARY CONTACT
-      // PERSON — NOT the company. Prefer the linked customer's primary-address
-      // contact person (cp_name / cp_email / cp_contact); fall back to the
-      // lead's own sender_* (walk-in leads with no customer), then the
-      // customer's primary_email as a last resort for the email.
       customer: (l.customer?.primary_address?.cp_name || l.sender_name || '') as string,
       email: (l.customer?.primary_address?.cp_email || l.sender_email || l.customer?.primary_email || '') as string,
       contact: (l.customer?.primary_address?.cp_contact || l.sender_mobile || '') as string,
@@ -395,7 +290,7 @@ export default function SalesTodo() {
       { params: { status: 'all', per_page: OPP_PER, page, with_counts: 0, search: search || undefined } },
     )
       .then(({ data }) => {
-        if (reqId !== oppReqIdRef.current) return;   // a newer request superseded this one
+        if (reqId !== oppReqIdRef.current) return;
         const opts = (data.data ?? []).filter(l => l.opp_code).map(mapOpp);
         setOppOptions(prev => append ? [...prev, ...opts] : opts);
         const lastPage = data.pagination?.last_page ?? page;
@@ -410,16 +305,13 @@ export default function SalesTodo() {
       .finally(() => { if (reqId === oppReqIdRef.current) setOppLoadingMore(false); });
   }, []);
 
-  // First page on mount (the picker also re-fetches page 1 each time it opens).
   useEffect(() => { loadOpps(1, '', false); }, [loadOpps]);
 
-  // Debounced server search (called by MasterSelect as the user types) — resets to page 1.
   const handleOppSearch = useCallback((q: string) => {
     oppSearchRef.current = q;
     loadOpps(1, q, false);
   }, [loadOpps]);
 
-  // Scrolled near the bottom of the dropdown → append the next page.
   const handleOppScrollEnd = useCallback(() => {
     if (oppLoadingMore || !oppHasMore) return;
     loadOpps(oppPage + 1, oppSearchRef.current, true);
@@ -431,7 +323,6 @@ export default function SalesTodo() {
   const oppEmailFor    = (code: string): string => oppOptions.find(o => o.value === code)?.email ?? '';
   const oppContactFor  = (code: string): string => oppOptions.find(o => o.value === code)?.contact ?? '';
 
-  /* ── Reminder filtering ── */
   const filteredReminders = useMemo(() => {
     let rows = reminders;
     if (reminderFilter === 'today')         rows = rows.filter(r => r.setDate === TODAY_STR && r.status === 'In Progress');
@@ -449,15 +340,10 @@ export default function SalesTodo() {
     return rows;
   }, [reminders, reminderFilter, q]);
 
-  /* ── Meeting filtering ── */
   const filteredMeetings = useMemo(() => {
     let rows = meetings.filter(m => m.type === meetingSub && m.status === meetingFilter);
     if (q) {
       const lo = q.toLowerCase();
-      // Search across every text-bearing column the user can see in the
-      // table — customer/agenda/etc. PLUS the columns that used to silently
-      // miss ("Zoom" never matched the platform column; phone numbers
-      // never matched contact; venue / email were also blind spots).
       rows = rows.filter(m =>
         m.customer.toLowerCase().includes(lo) ||
         m.oppId.toLowerCase().includes(lo) ||
@@ -473,7 +359,6 @@ export default function SalesTodo() {
     return rows;
   }, [meetings, meetingSub, meetingFilter, q]);
 
-  /* ── Calendar pipeline (uses current top-tab + meeting sub-tab) ── */
   type CalItem = { key: string; date: string; title: string; status: string; ref: Reminder | Meeting };
   const calendarItems: CalItem[] = useMemo(() => {
     if (tab === 'reminder') {
@@ -503,7 +388,6 @@ export default function SalesTodo() {
     };
   }, [calendarItems, calYear, calMonth]);
 
-  /* ── Counts for filter chip badges ── */
   const reminderCounts = useMemo(() => ({
     today:        reminders.filter(r => r.setDate === TODAY_STR && r.status === 'In Progress').length,
     all:          reminders.length,
@@ -533,16 +417,10 @@ export default function SalesTodo() {
   const startIdx = (safePage - 1) * rpp;
   const rows = filtered.slice(startIdx, startIdx + rpp);
 
-  // Resync the `page` state when filters / deletes shrink `pages` below
-  // the currently selected page. Without this, the render-time `safePage`
-  // clamp hides the drift but Prev/Next clicks operate on the stale
-  // `page` and feel "stuck" — the first one or two clicks appear to do
-  // nothing while the underlying counter catches up.
   useEffect(() => {
     if (page > pages) setPage(pages);
   }, [pages, page]);
 
-  /* ── Actions ── */
   const switchTab = (next: TopTab) => {
     setTab(next);
     setPage(1);
@@ -558,13 +436,7 @@ export default function SalesTodo() {
   const openAdd = () => {
     if (!canAdd) return;
     setForm(tab === 'reminder'
-      // Opportunity Date starts empty — it's derived from the chosen
-      // Opportunity ID, not free-typed. Pre-filling today's date before an
-      // opportunity is picked was misleading (QA bug 29).
       ? { editId: null, oppId:'', oppDate: '', subject:'', setDate: TODAY_STR, tat:'24 Hours', remark:'', status:'In Progress' }
-      // platform left empty intentionally — pre-filling "Zoom" silently
-      // satisfied the required validation, so the user could save without
-      // ever opening the dropdown. Forcing an active selection.
       : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', platform:'', platformOther:'', date: TODAY_STR, startTime:'', endTime:'', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
     setFormErrors([]);
     setMtgErr({});
@@ -573,13 +445,10 @@ export default function SalesTodo() {
 
   const openEdit = (record: Reminder | Meeting) => {
     if (!canEdit) return;
-    // Completed reminders are read-only — the action button is rendered as
-    // disabled, but guard the programmatic path too (calendar popover, etc.).
     if ('subject' in record && (record as Reminder).status === 'Done') {
       toast.info('Read-only', 'Completed reminders cannot be edited.');
       return;
     }
-    // For meetings, map an unrecognised platform onto the "Other" + free-text inputs.
     if ('code' in record) {
       const m = record as Meeting;
       const known = (m.type === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS);
@@ -598,25 +467,13 @@ export default function SalesTodo() {
     setModalOpen(true);
   };
 
-  /* Unconditional dismissal — clears the form and shuts the modal.
-   *
-   * The save path MUST use this rather than `close()` below. `savingRef` is
-   * still true when a successful save reaches its close call (it only clears
-   * in the `finally`), so the guarded `close()` bailed out on its first line
-   * and the popup stayed open behind the success toast. */
   const resetAndClose = () => { setModalOpen(false); setForm({}); setFormErrors([]); setMtgErr({}); };
 
-  /* User-initiated dismissal — the X and Cancel. Refuses while
-   * a save is in flight so an in-progress request can't be abandoned half-way,
-   * leaving the list disagreeing with what actually reached the server. */
   const close = () => { if (savingRef.current) return; resetAndClose(); };
 
   const setMark = async (record: Reminder | Meeting, status: string) => {
     if (savingRef.current) return;
     savingRef.current = true;
-    // Optimistic update — flip the row in local state immediately so the UI
-    // doesn't sit on "In Progress" for a few seconds waiting for the round
-    // trip. If the API call fails we roll the row back and toast the error.
     const prevStatus = record.status;
     if (tab === 'reminder') {
       setReminders(prev => prev.map(r => r.id === record.id ? { ...r, status: status as Reminder['status'] } : r));
@@ -633,7 +490,6 @@ export default function SalesTodo() {
       }
       toast.success('Updated', `Marked as ${status}`);
     } catch (err: any) {
-      // Roll back to the prior status — the optimistic flip was incorrect.
       if (tab === 'reminder') {
         setReminders(prev => prev.map(r => r.id === record.id ? { ...r, status: prevStatus as Reminder['status'] } : r));
       } else {
@@ -648,16 +504,8 @@ export default function SalesTodo() {
   const del = async (record: Reminder | Meeting) => {
     if (!canDel || savingRef.current) return;
 
-    // Mark "in-flight" BEFORE awaiting the confirm dialog so a second
-    // delete click (or Enter-spam on the keyboard) is rejected by the
-    // guard at the top instead of racing through to a duplicate DELETE.
-    // Reset in `finally` covers all exit paths — cancel, network error,
-    // success — so the ref never leaks across interactions.
     savingRef.current = true;
     try {
-      // Confirm before delete — matches the project's confirm-dialog
-      // pattern (Inbox / MyTeam / HrEmployeeOnboarding). Resolves true
-      // on Yes, false on Cancel / Esc / backdrop click.
       const isReminder = tab === 'reminder';
       const label = isReminder
         ? (record as Reminder).subject
@@ -699,8 +547,6 @@ export default function SalesTodo() {
     setFormErrors([]);
 
     if (tab === 'reminder') {
-      // Collect every validation failure so they can all be shown at once,
-      // rather than bailing on the first one.
       const errs: string[] = [];
       const subj = (form.subject || '').trim();
       if (!subj)                               errs.push('Subject is required.');
@@ -713,9 +559,6 @@ export default function SalesTodo() {
       if (!form.setDate) {
         errs.push('Reminder set date is required.');
       } else if (!form.editId && displayToIso(form.setDate) < displayToIso(TODAY_STR)) {
-        // Block past reminder dates on new reminders — you can't set a
-        // reminder for a date that has already gone by (QA bug 30). Existing
-        // reminders are exempt so a historic row can still be edited/saved.
         errs.push('Reminder set date cannot be in the past.');
       }
 
@@ -743,14 +586,6 @@ export default function SalesTodo() {
           const fresh = await remindersApi.create(payload);
           setReminders(prev => [apiToReminder(fresh), ...prev]);
           toast.success('Added', 'Reminder created');
-          // Switch to the filter that will actually show the new row. The
-          // default "Today's Priority" filter only shows (today + In Progress),
-          // so a Done reminder OR a future-dated one would silently vanish
-          // and the user would think the save didn't work. Land on the
-          // most specific filter that contains the new row:
-          //   • Done            → Completed tab
-          //   • today + InProg  → Today's Priority (preserves the focused view)
-          //   • everything else → All Reminders
           const isTodayPriority =
             payload.status === 'In Progress' &&
             payload.set_date === displayToIso(TODAY_STR);
@@ -769,21 +604,15 @@ export default function SalesTodo() {
         setSaving(false);
       }
     } else {
-      // Per-field validation — each message is keyed to its field so it renders
-      // inline under that input (red highlight), not in a lumped bottom box.
       const fe: Record<string, string> = {};
       const set = (k: string, msg: string) => { if (!fe[k]) fe[k] = msg; };
       const cust = (form.customer || '').trim();
-      // Customer name: must contain at least one letter (rejects "!!!", "123",
-      // "@@@" etc.) and stay within a sensible length / safe character set.
       if (!cust) set('customer', 'Person Name is required.');
       else {
         if (!/[A-Za-z]/.test(cust))                            set('customer', 'Person Name must contain letters.');
         if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) set('customer', 'Person Name has invalid characters or length.');
       }
 
-      // Person Email — REQUIRED, trimmed + format-checked so leading/trailing
-      // spaces don't trip the backend (QA: trim spaces).
       const emailRaw = (form.email || '').trim();
       if (!emailRaw) {
         set('email', 'Person Email is required.');
@@ -795,14 +624,10 @@ export default function SalesTodo() {
       if (!form.date) {
         set('date', 'Meeting Date is required.');
       } else if (!form.editId && displayToIso(form.date) < displayToIso(TODAY_STR)) {
-        // Block past meeting dates on new meetings — mirrors the reminder rule.
-        // Existing meetings are exempt so a historic row can still be edited/saved.
         set('date', 'Meeting date cannot be in the past.');
       }
       if (!form.startTime) set('startTime', 'Start Time is required.');
       if (!form.endTime)   set('endTime', 'End Time is required.');
-      // Minimum meeting duration = 15 minutes (a 2–3 min slot is almost always
-      // a mis-click). End must be at least 15 min after start.
       if (form.startTime && form.endTime) {
         const toMin = (hm: string) => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
         if (toMin(form.endTime) - toMin(form.startTime) < 15) {
@@ -810,8 +635,6 @@ export default function SalesTodo() {
         }
       }
 
-      // Contact number — REQUIRED, stored as typed. Enforce 10–15 digits (10
-      // covers India's standard mobile length; 15 is the ITU-T E.164 maximum).
       const contactRaw = (form.contact || '').trim();
       if (!contactRaw) {
         set('contact', 'Contact Number is required.');
@@ -822,7 +645,6 @@ export default function SalesTodo() {
         if (!/^\+?[\d\s\-]+$/.test(contactRaw)) set('contact', 'Contact Number can only contain digits, spaces, dashes and a leading +.');
       }
 
-      // Resolve the platform/type, honouring the free-text "Other" choice.
       const platformVal = form.platform === 'Other'
         ? (form.platformOther || '').trim()
         : (form.platform || '');
@@ -837,7 +659,6 @@ export default function SalesTodo() {
       const venueRaw = (form.venue || '').trim();
 
       if (isVirtual) {
-        // Virtual meeting link — REQUIRED, must be a valid http(s) URL.
         if (!linkRaw) {
           set('link', 'Meeting Link is required.');
         } else {
@@ -846,8 +667,6 @@ export default function SalesTodo() {
           if (!ok) set('link', 'Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).');
         }
       } else {
-        // Physical meeting — venue is REQUIRED and must look like a real
-        // place name (at least one letter, sensible length, safe punctuation).
         if (!venueRaw) {
           set('venue', 'Place / Venue is required.');
         } else {
@@ -857,7 +676,6 @@ export default function SalesTodo() {
         }
       }
 
-      // Meeting agenda — REQUIRED for both meeting types.
       const agendaRaw = (form.agenda || '').trim();
       if (!agendaRaw)                   set('agenda', 'Meeting Agenda is required.');
       else if (agendaRaw.length < 2)    set('agenda', 'Meeting Agenda must be at least 2 characters.');
@@ -892,9 +710,6 @@ export default function SalesTodo() {
           const fresh = await meetingsApi.create(payload);
           setMeetings(prev => [apiToMeeting(fresh), ...prev]);
           toast.success('Added', 'Meeting created');
-          // Switch the meeting sub-tab + status filter to the bucket the
-          // new meeting actually belongs to, so the row is always visible
-          // after save. Mirrors the reminder save logic above.
           if (payload.type !== meetingSub) setMeetingSub(payload.type);
           setMeetingFilter(payload.status as MeetingStatus);
           setPage(1);
@@ -909,10 +724,6 @@ export default function SalesTodo() {
     }
   };
 
-  // Turn raw axios / Laravel errors into something a user can act on.
-  // Catches the "POST data is too large" PHP error (returned as 413 or
-  // surfaced as a 500 with that wording) and translates it to a sensible
-  // size hint that matches the backend's ATTACH_MAX_KB constant (20 MB).
   const prettySaveError = (err: any): string => {
     const status = err?.response?.status;
     const raw = String(err?.response?.data?.message || err?.message || '');
@@ -924,7 +735,6 @@ export default function SalesTodo() {
     return firstFieldError || raw || 'Save failed';
   };
 
-  /* ── No-access ── */
   if (!canView) {
     return (
       <div className="td-root">
@@ -943,8 +753,6 @@ export default function SalesTodo() {
     <div className="td-root">
       
 
-      {/* ── Header — the Supplier list header (.sup-fig .cstrip) in the page's teal, with
-              Reminder / Meeting as the list tab rail (as on Quotations V/S PI). ── */}
       <div className="sup-fig">
         <div className="cstrip">
           <span className="cstrip__accent" />
@@ -975,7 +783,6 @@ export default function SalesTodo() {
         </div>
       </div>
 
-      {/* ── Toolbar ── */}
       <div className="td-toolbar">
         <div className="td-toolbar-row">
           <div className="td-filters">
@@ -1029,7 +836,6 @@ export default function SalesTodo() {
                 </div>
               </div>
             )}
-            {/* View toggle inline with the filters for both tabs (matches Figma) */}
             <div className="dt-tabrail hr-dt flex-shrink-0">
               <div className="dt-tabs" role="tablist">
                 <button
@@ -1057,10 +863,6 @@ export default function SalesTodo() {
               </div>
             </div>
           </div>
-          {/* Search sits right after the filters (and the inline view
-              toggle for the Meeting tab) so it lands next to the
-              List/Calendar control. The Add button is the only thing in
-              the right corner of the row. */}
           <div className="dt-search ui-search-abs">
             <i className="ri-search-line dt-search-icon" />
             <input
@@ -1074,7 +876,6 @@ export default function SalesTodo() {
           </div>
           <div className="td-toolbar-right">
             {canAdd && (
-              /* The Supplier header's Add button (.sup-fig .cstrip__action-btn), in teal. */
               <span className="sup-fig" style={{ display: 'contents' }}>
                 <button type="button" className="cstrip__action-btn" onClick={openAdd}>
                   <span className="cstrip__action-btn-sheen" />
@@ -1086,7 +887,6 @@ export default function SalesTodo() {
           </div>
         </div>
 
-        {/* Meeting status sub-filter row (only shown for Meeting tab) */}
         {tab === 'meeting' && (
           <div className="td-meeting-status-row">
             <span className="td-meeting-status-label">
@@ -1117,7 +917,6 @@ export default function SalesTodo() {
         )}
       </div>
 
-      {/* ── Calendar View ── */}
       {view === 'calendar' && (
         <CalendarSection
           tab={tab}
@@ -1151,7 +950,6 @@ export default function SalesTodo() {
         />
       )}
 
-      {/* ── Table ── */}
       {view === 'list' && (
       <div className="td-table-card dt-root hr-dt">
         <div className="td-table-wrap" ref={wrapRef}>
@@ -1189,10 +987,6 @@ export default function SalesTodo() {
                       <td><StatusBadge status={r.status} /></td>
                       <td>
                         <div className="td-actions">
-                          {/* View — read-only details + attachment. Always
-                              available (even for completed reminders) so the
-                              row can be inspected without entering edit mode
-                              (QA bug 31). */}
                           <Tooltip label="View details">
                             <button type="button" className="smc-act smc-act-info" aria-label="View" onClick={() => setViewReminder(r)}><IconEye /></button>
                           </Tooltip>
@@ -1211,15 +1005,6 @@ export default function SalesTodo() {
                               <button type="button" className="smc-act smc-act-map" aria-label="Mark Done" onClick={() => setMark(r, 'Done')}><IconCheck /></button>
                             </Tooltip>
                           )}
-                          {/* Done rows keep the slot rather than dropping the
-                              button, the same way Edit does above.
-                              .td-actions centres its children, so a row with
-                              one button fewer shifted its whole cluster by
-                              half a slot — the buttons stopped forming
-                              columns down the table and the column read as
-                              misaligned against its header. Holding the slot
-                              is also honest: the action exists, it just has
-                              nothing left to do on a completed reminder. */}
                           {r.status === 'Done' && canEdit && (
                             <Tooltip label="Already completed">
                               <button type="button" aria-disabled="true" className="smc-act smc-act-map td-ab-muted" aria-label="Already completed"><IconCheck /></button>
@@ -1288,10 +1073,6 @@ export default function SalesTodo() {
                       <td>
                         <div className="td-actions">
                           {isPhys ? (
-                            // Physical meetings — clicking "View Location" opens the
-                            // venue on Google Maps in a new tab. Falls back to a
-                            // themed toast when the row has no venue captured,
-                            // since a blank maps query is worse than nothing.
                             m.venue ? (
                               <Tooltip label="View on Maps">
                                 <a
@@ -1312,10 +1093,6 @@ export default function SalesTodo() {
                               </Tooltip>
                             )
                           ) : (m.link && (
-                            // Join is only valid while the meeting is live. Once it's
-                            // Postponed or Cancelled the link must not be launchable —
-                            // render a greyed-out (disabled) button instead of the
-                            // active anchor.
                             (m.status === 'Postponed' || m.status === 'Cancelled') ? (
                               <Tooltip label={`Join disabled — meeting ${m.status.toLowerCase()}`}>
                                 <button
@@ -1333,10 +1110,6 @@ export default function SalesTodo() {
                             )
                           ))}
                           {canEdit && (
-                            // A finalized meeting (Done / Cancelled) must not be
-                            // editable — prevents backdated modifications. Greyed
-                            // out (disabled); use the Undo action to revert it to
-                            // In Progress first if a change is genuinely needed.
                             (m.status === 'Done' || m.status === 'Cancelled') ? (
                               <Tooltip label={`Editing disabled — meeting ${m.status.toLowerCase()}`}>
                                 <button
@@ -1366,10 +1139,6 @@ export default function SalesTodo() {
                               </Tooltip>
                             </>
                           )}
-                          {/* Undo / revert — once a meeting is Done, Postponed
-                              or Cancelled it can be moved back to In Progress
-                              so a mistaken status change is recoverable (QA bug
-                              34). */}
                           {m.status !== 'In Progress' && canEdit && (
                             <Tooltip label="Revert to In Progress">
                               <button className="smc-act smc-act-vault" aria-label="Revert to In Progress" onClick={() => setMark(m, 'In Progress')}><IconRevert /></button>
@@ -1385,7 +1154,6 @@ export default function SalesTodo() {
           )}
         </div>
 
-        {/* Pagination — the worklist pager (.tc-wl-*) used by the Customers / Lead Ack lists. */}
         <div className="tc-wl-pag">
           <span className="tc-wl-info">
             {total === 0
@@ -1395,14 +1163,11 @@ export default function SalesTodo() {
           <div className="tc-wl-right">
             <span className="tc-wl-rows">
               Rows per page:
-              <select
-                value={rpp}
-                onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}
-                aria-label="Rows per page"
-              >
-                {/* The fixed options plus the auto-fit value, so the current page size is always listed. */}
-                {[...new Set([rpp, ...ROWS_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <RowsPerPageSelect
+                pageSize={rpp}
+                options={ROWS_OPTIONS}
+                onChange={n => { autoFitRef.current = false; setRpp(n); setPage(1); }}
+              />
             </span>
             <span className="tc-wl-range">{safePage} / {pages}</span>
             <div className="tc-wl-nav">
@@ -1418,7 +1183,6 @@ export default function SalesTodo() {
       </div>
       )}
 
-      {/* ── Add / Edit Modal ── */}
       {modalOpen && (
 
         <div className="td-overlay">
@@ -1455,7 +1219,6 @@ export default function SalesTodo() {
             <div className="td-modal-body">
               {tab === 'reminder' ? (
                 <>
-                  {/* Reminder form — matches prototype layout */}
                   <div className="td-form-row">
                     <Field label="Opportunity ID">
                       <MasterSelect
@@ -1468,9 +1231,6 @@ export default function SalesTodo() {
                         onChange={v => setForm(p => ({
                           ...p,
                           oppId: v,
-                          // Opportunity Date is derived from the chosen
-                          // opportunity's real query/created date. Clearing the
-                          // opportunity clears the date (QA bug 29).
                           oppDate: oppDateFor(v),
                         }))}
                       />
@@ -1478,7 +1238,7 @@ export default function SalesTodo() {
                     <Field label="Opportunity Date">
                       <MasterDatePicker
                         value={toInputDate(form.oppDate)}
-                        onChange={() => { /* derived — not user-editable */ }}
+                        onChange={() => {  }}
                         placeholder="Auto-filled from opportunity"
                         disabled
                       />
@@ -1486,12 +1246,6 @@ export default function SalesTodo() {
                   </div>
                   <div className="td-form-row">
                     <Field label="Status">
-                      {/* "Done" only while EDITING. A reminder created as Done
-                          is a contradiction — nothing was ever chased — and it
-                          lands straight in the Completed tab, out of sight of
-                          the person who just filed it. Closing one is what the
-                          row's own Done button is for; an existing reminder
-                          keeps both so an edit can still correct its status. */}
                       <MasterSelect
                         value={form.status || 'In Progress'}
                         options={form.editId
@@ -1506,7 +1260,6 @@ export default function SalesTodo() {
                     <Field label="Reminder Subject" required>
                       {(() => {
                         const v = form.subject || '';
-                        // Single rule: only letters, digits and spaces allowed.
                         const invalid = v.length > 0 && !/^[A-Za-z0-9 ]+$/.test(v);
                         return (
                           <>
@@ -1530,8 +1283,6 @@ export default function SalesTodo() {
                         value={toInputDate(form.setDate)}
                         onChange={iso => setForm(p => ({ ...p, setDate: fromInputDate(iso) }))}
                         placeholder="dd-mm-yyyy"
-                        // Reminders can't be dated in the past — applies to both
-                        // add AND edit, so editing a row also can't pick an old date.
                         minDate={toInputDate(TODAY_STR)}
                       />
                     </Field>
@@ -1548,11 +1299,6 @@ export default function SalesTodo() {
                     <div className="td-field">
                       <label className="td-label">Attachment</label>
 
-                      {/* Existing attachment — only shows in Edit mode when a
-                          file is already on file AND the user hasn't picked a
-                          replacement yet. Clicking the link opens / downloads
-                          the file in a new tab. "Replace" / "Remove" buttons
-                          let the user swap in a new file or detach. */}
                       {form.attachmentUrl && !form.attachmentFile && (
                         <div className="td-file-existing">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2.2" style={{ flexShrink: 0 }}>
@@ -1580,8 +1326,6 @@ export default function SalesTodo() {
                         </div>
                       )}
 
-                      {/* Dropzone — shown when there's no existing attachment
-                          OR after the user picked a replacement file. */}
                       {(!form.attachmentUrl || form.attachmentFile) && (
                         <label htmlFor="tdF_attachment" className="td-file-drop">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2.2" style={{ flexShrink: 0 }}>
@@ -1603,11 +1347,6 @@ export default function SalesTodo() {
                         accept=".png,.jpg,.jpeg,.webp,.pdf"
                         onChange={e => {
                           const f = e.target.files?.[0];
-                          // Reminder attachments are images + PDF only — reject
-                          // Word/Excel/CSV (QA #23) with an inline message. The
-                          // `accept` above is only a hint (drag-drop / "All
-                          // files" bypasses it), so validate the type here too.
-                          // Mirrors the backend ATTACH_MIMES rule.
                           if (f) {
                             const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
                             if (!['jpg', 'jpeg', 'png', 'webp', 'pdf'].includes(ext)) {
@@ -1616,10 +1355,6 @@ export default function SalesTodo() {
                               return;
                             }
                           }
-                          // Reject too-large files client-side BEFORE the user
-                          // hits Save — saves an upload of useless bytes and
-                          // shows the message inline next to the field. Cap
-                          // mirrors the backend's ATTACH_MAX_KB (20 MB).
                           const MAX_BYTES = 20 * 1024 * 1024;
                           if (f && f.size > MAX_BYTES) {
                             setFormErrors([`Attachment is too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Please upload a file under 20 MB.`]);
@@ -1639,8 +1374,6 @@ export default function SalesTodo() {
                         maxLength={2000}
                         onChange={e => setForm(p => ({ ...p, remark: e.target.value }))}
                         placeholder="Add a remark or note…"
-                        // Fixed height matches the ATTACHMENT box so the two
-                        // fields stay identical (rows=3 alone rendered taller).
                         style={{ resize: 'none', height: 76 }}
                       />
                       <span className="td-char-count">{(form.remark || '').length}/2000</span>
@@ -1649,7 +1382,6 @@ export default function SalesTodo() {
                 </>
               ) : (
                 <>
-                  {/* Virtual/Physical toggle at top */}
                   <div className="td-mtg-toggle">
                     <button
                       type="button"
@@ -1667,8 +1399,6 @@ export default function SalesTodo() {
                     </button>
                   </div>
 
-                  {/* Opportunity picker — selecting an opportunity auto-fills
-                      its Opportunity Date (read-only). */}
                   <div className="td-form-row">
                     <Field label="Opportunity ID">
                       <MasterSelect
@@ -1682,9 +1412,6 @@ export default function SalesTodo() {
                           const name  = oppCustomerFor(v);
                           const email = oppEmailFor(v);
                           const phone = oppContactFor(v);
-                          // Auto-fill the opportunity's PRIMARY CONTACT PERSON —
-                          // name, email AND phone. Keep any manually-typed value
-                          // when the contact person is missing that field.
                           setForm(p => ({
                             ...p,
                             oppId: v,
@@ -1693,7 +1420,6 @@ export default function SalesTodo() {
                             email:       email || p.email,
                             contact:     phone || p.contact,
                           }));
-                          // Clear the inline error on any field we just filled.
                           setMtgErr(e => ({
                             ...e,
                             ...(name  ? { customer: '' } : {}),
@@ -1737,7 +1463,6 @@ export default function SalesTodo() {
                         maxLength={20}
                         value={form.contact || ''}
                         onChange={e => {
-                          // Digits, spaces, dashes and one leading +.
                           const cleaned = e.target.value
                             .replace(/[^\d\s+\-]/g, '')
                             .replace(/(?!^)\+/g, '');
@@ -1755,7 +1480,6 @@ export default function SalesTodo() {
                         invalid={!!mtgErr.platform}
                         onChange={v => { setForm(p => ({ ...p, platform: v, platformOther: v === 'Other' ? p.platformOther : '' })); clearMtgErr('platform'); }}
                       />
-                      {/* Free-text capture when "Other" is picked (QA bug 34). */}
                       {form.platform === 'Other' && (
                         <input
                           className={`td-inp ${mtgErr.platform ? 'td-inp-err' : ''}`}
@@ -1784,8 +1508,6 @@ export default function SalesTodo() {
                         onChange={iso => { setForm(p => ({ ...p, date: fromInputDate(iso) })); clearMtgErr('date'); }}
                         placeholder="dd-mm-yyyy"
                         invalid={!!mtgErr.date}
-                        // Meetings can't be scheduled in the past — applies to both
-                        // add AND edit, so editing a row also can't pick an old date.
                         minDate={toInputDate(TODAY_STR)}
                       />
                     </Field>
@@ -1796,7 +1518,6 @@ export default function SalesTodo() {
                         placeholder="--:--"
                         invalid={!!mtgErr.startTime}
                         accent="teal"
-                        // Today → can't start before now.
                         minTime={form.date === TODAY_STR ? hmNow() : undefined}
                       />
                     </Field>
@@ -1807,8 +1528,6 @@ export default function SalesTodo() {
                         placeholder="--:--"
                         invalid={!!mtgErr.endTime}
                         accent="teal"
-                        // End must be ≥ Start + 15 min (min meeting length), and
-                        // also ≥ now when the meeting is today.
                         minTime={(() => {
                           const floors = [
                             form.startTime ? addHm(form.startTime, 15) : '',
@@ -1863,7 +1582,6 @@ export default function SalesTodo() {
                 </button>
               </div>
             </div>
-            {/* While saving, blanket the whole modal so no field/button can be touched. */}
             {saving && (
               <div className="td-form-lock" aria-live="polite" aria-busy="true">
                 <span className="td-form-lock-spinner" />
@@ -1874,7 +1592,6 @@ export default function SalesTodo() {
         </div>
       )}
 
-      {/* ── Reminder View (read-only) Modal ── */}
       {viewReminder && (
         <div className="td-overlay" onMouseDown={() => setViewReminder(null)}>
           <div className="td-modal td-view-modal" onMouseDown={e => e.stopPropagation()}>
@@ -1935,11 +1652,6 @@ export default function SalesTodo() {
   );
 }
 
-/* ─────────────────────────────────────────────────────────────────────
- * Calendar view section.
- * Shown when `view === 'calendar'` in place of the list table.
- * Cell click opens a popover; pill click opens the edit modal.
- * ──────────────────────────────────────────────────────────────────── */
 type CalItemForSection = { key: string; date: string; title: string; status: string; ref: Reminder | Meeting };
 const CAL_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const CAL_DAY_NAMES   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
@@ -1975,11 +1687,9 @@ function CalendarSection(props: {
   const { tab, meetingSub, calYear, calMonth, calendarMap, monthStats, todayDate,
           onPrev, onNext, onToday, popover, setPopover, onItemClick } = props;
 
-  // Draggable popover: once the user drags it, dragPos overrides the anchored position.
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
 
-  // Reset drag position whenever a new day popover opens.
   useEffect(() => { setDragPos(null); }, [popover?.dateKey, popover?.x, popover?.y]);
 
   const onDragStart = (e: React.MouseEvent) => {
@@ -2005,7 +1715,7 @@ function CalendarSection(props: {
     document.addEventListener('mouseup', onUp);
   };
 
-  const firstDay  = new Date(calYear, calMonth, 1).getDay();          // 0 = Sun
+  const firstDay  = new Date(calYear, calMonth, 1).getDay();
   const daysIn    = new Date(calYear, calMonth + 1, 0).getDate();
   const prevDaysIn = new Date(calYear, calMonth, 0).getDate();
   const trailing = (7 - ((firstDay + daysIn) % 7)) % 7;
@@ -2021,7 +1731,6 @@ function CalendarSection(props: {
     setPopover({ dateKey, x: rect.left + 8, y: rect.bottom + 8 });
   };
 
-  // Close popover on outside click
   useEffect(() => {
     if (!popover) return;
     const handler = (ev: MouseEvent) => {
@@ -2034,7 +1743,6 @@ function CalendarSection(props: {
 
   const cells: React.ReactNode[] = [];
 
-  // Leading blanks (prev month)
   for (let b = 0; b < firstDay; b++) {
     const pD = prevDaysIn - firstDay + b + 1;
     cells.push(
@@ -2044,7 +1752,6 @@ function CalendarSection(props: {
     );
   }
 
-  // Current month
   for (let d = 1; d <= daysIn; d++) {
     const dd = String(d).padStart(2, '0');
     const mm = String(calMonth + 1).padStart(2, '0');
@@ -2090,7 +1797,6 @@ function CalendarSection(props: {
     );
   }
 
-  // Trailing blanks
   for (let t = 0; t < trailing; t++) {
     cells.push(
       <div key={`t-${t}`} className="td-cal-cell td-cal-cell-out">
@@ -2099,15 +1805,10 @@ function CalendarSection(props: {
     );
   }
 
-  // Popover content
   let popoverEl: React.ReactNode = null;
   if (popover) {
     const list = calendarMap[popover.dateKey] || [];
     const parts = popover.dateKey.split('/');
-    // Clamp the popover's anchor so it never bleeds below the fold (QA
-    // 15/16/17). The list caps at 3 rows (~188px) + header (~68px), so the box
-    // is ~260px tall; reserve that here so the position math and the actual
-    // box agree regardless of screen size.
     const POP_MAX_H = Math.min(280, window.innerHeight - 24);
     const popLeft = dragPos ? dragPos.x : Math.max(8, Math.min(popover.x, window.innerWidth - 360));
     const popTop  = dragPos ? dragPos.y : Math.max(12, Math.min(popover.y, window.innerHeight - POP_MAX_H - 12));
@@ -2213,10 +1914,6 @@ function CalendarSection(props: {
 
       <div className="td-cal-card">
         <div className="td-cal-day-hdr">
-          {/* Use the anchored `todayDate` (computed at module load) rather
-              than a live `new Date()` here — otherwise the highlighted
-              weekday column drifts across midnight while the page stays
-              open, getting out of sync with the `td-cal-cell-today` cell. */}
           {(() => {
             const todayDow = new Date(todayDate.y, todayDate.m, todayDate.d).getDay();
             return CAL_DAY_NAMES.map((d, i) => {
@@ -2233,7 +1930,6 @@ function CalendarSection(props: {
   );
 }
 
-/* ── Form field helper ── */
 function Field({ label, required, colSpan, error, children }: { label: string; required?: boolean; colSpan?: 1 | 2; error?: string; children: React.ReactNode }) {
   return (
     <div className="td-field" style={colSpan === 2 ? { gridColumn: 'span 2' } : undefined}>
@@ -2244,7 +1940,6 @@ function Field({ label, required, colSpan, error, children }: { label: string; r
   );
 }
 
-/* ─── Date helpers: bridge dd/mm/yyyy ↔ HTML5 date input (yyyy-mm-dd) ─── */
 function toInputDate(d?: string) {
   if (!d) return '';
   const p = d.split('/');
@@ -2258,119 +1953,6 @@ function fromInputDate(d?: string) {
   return `${p[2]}/${p[1]}/${p[0]}`;
 }
 
-/* ─── TdSelect — themed dropdown that matches the rest of the form.
- *  Native <select> elements can't be styled when their options panel is
- *  open (browsers refuse to honour CSS on <option>), so we build a tiny
- *  custom dropdown using a styled trigger + portal-less menu. Keeps the
- *  teal palette consistent end-to-end. Falls back to a plain trigger
- *  string when no option matches the value. ──────────────────────────── */
-function TdSelect(props: {
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  const { value, options, onChange, placeholder = 'Select…' } = props;
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Reset the filter every time the menu closes so the next open is fresh,
-  // and auto-focus the search input when the menu opens (mirrors how
-  // MasterSelect behaves so the two read as siblings).
-  useEffect(() => {
-    if (!open) { setSearch(''); return; }
-    // setTimeout shoves the focus past the click that just opened the menu —
-    // otherwise React re-renders steal it back on the same tick.
-    const id = window.setTimeout(() => searchInputRef.current?.focus(), 0);
-    return () => window.clearTimeout(id);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  const selected = options.find(o => o.value === value);
-  // Only show the search row when there are enough options to make
-  // scrolling annoying — keeps short status/yes-no dropdowns clean.
-  const showSearch = options.length > 4;
-  const lo = search.trim().toLowerCase();
-  const filtered = lo
-    ? options.filter(o => o.label.toLowerCase().includes(lo) || o.value.toLowerCase().includes(lo))
-    : options;
-
-  return (
-    <div ref={rootRef} className={`td-cs ${open ? 'is-open' : ''}`}>
-      <button
-        type="button"
-        className="td-cs-trigger"
-        onClick={() => setOpen(o => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className={`td-cs-value ${selected ? '' : 'is-placeholder'}`}>
-          {selected ? selected.label : placeholder}
-        </span>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {open && (
-        <div className="td-cs-menu" role="listbox">
-          {showSearch && (
-            <div className="td-cs-search ui-search-abs" onMouseDown={e => e.stopPropagation()}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.3">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                ref={searchInputRef}
-                type="text"
-                autoComplete="off"
-                placeholder="Search…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                onKeyDown={e => { if (e.key !== 'Escape') e.stopPropagation(); }}
-              />
-              <SearchClear show={search} onClear={() => { setSearch(''); }} />
-            </div>
-          )}
-          <div className="td-cs-list">
-            {filtered.length === 0 ? (
-              <div className="td-cs-empty">No results</div>
-            ) : filtered.map(o => (
-              <button
-                key={o.value || '__empty'}
-                type="button"
-                role="option"
-                aria-selected={o.value === value}
-                className={`td-cs-opt ${o.value === value ? 'is-active' : ''}`}
-                onClick={() => { onChange(o.value); setOpen(false); }}
-              >
-                {o.label}
-                {o.value === value && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12" /></svg>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Status badge (colored dot + text) ─── */
 function StatusBadge({ status }: { status: string }) {
   const cls =
     status === 'Done' ? 'td-done' :
@@ -2384,7 +1966,6 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-/* ─── Icons ─── */
 const IconPlus = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
 const IconX        = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IconLocation = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;

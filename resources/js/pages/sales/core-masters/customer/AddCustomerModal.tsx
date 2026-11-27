@@ -10,7 +10,7 @@ import '../../../../components/ui/DataTable.css';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
-import { ACM_SHELL_CSS, StepperShimmer, Stage1FormShimmer } from './AddCustomerModalShimmer';
+import { ACM_SHELL_CSS, StepperShimmer, Stage1FormShimmer, acmShell } from './AddCustomerModalShimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -874,6 +874,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   useScrollLock(open, '.acm-root');
 
+  // Replacing the loading shell: it already played the open animation.
+  const [settled] = useState(() => acmShell.shown);
+  useEffect(() => { acmShell.shown = false; }, []);
+
   const handleClose = () => {
     if (inFlightRef.current || saving) return;
     if (dirtySavedRef.current) {
@@ -1313,7 +1317,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const nextLocked = false;
 
   return createPortal((
-    <div className="acm-root">
+    <div className={`acm-root${settled ? ' acm-root--settled' : ''}`}>
       <style>{ACM_SHELL_CSS}</style>
       <style>{SCOPED_CSS}</style>
       <style>{CLM_CSS}</style>
@@ -4225,6 +4229,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-gst-table-wrap { border-color: rgba(167,139,250,0.25); }
 [data-bs-theme="dark"] .acm-gst-table thead tr { background: transparent; }
 [data-bs-theme="dark"] .acm-gst-table td { color: #cbd5e1; border-top-color: rgba(167,139,250,0.15); }
+[data-bs-theme="dark"] .acm-gst-status-active { background: rgba(34,197,94,0.15); color: #6ee7b7; box-shadow: inset 0 0 0 1px rgba(34,197,94,0.3); }
+[data-bs-theme="dark"] .acm-gst-status-inactive,
+[data-bs-theme="dark"] .acm-gst-status-cancelled { background: rgba(239,68,68,0.15); color: #fca5a5; box-shadow: inset 0 0 0 1px rgba(239,68,68,0.3); }
+[data-bs-theme="dark"] .acm-gst-status-suspended { background: rgba(245,158,11,0.15); color: #fcd34d; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.3); }
 [data-bs-theme="dark"] .acm-btn-ghost { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-btn-ghost:hover:not(:disabled) { background: rgba(167,139,250,0.22); border-color: rgba(167,139,250,0.55); color: #ddd6fe; }
 
@@ -4523,6 +4531,27 @@ const SCOPED_CSS = `
 
 [data-bs-theme="dark"] .acm-tab-off { color: #a89fc7; }
 [data-bs-theme="dark"] .acm-tab-on { color: #c4b5fd; border-bottom-color: #a78bfa; }
+.acm-tab { border-radius: 9px 9px 0 0; transition: color .15s, border-color .15s, background .15s; }
+.acm-tab-off:hover { color: #6d28d9; background: rgba(124,58,237,.05); border-bottom-color: #c4b5fd; }
+.acm-tab-on { color: #5b21b6; background: rgba(124,58,237,.08); border-bottom-color: #7c3aed; }
+.acm-tab:focus-visible { outline: 2px solid #a78bfa; outline-offset: -2px; }
+[data-bs-theme="dark"] .acm-tab-off:hover { color: #ddd6fe; background: rgba(167,139,250,.08); border-bottom-color: rgba(167,139,250,.45); }
+[data-bs-theme="dark"] .acm-tab-on { background: rgba(167,139,250,.12); }
+.acm-root .master-select-wrap:not(.show):not(.disabled) .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(124,58,237,.55) !important;
+  box-shadow: 0 2px 6px rgba(124,58,237,.08) !important;
+}
+.acm-root .master-select-wrap.show .master-select-toggle {
+  background: var(--vz-card-bg, #fff) !important;
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15), 0 4px 12px rgba(124,58,237,.12) !important;
+}
+.acm-root .master-select-wrap.show .master-select-chev { color: #7c3aed; }
+.acm-root .master-select-wrap.invalid .master-select-toggle { border-color: #ef4444 !important; }
+.acm-root .master-select-wrap.invalid.show .master-select-toggle { box-shadow: 0 0 0 3px rgba(239,68,68,.15) !important; }
+[data-bs-theme="dark"] .acm-root .master-select-wrap:not(.show):not(.disabled) .master-select-toggle:hover:not(:disabled) { border-color: #a78bfa !important; box-shadow: 0 2px 8px rgba(0,0,0,.3) !important; }
+[data-bs-theme="dark"] .acm-root .master-select-wrap.show .master-select-toggle { background: #1a1430 !important; border-color: #a78bfa !important; box-shadow: 0 0 0 3px rgba(167,139,250,.2) !important; }
+[data-bs-theme="dark"] .acm-root .master-select-wrap.show .master-select-chev { color: #c4b5fd; }
 
 [data-bs-theme="dark"] .acm-section {
   background: #1f2942;
@@ -4554,6 +4583,21 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle:disabled { color: #94a3b8; }
 
+[data-bs-theme="dark"] .acm-root .avm-master-select .master-select-wrap:not(.disabled):not(.show) .master-select-toggle:not(:disabled) {
+  background: #110c25 !important;
+  border-color: #3b2a6b !important;
+}
+/* Locked dropdowns (Address Type, State before a Country is picked) take the
+   same surface as the rest, not the lighter disabled purple. */
+[data-bs-theme="dark"] .acm-root .avm-master-select .master-select-wrap.disabled .master-select-toggle,
+[data-bs-theme="dark"] .acm-root .avm-master-select .master-select-toggle:disabled {
+  background: #110c25 !important;
+  border-color: #3b2a6b !important;
+}
+.acm-root .master-select-placeholder {
+  opacity: 1;
+  color: color-mix(in srgb, var(--vz-secondary-color) 65%, transparent);
+}
 [data-bs-theme="dark"] .acm-field .avm-input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
 [data-bs-theme="dark"] .acm-radio-pill { background: #131c33; border-color: rgba(167,139,250,0.40); color: #ddd6fe; }
 [data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.45); border-color: #a78bfa; color: #ffffff; }

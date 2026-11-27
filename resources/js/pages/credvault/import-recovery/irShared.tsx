@@ -68,16 +68,16 @@ type Col = [label: string, align: 'c' | 'l', width: number];
 const IMPORT_COLS: Col[] = [['Sr. No', 'c', 64], ['Import ID', 'c', 105], ['Imported On', 'c', 120], ['Imported By', 'l', 190], ['File', 'l', 210], ['Format', 'c', 100], ['Imported', 'c', 90], ['Skipped', 'c', 85], ['Weak', 'c', 80], ['Duplicates', 'c', 95]];
 const BACKUP_COLS: Col[] = [['Sr. No', 'c', 64], ['Backup ID', 'c', 105], ['Downloaded On', 'c', 125], ['Downloaded By', 'l', 190], ['Format', 'c', 100], ['Scope', 'c', 110], ['Items', 'c', 75], ['Size', 'c', 80], ['Protection', 'c', 150], ['Status', 'c', 110]];
 
-export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSize, searching }: {
+export function HistoryCard({ kind, rows, meta, loading, error, onPage, onPageSize, searching, shimmer }: {
   kind: 'import' | 'backup'; rows: TransferRow[]; meta: PageMeta | null; loading: boolean; error: string; onPage: (p: number) => void;
-  onPageSize?: (n: number) => void; searching?: boolean;
+  onPageSize?: (n: number) => void; searching?: boolean; shimmer?: boolean;
 }) {
   const head = kind === 'import' ? IMPORT_COLS : BACKUP_COLS;
   const start = meta ? (meta.current_page - 1) * meta.per_page : 0;
   const td = (i: number, node: ReactNode) => <td className={`ir-a${head[i][1]}`}>{node}</td>;
 
   let body: ReactNode;
-  if (loading && !rows.length) {
+  if (shimmer || (loading && !rows.length)) {
     body = Array.from({ length: 3 }, (_, r) => (
       <tr key={r} className="cv-shimrow">{head.map((_, c) => <td key={c}><i style={{ width: `${55 + ((r * 7 + c * 13) % 40)}%` }} /></td>)}</tr>
     ));

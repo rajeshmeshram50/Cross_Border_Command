@@ -207,6 +207,13 @@ export function TooltipPill({
         whiteSpace: 'normal',
         wordBreak: 'break-word',
         overflowWrap: 'anywhere',
+        /* Size to content, not to the space left of the viewport edge. A fixed
+           box with width:auto shrink-to-fits against `left`→edge, so a tooltip
+           on a far-right trigger (e.g. the Profile icon) got squeezed and broke
+           mid-word ("Profil"/"e"). max-content sizes it to the text; maxWidth
+           still caps long labels, and the caller's viewport clamp keeps it on
+           screen. */
+        width: 'max-content',
         maxWidth: maxWidth ?? `min(360px, calc(100vw - 16px))`,
         /* And a height cap, for the same reason as the width one. Without
            it a 2,000-character product description rendered as a column
@@ -329,8 +336,15 @@ export default function Tooltip({
   const place = () => {
     const el = triggerRef.current;
     const trig = el?.getBoundingClientRect();
-    const tip = tipRef.current?.getBoundingClientRect();
-    if (!el || !trig || !tip) return;
+    const tipEl = tipRef.current;
+    if (!el || !trig || !tipEl) return;
+    /* The tip's LAYOUT size, not getBoundingClientRect(): the entrance
+       animation starts at scale(.86), and a bounding rect includes the
+       transform, so the width read here was 14% short. The viewport clamp then
+       stopped that much too late and a long label beside the right edge (the
+       Action column's "In use by ... can't delete") ran off the screen with its
+       text cut (QA #59). offsetWidth/Height ignore transforms. */
+    const tip = new DOMRect(0, 0, tipEl.offsetWidth, tipEl.offsetHeight);
     setCoords(placeTip(visibleTextRect(el) ?? trig, tip, position, offset));
   };
 

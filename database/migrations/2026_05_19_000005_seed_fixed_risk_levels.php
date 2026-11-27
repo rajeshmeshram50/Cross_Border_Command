@@ -5,20 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Mark Low and High as the two fixed system "Risk Level" entries.
- *
- * Same pattern as address_types / customer_types:
- *   • Adds `is_system` boolean column to `master_risk_levels`.
- *   • Upserts the two canonical rows at global scope with
- *     `is_system = true` — protected from delete + name edit and
- *     blocks any case-insensitive duplicate from being added under
- *     any tenant scope.
- *   • Cleans up every other globally-scoped non-system row so the
- *     list starts clean. Per-tenant rows are left alone.
- *
- * Idempotent: case-insensitive name lookup, re-runs are safe.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -29,7 +15,6 @@ return new class extends Migration
             }
         });
 
-        // 1. Upsert the two fixed entries.
         $fixed = [
             [
                 'name'            => 'Low',
@@ -71,7 +56,6 @@ return new class extends Migration
             }
         }
 
-        // 2. Clean up every other globally-scoped non-system row.
         DB::table('master_risk_levels')
             ->whereNull('client_id')
             ->whereNull('branch_id')

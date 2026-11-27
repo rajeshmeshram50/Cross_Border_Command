@@ -4,16 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Sales Matrix → Product Directory (lead ⇄ product mapping).
- *
- * Joins the lead to one or more products with the salesperson's target
- * price and intended quantity. Powers the "Product Directory" pill on
- * the matrix toolbar and gets read again by later stages (Price Shared,
- * Quotation vs PI). One row per (lead, product) — the unique gate
- * prevents the same product being mapped twice to a lead, but the same
- * product can map to many leads (it's a directory entry, not ownership).
- */
 return new class extends Migration
 {
     public function up(): void
@@ -33,7 +23,6 @@ return new class extends Migration
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
 
-            // One row per (lead, product); fast lookup by lead.
             $table->unique(['lead_id', 'product_id'], 'lead_products_pair_unique');
             $table->index(['client_id', 'lead_id']);
         });

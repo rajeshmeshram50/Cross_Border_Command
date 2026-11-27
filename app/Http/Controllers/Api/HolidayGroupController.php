@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\HolidayGroup;
 use App\Models\Module;
@@ -13,11 +12,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/**
- * HRMS Holiday Groups — named holiday calendars ("types") that own a set of
- * holidays and get assigned to employees. Shares the `hr.holiday` permission
- * module and the same tenant scoping as HolidayController.
- */
 class HolidayGroupController extends Controller
 {
     use ScopesHolidayTenant;
@@ -28,12 +22,6 @@ class HolidayGroupController extends Controller
     {
         $this->authorizeAction($request, 'can_view');
 
-        // withCount, or the two counting accessors in HolidayGroup::$appends
-        // fire a COUNT each per group as the list serialises.
-        //
-        // `creator` is not loaded: nothing on the Holiday page reads it, and at
-        // 202 groups that relation cost a query plus roughly a quarter of a
-        // 100 kB response for a name no one displays.
         $q = HolidayGroup::query()->withCount(['holidays', 'employees']);
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
@@ -47,8 +35,6 @@ class HolidayGroupController extends Controller
             $q->where('status', $status);
         }
 
-        // Order by code (creation sequence) so the auto-generated IDs read as a
-        // clean ascending series instead of a name-scrambled order.
         return response()->json($q->orderBy('code')->get());
     }
 
@@ -97,11 +83,6 @@ class HolidayGroupController extends Controller
         $this->authorizeAction($request, 'can_delete');
         $row = $this->resolveRow($request, (int) $id);
 
-        // Block deletion while employees are still assigned to this group.
-        // Deleting it would silently strip the holiday list off those employees
-        // (and the paid days payroll credits from it). The admin must reassign
-        // them to another group first. (Soft-deleted employees don't count —
-        // the Employee model's SoftDeletes scope excludes them.)
         $assigned = Employee::where('holiday_group_id', $row->id)->count();
         if ($assigned > 0) {
             throw ValidationException::withMessages([
@@ -110,8 +91,6 @@ class HolidayGroupController extends Controller
             ]);
         }
 
-        // No employees use it — safe to remove. Keep its holidays but ungroup
-        // them so the dates aren't lost.
         DB::transaction(function () use ($row) {
             DB::table('holidays')->where('holiday_group_id', $row->id)->update(['holiday_group_id' => null]);
             $row->delete();
@@ -123,33 +102,13 @@ class HolidayGroupController extends Controller
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $data = $request->validate([
-            // Group names are labels — letters, numbers, spaces and hyphens only
-            // (no apostrophes or other special characters). Mirrors the frontend.
-            /* Must contain at least one LETTER. (#58)
-             *
-             * The pattern allowed \pN freely, so "12345" or "2026" saved as a
-             * group name with nothing to object — a number is not a name, and
-             * nothing downstream can make sense of one.
-             *
-             * Digits are still allowed INSIDE a name: "Diwali 2026" and
-             * "Group 1" are ordinary things to call a holiday group, and
-             * banning digits outright would swap a validation gap for a
-             * validation obstacle. The lookahead is what draws the line — it
-             * rejects a name made only of digits, spaces or hyphens while
-             * leaving every real name alone. Same idiom the bank-branch rule
-             * uses for the same reason. */
             'name'        => ['required', 'string', 'max:191', 'regex:/^(?=.*\pL)[\pL\pN \-]+$/u'],
             'description' => 'nullable|string|max:1000',
             'status'      => ['nullable', Rule::in(['Active', 'Inactive'])],
         ], [
-            // Says what a valid name IS, and names the rule that just failed —
-            // "invalid format" leaves the user guessing which character to drop.
             'name.regex' => 'Group name must include at least one letter — it can also contain numbers, spaces and hyphens, but not numbers alone.',
         ]);
 
-        // Block duplicate group names within the same tenant scope. Match is
-        // case-insensitive (ilike) on the trimmed name; on update the row being
-        // edited is excluded so re-saving it without a rename is allowed.
         [$clientId, $branchId] = $this->resolveOwnership($request);
         $name = trim($data['name']);
         $data['name'] = $name;
@@ -175,7 +134,6 @@ class HolidayGroupController extends Controller
         return $q->firstOrFail();
     }
 
-    /** Sequential HGRP code. Shared allocator — see \App\Support\DocumentNumber. */
     private function allocateCode($clientId, $branchId): string
     {
         return \App\Support\DocumentNumber::next(

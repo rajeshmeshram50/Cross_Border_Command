@@ -19,8 +19,6 @@ use App\Models\ShipmentOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-
-
 class ClmBuyerProfileController extends Controller
 {
     private const CATS = ['kyc', 'dd', 'tl', 'td'];
@@ -34,19 +32,12 @@ class ClmBuyerProfileController extends Controller
         $empty = ['buyers' => [], 'consignees' => [], 'ws_eq' => [], 'ws_neq' => [], 'wos_eq' => [], 'wos_neq' => []];
         if (!$cid) return response()->json(['status' => true, 'data' => $empty]);
 
-        /* ── 1. Segment masters (id→regulatory). ── */
         $segments = ClmSegment::where('client_id', $cid)->get(['id', 'name', 'code', 'regulatory_status']);
         $segRegById  = [];
         foreach ($segments as $s) {
-            $segRegById[(int) $s->id] = (string) $s->regulatory_status;   // 'highly' | 'less'
+            $segRegById[(int) $s->id] = (string) $s->regulatory_status;
         }
 
-        /* ── 2. Segment rules → required-doc union per segment.
-         * A segment can carry a Domestic AND an International rule, so key the
-         * doc_selections by document_type and let each buyer draw the set that
-         * matches its own trade type (India → domestic, else international).
-         * `$selForSeg` falls back to the segment's other-type rule when the
-         * matching one is absent, so legacy single-type setups never lose docs. */
         $rulesBySegType = [];
         foreach (ClmSegmentRule::where('client_id', $cid)->get(['segment_id', 'document_type', 'doc_selections']) as $r) {
             $rulesBySegType[(int) $r->segment_id][(string) $r->document_type] = is_array($r->doc_selections) ? $r->doc_selections : [];
@@ -57,18 +48,16 @@ class ClmBuyerProfileController extends Controller
             return $byType ? (array) reset($byType) : [];
         };
 
-        /* ── 3. Uploaded docs grouped by owner ("Type#id" → set of cat::code). ── */
         $uploadsByOwner = [];
         foreach (SegmentDocUpload::where('client_id', $cid)->get(['uploadable_type', 'uploadable_id', 'category', 'doc_code']) as $u) {
             $uploadsByOwner[$u->uploadable_type . '#' . $u->uploadable_id][$u->category . '::' . $u->doc_code] = true;
         }
 
-        /* ── 4. Active agreements + applicability per segment id. ── */
         $agreements = ClmAgreementLibrary::where('client_id', $cid)
             ->where('agr_status', 'Active')
             ->get(['id', 'segment', 'regulatory', 'party']);
-        $agrPartyById = [];   // agreement_id → party CSV ("buyer"/"consignee")
-        $agrIdsBySeg = [];    // segment_id → [agreement_id, …]
+        $agrPartyById = [];
+        $agrIdsBySeg = [];
         foreach ($agreements as $a) $agrPartyById[(int) $a->id] = (string) $a->party;
         foreach ($segments as $s) {
             $sid = (int) $s->id;
@@ -85,14 +74,11 @@ class ClmBuyerProfileController extends Controller
             $agrIdsBySeg[$sid] = $list;
         }
 
-        // Active trade-document library matched to each segment the same way, so
-        // a shipment's Trade Docs count (its Proforma Invoice + applicable trade
-        // docs) mirrors the Evidence Vault instead of the empty customer bucket.
         $tradeDocs = ClmTradeDocLibrary::where('client_id', $cid)
             ->where('status', 'active')
             ->get(['id', 'segment', 'regulatory', 'party']);
-        $tdPartyById = [];    // trade_doc_id → party CSV
-        $tdIdsBySeg = [];     // segment_id → [trade_doc_id, …]
+        $tdPartyById = [];
+        $tdIdsBySeg = [];
         foreach ($tradeDocs as $m) $tdPartyById[(int) $m->id] = (string) $m->party;
         foreach ($segments as $s) {
             $sid = (int) $s->id;
@@ -109,17 +95,8 @@ class ClmBuyerProfileController extends Controller
             $tdIdsBySeg[$sid] = $list;
         }
 
-        /* ── 5. Completed agreement signature requests, keyed by party + lead. ── */
-        $sigByParty   = [];   // "Model#id" → set of completed agreement ids (party-wise list)
-        $agrSigByLead = [];   // lead_id    → ['Customer'|'Consignee' → set of agreement ids]
-        /* Agreement and trade-doc signatures come back in ONE read.
-         *
-           They were two queries against the same table with the same client
-           and the same status, differing only in document_type — and on a
-           deployment where the database is a network hop away every query
-           costs far more than the work it does. Fetched together and split
-           here; the two loops below are unchanged apart from reading from
-           their own slice. */
+        $sigByParty   = [];
+        $agrSigByLead = [];
         $sigRowsAll = ClmSignatureRequest::where('client_id', $cid)
             ->whereIn('document_type', [ClmSignatureRequest::DOC_AGREEMENT, ClmSignatureRequest::DOC_TRADE])
             ->where('status', 'completed')
@@ -137,17 +114,8 @@ class ClmBuyerProfileController extends Controller
             }
         }
 
-        // Completed trade-document signatures, per lead + party, keyed by the
-        // trade-doc-library id (legacy scalar or the multi-doc JSON array).
-        $tdSigByLead = [];   // lead_id → ['Customer'|'Consignee' → set of trade_doc ids]
-        /* A trade document sent from the party's own Evidence Vault or party form
-           carries NO lead_id - it belongs to the customer, not to one deal. Those
-           requests used to be skipped outright, so a document signed that way
-           never moved the profile's Trade Documents ratio however many times it
-           completed. They are collected per party here and credited to the
-           customer list further down; the per-lead map stays lead-only, because
-           the transaction rows below are genuinely per-deal. */
-        $tdSigByParty = [];  // 'Customer'|'Consignee' → party_id → set of trade_doc ids
+        $tdSigByLead = [];
+        $tdSigByParty = [];
         foreach ($sigRowsAll->where('document_type', ClmSignatureRequest::DOC_TRADE) as $sr) {
             $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             $ids = is_array($sr->trade_doc_ids) && $sr->trade_doc_ids ? $sr->trade_doc_ids : [$sr->trade_doc_id];
@@ -159,8 +127,6 @@ class ClmBuyerProfileController extends Controller
             }
         }
 
-        /* ── Closures shared by every section. ── */
-        // Buyer trade type from its primary-address country (India → domestic).
         $docTypeForCountry = fn(?string $country): string => trim((string) $country) === 'India' ? 'domestic' : 'international';
         $unionFor = function (array $segIds, string $docType) use ($selForSeg): array {
             $u = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => []];
@@ -185,7 +151,6 @@ class ClmBuyerProfileController extends Controller
             }
             return $out;
         };
-        // Applicable agreement / trade-doc ids for a set of segment ids.
         $agrIdsForSegments = function (array $segIds) use ($agrIdsBySeg): array {
             $set = [];
             foreach ($segIds as $sid) foreach ($agrIdsBySeg[$sid] ?? [] as $aid) $set[$aid] = true;
@@ -196,24 +161,12 @@ class ClmBuyerProfileController extends Controller
             foreach ($segIds as $sid) foreach ($tdIdsBySeg[$sid] ?? [] as $mid) $set[$mid] = true;
             return array_keys($set);
         };
-        // agr progress = applicable agreements vs completed (from a "signed set").
         $agrProgress = function (array $applicableIds, array $signedSet): array {
             $t = count($applicableIds);
             $d = 0;
             foreach ($applicableIds as $aid) if (isset($signedSet[$aid])) $d++;
             return ['d' => $d, 't' => $t];
         };
-        /* Party membership from a doc's party CSV, matching the Evidence
-         * Vault's partyFlags — which this claimed to mirror but did not.
-         *
-         * Only a genuinely BLANK party means "applies to both". The old
-         * `if (!$fb && !$fc)` fallback also fired when the party was set but
-         * named neither — i.e. every Supplier-only document — so a document
-         * marked Supplier-Material / Goods was treated as applicable to the
-         * customer AND the consignee. The vault, which uses the correct rule,
-         * hid it; this screen showed it and counted it, which is why the two
-         * disagreed (QA: non-applicable trade docs / agreements on Customer
-         * Profile). Supplier-only now resolves to neither, as in the vault. */
         $partyFlags = function (?string $party): array {
             $tokens = array_filter(array_map(fn($t) => strtolower(trim($t)), explode(',', (string) $party)));
             if (empty($tokens)) return [true, true];
@@ -222,13 +175,6 @@ class ClmBuyerProfileController extends Controller
                 in_array('consignee', $tokens, true),
             ];
         };
-        // Per-party applicable-doc progress: count the applicable library ids
-        // whose party covers $side ('buyer'|'consignee'); a doc is "done" when a
-        // completed signature for that side exists. Mirrors the vault ratios.
-        /* $side 'buyer' | 'consignee' | 'any'. 'any' is for a deal with NO
-         * separate consignee: the one party is both, so every applicable
-         * document counts once — including the consignee-only ones, which are
-         * that same party's obligations. Mirrors the Evidence Vault. */
         $docProgress = function (array $applicableIds, array $partyById, array $signedForSide, string $side) use ($partyFlags): array {
             $t = 0;
             $d = 0;
@@ -241,7 +187,6 @@ class ClmBuyerProfileController extends Controller
             }
             return ['d' => $d, 't' => $t];
         };
-        // Regulatory tier label from a set of segment ids.
         $regFor = function (array $segIds) use ($segRegById): string {
             $hasHigh = false;
             $hasLow = false;
@@ -255,13 +200,11 @@ class ClmBuyerProfileController extends Controller
             return 'Low';
         };
 
-        /* ── 6. Leads, PIs, shipments (batched) for ship counts + txn tables. ── */
         $leads = Lead::where('client_id', $cid)
             ->whereNotNull('customer_id')
             ->get(['id', 'opp_code', 'customer_id', 'consignee_id', 'lead_stage_id']);
         $leadIds = $leads->pluck('id')->all();
 
-        // Latest non-cancelled PI per lead.
         $piByLead = [];
         if (!empty($leadIds)) {
             foreach (
@@ -271,13 +214,10 @@ class ClmBuyerProfileController extends Controller
                     ->orderBy('id')
                     ->get(['id', 'opp_id', 'code']) as $pi
             ) {
-                $piByLead[(int) $pi->opp_id] = $pi;   // later id wins = latest
+                $piByLead[(int) $pi->opp_id] = $pi;
             }
         }
 
-        // Which PIs have a COMPLETED e-signature — the PI is a shipment's first
-        // (buyer-side) Trade Document, so a signed PI counts as a signed trade
-        // doc (same source of truth the Q/PI list + Evidence Vault use).
         $piSignedIds = [];
         $piIdsForSig = collect($piByLead)->pluck('id')->all();
         if (!empty($piIdsForSig)) {
@@ -292,7 +232,6 @@ class ClmBuyerProfileController extends Controller
             }
         }
 
-        // Lead → product segment ids (via the lead's latest PI line items).
         $leadSegIds = [];
         $piIds = collect($piByLead)->pluck('id')->all();
         if (!empty($piIds)) {
@@ -325,7 +264,6 @@ class ClmBuyerProfileController extends Controller
             }
         }
 
-        // Shipments: which leads have one + per-customer count.
         $shipLeadIds = [];
         $shipCodeByLead = [];
         $shipByCustomer = [];
@@ -334,17 +272,11 @@ class ClmBuyerProfileController extends Controller
         foreach (ShipmentOrder::where('client_id', $cid)->orderBy('id')->get(['id', 'lead_id', 'shipment_code']) as $so) {
             $lid = (int) $so->lead_id;
             $shipLeadIds[$lid] = true;
-            // Real shipment_orders.shipment_code (e.g. "SHP-001"), so the txn
-            // tables show the same id as the Evidence Vault. Latest row wins;
-            // legacy rows with a NULL code fall back to the synthetic id below.
             if ($so->shipment_code) $shipCodeByLead[$lid] = $so->shipment_code;
             $cust = $leadCustomerById[$lid] ?? null;
             if ($cust) $shipByCustomer[$cust] = ($shipByCustomer[$cust] ?? 0) + 1;
         }
 
-        /* ── 7. Buyers (customers). ── */
-        // Count only DISTINCT consignees (exclude "same as customer" entries) so
-        // the list's CONSIGNEES column matches the consignee popup.
         $customers = Customer::query()->forUser($user)
             ->withCount(['consignees as consignees_count' => function ($q) {
                 $q->where(fn($w) => $w->where('same_as_customer', false)->orWhereNull('same_as_customer'));
@@ -354,29 +286,20 @@ class ClmBuyerProfileController extends Controller
             ->get();
 
         $buyers = [];
-        $applicTdByCustomer = [];   // customer id → applicable trade-doc library ids
-        $applicAgrByCustomer = [];  // customer id → party-level applicable agreement ids
-        $dealAgrByCustomer   = [];  // customer id → agreement ids its DEALS require
-        $dealAgrByConsignee  = [];  // consignee id → agreement ids its DEALS require
-        $applicAgrByConsignee = []; // consignee id → party-level applicable agreement ids
-        $dealAgrSignedByConsignee = []; // consignee id → agreement ids signed on its deals
+        $applicTdByCustomer = [];
+        $applicAgrByCustomer = [];
+        $dealAgrByCustomer   = [];
+        $dealAgrByConsignee  = [];
+        $applicAgrByConsignee = [];
+        $dealAgrSignedByConsignee = [];
         $sr = 0;
         foreach ($customers as $c) {
             $sr++;
-            $segIds   = \App\Support\SegmentGuard::idsOf($c);   // own ids — names can be shared
+            $segIds   = \App\Support\SegmentGuard::idsOf($c);
             $prog     = $progressFor($unionFor($segIds, $docTypeForCountry(optional($c->primaryAddress)->country)), Customer::class . '#' . $c->id);
             $applic   = $agrIdsForSegments($segIds);
-            /* Keep the customer's applicable trade-doc ids: the party-level
-               credit below has to know WHICH documents count, not just how
-               many were signed. */
             $applicTdByCustomer[(int) $c->id] = $tdIdsForSegments($segIds);
             $applicAgrByCustomer[(int) $c->id] = $applic;
-            /* Party-aware, like the per-deal rows already are.
-               agrProgress() counted every agreement whose SEGMENT matched,
-               so one marked Consignee-only or Supplier-only still landed in
-               the customer's total (QA: non-applicable agreements shown).
-               docProgress() applies the same party rule the Evidence Vault
-               uses, so the two screens agree. */
             $agr      = $docProgress($applic, $agrPartyById, $sigByParty['Customer#' . $c->id] ?? [], 'buyer');
             $segNames = collect(explode(',', (string) $c->segment))->map(fn($n) => trim($n))->filter()->values()->all();
             $buyers[] = [
@@ -385,16 +308,10 @@ class ClmBuyerProfileController extends Controller
                 'db_id'   => (int) $c->id,
                 'name'    => $c->company_name,
                 'seg'     => $segNames,
-                // Each segment with its own Reg status, for the badges.
                 'segs'    => \App\Support\SegmentGuard::rowsFor($segIds),
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',
-                /* Identity chips for the Evidence Vault header. Same fields the
-                   Customer list hands its vault (CustomerController::row), so
-                   the header reads identically wherever it is opened from.
-                   `risk` especially: the header falls back to "Low Risk" when
-                   it is absent, which quietly mislabels a High Risk buyer. */
                 'contact' => optional($c->primaryAddress)->cp_name,
                 'city'    => optional($c->primaryAddress)->city,
                 'type'    => $c->type,
@@ -403,34 +320,21 @@ class ClmBuyerProfileController extends Controller
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
                 'tl'      => $prog['tl'],
-                /* Placeholder — overwritten below from $tdByCustomer /
-                   $tdByConsignee. NOT $prog['td']: that resolves out of the
-                   segment rule's doc_selections['td'], which the DCP no longer
-                   stores, so it is permanently an empty set. */
                 'td'      => ['d' => 0, 't' => 0],
                 'agr'     => $agr,
                 'ship'    => (int) ($shipByCustomer[(int) $c->id] ?? 0),
             ];
         }
 
-        /* ── 8. Consignees. ── */
         $consignees = Consignee::query()->forUser($user)
-            // `customers` is the many-to-many pivot (all customers this consignee
-            // is mapped to); `customer` is just the legacy single primary. The
-            // profile must reflect ALL mapped customers, not only the primary.
             ->with([
-                // cp_name + city feed the Evidence Vault header chips — see the
-                // customer query above.
                 'primaryAddress:id,consignee_id,country,city,cp_name',
                 'customer:id,customer_code',
-                // `segment` is needed too: a same-as-customer consignee resolves
-                // its applicable set from the CUSTOMER's segments (see the loop below).
-                'customers:id,customer_code,segment',
+                'customers:id,customer_code,segment,segment_ids,client_id,branch_id',
             ])
             ->orderBy('id')
             ->get();
 
-        // shipment count per consignee (via leads referencing the consignee).
         $shipByConsignee = [];
         foreach ($leads as $l) {
             if ($l->consignee_id && isset($shipLeadIds[(int) $l->id])) {
@@ -442,16 +346,6 @@ class ClmBuyerProfileController extends Controller
         $sr = 0;
         foreach ($consignees as $c) {
             $sr++;
-            /* SAME AS CUSTOMER → read the CUSTOMER's record.
-             *
-             * Such a consignee is not a separate legal party: its KYC, Due
-             * Diligence and Trade Licences are filed against the customer, and
-             * the Evidence Vault already swaps the owner for exactly this
-             * reason. This screen did not, so it looked up uploads under
-             * Consignee#id, found none, and printed 0 of 3 next to a vault
-             * showing 3 of 3 verified. Segments come from the customer too, so
-             * both sides resolve the same applicable set.
-             * A genuinely separate consignee is untouched. */
             $sameAsCust = !empty($c->same_as_customer) ? $c->customers->first() : null;
             $progOwner  = $sameAsCust
                 ? Customer::class . '#' . $sameAsCust->id
@@ -460,18 +354,12 @@ class ClmBuyerProfileController extends Controller
             $segIds = \App\Support\SegmentGuard::idsOf($sameAsCust ?: $c);
             $prog   = $progressFor($unionFor($segIds, $docTypeForCountry(optional($c->primaryAddress)->country)), $progOwner);
             $applic = $agrIdsForSegments($segIds);
-            // Party-filter the agreement total to the CONSIGNEE side (same as the
-            // transaction matrix's c_agr) — $agrProgress counted ALL segment
-            // agreements incl. buyer-only ones a consignee can never sign, so the
-            // "Agreements Pending" KPI was inflated for every consignee.
             $agr    = $docProgress($applic, $agrPartyById, $sigByParty['Consignee#' . $c->id] ?? [], 'consignee');
             $applicAgrByConsignee[(int) $c->id] = $applic;
             $consOut[] = [
                 'sr'      => $sr,
                 'id'      => $c->consignee_code ?: ('CS-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
                 'cid'     => optional($c->customer)->customer_code ?: ('C-' . str_pad((string) $c->customer_id, 3, '0', STR_PAD_LEFT)),
-                // All mapped customers (codes) via the M2M pivot — falls back to
-                // the single primary when the pivot has no rows.
                 'cids'    => (function () use ($c) {
                     $codes = $c->customers
                         ->map(fn($cu) => $cu->customer_code ?: ('C-' . str_pad((string) $cu->id, 3, '0', STR_PAD_LEFT)))
@@ -490,8 +378,6 @@ class ClmBuyerProfileController extends Controller
                 'sc'      => '#0e7490',
                 'sb'      => '#f0fdff',
                 'country' => optional($c->primaryAddress)->country ?: '—',
-                // Evidence Vault header chips — see the buyer rows above.
-                // A consignee has no `type`, so only these three.
                 'contact' => optional($c->primaryAddress)->cp_name,
                 'city'    => optional($c->primaryAddress)->city,
                 'risk'    => $c->risk_level,
@@ -499,24 +385,16 @@ class ClmBuyerProfileController extends Controller
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
                 'tl'      => $prog['tl'],
-                /* Placeholder — overwritten below from $tdByCustomer /
-                   $tdByConsignee. NOT $prog['td']: that resolves out of the
-                   segment rule's doc_selections['td'], which the DCP no longer
-                   stores, so it is permanently an empty set. */
                 'td'      => ['d' => 0, 't' => 0],
                 'agr'     => $agr,
                 'ship'    => (int) ($shipByConsignee[(int) $c->id] ?? 0),
             ];
         }
 
-        /* ── 9. Transaction matrix (opportunities). ── */
         $custById = $customers->keyBy('id');
         $consById = $consignees->keyBy('id');
-        // Customer compliance progress reused per opportunity (keyed by id).
         $custProgById = [];
         foreach ($buyers as $b) $custProgById[$b['db_id']] = $b;
-        // Consignee compliance — drives the "Consignee Transactions" view in
-        // the Buyer ≠ Consignee tab.
         $consProgById = [];
         foreach ($consOut as $co) $consProgById[$co['db_id']] = $co;
 
@@ -525,30 +403,8 @@ class ClmBuyerProfileController extends Controller
         $wosEq = [];
         $wosNeq = [];
 
-        /* Party-level Trade Docs, summed across the party's own deals.
-         *
-         * Trade Documents are a PER-DEAL document for a customer/consignee —
-         * they hang off the shipment, not off the party (see the Evidence
-         * Vault's own note: its trade_documents_count is the sum of each
-         * shipment's trade_docs ratio). There is no party-level source to read,
-         * so the list column has to be aggregated from the same per-lead figure
-         * the transaction rows below already compute.
-         *
-         * This is why the column read 0/0 for EVERY customer: it was taking
-         * $prog['td'], which resolves $union['td'] out of the segment rule's
-         * doc_selections — and Trade Documents were removed from the DCP, so
-         * ClmSegmentRuleController::validated() strips 'td' on every save and
-         * that key is now permanently empty. */
         $tdByCustomer  = [];
         $tdByConsignee = [];
-        /* Agreements counted PER DEAL, summed — not de-duplicated by library id.
-         *
-         * A customer with two shipments that each require the same agreement
-         * owes it twice: once on each deal. Collapsing them to a distinct set
-         * of ids reported 1/1 where the Evidence Vault, which is per-shipment,
-         * showed 1/1 on one shipment and 0/1 on the other — two obligations,
-         * one signed. The correct figure is 1 of 2, and this is the same rule
-         * the trade-doc columns beside it already follow. */
         $agrByCustomer  = [];
         $agrByConsignee = [];
         $addTd = function (array &$acc, int $key, array $p): void {
@@ -562,63 +418,23 @@ class ClmBuyerProfileController extends Controller
             if (!$cust) continue;
             $lid = (int) $l->id;
             $cons = $l->consignee_id ? $consById->get($l->consignee_id) : null;
-            // "buyer = consignee": no separate consignee, or it's flagged same_as_customer.
             $separateConsignee = $cons && !$cons->same_as_customer;
 
-            /* The DEAL's segments — from the products on its PI (or quotation).
-             * No fallback to the customer's own segment tags any more: with
-             * nothing quoted or invoiced there is nothing being traded, so no
-             * document applies yet. The fallback counted documents off the
-             * customer master instead, which is the same mistake this screen
-             * has been carrying everywhere else — and it left the Evidence
-             * Vault (correctly reporting nothing) disagreeing with this cell. */
             $segIds = $leadSegIds[$lid] ?? [];
             $cp     = $custProgById[(int) $cust->id] ?? null;
             $pi     = $piByLead[$lid] ?? null;
             $hasShip = isset($shipLeadIds[$lid]);
 
-            // Per-shipment Trade Docs + Agreements, party-aware, mirroring the
-            // Evidence Vault: the buyer columns (td/agr) count the customer-side
-            // docs, the c_* columns the consignee side. The PI is the buyer's
-            // first Trade Document, so it adds 1 to the buyer Trade-Docs total
-            // (and 1 signed once the PI is e-signed).
             $applicAgr = $agrIdsForSegments($segIds);
             foreach ($applicAgr as $aid) $dealAgrByCustomer[(int) $cust->id][(int) $aid] = true;
             $applicTd  = $tdIdsForSegments($segIds);
-            /* AGREEMENTS: buyer side always. The party marking decides who owes
-               an agreement — a Consignee-marked one is the consignee's to sign
-               even when the consignee is this same company.
-               TRADE DOCS: unchanged — with no separate consignee the one party
-               carries both sides, so the combined set is counted once. */
             $agrBuyer  = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Customer'] ?? [], 'buyer');
-            /* Consignee side of the SAME deal. Computed for every lead, not just
-               the separate-consignee branch, because a same-as-customer
-               consignee still owes its own agreements. The signed set merges
-               both parties: a Sales-Matrix send is filed under the customer
-               even when the consignee signs, which is how the vault reads it. */
             $agrConsDeal = $docProgress(
                 $applicAgr,
                 $agrPartyById,
                 ($agrSigByLead[$lid]['Customer'] ?? []) + ($agrSigByLead[$lid]['Consignee'] ?? []),
                 'consignee',
             );
-            /* Trade docs, consignee side — computed for EVERY lead, exactly as
-               the agreement figure above is.
-             *
-               A consignee that IS the customer used to be counted with the
-               BUYER's tally, which carried the PI and every Buyer-only document.
-               The Evidence Vault no longer shows those on the consignee side
-               (QA #7), so counting them here would leave this cell reading more
-               than the panel it summarises. One entity is still two roles, and
-               each role is counted on its own. */
-            /* 'any' when the consignee IS the customer.
-             *
-               Its vault shows the customer's documents as well as its own in
-               that case, so the cell has to total the same set — every
-               document applicable to either party, each once — or it reads
-               short against the panel it summarises. A separate consignee
-               keeps 'consignee': two companies, two sets. The PI is not in
-               $applicTd at all, so it stays out of both. */
             $tdConsDeal = $docProgress(
                 $applicTd,
                 $tdPartyById,
@@ -628,24 +444,6 @@ class ClmBuyerProfileController extends Controller
             $tdSigSet  = $separateConsignee
                 ? ($tdSigByLead[$lid]['Customer'] ?? [])
                 : (($tdSigByLead[$lid]['Customer'] ?? []) + ($tdSigByLead[$lid]['Consignee'] ?? []));
-            /* 'buyer' in BOTH cases, and the same-as-customer half of that is
-               the fix.
-             *
-               This used to widen to 'any' when the consignee IS the customer,
-               on the reasoning that such a party's vault shows both sides, so
-               the cell should total both. Measured against the vault it does
-               not: the Customer Evidence Vault counts the BUYER-applicable set
-               only, and files the consignee-side documents on the consignee
-               (which has its own row, its own vault, and its own cell here).
-               Widening therefore added every Consignee-only trade document on
-               top of a set the vault never showed, and the row read higher
-               than the panel it links to — C-018 showed 10 against a vault of
-               8, C-014 showed 7 against 5, the surplus being exactly the
-               Consignee-only documents in those segments.
-               The consignee side is untouched: $tdConsDeal above still uses
-               'any' for a same-as-customer consignee, because THAT vault does
-               merge both sets. One entity, two roles, each counted where it is
-               filed. */
             $tdBuyer   = $docProgress($applicTd, $tdPartyById, $tdSigSet, 'buyer');
             if ($pi) {
                 $tdBuyer['t'] += 1;
@@ -670,57 +468,20 @@ class ClmBuyerProfileController extends Controller
             if ($separateConsignee) {
                 $base['consignee'] = $cons->company_name;
                 $base['consId'] = (int) $cons->id;
-                // Consignee-side compliance for the "Consignee Transactions" view.
                 $cp2 = $consProgById[(int) $cons->id] ?? null;
                 $base['c_kyc'] = $cp2 ? $cp2['kyc'] : ['d' => 0, 't' => 0];
                 $base['c_dd']  = $cp2 ? $cp2['dd']  : ['d' => 0, 't' => 0];
                 $base['c_tl']  = $cp2 ? $cp2['tl']  : ['d' => 0, 't' => 0];
                 $base['c_td']  = $docProgress($applicTd,  $tdPartyById,  $tdSigByLead[$lid]['Consignee']  ?? [], 'consignee');
-                /* No PI in a SEPARATE consignee's count.
-                   It is a buyer-side document and the Evidence Vault no longer
-                   lists it on the consignee side, so counting it here would put
-                   this cell one ahead of the panel it summarises. A consignee
-                   that is also the customer still counts it: that row reads
-                   $tdBuyer, which carries the PI. */
                 $base['c_agr'] = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Consignee'] ?? [], 'consignee');
             }
 
-            /* Roll this deal into the party totals the two list tables show.
-               The customer always gets the buyer-side figure (which already
-               carries the PI as its first trade document). A SEPARATE consignee
-               gets the consignee-side figure; when Customer = Consignee the
-               vault displays the buyer-side set, so the consignee row mirrors
-               it rather than showing 0/0. */
-            /* Deal-level agreements for the CONSIGNEE — collected for every deal
-               that names one, separate or not. Keeping this inside the
-               separate-consignee branch meant a same-as-customer consignee
-               collected nothing, so its cell read 0/0 against a vault listing
-               the deal's agreements.
-               The signed set is party-agnostic: a Sales-Matrix send is filed
-               under the customer even when the consignee signs, which is how
-               the vault reads it too. */
             if ($cons) {
                 foreach ($applicAgr as $aid) $dealAgrByConsignee[(int) $cons->id][(int) $aid] = true;
                 foreach (array_keys(($agrSigByLead[$lid]['Customer'] ?? []) + ($agrSigByLead[$lid]['Consignee'] ?? [])) as $sid) {
                     $dealAgrSignedByConsignee[(int) $cons->id][(int) $sid] = true;
                 }
             }
-            /* SHIPMENT-LINKED deals only.
-             *
-             * Case-to-Case documents are per TRANSACTION, and a deal with no
-             * shipment order is not a transaction yet — the Evidence Vault does
-             * not render it and does not count it (see $ctcRows in
-             * SegmentDocUploadController). Counting it here is what produced
-             * the "0/2 outside, nothing inside" mismatch: the cell advertised
-             * paperwork the vault gave the user no way to reach.
-             *
-             * Deliberately narrower than before (product decision, 15 Sep). The
-             * earlier direction widened the VAULT to match this column instead;
-             * that is now reversed on both sides so they still agree.
-             *
-             * Only the td/agr columns are gated. The transaction tables below
-             * keep listing every deal — they have their own shipped / not
-             * shipped split and are not part of this count. */
             if ($hasShip) {
                 $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
                 $addTd($agrByCustomer, (int) $cust->id, $agrBuyer);
@@ -745,52 +506,11 @@ class ClmBuyerProfileController extends Controller
             }
         }
 
-        /* Both lists are built before the lead loop runs, so the aggregated
-           Trade-Docs figure is applied here. A party with no deals keeps 0/0 —
-           correct, not a failure: per-deal documents cannot exist without a
-           deal. */
         foreach ($buyers as &$b) {
             $b['td'] = $tdByCustomer[(int) $b['db_id']] ?? ['d' => 0, 't' => 0];
-            /* Credit trade documents signed against the PARTY rather than a deal
-               (Evidence Vault / customer form sends carry no lead_id). Without
-               this the ratio never moved once such a document completed - the
-               per-lead accumulation above cannot see them.
-               Capped at the applicable total so the cell can never read more
-               done than exist: a document signed both from a deal and from the
-               vault would otherwise be counted twice. */
-            /* Count only the applicable documents that were actually signed.
-             *
-             * This previously added the SIZE of the party's signed set to the
-             * done figure and capped it at the total. That credits documents
-             * that have nothing to do with this customer: C-014's applicable
-             * set is {8,16,21,20} while its one completed request covers
-             * {10,18} — no overlap at all — yet the cell read 4 of 5 done.
-             * Intersecting fixes what is counted; max() rather than + fixes
-             * the double count, since a document signed both from a deal and
-             * from the vault is still one document. */
             $partyIds  = array_keys($tdSigByParty['Customer'][(int) $b['db_id']] ?? []);
             $applicIds = $applicTdByCustomer[(int) $b['db_id']] ?? [];
             $partyDone = count(array_intersect($applicIds, $partyIds));
-            /* Agreements: the party's own segment set UNION what its deals
-             * require — the same set the Evidence Vault now lists.
-             *
-             * This cell resolved from the customer's segment tags alone, so
-             * C-010 (tagged foods / Travel & Luggage, trading Test Segment 30
-             * goods) read 0/0 while its deal had four agreements and two of
-             * them signed. Party-level ids stay in the union, so a party with
-             * applicable agreements and no deal yet is unaffected. Done counts
-             * the signed ones in that union, never a raw tally. */
-            /* DEAL agreements only — the party's own segment tags are NOT
-               merged in. An agreement belongs to a transaction, not to a
-               company: a customer with three PIs owes each deal's paperwork
-               on that deal, not the union of all three at party level.
-               Reverses the party-level half of CBC #66, deliberately, and in
-               step with SegmentDocUploadController::vault() — the two screens
-               have to answer the same question the same way. */
-            /* Summed across the party's deals, not a distinct set of library
-               ids. Two shipments that each require the same agreement are two
-               obligations — the Evidence Vault shows them as 1/1 and 0/1 on
-               separate shipment rows, so this cell has to read 1 of 2. */
             $b['agr'] = $agrByCustomer[(int) $b['db_id']] ?? ['d' => 0, 't' => 0];
 
             if ($partyDone > 0) {
@@ -798,7 +518,6 @@ class ClmBuyerProfileController extends Controller
             }
         }
         unset($b);
-        /* Consignee → its customer, for the same_as_customer fallback below. */
         $custIdOfCons = [];
         foreach ($consignees as $cRow) {
             $first = $cRow->customers->first();
@@ -806,10 +525,6 @@ class ClmBuyerProfileController extends Controller
         }
 
         foreach ($consOut as &$co) {
-            /* Agreements: what this consignee's DEALS require — same rule as
-               the buyer rows above and the Evidence Vault. Party-level
-               segment tags are not merged in; see the note there. */
-            // Summed per deal, same rule as the buyer column above.
             $co['agr'] = $agrByConsignee[(int) $co['db_id']] ?? ['d' => 0, 't' => 0];
 
             $own = $tdByConsignee[(int) $co['db_id']] ?? null;
@@ -817,27 +532,6 @@ class ClmBuyerProfileController extends Controller
                 $co['td'] = $own;
                 continue;
             }
-
-            /* SAME AS CUSTOMER, with no deal of its own.
-             *
-             * When the consignee IS the customer there is no separate
-             * consignee-side document set — the buyer's documents are the
-             * consignee's, which is why the Evidence Vault shows them on this
-             * party and why they "auto update" when the customer's do. The
-             * lead loop already mirrors the buyer figure onto such a consignee,
-             * but only for consignees that appear on a lead; one with no deal
-             * yet fell through to 0/0 while its vault showed documents.
-             *
-             * A SEPARATE consignee keeps 0/0 here: its documents are genuinely
-             * per-deal, so with no deal there is nothing to count. */
-            /* No mirror of the customer's per-deal figure.
-             * The Evidence Vault is the reference, and it counts a party's own
-             * deals — a same-as-customer consignee is never named on a lead
-             * (leads carry consignee_id = NULL there), so it genuinely has no
-             * per-deal documents of its own and the vault reports 0/0. Copying
-             * the customer's figure here made this cell disagree with the vault
-             * the row links to. Its standard docs (KYC / DD / TL) still come
-             * from the customer, which is where they are filed. */
 
             $co['td'] = ['d' => 0, 't' => 0];
         }
@@ -856,7 +550,6 @@ class ClmBuyerProfileController extends Controller
         ]);
     }
 
-    /** Case-insensitive token membership in a comma-separated string. */
     private function csvHasToken(?string $csv, string $token): bool
     {
         $token = mb_strtolower(trim($token));

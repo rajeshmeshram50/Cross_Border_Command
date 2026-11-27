@@ -1,0 +1,710 @@
+/* Sourcing Target Report popup — Figma. Shell/vars/buttons/close: popup-shell.css (shared). */
+
+/* Figma .srpt-box: width min(1280px, 100vw - 24px), max-height 100vh - 40px, radius 20px. */
+.sta-modal--report {
+    width: min(1280px, calc(100vw - 24px));
+    max-width: none;
+    max-height: calc(100vh - 40px);
+    border-radius: 20px;
+}
+
+/* ── Dark header ──────────────────────────────────────────────────────── */
+.str-head {
+    flex: none;
+    padding: 20px 26px 0;
+    color: #fff;
+    background: linear-gradient(135deg, #0a3d52 0%, #0b5870 55%, #0c6a85 100%);
+}
+
+.str-head-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.str-head-ico {
+    flex: none;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .25);
+    border-radius: 12px;
+}
+
+.str-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.str-chip {
+    padding: 3px 10px;
+    font: 800 12px ui-monospace, 'JetBrains Mono', monospace;
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .12);
+    border: 1px solid rgba(103, 232, 249, .5);
+    border-radius: 8px;
+}
+
+.str-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #4ade80;
+    background: rgba(74, 222, 128, .12);
+    border: 1px solid rgba(74, 222, 128, .5);
+    border-radius: 999px;
+}
+
+.str-state i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.str-state.is-prog {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, .12);
+    border-color: rgba(251, 191, 36, .5);
+}
+
+.str-sub {
+    margin-top: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #a5d4e0;
+}
+
+.str-tiles {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.str-tile {
+    min-width: 0;
+    padding: 11px 14px;
+    background: rgba(255, 255, 255, .07);
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 12px;
+}
+
+.str-tile-l {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #8cc4d3;
+}
+
+.str-tile-v {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.str-tile-v.is-code {
+    font-family: ui-monospace, 'JetBrains Mono', monospace;
+    color: #67e8f9;
+}
+
+.str-tile-v.is-due {
+    color: #fbbf24;
+}
+
+.str-tile-v.is-overdue {
+    color: #fb7185;
+}
+
+.str-tile-v.is-assignee {
+    color: #4ade80;
+}
+
+.str-stats {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 18px -26px 0;
+    padding: 14px 26px;
+    border-top: 1px solid rgba(255, 255, 255, .1);
+    background: rgba(0, 0, 0, .1);
+}
+
+.str-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0 22px;
+    border-left: 1px solid rgba(255, 255, 255, .14);
+}
+
+.str-stat:first-child {
+    padding-left: 0;
+    border-left: 0;
+}
+
+.str-stat span,
+.str-prog-top span {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #8cc4d3;
+}
+
+.str-stat b {
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.str-stat.is-done b {
+    color: #4ade80;
+}
+
+.str-stat.is-pend b {
+    color: #fbbf24;
+}
+
+.str-prog {
+    flex: 1;
+    min-width: 0;
+    margin-left: 22px;
+    padding-left: 22px;
+    border-left: 1px solid rgba(255, 255, 255, .14);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+}
+
+.str-prog-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.str-prog-top b {
+    font-size: 13px;
+    font-weight: 800;
+    color: #4ade80;
+}
+
+.str-bar {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .15);
+}
+
+.str-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #34d399, #22d3ee 60%, #38bdf8);
+    transition: width .4s ease;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.str-tabs {
+    flex: none;
+    display: flex;
+    background: var(--c-th);
+    border-bottom: 1px solid var(--c-card-bd);
+}
+
+.str-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 46px;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--c-muted);
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+}
+
+.str-tab span {
+    min-width: 22px;
+    padding: 1px 7px;
+    font-size: 11px;
+    text-align: center;
+    color: var(--c-brand-ink);
+    background: var(--c-chip);
+    border-radius: 999px;
+}
+
+.str-tab:hover {
+    color: var(--c-brand-ink);
+}
+
+.str-tab.is-on {
+    color: var(--c-brand-ink);
+    background: var(--c-card);
+    border-bottom-color: var(--c-brand);
+}
+
+.str-tab.is-on span {
+    color: #fff;
+    background: var(--c-brand);
+}
+
+/* ── Table ────────────────────────────────────────────────────────────── */
+.str-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    background: var(--c-card);
+}
+
+.str-row {
+    display: grid;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px 8px;
+    border-top: 1px solid var(--c-line);
+    font-size: 12.5px;
+    color: var(--c-text);
+}
+
+/* Sized to fit the 1280px Figma box with no horizontal scroll (about 1180px used).
+   Equal 8px edges: the row has 8px side padding, the Sr No column hugs the left, and the
+   Map Supplier button fills the Action column, so it ends exactly 8px from the right.
+   Every row is its own grid with the same tracks, so header and rows stay aligned. */
+/* The popup is min(1280px, 100vw - 24px), so on a smaller window or with
+   browser zoom it is narrower than 1280. Columns therefore flex between a minimum and their
+   full width (minmax): full size on a wide screen, tighter on a narrow one. Every row has the
+   same container width, so header and rows still line up. Map Supplier Directory stays 200px.
+   Below the rows' min-width (1040px master / 848px manual) the table scrolls sideways. */
+.str-row--m {
+    grid-template-columns:
+        40px minmax(64px, 74px) minmax(120px, 1.5fr) minmax(96px, 118px) minmax(76px, 86px)
+        minmax(80px, 92px) minmax(92px, 112px) minmax(100px, 116px) minmax(84px, 104px) 200px;
+    min-width: 1040px;   /* column minimums 952 + 9 gaps x 8 + 16 side padding */
+}
+
+.str-row--n {
+    grid-template-columns:
+        40px minmax(160px, 1.6fr) minmax(96px, 120px) minmax(96px, 120px) minmax(104px, 130px)
+        minmax(88px, 110px) 200px;
+    min-width: 848px;    /* column minimums 784 + 6 gaps x 8 + 16 side padding */
+}
+
+.str-row > .c:first-child {
+    justify-self: start;
+    text-align: left;
+}
+
+.str-row > .c:last-child {
+    justify-self: stretch;
+}
+
+.str-row > .c:last-child .str-map {
+    width: 100%;
+    justify-content: center;
+}
+
+.str-row--head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-top: 11px;
+    padding-bottom: 11px;
+    border-top: 0;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--c-brand-ink);
+    background: var(--c-th);
+    border-bottom: 1px solid var(--c-card-bd);
+}
+
+.str-row .c {
+    text-align: center;
+    justify-self: center;
+}
+
+.str-row:not(.str-row--head):hover {
+    background: var(--c-hover);
+}
+
+.str-no {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--c-brand-ink);
+    background: var(--c-chip);
+    border: 1px solid var(--c-ghost-bd);
+    border-radius: 7px;
+}
+
+.str-code {
+    font: 800 12px ui-monospace, monospace;
+    color: var(--c-brand);
+}
+
+.str-name {
+    font-weight: 800;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Cut at 25 characters: the full name is in the tooltip. */
+.str-name.is-cut {
+    cursor: default;
+}
+
+.str-hsn {
+    font: 500 12px ui-monospace, monospace;
+    color: var(--c-muted);
+}
+
+.str-price {
+    font-weight: 800;
+}
+/* Target price on one line (CS-2215): a very long value ends in "…" (full value in the tooltip)
+   instead of wrapping into a tall block of digits. */
+/* Every .c cell is centred by justify-self, which sizes it to its CONTENT — a long price then spilled
+   over the next columns. The price cell instead fills its column and clips, so the text can end in
+   "…" (the value is still centred inside). */
+.str-row .c.str-price-cell {
+    justify-self: stretch;
+    min-width: 0;
+    overflow: hidden;
+    text-align: center;
+}
+.str-price-cell .str-price {
+    display: block;
+    min-width: 0;          /* a flex item: may shrink below its text, so the "…" can show */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.str-dash {
+    color: var(--c-ph);
+}
+
+/* Real master data can hold long unbroken names / segments: a cell wraps in its own column. */
+.str-row > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* Product Clarity chip — the green "✓ Text / Link / Pdf" chip of the Figma, sized for the report
+   row. Text opens the note, Link opens the link, Pdf opens the document. */
+.str-cla {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+    color: #047857;
+    background: #d1fae5;
+    border: 1.5px solid #a7f3d0;
+    border-radius: 8px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color .15s, border-color .15s;
+}
+.str-cla:hover,
+.str-cla:focus-visible {
+    color: #047857;
+    background: #a7f3d0;
+    border-color: #6ee7b7;
+}
+.str-cla:focus-visible { outline: 2px solid #34d399; outline-offset: 2px; }
+span.str-cla { cursor: default; }
+button.str-cla { font-family: inherit; }
+.str-cla.is-busy { cursor: progress; }
+.str-cla__n {
+    margin-left: 1px;
+    font-size: 10px;
+    opacity: .8;
+}
+.sct-spin.sct-spin--cla {
+    width: 11px;
+    height: 11px;
+    border-width: 2px;
+    border-color: rgba(4, 120, 87, .25);
+    border-top-color: #047857;
+}
+[data-bs-theme="dark"] .str-cla {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, .14);
+    border-color: rgba(16, 185, 129, .38);
+}
+[data-bs-theme="dark"] .str-cla:hover,
+[data-bs-theme="dark"] .str-cla:focus-visible {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, .24);
+}
+
+/* The off Map Supplier button keeps the full cell width inside its tooltip wrapper. */
+.str-map-wrap {
+    display: block;
+    width: 100%;
+}
+
+/* Map Supplier Directory for someone who is not the assignee: muted, not clickable. */
+.str-map.is-off,
+.str-map.is-off:hover {
+    background: #e2e8f0;
+    color: #94a3b8;
+    box-shadow: none;
+    transform: none;
+    filter: none;
+    cursor: not-allowed;
+}
+[data-bs-theme="dark"] .str-map.is-off,
+[data-bs-theme="dark"] .str-map.is-off:hover {
+    background: rgba(148, 163, 184, .14);
+    color: #64748b;
+}
+
+.str-seg {
+    display: inline-block;
+    padding: 3px 11px;
+    font-size: 10.5px;
+    font-weight: 800;
+    border-radius: 999px;
+    border: 1px solid;
+    white-space: nowrap;
+}
+
+.str-seg--0 {
+    color: #0e7490;
+    background: #e0f7fb;
+    border-color: #8fdcea;
+}
+
+.str-seg--1 {
+    color: #1d4ed8;
+    background: #e8f0ff;
+    border-color: #bcd2fb;
+}
+
+.str-seg--2 {
+    color: #7c3aed;
+    background: #f3edff;
+    border-color: #ddd0fb;
+}
+
+.str-seg--3 {
+    color: #0369a1;
+    background: #e6f4fd;
+    border-color: #b6dcf4;
+}
+
+.str-seg--4 {
+    color: #c2410c;
+    background: #fff2e6;
+    border-color: #fdd5ae;
+}
+
+[data-bs-theme="dark"] .str-seg--0 {
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .12);
+    border-color: rgba(34, 211, 238, .35);
+}
+
+[data-bs-theme="dark"] .str-seg--1 {
+    color: #93c5fd;
+    background: rgba(96, 165, 250, .12);
+    border-color: rgba(96, 165, 250, .35);
+}
+
+[data-bs-theme="dark"] .str-seg--2 {
+    color: #c4b5fd;
+    background: rgba(167, 139, 250, .12);
+    border-color: rgba(167, 139, 250, .35);
+}
+
+[data-bs-theme="dark"] .str-seg--3 {
+    color: #7dd3fc;
+    background: rgba(56, 189, 248, .12);
+    border-color: rgba(56, 189, 248, .35);
+}
+
+[data-bs-theme="dark"] .str-seg--4 {
+    color: #fdba74;
+    background: rgba(251, 146, 60, .12);
+    border-color: rgba(251, 146, 60, .35);
+}
+
+.str-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #15803d;
+    background: #dcfce7;
+    border: 1px solid #bbf7d0;
+    border-radius: 999px;
+}
+
+.str-status i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.str-status.is-pend {
+    color: #b45309;
+    background: #fef3c7;
+    border-color: #fde68a;
+}
+
+[data-bs-theme="dark"] .str-status {
+    color: #4ade80;
+    background: rgba(74, 222, 128, .12);
+    border-color: rgba(74, 222, 128, .35);
+}
+
+[data-bs-theme="dark"] .str-status.is-pend {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, .12);
+    border-color: rgba(251, 191, 36, .35);
+}
+
+/* Supplier Count badge — Figma .srpt-sup-count: 26px square, 8px radius, 1.5px border, no shadow.
+   With suppliers: cyan gradient, white figure. Zero: light cyan, not clickable (V-T48). */
+.str-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 6px;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    color: #fff;
+    background: linear-gradient(135deg, #22d3ee, #0891b2);
+    border: 1.5px solid #0891b2;
+    border-radius: 8px;
+}
+
+/* With suppliers it is a button that opens the Mapped Suppliers popup (Figma hover: grow + glow). */
+button.str-count {
+    cursor: pointer;
+    transition: transform .15s, box-shadow .15s, filter .15s;
+}
+
+button.str-count:hover {
+    transform: scale(1.18);
+    box-shadow: 0 4px 12px rgba(8, 145, 178, .45);
+    filter: brightness(1.1);
+}
+
+button.str-count:focus-visible {
+    outline: 2px solid #22d3ee;
+    outline-offset: 2px;
+}
+
+.str-count.is-zero {
+    color: #0891b2;
+    background: #f0fdff;
+    border-color: #b2ebf2;
+}
+
+[data-bs-theme="dark"] .str-count.is-zero {
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .1);
+    border-color: rgba(34, 211, 238, .3);
+}
+
+.str-map {
+    padding: 0 10px;
+    gap: 6px;
+}
+
+/* The location pin keeps its full 13px: in the full-width button the flex row ran ~1px short,
+   and an svg flex item shrinks first, which squeezed the pin down to a dot. */
+.str-map svg {
+    flex: none;
+}
+
+.str-empty {
+    padding: 60px 20px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--c-muted);
+}
+
+/* Inside the fixed-height table box (same size on both tabs), the empty note sits in the middle. */
+.str-scroll > .str-empty {
+    box-sizing: border-box;
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+}
+
+@media (max-width: 1100px) {
+    .str-tiles {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 700px) {
+    .str-tiles {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .str-stats {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .str-prog {
+        flex-basis: 100%;
+        margin-left: 0;
+        padding-left: 0;
+        border-left: 0;
+    }
+
+    .sta-modal--report {
+        border-radius: 20px 20px 0 0;
+    }
+}

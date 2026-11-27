@@ -31,7 +31,6 @@ interface TeamEmployee {
   department?: { id: number; name: string } | null;
   designation?: { id: number; name: string; level?: string | null } | null;
   reportingManager?: { id: number; display_name: string; emp_code: string } | null;
-  // Server-resolved manager name (employee OR Branch User), for "Reports To".
   reports_to?: string | null;
   branch?: { id: number; name: string } | null;
   status: string;
@@ -45,8 +44,6 @@ interface ApprovalItem {
   title: string;
   subject_name: string;
   subject_dept: string;
-  /** Who the subject reports to — shown in its own column so a reviewer can
-   *  see whose line the request came up. Optional: older API builds omit it. */
   subject_manager?: string | null;
   action: string;            // Sign | Approve | Review & Acknowledge
   status: string;
@@ -565,6 +562,7 @@ export default function MyTeam() {
                 fitToViewport
                 autoFitRows
                 minAutoRows={8}
+                fillToFooter
                 tabs={TEAM_TABS(employees.length, approvalCounts.total)}
                 activeTab="employees"
                 onTabChange={(k) => setTab(k as 'employees' | 'approvals')}
@@ -584,6 +582,7 @@ export default function MyTeam() {
                 fitToViewport
                 autoFitRows
                 minAutoRows={8}
+                fillToFooter
                 tabs={TEAM_TABS(employees.length, approvalCounts.total)}
                 activeTab="approvals"
                 onTabChange={(k) => setTab(k as 'employees' | 'approvals')}

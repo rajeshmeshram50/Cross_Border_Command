@@ -4,13 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Central CLM → Trade Licences master.
- *
- * Statutory trade licences (GST registration, IEC, AD Code, FSSAI, drug
- * licence, BIS/ISI, …). The prototype called this column `validity` instead
- * of `expiry`; the only difference is naming.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -20,10 +13,10 @@ return new class extends Migration
 
             $table->foreignId('client_id')->constrained('clients')->cascadeOnDelete();
 
-            $table->string('code', 16);          // TL-001
+            $table->string('code', 16);
             $table->string('name', 255);
             $table->string('authority', 255);
-            $table->string('validity', 32)->default('N/A');   // N/A | MM/YYYY
+            $table->string('validity', 32)->default('N/A');
 
             $table->string('status', 16)->default('active');
 

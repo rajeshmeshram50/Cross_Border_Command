@@ -125,6 +125,7 @@ const RackMaster = lazyPage(() => import('../pages/inventory-management/rack/Rac
 const ProductFlagMaster = lazyPage(() => import('../pages/inventory-management/product-flag/ProductFlagMaster'));
 const P2pBulkSourcing = lazyPage(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
 const SourcingTracker = lazyPage(() => import('../pages/p2p/procurement-management/sourcing-tracker/SourcingTracker'));
+const ServiceManagement = lazyPage(() => import('../pages/p2p/p2p-master-management/service-management/ServiceManagement'));
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
 const Invoice = lazyPage(() => import('../pages/p2p/purchase-management/invoice/InvoiceList'));
 const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/po-list/Order'));
@@ -519,7 +520,7 @@ function ProfileRouter() {
 function AuthRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const state = location.state as { email?: string } | null;
   const [resetEmail, setResetEmail] = useState(state?.email || '');
 
@@ -567,6 +568,10 @@ function DashboardRoutes({ user }: { user: any }) {
   );
 }
 
+function ClmInMaster({ children }: { children: React.ReactNode }) {
+  return <div className="clm-mc mp-inv" style={{ display: 'contents' }}>{children}</div>;
+}
+
 function DashboardRoutesInner({ user }: { user: any }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -590,7 +595,6 @@ function DashboardRoutesInner({ user }: { user: any }) {
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboardingPending, navigate]);
 
   const navigateFn = (p: string, data?: any) => {
@@ -651,7 +655,7 @@ function DashboardRoutesInner({ user }: { user: any }) {
             {!routeAllowed ? (
               <AccessDenied />
             ) : (
-            <Suspense key={location.pathname} fallback={<RouteFallback />}>
+            <Suspense key={location.pathname.replace(/^(\/sales\/matrix\/[^/]+)\/stage\/[^/]+$/, '$1')} fallback={<RouteFallback />}>
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
               <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />
@@ -707,7 +711,18 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/inbox"    element={<Inbox />} />
               <Route path="/gmail"    element={<Gmail />} />
               <Route path="/master" element={<MasterDashboard />} />
-              <Route path="/master/segments" element={<ClmSegmentPage />} />
+              <Route path="/master/segments" element={<ClmInMaster><ClmSegmentPage /></ClmInMaster>} />
+              <Route path="/master/clm/authority"        element={<ClmInMaster><ClmAuthorityPage /></ClmInMaster>} />
+              <Route path="/master/clm/kyc"              element={<ClmInMaster><ClmKycPage /></ClmInMaster>} />
+              <Route path="/master/clm/due-diligence"    element={<ClmInMaster><ClmDdPage /></ClmInMaster>} />
+              <Route path="/master/clm/trade-licenses"   element={<ClmInMaster><ClmTradeLicensesPage /></ClmInMaster>} />
+              <Route path="/master/clm/quality-docs"     element={<ClmInMaster><ClmQcPage /></ClmInMaster>} />
+              <Route path="/master/clm/trade-documents"  element={<ClmInMaster><ClmTradeDocumentsPage /></ClmInMaster>} />
+              <Route path="/master/clm/terms-conditions" element={<ClmInMaster><ClmTncPage /></ClmInMaster>} />
+              <Route path="/master/clm/agreements"       element={<ClmInMaster><ClmAgreementsPage /></ClmInMaster>} />
+              <Route path="/master/clm/clause-library"   element={<ClmInMaster><ClmClauseLibraryPage /></ClmInMaster>} />
+              <Route path="/master/holiday" element={<Navigate to="/master/holiday_groups" replace />} />
+              <Route path="/master/lead-ack" element={<SalesLeadAckMaster variant="teal" />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/sales/customers" element={<SalesCustomers />} />
               <Route path="/sales/consignee" element={<SalesConsignee />} />
@@ -743,7 +758,12 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
               <Route path="/p2p/sourcing-tracker" element={<SourcingTracker />} />
+              <Route path="/p2p/service-management" element={<ServiceManagement />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
+              <Route path="/master/inventory/warehouse-master" element={<WarehouseMaster />} />
+              <Route path="/master/inventory/zone-master" element={<ZoneMaster />} />
+              <Route path="/master/inventory/rack-master" element={<RackMaster />} />
+              <Route path="/master/inventory/product-flags" element={<ProductFlagMaster />} />
               <Route path="/inventory-management/warehouse-master" element={<WarehouseMaster />} />
               <Route path="/inventory-management/zone-master" element={<ZoneMaster />} />
               <Route path="/inventory-management/rack-master" element={<RackMaster />} />

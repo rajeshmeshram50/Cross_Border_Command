@@ -17,6 +17,8 @@ import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcS
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
+import { clmBottomReserve } from '../shared/clmShared';
+import { PopName } from '../shared/clmCommon';
 
 type SentRow = AwsContract & { dbId: number; approver: string; clarifications: Clarification[]; rejReason?: string; expDate: string };
 
@@ -257,7 +259,7 @@ export default function ClmAgreementsSentPage() {
       const el = cardRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const fh = Math.max(240, window.innerHeight - top - 56);
+      const fh = Math.max(240, window.innerHeight - top - (clmBottomReserve() - 1)); /* measured footer + 8px gap */
       setFillH(prev => (prev === fh ? prev : fh));
 
       const toolbarH = (el.querySelector('.aws-toolbar') as HTMLElement | null)?.offsetHeight || 0;
@@ -420,12 +422,12 @@ export default function ClmAgreementsSentPage() {
       {cpOpen && (
         <>
           <div onClick={() => setCpOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="aws-cp-pop" style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: 'var(--font-sans)' }}>
+          <div className="aws-cp-pop" style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', overflowX: 'hidden', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: 'var(--font-sans)' }}>
             <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0e7490', padding: '4px 8px 7px' }}>Counterparties ({cpOpen.names.length})</div>
             {cpOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, background: i % 2 ? (t.dark ? 'rgba(255,255,255,.03)' : '#F0FDFF') : 'transparent' }}>
                 <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(name)}</span></div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: t.text }}><PopName text={name} /></span>
               </div>
             ))}
           </div>
@@ -505,13 +507,17 @@ function SummaryCard({ t, accent, value, label, icon }: {
  * version on Case to Case (3.6:1). The darkest corner is still 3.7:1.
  */
 function Avatar({ name }: { name: string }) {
+  /* Dark: the bright #DFF9FD tile was the lightest thing on the dark table,
+     a row of white squares down every name column. */
+  const { dark } = useOpsTheme('cyan');
   return (
     <div style={{
       width: 24, height: 24, borderRadius: 8, flexShrink: 0, boxSizing: 'border-box',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(12deg,#67E8F9,#DFF9FD)',
+      background: dark ? 'rgba(6,182,212,.16)' : 'linear-gradient(12deg,#67E8F9,#DFF9FD)',
+      border: dark ? '1px solid rgba(103,232,249,.35)' : 'none',
     }}>
-      <span style={{ fontSize: 9, fontWeight: 700, color: '#0E7490', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: dark ? '#67e8f9' : '#0E7490', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
     </div>
   );
 }
@@ -715,8 +721,9 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                 <th style={{ ...THL, width: 200 }}>AGREEMENT TITLE</th>
                 <th style={{ ...THL, width: 130 }}>CREATED BY</th>
                 <th style={{ ...THL, width: 130 }}>REJECTED BY</th>
-                <th style={THL}>REASON</th>
-                <th style={{ ...TH, width: 100 }}>EXPIRY</th>
+                <th style={{ ...TH, width: 110 }}>STATUS</th>
+                <th style={{ ...THL, width: 220 }}>REJECTION REASON</th>
+                <th style={{ ...TH, width: 100 }}>EXPIRY DATE</th>
                 <th style={{ ...TH, width: 90 }}>ACTION</th>
               </tr></thead>
               <tbody>
@@ -730,10 +737,14 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                       onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                       <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
-                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
-                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 650, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
-                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FCA5A5,#EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(rej.by)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.dark ? '#fca5a5' : '#7F1D1D', whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
+                      {/* Same cells as the Rejected tab of Agreements To Approve
+                          (QA #80): DD-Mon-YYYY date, plain avatars + names, a
+                          Rejected status pill, the reason as one red line. */}
+                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
+                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
+                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={rej.by} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
+                      <td style={TD_C}><ApprovalBadge ap="rejected" /></td>
                       {/* The marker is the bare glyph, not a chip. It used to be
                           a 9px cross inside a 16px filled disc: at that size the
                           cross has barely three pixels of stroke left and the
@@ -742,8 +753,8 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                           and it no longer competes with the two real avatars
                           beside it — a chip in this column looked like a third
                           one that had lost its letter. */}
-                      <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#fca5a5' : '#DC2626'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12.5" /><line x1="12" y1="16" x2="12" y2="16" /></svg><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{rej.reason}</div></Tooltip></div></td>
-                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
+                      <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{rej.reason}</div></Tooltip></td>
+                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                       <td style={TD_C}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                         <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} onPick={(fmt) => onDownload(c, fmt)} t={t} />
                       </div></td>
@@ -775,8 +786,8 @@ function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, on
             <th style={{ ...THL, width: 200 }}>AGREEMENT TITLE</th>
             <th style={{ ...THL, width: 115 }}>CREATED BY</th>
             <th style={{ ...THL, width: 115 }}>APPROVER</th>
-            <th style={THL}>CLARIFICATION QUERY</th>
-            <th style={{ ...TH, width: 100 }}>EXPIRY</th>
+            <th style={{ ...THL, width: 300 }}>CLARIFICATION QUERY</th>
+            <th style={{ ...TH, width: 100 }}>EXPIRY DATE</th>
             <th style={{ ...TH, width: 120 }}>ACTION</th>
           </tr></thead>
           <tbody>
@@ -793,18 +804,25 @@ function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, on
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                   <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
-                  <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
-                  <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }}>{c.title}</div></Tooltip></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.approver} /><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
-                  <td style={{ ...TD_L, maxWidth: 210 }}>
-                    {round > 1 && <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 20, background: '#F5F0FF', border: '1px solid #DDD6FE', fontSize: 7.5, fontWeight: 700, color: '#7C3AED', marginBottom: 3 }}>Round {round}</span>}
-                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }}>{latest?.query ?? '—'}</div></Tooltip>
+                  {/* Cells as on the other tabs (QA #82): DD-Mon-YYYY dates and
+                      11.5px/500 names. The query cell is the same shape on
+                      every row - "Round N" chip and the query on one line, the
+                      status note under it - where the chip used to appear only
+                      from round 2, on its own line, as a light chip in dark mode. */}
+                  <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
+                  <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }}>{c.title}</div></Tooltip></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.approver} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
+                  <td style={{ ...TD_L, maxWidth: 300 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                      <span style={{ flexShrink: 0, padding: '1px 8px', borderRadius: 20, background: t.dark ? 'rgba(139,92,246,.18)' : '#F5F0FF', border: `1px solid ${t.dark ? 'rgba(167,139,250,.4)' : '#DDD6FE'}`, fontSize: 9, fontWeight: 700, lineHeight: '16px', color: t.dark ? '#c4b5fd' : '#7C3AED', whiteSpace: 'nowrap' }}>Round {Math.max(1, round)}</span>
+                      <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, maxWidth: 230 }}>{latest?.query ?? '—'}</div></Tooltip>
+                    </div>
                     {hasPending
                       ? <div style={{ fontSize: 8.5, color: '#F59E0B', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response · raised by {c.approver} on {latest?.date}</div>
                       : <div style={{ fontSize: 8.5, color: t.dark ? '#67e8f9' : '#0891b2', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> You responded · awaiting {c.approver}'s decision</div>}
                   </td>
-                  <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.expDate}</span></td>
+                  <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
                   <td style={TD_C}>
                     {hasPending
                       ? <button onClick={() => onRespond(c.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontFamily: 'inherit', fontSize: 10, fontWeight: 800, cursor: 'pointer', boxShadow: '0 3px 10px rgba(8,145,178,.4)', whiteSpace: 'nowrap' }}
@@ -880,9 +898,14 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
           </div>
         </div>
 
-        <div className="aws-clarify-body" style={{ background: t.dark ? '#150f2b' : '#F7F5FF', padding: 18, display: 'grid', gridTemplateColumns: hasPending ? '1.05fr .95fr' : '1fr', gap: 16, alignItems: 'start' }}>
+        {/* Two panes while answering: the history card fills its cell
+            absolutely, so the reply card alone sets the row height and both
+            cards end on the same line (as in Agreements To Approve, QA #74).
+            Read-only (nothing pending) keeps the single natural-height card. */}
+        <div className="aws-clarify-body" style={{ background: t.dark ? '#150f2b' : '#F7F5FF', padding: 18, display: 'grid', gridTemplateColumns: hasPending ? '1.05fr .95fr' : '1fr', gap: 16, alignItems: hasPending ? 'stretch' : 'start' }}>
 
-          <div style={card}>
+          <div style={hasPending ? { position: 'relative', minHeight: 220 } : undefined}>
+          <div style={hasPending ? { ...card, position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } : card}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 13 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
@@ -896,7 +919,7 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
               )}
             </div>
 
-            <div ref={threadRef} className="aws-thread" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 330, overflowY: 'auto' }}>
+            <div ref={threadRef} className="aws-thread" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', ...(hasPending ? { flex: 1, minHeight: 0 } : { maxHeight: 330 }) }}>
               {contract.clarifications.map((cl, i) => (
                 <div key={i}>
                   <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
@@ -919,6 +942,7 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
               ))}
             </div>
             <TypingIndicator name={typingName} color={t.dark ? '#c4b5fd' : '#7C3AED'} />
+          </div>
           </div>
 
           {hasPending ? (
@@ -969,12 +993,12 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
               <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
                 <button
                   onClick={() => { if (!text.trim()) { setErr(true); return; } stopTyping(); onSubmit(contract.id, text.trim()); }}
-                  style={{ flex: 2, padding: '13px 16px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(109,40,217,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                  style={{ flex: 1, height: 40, padding: '0 16px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 14px rgba(109,40,217,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0 }}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                   Submit
                 </button>
-                <button onClick={() => { stopTyping(); onClose(); }} style={{ flex: 1, padding: '13px 16px', borderRadius: 12, border: `1.5px solid ${t.dark ? t.border : '#E6E1F5'}`, background: 'transparent', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={() => { stopTyping(); onClose(); }} style={{ flex: 1, height: 40, padding: '0 16px', borderRadius: 10, border: `1.5px solid ${t.dark ? t.border : '#E6E1F5'}`, background: 'transparent', color: t.dark ? '#cbd5e1' : '#64748B', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
               </div>
             </div>
           ) : null}
@@ -1007,7 +1031,7 @@ function EmptyState({ msg, t, searching = false, title = 'No Contracts Found', i
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', position: 'sticky', left: 0 }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 13, background: 'linear-gradient(135deg,#E0F7FA,#A7F3D0)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 3px 10px rgba(6,182,212,.15)' }}>{icon ?? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</div>
+        <div style={{ width: 48, height: 48, borderRadius: 13, background: t.dark ? 'rgba(6,182,212,.14)' : 'linear-gradient(135deg,#E0F7FA,#A7F3D0)', border: t.dark ? '1px solid rgba(103,232,249,.3)' : 'none', color: t.dark ? '#67e8f9' : '#0891b2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 3px 10px rgba(6,182,212,.15)' }}>{icon ?? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</div>
         <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', marginBottom: 5 }}>{searching ? 'No Matching Contracts' : title}</div>
         <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>{searching ? 'No results match the current search.' : msg}</div>
       </div>
@@ -1022,7 +1046,7 @@ function EmptyState({ msg, t, searching = false, title = 'No Contracts Found', i
    the initials, the small captions under a clarification). */
 const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center', fontSize: 11.5, fontWeight: 500 } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
-const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'linear-gradient(135deg,rgba(6,182,212,.12),rgba(8,145,178,.06))', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.25'})`, whiteSpace: 'nowrap', letterSpacing: '.02em' });
+const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 600, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'linear-gradient(135deg,rgba(6,182,212,.12),rgba(8,145,178,.06))', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.25'})`, whiteSpace: 'nowrap', letterSpacing: '.02em' });
 
 const AWS_CSS = `
 @keyframes awsSlideUp { from { opacity:0; transform:translateY(24px) scale(.96); } to { opacity:1; transform:none; } }

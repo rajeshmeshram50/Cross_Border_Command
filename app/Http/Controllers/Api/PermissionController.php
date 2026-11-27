@@ -13,14 +13,12 @@ use Illuminate\Support\Facades\DB;
 
 class PermissionController extends Controller
 {
-    /** The flags a permission row carries. */
     private const FLAGS = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
 
     private function subordinateUserIds(User $granter): array
     {
         $granterEmpId = $granter->employee_id;
 
-        // Level 0: reports of the granter, by either manager column.
         $frontier = Employee::query()
             ->where('client_id', $granter->client_id)
             ->where(function ($q) use ($granterEmpId, $granter) {
@@ -46,7 +44,6 @@ class PermissionController extends Controller
 
         if ($seen === []) return [];
 
-        // Only subordinates who actually have a login can hold permissions.
         return User::whereIn('id', Employee::whereIn('id', $seen)->whereNotNull('user_id')->pluck('user_id'))
             ->where('client_id', $granter->client_id)
             ->where('user_type', 'employee')
@@ -54,7 +51,6 @@ class PermissionController extends Controller
             ->pluck('id')
             ->all();
     }
-
 
     private function delegationDenial(User $granter, array $payload)
     {
@@ -86,21 +82,6 @@ class PermissionController extends Controller
         return null;
     }
 
-    /**
-     * Attach each employee-login's DEPARTMENT name to the picker payload.
-     *
-     * The Permissions picker identifies an employee by name + department (the
-     * branch is redundant there — a branch user only ever sees their own branch,
-     * and an employee only their own reports). Department is what actually tells
-     * two same-named rows apart.
-     *
-     * Resolved through `employees.department_id` → `master_departments`, NOT
-     * `users.department_id`: that column points at the legacy `departments`
-     * table, which is empty in this schema. The employee row is the source of
-     * truth for org placement.
-     *
-     * @param  \Illuminate\Support\Collection $users
-     */
     private function withDepartments($users)
     {
         if ($users->isEmpty()) return $users;
@@ -111,7 +92,6 @@ class PermissionController extends Controller
             ->pluck('d.name', 'employees.user_id');
 
         return $users->each(function ($u) use ($byUser) {
-            // record" apart from "this payload doesn't carry departments".
             $u->department = $byUser[$u->id] ?? null;
         });
     }
@@ -131,16 +111,7 @@ class PermissionController extends Controller
         $authUser = $request->user();
         $targetUser = User::findOrFail($userId);
 
-        // Allow self-read; super admin reads anyone; client admin reads anyone
-        // in their client.
-        //
-        // Orphan target (NULL client_id, e.g. an employee super_admin created
-        // without a tenant) is also allowed for client_admin — the HR
-        // Employees scope shows orphans to them, so the perms page must load
-        // too. The save path then adopts the orphan into the granter's tenant.
         $isPrivilegedGranter = $authUser->isClientAdmin();
-        // Branch user can read perms for employees in their own branch only —
-        // mirrors the savePermissions scope below.
         $isSubBranchGranter = $authUser->isBranchUser();
         $subBranchAllowed = $isSubBranchGranter
             && $targetUser->user_type === 'employee'
@@ -179,22 +150,17 @@ class PermissionController extends Controller
         $branchFilter = $request->integer('branch_id') ?: null;
 
         if ($authUser->isSuperAdmin()) {
-            // Hide client_admins whose organization is inactive/suspended — granting
-            // perms to a frozen org is a footgun
             $users = User::where('user_type', 'client_admin')
                 ->where('status', 'active')
                 ->whereHas('client', fn($q) => $q->where('status', 'active'))
                 ->with(['client:id,org_name,status'])
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } elseif ($authUser->isClientAdmin()) {
-            // Client admin manages every active branch_user/employee in the
-            // client (excluding self).
             $query = User::where('client_id', $authUser->client_id)
                 ->where('id', '!=', $authUser->id)
                 ->whereIn('user_type', ['branch_user', 'employee'])
                 ->where('status', 'active')
                 ->where(function ($q) {
-                    // branch_user must have an active branch; employees pass through.
                     $q->where('user_type', 'employee')
                         ->orWhere(function ($qq) {
                             $qq->where('user_type', 'branch_user')
@@ -203,9 +169,6 @@ class PermissionController extends Controller
                 })
                 ->with('branch:id,name,status');
 
-            // BranchSwitcher narrowing — when user picks a specific branch,
-            // limit the picker to users in that branch (validated against the
-            // granter's own client to block cross-tenant ids).
             if ($branchFilter !== null) {
                 $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
                     ->where('client_id', $authUser->client_id)
@@ -226,7 +189,6 @@ class PermissionController extends Controller
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
             $users = $this->withDepartments($users);
         } elseif ($authUser->isEmployee()) {
-
             $subordinateIds = $this->subordinateUserIds($authUser);
             $users = $subordinateIds === []
                 ? collect()
@@ -255,7 +217,7 @@ class PermissionController extends Controller
 
         $request->validate([
             'permissions' => 'required|array',
-            'permissions.*.module_id' => 'required|exists:modules,id',
+            'permissions.*.module_id' => 'required|integer',
             'permissions.*.can_view' => 'boolean',
             'permissions.*.can_add' => 'boolean',
             'permissions.*.can_edit' => 'boolean',
@@ -266,16 +228,16 @@ class PermissionController extends Controller
             'permissions.*.is_auto'   => 'boolean',
         ]);
 
-        /* Authorization — grant scope:
-         *   super_admin   → client_admin only
-         *   client_admin  → branch_user only  (NOT employees)
-         *   branch_user   → employees in same (client_id, branch_id)
-         *   employee      → employees in their own reporting sub-tree
-         *
-         * The employee tier is the delegation rule the tenants asked for: a
-         * manager hands out access to their own people, capped at the access
-         * they hold themselves. Both halves are enforced below — who (the
-         * sub-tree walk) and how much (delegationDenial). */
+        // Validate every module_id in one query instead of the per-row `exists`
+        // rule, which issued a SELECT for each of the 100+ rows the UI sends.
+        $moduleIds = collect($request->permissions)->pluck('module_id')->map(fn($v) => (int) $v)->unique();
+        $missing = $moduleIds->diff(DB::table('modules')->whereIn('id', $moduleIds)->pluck('id'));
+        if ($missing->isNotEmpty()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'permissions' => ['Unknown module id(s): ' . $missing->implode(', ')],
+            ]);
+        }
+
         if ($authUser->isSuperAdmin()) {
             if (!$targetUser->isClientAdmin()) {
                 return response()->json([
@@ -283,15 +245,8 @@ class PermissionController extends Controller
                 ], 403);
             }
         } elseif ($authUser->isClientAdmin()) {
-            // Client admin = branch_user only.
             $manageableTypes = ['branch_user'];
 
-            // Adopt orphan targets (NULL client_id — typically employees that
-            // super_admin created without tenant attribution) into the
-            // granter's tenant. The HR Employees scope already exposes these
-            // orphans to branch users, so we mirror the implicit ownership
-            // and clean up the data on first interaction. Without this the
-            // ===-comparison below 403's every orphan grant.
             if (
                 $targetUser->client_id === null
                 && in_array($targetUser->user_type, $manageableTypes, true)
@@ -321,17 +276,10 @@ class PermissionController extends Controller
                 return response()->json(['message' => 'You can only assign permissions to users you manage'], 403);
             }
 
-            // Cannot grant any flag the granter doesn't already have themselves
             if ($denial = $this->delegationDenial($authUser, $request->permissions)) {
                 return $denial;
             }
         } elseif ($authUser->isBranchUser()) {
-            // Branch user — can only grant to employees in their own
-            // (client_id, branch_id). Matches the spec line in the big
-            // comment above ("branch_user → employees in same branch").
-            // Cannot grant to other branch_users, cannot adopt orphans
-            // (that's reserved for the client admin path which is the
-            // tenant's HR proxy).
             $allowed = $targetUser->user_type === 'employee'
                 && $targetUser->client_id === $authUser->client_id
                 && $targetUser->branch_id === $authUser->branch_id
@@ -343,18 +291,10 @@ class PermissionController extends Controller
                 ], 403);
             }
 
-            // Same can't-grant-what-you-don't-have rule as the privileged
-            // path above. Without this a sub-branch user could escalate an
-            // employee past their own access.
             if ($denial = $this->delegationDenial($authUser, $request->permissions)) {
                 return $denial;
             }
         } elseif ($authUser->isEmployee()) {
-            /* Employee granter — target must sit under them in the reporting
-             * tree. Deliberately NOT "same branch": the tree is the authority,
-             * and a manager whose report was moved to another branch still
-             * manages that person. Peers and managers are unreachable because
-             * the walk only ever descends. */
             $allowed = $targetUser->user_type === 'employee'
                 && $targetUser->client_id === $authUser->client_id
                 && $targetUser->id !== $authUser->id
@@ -366,8 +306,6 @@ class PermissionController extends Controller
                 ], 403);
             }
 
-            // And never more than they hold themselves — an HRMS-only team
-            // lead can hand out HRMS and nothing else.
             if ($denial = $this->delegationDenial($authUser, $request->permissions)) {
                 return $denial;
             }
@@ -375,25 +313,14 @@ class PermissionController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // Only allow permissions on LEAF modules (parents exist only for grouping).
-        // A leaf = module with no children.
         $parentIdsWithKids = DB::table('modules')
             ->whereNotNull('parent_id')
             ->distinct()
             ->pluck('parent_id')
             ->toArray();
 
-        // Pull in the modules the ticked ones can't work without (HRMS
-        // dependency matrix — see App\Support\ModuleDependencies).
         [$payload, $autoGranted] = $this->withDependencyGrants($request->permissions, $authUser);
 
-        /* Replace the user's grants atomically. This is a delete-then-insert:
-         * without a transaction, a failure part-way through the loop (or a
-         * connection drop) leaves the user with a half-written set — or, if it
-         * dies on the first insert, with NO permissions at all, locked out of
-         * every screen they had. The rows are also collected and inserted in
-         * one statement rather than one query per module (a full grant is ~140
-         * round-trips otherwise). */
         $count = 0;
         $skippedParents = 0;
         $cascadeAffected = 0;
@@ -406,7 +333,6 @@ class PermissionController extends Controller
 
             $toInsert = [];
             foreach ($payload as $perm) {
-                // Skip any payload pointing at a parent/group module
                 if (in_array((int) $perm['module_id'], $parentIdsWithKids, true)) {
                     $skippedParents++;
                     continue;
@@ -420,13 +346,6 @@ class PermissionController extends Controller
                 $canImport = filter_var($perm['can_import'] ?? false, FILTER_VALIDATE_BOOLEAN);
                 $canApprove = filter_var($perm['can_approve'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-                // Action permissions imply visibility. Granting add / edit / delete /
-                // export / import / approve on a module MUST also grant can_view:
-                // the sidebar menu, the page-access guards, and the controller
-                // index() checks all key off can_view, so an "edit-only" row would
-                // hide the module entirely and lock the user out of the very page
-                // they were given edit rights on. View is the baseline every other
-                // action sits on top of. (View granted alone stays view-only.)
                 if ($canAdd || $canEdit || $canDelete || $canExport || $canImport || $canApprove) {
                     $canView = true;
                 }
@@ -447,8 +366,6 @@ class PermissionController extends Controller
                     'can_export' => $canExport,
                     'can_import' => $canImport,
                     'can_approve' => $canApprove,
-                    // Auto rows are the ones the dependency matrix added; the
-                    // next save reads this back so it never re-seeds from them.
                     'is_auto' => filter_var($perm['is_auto'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'granted_by' => $grantedById,
                     'created_at' => now(),
@@ -461,18 +378,11 @@ class PermissionController extends Controller
                 DB::table('permissions')->insert($chunk);
             }
 
-            // Cascade-clear: when a CLIENT ADMIN updates their OWN permissions,
-            // any branch user under their client must lose flags the admin no
-            // longer has. Without this, perms previously granted downstream stay
-            // live even after the admin's access is revoked — a real
-            // privilege-escalation gap. Inside the transaction: the downstream
-            // revoke and the grant that triggered it land together or not at all.
             if ($authUser->isSuperAdmin() && $targetUser->isClientAdmin() && $targetClientId) {
                 $cascadeAffected = $this->cascadeClearDownstream($targetId, $targetClientId);
             }
         });
 
-        // Verify
         $dbCount = DB::table('permissions')->where('user_id', $targetId)->count();
 
         return response()->json([
@@ -486,29 +396,12 @@ class PermissionController extends Controller
         ]);
     }
 
-    /**
-     * Expand a permissions payload with the dependency modules the ticked ones
-     * need in order to work (HRMS dependency matrix).
-     *
-     * Only can_view is auto-granted, and only for modules the GRANTER can see
-     * themselves — the delegation rule ("never hand out more than you hold")
-     * still applies to implicit grants, so a dependency the granter lacks is
-     * silently skipped rather than escalating.
-     *
-     * Returns [expanded payload, list of auto-granted slugs].
-     *
-     * $granter = null skips the cap entirely (used by the department grid,
-     * which is already role-gated and holds no per-module grant of its own).
-     */
     private function withDependencyGrants(array $payload, ?User $granter): array
     {
         $modules = DB::table('modules')->select('id', 'slug')->get();
         $slugById = $modules->pluck('slug', 'id')->all();
         $idBySlug = $modules->pluck('id', 'slug')->all();
 
-        // Seeds = rows the operator actually ticked. A row flagged is_auto was
-        // put there by a previous run of this very method, and re-seeding from
-        // it would walk the matrix a second hop (see ModuleDependencies).
         $seedSlugs = [];
         $byModuleId = [];
         foreach ($payload as $perm) {
@@ -530,24 +423,18 @@ class PermissionController extends Controller
             ? null
             : Permission::where('user_id', $granter->id)->get()->keyBy('module_id');
 
-        // No seeds left (the operator cleared every explicit tick) still has to
-        // fall through to the cleanup below — returning early here would strand
-        // the feeders of the module that was just unticked.
         $required = $seedSlugs === [] ? [] : ModuleDependencies::resolve($seedSlugs);
 
         $autoGranted = [];
         foreach ($required as $depSlug) {
             $depId = $idBySlug[$depSlug] ?? null;
-            if (!$depId) continue; // slug not seeded in this deployment — ignore
+            if (!$depId) continue;
 
-            // Already granted view by the operator? Leave it alone — an explicit
-            // grant outranks an implied one and must keep its action flags.
             $existing = $byModuleId[$depId] ?? null;
             $isExplicit = $existing !== null
                 && !filter_var($existing['is_auto'] ?? false, FILTER_VALIDATE_BOOLEAN);
             if ($isExplicit && filter_var($existing['can_view'] ?? false, FILTER_VALIDATE_BOOLEAN)) continue;
 
-            // Delegation cap: the granter must hold view on it themselves.
             if ($granterPerms !== null && !($granterPerms->get($depId)?->can_view)) continue;
 
             $row = $existing ?? ['module_id' => $depId];
@@ -557,9 +444,6 @@ class PermissionController extends Controller
             $autoGranted[] = $depSlug;
         }
 
-        // Drop auto rows that nothing requires any more. Without this, unticking
-        // the module that pulled a feeder in would leave the feeder granted
-        // forever, and the grant would only ever grow.
         $requiredIds = [];
         foreach ($required as $depSlug) {
             if (isset($idBySlug[$depSlug])) $requiredIds[$idBySlug[$depSlug]] = true;
@@ -573,25 +457,15 @@ class PermissionController extends Controller
         return [array_values($byModuleId), $autoGranted];
     }
 
-    /**
-     * For every branch_user under $clientId, downgrade any flag they currently
-     * have to false if the client_admin ($adminUserId) no longer has it. This is
-     * the cascade that keeps "client_admin perm removed → branch users lose it
-     * too" consistent. Returns the number of branch_user rows touched.
-     */
     private function cascadeClearDownstream(int $adminUserId, int $clientId): int
     {
         $fields = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
 
-        // Map module_id → admin's current flag set (post-save)
         $adminPerms = DB::table('permissions')
             ->where('user_id', $adminUserId)
             ->get(['module_id', ...$fields])
             ->keyBy('module_id');
 
-        // Cascade applies to BOTH branch users and employees under this client
-        // — both are granted by the admin, so both must be downgraded if the
-        // admin's flags shrink.
         $branchUserIds = User::where('client_id', $clientId)
             ->whereIn('user_type', ['branch_user', 'employee'])
             ->pluck('id');
@@ -603,7 +477,6 @@ class PermissionController extends Controller
                 $admin = $adminPerms->get($row->module_id);
                 $updates = [];
                 foreach ($fields as $f) {
-                    // Branch user has the flag, admin doesn't → strip it
                     if ($row->$f && (!$admin || !$admin->$f)) {
                         $updates[$f] = false;
                     }
@@ -616,7 +489,6 @@ class PermissionController extends Controller
                     $affected++;
                 }
 
-                // If every flag is now false, delete the row entirely
                 $stillHasAny = collect($fields)->some(fn($f) => array_key_exists($f, $updates) ? $updates[$f] : $row->$f);
                 if (!$stillHasAny) {
                     DB::table('permissions')->where('id', $row->id)->delete();
@@ -625,13 +497,6 @@ class PermissionController extends Controller
         }
         return $affected;
     }
-
-    /* ─────────────────────────────────────────────────────────────────
-     *  DEPARTMENT-WISE PERMISSIONS
-     *  Branch users (and client admins) can set module access for a whole
-     *  department — the department's baseline access, keyed per
-     *  (client, department, module). GET returns the saved grid; POST saves it.
-     * ───────────────────────────────────────────────────────────────── */
 
     public function getDepartmentPermissions(Request $request, $departmentId)
     {
@@ -652,15 +517,13 @@ class PermissionController extends Controller
         $authUser = $request->user();
         if (!$authUser) abort(401);
 
-        // Only the branch's director (branch_user), the client admin, or a
-        // super admin may configure department permissions.
         if (!($authUser->isBranchUser() || $authUser->isClientAdmin() || $authUser->isSuperAdmin())) {
             return response()->json(['message' => 'You are not allowed to set department permissions.'], 403);
         }
 
         $data = $request->validate([
             'permissions' => 'required|array',
-            'permissions.*.module_id' => 'required|integer|exists:modules,id',
+            'permissions.*.module_id' => 'required|integer',
             'permissions.*.can_view'    => 'boolean',
             'permissions.*.can_add'     => 'boolean',
             'permissions.*.can_edit'    => 'boolean',
@@ -671,16 +534,20 @@ class PermissionController extends Controller
             'permissions.*.is_auto'   => 'boolean',
         ]);
 
+        // One query to validate module ids, not one SELECT per row (see savePermissions).
+        $deptModuleIds = collect($data['permissions'])->pluck('module_id')->map(fn($v) => (int) $v)->unique();
+        $deptMissing = $deptModuleIds->diff(DB::table('modules')->whereIn('id', $deptModuleIds)->pluck('id'));
+        if ($deptMissing->isNotEmpty()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'permissions' => ['Unknown module id(s): ' . $deptMissing->implode(', ')],
+            ]);
+        }
+
         $clientId  = $authUser->client_id;
         $deptId    = (int) $departmentId;
         $flags     = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
         $saved     = 0;
 
-        // Same two invariants as the per-user path: an action implies view, and
-        // a module implies view on the modules it depends on. This grid feeds
-        // straight into every HOD of the department, so an unexpanded row here
-        // would hand out the same half-broken screens the matrix exists to
-        // prevent. No delegation cap — this endpoint is role-gated instead.
         [$deptPayload, $autoGranted] = $this->withDependencyGrants($data['permissions'], null);
 
         DB::transaction(function () use ($deptPayload, $clientId, $deptId, $flags, $authUser, &$saved) {
@@ -692,7 +559,6 @@ class PermissionController extends Controller
                     $anyOn = $anyOn || $values[$f];
                 }
 
-                // Action implies visibility (mirrors savePermissions()).
                 if ($anyOn && !$values['can_view']) $values['can_view'] = true;
 
                 $values['is_auto'] = (bool) ($p['is_auto'] ?? false);
@@ -700,8 +566,6 @@ class PermissionController extends Controller
                 $keys = ['client_id' => $clientId, 'department_id' => $deptId, 'module_id' => (int) $p['module_id']];
 
                 if (!$anyOn) {
-                    // No flags → remove the row (keeps the table clean, mirrors
-                    // the per-user "all-false = delete" behaviour).
                     \App\Models\DepartmentPermission::where($keys)->delete();
                     continue;
                 }
@@ -714,9 +578,6 @@ class PermissionController extends Controller
             }
         });
 
-        // Auto-propagate to the department's HOD(s): the HOD automatically
-        // receives exactly these department permissions (overwriting only these
-        // modules — direct grants on other modules are preserved).
         $hodApplied = \App\Support\DepartmentPermissionSync::applyToAllHods($clientId, $deptId, $authUser->id);
 
         return response()->json([

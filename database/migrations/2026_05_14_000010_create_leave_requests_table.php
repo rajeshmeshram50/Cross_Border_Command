@@ -4,16 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Single source of truth for employee leave applications. Drives:
- *   - Employee profile Leave tab (pending list, history, "used" cell in balances)
- *   - HR approval queue (future)
- *   - LeaveBalances aggregate (sums approved days per type to compute `used`)
- *
- * Status enum tracked via a check constraint on Postgres; Eloquent reads it
- * as a plain string. Date range is half-day aware via `day_type` so a half-
- * day Tuesday counts 0.5 instead of 1.
- */
 return new class extends Migration {
     public function up(): void
     {
@@ -33,11 +23,8 @@ return new class extends Migration {
             $table->text('reason')->nullable();
             $table->string('attachment_path', 1024)->nullable();
 
-            // Stored as JSON so the multi-select notify dropdown can carry
-            // arbitrary structure: { manager: bool, hr: bool, employee_ids: [..] }.
             $table->json('notify')->nullable();
 
-            // Handover fields (from ApplyLeavePanel stage 5).
             $table->boolean('handover_required')->default(false);
             $table->unsignedBigInteger('cover_person_id')->nullable();
             $table->text('handover_notes')->nullable();

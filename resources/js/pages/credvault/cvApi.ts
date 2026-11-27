@@ -290,14 +290,16 @@ export const cvApi = {
   generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength_level: number; meets_policy: boolean; policy_minimum: string } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
 
-  list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', q),
-  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, q),
+  list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', { ...q, tz: viewerTz() }),
+  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, { ...q, tz: viewerTz() }),
   nextCode: (critical = false) => get<{ data: { next_code: string } }>(`${vaultPath(critical)}/credentials/next-code`).then(r => r.data.next_code),
   show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => r.data),
-  create: (body: Loose | FormData, critical = false) => send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials`, body),
-  update: (id: number, body: Loose | FormData, critical = false) => (body instanceof FormData
-    ? send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials/${id}`, body)
-    : send<{ data: CredentialDetail; message: string }>('put', `${vaultPath(critical)}/credentials/${id}`, body)),
+  // `light`: the server answers with just id / code / name / vault / type / scope / risk / updated_at
+  // (+ health on update) instead of rebuilding the full detail — for callers that reload their list anyway.
+  create: (body: Loose | FormData, critical = false, light = false) => send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials${light ? '?light=1' : ''}`, body),
+  update: (id: number, body: Loose | FormData, critical = false, light = false) => (body instanceof FormData
+    ? send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials/${id}${light ? '?light=1' : ''}`, body)
+    : send<{ data: CredentialDetail; message: string }>('put', `${vaultPath(critical)}/credentials/${id}${light ? '?light=1' : ''}`, body)),
   remove: (id: number, critical = false) => send<{ message: string; data: { id: number; purges_at?: string; removed_share?: boolean } }>('delete', `${vaultPath(critical)}/credentials/${id}`),
   reveal: (id: number, action: 'reveal' | 'copy', field?: string) => send<{ data: { field: string; label: string; value: string; hide_after_seconds: number; clear_clipboard_after: number } }>('post', `/credentials/${id}/reveal`, { action, field }).then(r => r.data),
   event: (id: number, action: 'view' | 'launch' | 'copy', field?: string) => send('post', `/credentials/${id}/events`, { action, field }),

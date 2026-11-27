@@ -14,7 +14,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
 </head>
 <body style="margin:0; padding:0; background-color:#eef2f7; font-family:'Inter','Segoe UI',Arial,sans-serif; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; color:#0f172a;">
 
-<!-- Preheader -->
 <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; color:#eef2f7; line-height:1px;">
     Your {{ $docKind }} {{ $docCode }} is ready · Tap to open online.
 </div>
@@ -23,11 +22,8 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
     <tr>
         <td align="center">
 
-            <!-- ═══════ MAIN CARD ═══════ -->
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="640" style="max-width:640px; width:100%; background:#ffffff; border-radius:20px; overflow:hidden; box-shadow:0 4px 14px rgba(15,23,42,0.04), 0 24px 56px rgba(15,23,42,0.12);">
 
-                <!-- ─── HEADER ROW — green vertical accent + branch
-                     identity + top-right green corner ribbon. -->
                 <tr>
                     <td style="padding:0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -55,7 +51,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ HERO HEADING ═══════ -->
                 <tr>
                     <td style="padding:40px 40px 8px;">
                         <h1 style="margin:0 0 14px; font-size:40px; line-height:1.05; font-weight:900; color:#0f172a; letter-spacing:-1.1px; font-family:'Inter','Segoe UI',Arial,sans-serif; text-transform:uppercase;">
@@ -66,7 +61,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ BODY MESSAGE ═══════ -->
                 <tr>
                     <td style="padding:26px 40px 0;">
                         <p style="margin:0 0 8px; font-size:15px; color:#0f172a; font-weight:700;">
@@ -78,9 +72,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ TOTAL AMOUNT CARD — the most important number
-                     on the doc gets the most visual weight. Big number,
-                     light tinted background, currency + type chip. ═══════ -->
                 @if($grandTotal > 0)
                 <tr>
                     <td style="padding:30px 40px 0;">
@@ -112,10 +103,7 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                 </tr>
                 @endif
 
-                <!-- ═══════ INFO CARDS — stacked vertically. ═══════ -->
-
-                <!-- Card 1: Doc Number -->
-                <tr>
+<tr>
                     <td style="padding:14px 40px 0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f1f5f9; border-radius:14px;">
                             <tr>
@@ -137,7 +125,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- Card 2: Date -->
                 <tr>
                     <td style="padding:10px 40px 0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f1f5f9; border-radius:14px;">
@@ -160,7 +147,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- Card 3: Products -->
                 <tr>
                     <td style="padding:10px 40px 0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f1f5f9; border-radius:14px;">
@@ -183,7 +169,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ CTA BUTTON ═══════ -->
                 @if(!empty($viewUrl))
                 <tr>
                     <td align="center" style="padding:34px 40px 8px;">
@@ -209,7 +194,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                 </tr>
                 @endif
 
-                <!-- ═══════ SIGN-OFF ═══════ -->
                 <tr>
                     <td style="padding:36px 40px 24px;">
                         <p style="margin:0 0 2px; font-size:13px; color:#475569;">Best regards,</p>
@@ -221,7 +205,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ FOOTER ═══════ -->
                 <tr>
                     <td style="padding:24px 40px 16px; text-align:center; border-top:1px solid #eef0f3;">
                         @if(!empty($logoPath))
@@ -247,7 +230,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ BOTTOM-LEFT GREEN RIBBON ═══════ -->
                 <tr>
                     <td style="padding:0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -266,7 +248,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                 </tr>
 
             </table>
-            <!-- ═══════ /MAIN CARD ═══════ -->
 
             <p style="margin:18px 0 0; font-size:10px; color:#94a3b8; max-width:640px; line-height:14px;">
                 Automated email · Reply to reach the team directly.

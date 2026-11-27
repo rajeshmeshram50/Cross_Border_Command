@@ -6,35 +6,16 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
 
-/**
- * One-off QA fixture: 20 customers, 20 consignees, 20 products and
- * 20 vendors (suppliers) of realistic Indian export/import data for the
- * IGC GROUP tenant (client_id = 1, Healthcare branch = 2,
- * owned by the QA user rajeshmeshram = user id 3).
- *
- * Codes are allocated exactly the way the controllers do:
- *   customer_code  C-### (zero-padded id)
- *   consignee_code CN-### (zero-padded id)
- *   product_code   P-## (per-client max + 1)
- *   vendor_code    V-## (per-client max + 1)
- *
- * Run: php artisan db:seed --class=IndianTestDataSeeder
- */
 class IndianTestDataSeeder extends Seeder
 {
     private int $clientId = 1;
-    private int $branchId = 2;   // Healthcare branch
-    private int $createdBy = 3;  // rajeshmeshram (branch_user on the Healthcare branch)
+    private int $branchId = 2;
+    private int $createdBy = 3;
 
     public function run(): void
     {
         $now = Carbon::now();
 
-        // Idempotency guard — this fixture inserts a fixed list of 20
-        // customers/consignees/products/vendors, so re-running it would
-        // DUPLICATE them. If the first marker row already exists for this
-        // tenant, treat the fixture as already seeded and skip. To re-seed
-        // from scratch, clear the tenant's rows first.
         $already = DB::table('customers')
             ->where('client_id', $this->clientId)
             ->where('company_name', 'Rajdhani Agro Exports Pvt Ltd')
@@ -52,7 +33,6 @@ class IndianTestDataSeeder extends Seeder
         });
     }
 
-    /* ───────────────────────── CUSTOMERS ───────────────────────── */
     private function seedCustomers(Carbon $now): array
     {
         $rows = [
@@ -128,12 +108,8 @@ class IndianTestDataSeeder extends Seeder
         return $ids;
     }
 
-    /* ───────────────────────── CONSIGNEES ──────────────────────── */
     private function seedConsignees(Carbon $now, array $customerIds): void
     {
-        // Indian recipient firms — CFS / port-warehouse / domestic distributor
-        // consignees, one per customer. name, segment, classification, risk,
-        // city, state, pin.
         $rows = [
             ['JNPT Logistics & Distribution Pvt Ltd', 'Food & Agro', 'A', 'Low', 'Navi Mumbai', 'Maharashtra', '400707'],
             ['Mundra Port Warehousing Co', 'Food & Agro', 'A', 'Low', 'Mundra', 'Gujarat', '370421'],
@@ -204,14 +180,9 @@ class IndianTestDataSeeder extends Seeder
         }
     }
 
-    /* ───────────────────────── PRODUCTS ────────────────────────── */
     private function seedProducts(Carbon $now): void
     {
-        // segment_id: 5 Pharma, 6 Chemicals, 7 Food & Agro, 8 Textile, 9 Metal & Mining
-        // uom_id:     13 MT, 11 Kg, 16 LTR    | hsn_id: 12 pharma,13 lithium,14 rice,15 cotton,16 copper
-        // gst_id:     12=5%, 13=12%, 14=18%, 15=28%
         $rows = [
-            // name, generic, brand, seg, uom, hsn, gst, base_price
             ['Basmati Rice 1121 Steam', 'Long Grain Basmati Rice', 'Rajdhani Gold', 7, 13, 14, 12, 92000],
             ['Turmeric Finger Polished', 'Curcuma Longa', 'Konkan Spice', 7, 11, 14, 12, 145],
             ['Green Cardamom 8mm Bold', 'Elettaria Cardamomum', 'Kerala Aroma', 7, 11, 14, 12, 2400],
@@ -234,7 +205,6 @@ class IndianTestDataSeeder extends Seeder
             ['Psyllium Husk 99% Pure', 'Isabgol Bhusi', 'Rajdhani Gold', 7, 11, 14, 13, 240],
         ];
 
-        // Allocate product codes the way ProductController::nextProductCode does.
         $existing = DB::table('products')->where('client_id', $this->clientId)
             ->pluck('product_code');
         $max = 0;
@@ -275,7 +245,7 @@ class IndianTestDataSeeder extends Seeder
                 'length_cm'    => 60.00,
                 'width_cm'     => 40.00,
                 'height_cm'    => 20.00,
-                'status'       => 'inactive',   // Core+Sales+Quality complete, vendor not yet mapped
+                'status'       => 'inactive',
                 'step_completed' => 3,
                 'created_at'   => $now,
                 'updated_at'   => $now,
@@ -283,12 +253,8 @@ class IndianTestDataSeeder extends Seeder
         }
     }
 
-    /* ───────────────────────── VENDORS ─────────────────────────── */
     private function seedVendors(Carbon $now): void
     {
-        // vendor_type_id 11 Mfr,12 Trader,13 Importer,14 Distributor
-        // risk 11 Low,12 Med,13 High | behaviour 11 Reliable,12 Standard,13 Critical
-        // compliance 11 Compliant,12 Minor,13 Under Review | segment 5..9
         $rows = [
             ['Shakti Agro Processors Pvt Ltd', 11, 11, 11, 7, 11, 'Karnal', 'Haryana', '06', '132001', 'Balwinder Singh', 'Plant Head'],
             ['Western Spice Mills Pvt Ltd', 11, 11, 11, 7, 11, 'Kochi', 'Kerala', '32', '682024', 'Joseph Mathew', 'Director'],
@@ -365,7 +331,6 @@ class IndianTestDataSeeder extends Seeder
         }
     }
 
-    /* ───────────────────────── helpers ─────────────────────────── */
     private function slug(string $s): string
     {
         $s = preg_replace('/\b(pvt|private|ltd|limited|llc|inc|co|company|gmbh|bv|kk|pte|fze|lda|srl|pty|llp|corporation|corp|co-op)\b/i', '', strtolower($s));

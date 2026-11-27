@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * When a finalised COMPANY advance settled as "reimburse" (used more than the
- * advance), the extra is paid back to the employee by raising a reimbursement
- * Expense Claim. These columns link the advance to that claim so the button
- * flips to "Reimbursement raised" and can't be actioned twice.
- */
 return new class extends Migration {
     public function up(): void
     {

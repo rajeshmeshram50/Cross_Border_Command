@@ -6,15 +6,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('password_reset_otps', function (Blueprint $table) {
             $table->id();
             $table->string('email')->index();
-            $table->string('otp'); // stores bcrypt hash
+            $table->string('otp');
             $table->integer('attempts')->default(0);
             $table->boolean('verified')->default(false);
             $table->timestamp('expires_at');
@@ -22,9 +19,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('password_reset_otps');

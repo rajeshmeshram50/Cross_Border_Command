@@ -27,7 +27,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-
 class ClmSignatureController extends Controller
 {
     public function __construct(private ZohoSignService $zoho)
@@ -49,7 +48,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-
     public function preview(Request $request)
     {
         $user = $request->user();
@@ -57,25 +55,12 @@ class ClmSignatureController extends Controller
 
         $data = $request->validate([
             'trade_doc_id' => 'required_without:agreement_id|integer|exists:clm_trade_doc_library,id',
-            // Supplier (Vendor) agreement preview — clm_agreement_library id,
-            // mutually exclusive with trade_doc_id. Renders through the same
-            // renderPdf path so the modal preview matches what gets sent.
             'agreement_id' => 'required_without:trade_doc_id|integer|exists:clm_agreement_library,id',
             'party_id'     => 'required|integer',
             'model_name'   => 'nullable|string|in:Customer,Consignee,Vendor',
-            // Per-render overrides for the page-shell zones. When the
-            // Send-for-Signature modal lets the user tweak the header /
-            // footer / body inline (Insert Table, edit header colours,
-            // etc.), the SPA POSTs the in-progress config here so the
-            // preview reflects the edit before they hit Send. Saved
-            // trade-doc row is NOT mutated by this path — overrides
-            // only apply to this PDF render.
             'header_config_override' => 'nullable|array',
             'footer_config_override' => 'nullable|array',
             'content_override'       => 'nullable|string',
-            // Opportunity scope — lets the {{product.*}} table resolve against
-            // the lead's products in the preview. Omitted for standalone
-            // customer/consignee vault previews (table then renders empty).
             'lead_id'                => 'nullable|integer|exists:leads,id',
         ]);
         $modelName = $data['model_name'] ?? 'Customer';
@@ -83,7 +68,7 @@ class ClmSignatureController extends Controller
         $doc   = !empty($data['agreement_id'])
             ? tap(
                 ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($data['agreement_id']),
-                fn($a) => $a->name = $a->title,   // alias title→name for the shared renderer
+                fn($a) => $a->name = $a->title,
             )
             : ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($data['trade_doc_id']);
         $party = $this->loadParty($modelName, (int) $data['party_id'], $user);
@@ -91,10 +76,6 @@ class ClmSignatureController extends Controller
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
             : null;
 
-        /* A document the renderer cannot lay out is a fact about THIS document,
-           not a broken server, and the modal has nothing to act on while the
-           only thing it is told is "Server Error". Name the document and say
-           what happened; the stack trace still goes to the log. */
         try {
             $bytes = $this->renderPdf(
                 $doc,
@@ -127,7 +108,6 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-
     private function loadParty(string $modelName, int $partyId, $user): Model
     {
         switch ($modelName) {
@@ -141,13 +121,6 @@ class ClmSignatureController extends Controller
         abort(422, "Unsupported model_name: {$modelName}");
     }
 
-    /**
-     * Turn a raw send-flow exception into a clean, user-facing message. Zoho Sign
-     * failures bubble up as "Zoho Sign API error: <raw JSON body>" — that raw
-     * third-party payload must never reach the UI (QA #10). Detect the common
-     * "already sent / signed / processed" case and otherwise return a generic
-     * clean message. Non-Zoho errors keep their own (developer) message.
-     */
     private function cleanSendError(\Throwable $e, string $fallback): string
     {
         $raw = $e->getMessage();
@@ -171,8 +144,6 @@ class ClmSignatureController extends Controller
             : 'The e-signature service could not process this request right now. Please try again in a moment.';
     }
 
-
-
     public function send(Request $request)
     {
         $user = $request->user();
@@ -186,56 +157,24 @@ class ClmSignatureController extends Controller
         $data = $request->validate([
             'trade_doc_ids'        => 'required_without:agreement_ids|array|max:10',
             'trade_doc_ids.*'      => 'integer|exists:clm_trade_doc_library,id',
-            // Agreement ids (clm_agreement_library). These used to be mutually
-            // exclusive with trade_doc_ids — one request, one library — which
-            // forced the Case-to-Case panel to send a mixed selection as TWO
-            // envelopes, so a signer asked for one trade document and one
-            // agreement received two separate emails for the same deal.
-            // Both lists may now arrive together and are rendered into ONE Zoho
-            // request, the same way a bundled Purchase Order already rides
-            // along. Each list is still capped at 10.
             'agreement_ids'        => 'required_without:trade_doc_ids|array|max:10',
             'agreement_ids.*'      => 'integer|exists:clm_agreement_library,id',
             'party_id'             => 'required|integer',
             'model_name'           => 'nullable|string|in:Customer,Consignee,Vendor',
-            // Optional lead scope. Sent from the Sales-Matrix Trade Documents
-            // popup so the request is tied to the opportunity — without it the
-            // lead-scoped status lookup/poll (and the row's Sent/Signed badge,
-            // Remind + downloads) can't find it. Omitted for the standalone
-            // customer/consignee/vendor vault sends.
             'lead_id'              => 'nullable|integer|exists:leads,id',
             'signers'              => 'required|array|min:1|max:5',
             'signers.*.email'      => 'required|email',
             'signers.*.name'       => 'required|string|max:255',
             'signers.*.order'      => 'nullable|integer|min:1',
-            // Optional signer role (buyer / consignee). Supplied by the
-            // Sales-Matrix "Buyer + Consignee" send so each signer's box can
-            // land at its own dragged position (per-role document_settings).
-            // Absent on the legacy single-signer vault sends.
             'signers.*.role'       => 'nullable|string|max:32',
             'expiry_days'          => 'nullable|integer|min:1|max:90',
             'is_sequential'        => 'nullable|boolean',
             'notes'                => 'nullable|string|max:1000',
-            'document_settings'    => 'nullable|array', // keyed by trade_doc_id → {x,y,page,width,height}
-            // Per-doc overrides — same keying convention as
-            // document_settings. Each map is { trade_doc_id: payload }
-            // so a multi-doc send can carry independent header/footer/
-            // body tweaks per draft. Saved trade-doc rows are NOT
-            // mutated by this path; overrides only apply to the PDFs
-            // shipped to Zoho for this send.
+            'document_settings'    => 'nullable|array',
             'header_config_overrides'   => 'nullable|array',
             'footer_config_overrides'   => 'nullable|array',
             'content_overrides'         => 'nullable|array',
-            // Optional Purchase Order to BUNDLE into the same signature request.
-            // The PO is a generated PDF (not a CLM library doc), so it rides
-            // alongside the trade docs as one extra document in the same Zoho
-            // request. Its dragged signature box arrives in document_settings
-            // under the reserved key "po".
 
-            /* The P2P module's Stage 04 Purchase Order row. Its PDF was rendered
-               at submit and is on disk, so it is attached rather than re-rendered
-               — and a DOCUMENT id cannot be confused with a legacy purchase order
-               the way `purchase_order_id` can (the two PO tables share ids). */
             'p2p_po_document_id'        => 'nullable|integer',
         ]);
 
@@ -245,14 +184,6 @@ class ClmSignatureController extends Controller
             ? Lead::where('client_id', $user->client_id)->find($data['lead_id'])
             : null;
 
-        /* Both libraries expose the columns renderPdf needs (content, code,
-         * header/footer config); agreements just name their title `title`, so
-         * alias it to `name` for the shared render/naming code below.
-         *
-         * A send may now carry trade documents, agreements, or BOTH. Each row
-         * is tagged with `cbc_kind` so the rest of the method — the settings
-         * keys, the persisted id split — can tell them apart after they are
-         * merged into one ordered list. */
         $tdIds  = array_values($data['trade_doc_ids'] ?? []);
         $agrIds = array_values($data['agreement_ids'] ?? []);
         $isMixed = $tdIds && $agrIds;
@@ -275,9 +206,6 @@ class ClmSignatureController extends Controller
             return response()->json(['status' => false, 'message' => 'No accessible documents in the selection.'], 422);
         }
 
-        // Preserve the user's chosen order, not whatever DB order we got back.
-        // Trade documents lead, then agreements — the order the Case-to-Case
-        // panel lists them in.
         $orderedDocs = collect($tdIds)->map(fn($id) => $tdDocs->get($id))
             ->concat(collect($agrIds)->map(fn($id) => $agrDocs->get($id)))
             ->filter()
@@ -290,31 +218,6 @@ class ClmSignatureController extends Controller
             return $map[$docKeyOf($doc)] ?? $map[(string) $doc->id] ?? null;
         };
 
-        // Same-party constraint — mirrors agreementSend(). A single signature
-        // request must not mix a Buyer-only document with a Consignee-only or
-        // a Buyer+Consignee document: the signer set is tied to the document's
-        // applicable party, so a mixed bundle would route the wrong papers to
-        // the wrong parties. Each doc's `party` CSV is reduced to just its
-        // signer-bearing tokens (Buyer / Consignee — Supplier-* and any others
-        // don't change who signs) and they must all collapse to the same key.
-        // When the lead's consignee IS the customer, Consignee is read as Buyer:
-        // the same person signs every document, so there is no mix to split.
-        /* Keyed on WHO SIGNS, not on how the party column is spelled.
-         *
-         * Comparing the CSVs asked the wrong question. The rule exists to stop
-         * one envelope routing different papers to different signers, so the
-         * only thing that matters is the set of people each document resolves
-         * to ON THIS LEAD. Three selections were being refused that route to
-         * exactly one person:
-         *   · consignee IS the customer — "Buyer" and "Buyer,Consignee" are the
-         *     same company and the same mailbox (QA #68);
-         *   · the lead has no consignee at all, so a Consignee token resolves
-         *     to nobody and cannot be a second destination;
-         *   · a document whose party names no signing side at all (Supplier-*),
-         *     which collapsed to an empty key and then counted as its own
-         *     party group against everything else.
-         * A genuinely different consignee still resolves to a second mailbox
-         * and is still refused, which is the case the rule was written for. */
         $leadCustomer  = $lead && $lead->customer_id  ? Customer::query()->forUser($user)->find($lead->customer_id)   : null;
         $leadConsignee = $lead && $lead->consignee_id ? Consignee::query()->forUser($user)->find($lead->consignee_id) : null;
         $sameAsCustomer = $this->leadConsigneeIsCustomer($lead, $user);
@@ -322,9 +225,6 @@ class ClmSignatureController extends Controller
             $tokens = collect(explode(',', (string) $p))
                 ->map(fn($s) => strtolower(trim($s)))
                 ->filter(fn($t) => in_array($t, ['buyer', 'consignee'], true));
-            // Falls back to the party this send is addressed to when the lead
-            // carries no record of that side — the same party resolveSigners
-            // would use, so the key matches where the paper actually goes.
             $buyerId = $leadCustomer?->primary_email
                 ?: ($modelName === 'Customer' ? ($party->primary_email ?? null) : null);
             $consId  = $sameAsCustomer
@@ -333,13 +233,10 @@ class ClmSignatureController extends Controller
                     ?: ($modelName === 'Consignee' ? ($party->primary_email ?? null) : null));
             return $tokens
                 ->map(fn($t) => $t === 'buyer' ? $buyerId : $consId)
-                ->filter()                       // a side the lead cannot route to is not a destination
+                ->filter()
                 ->map(fn($e) => strtolower(trim((string) $e)))
                 ->unique()->sort()->values()->implode(',');
         };
-        /* Documents addressed to nobody resolvable carry no destination of
-           their own, so they ride with whatever else is in the envelope
-           instead of counting as a separate group. */
         $partyKeys = $orderedDocs->map(fn($d) => $signerKeyOf($d->party))->filter()->unique()->values();
         if ($partyKeys->count() > 1) {
             return response()->json([
@@ -350,10 +247,6 @@ class ClmSignatureController extends Controller
             ], 422);
         }
 
-        // A single person (same email) must appear only ONCE. Collapse any
-        // duplicate signers so Zoho isn't sent the same recipient multiple
-        // times (which created multiple signature actions for one person).
-        // Keep the first occurrence, preserving order/signing position.
         $seenSignerEmails = [];
         $data['signers'] = collect($data['signers'])
             ->filter(function ($s) use (&$seenSignerEmails) {
@@ -366,11 +259,10 @@ class ClmSignatureController extends Controller
             ->all();
 
         $tempPaths    = [];
-        $localDocMeta = [];   // parallel meta we'll use after Zoho returns
+        $localDocMeta = [];
         $requestUuid  = (string) Str::uuid();
 
         try {
-            // 1. Render each draft to a temp PDF on disk.
             $headerByDoc  = (array) ($data['header_config_overrides'] ?? []);
             $footerByDoc  = (array) ($data['footer_config_overrides'] ?? []);
             $contentByDoc = (array) ($data['content_overrides']       ?? []);
@@ -401,13 +293,6 @@ class ClmSignatureController extends Controller
                 ];
             }
 
-
-
-            /* 1c. The P2P module's Purchase Order. Its PDF was rendered at submit
-               and is on disk, so it is attached as-is: no dompdf pass on a send
-               that already renders several documents, and the file the supplier
-               signs is byte-for-byte the one Stage 04 shows. Keyed 'po' as above,
-               so the dragged box resolves from document_settings['po'] either way. */
             if (!empty($data['p2p_po_document_id'])) {
                 $p2pDoc = \App\Models\P2p\PurchaseOrderDocument::withoutGlobalScope('tenant')
                     ->where('client_id', $user->client_id)
@@ -425,14 +310,11 @@ class ClmSignatureController extends Controller
                         'document_name' => 'Purchase Order ' . $poCode,
                     ];
                 } elseif ($p2pDoc) {
-                    /* The row exists but its PDF does not — say so rather than
-                       send an envelope quietly missing the purchase order. */
                     throw new \RuntimeException('The purchase order PDF is not ready yet. Open Stage 04, wait for it to generate, then send again.');
                 }
             }
 
-            // 2. Build the Zoho request body — recipient actions + metadata.
-            $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
+            $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));
             $actions = [];
             foreach ($data['signers'] as $i => $signer) {
                 $actions[] = [
@@ -461,23 +343,14 @@ class ClmSignatureController extends Controller
 
             $filenames = array_map(fn($m) => Str::slug($m['document_name']) ?: ('document_' . $m['id']), $localDocMeta);
 
-            // 3. Create the Zoho request (multipart — JSON + N PDFs).
             $createResp     = $this->zoho->createRequestMultipart($tempPaths, $filenames, $requestBody);
             $zohoRequestId  = data_get($createResp, 'requests.request_id');
             if (!$zohoRequestId) {
                 throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
             }
 
-            // 4. Fetch the created request so we know its action_ids + document_ids.
             [$zohoActions, $zohoDocumentIds] = $this->zohoRequestShape($createResp, (string) $zohoRequestId);
 
-            // Tag each Zoho action with its CBC signer role (buyer / consignee)
-            // by matching its recipient_email against the resolved signers. On a
-            // Buyer+Consignee trade document submitWithFields uses `cbc_role` to
-            // place each signer's signature box at the position the user dragged
-            // for THAT role — instead of both signers sharing one coord and
-            // visually stacking. Single-signer sends carry no role and fall back
-            // to the flat coord shape. Mirrors agreementSend().
             $signersByEmail = collect($data['signers'])
                 ->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
             foreach ($zohoActions as &$zohoAction) {
@@ -489,29 +362,7 @@ class ClmSignatureController extends Controller
             }
             unset($zohoAction);
 
-            // 5. Build the per-document signature field coords and submit.
-            //    document_settings is keyed by trade_doc_id; its value is either
-            //    a flat { x,y,page,width,height } (single signer) or a per-role
-            //    map { buyer:{…}, consignee:{…} } (Buyer+Consignee). Both shapes
-            //    pass straight through — submitWithFields resolves the role.
-            // cbc doc-id order MUST mirror $tempPaths order (CLM docs, then the
-            // bundled PO under key 'po') so coords align to the right Zoho doc.
             $cbcDocIdsOrdered = $orderedDocs->map(fn($d) => $docKeyOf($d))->all();
-            /* The purchase order counts here too.
-             *
-             * This once asked only for the Sales-side order, which the Stage 04
-             * send never attaches — it bundles the P2P module's own PO
-             * ($p2pDoc) — so the list came back one entry SHORT of the files
-             * actually uploaded:
-             * document_settings['po'] then had no document to attach itself to,
-             * Zoho was given no coordinates for the purchase order, and it fell
-             * back to its own default placement. The signature landed nowhere
-             * near the box that had been dragged for it, while the trade
-             * documents in the same envelope were placed correctly (CS-12).
-             *
-             * Both branches append the same 'po' key, in the same position as
-             * the file they pushed onto $tempPaths — which is what keeps every
-             * document's coordinates aligned to its own Zoho id. */
             if (in_array('po', array_column($localDocMeta, 'id'), true)) $cbcDocIdsOrdered[] = 'po';
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
@@ -522,26 +373,14 @@ class ClmSignatureController extends Controller
             $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
             $submitted  = isset($submitResp['requests']);
 
-            // 6. Read back the final status — polled, not slept on. See
-            //    awaitSubmittedStatus().
             $finalStatus = 'draft';
             if ($submitted) {
                 $finalStatus = $this->awaitSubmittedStatus($zohoRequestId);
             }
 
-            // 7. Persist.
             $sigReq = new ClmSignatureRequest();
             $sigReq->client_id           = $user->client_id;
             $sigReq->branch_id           = $user->branch_id ?? null;
-            // Explicit trade-doc discriminator + optional lead scope so the
-            // Sales-Matrix popup can resolve this request lead-side (mirrors
-            // the agreement-send path).
-            /* A mixed envelope has no single document_type, but the column is
-             * one value and everything downstream reads it. Trade document
-             * wins when both are present, and the real per-kind split is
-             * recorded in metadata.doc_kind_ids below — which is what the
-             * Evidence Vault's status overlay reads, so BOTH documents show
-             * Sent/Signed rather than only the side that won this column. */
             $sigReq->document_type       = $tdIds ? ClmSignatureRequest::DOC_TRADE : ClmSignatureRequest::DOC_AGREEMENT;
             $sigReq->lead_id             = $data['lead_id'] ?? null;
             $sigReq->trade_doc_id        = $orderedDocs->first()->id;
@@ -553,7 +392,6 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id     = $zohoRequestId;
             $sigReq->request_name        = $requestName;
             $sigReq->status              = $finalStatus;
-            // BR-13: record WHERE each signer must sign (see withPlacements).
             $sigReq->signers             = $this->withPlacements((array) $data['signers'], (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date         = now()->addDays($expiryDays);
             $sigReq->metadata            = [
@@ -569,19 +407,13 @@ class ClmSignatureController extends Controller
                 ],
                 'document_settings' => $data['document_settings'] ?? null,
                 'request_uuid'      => $requestUuid,
-                /* Which library each id in trade_doc_ids came from. Present on
-                 * every send (not just mixed ones) so readers have one rule to
-                 * follow; readers fall back to document_type when it is absent,
-                 * which is every request written before this shipped. */
                 'doc_kind_ids'      => array_filter([
                     ClmSignatureRequest::DOC_TRADE     => $orderedDocs->where('cbc_kind', ClmSignatureRequest::DOC_TRADE)->pluck('id')->values()->all(),
                     ClmSignatureRequest::DOC_AGREEMENT => $orderedDocs->where('cbc_kind', ClmSignatureRequest::DOC_AGREEMENT)->pluck('id')->values()->all(),
                 ]),
-
             ];
             $sigReq->created_by          = Auth::id();
             $sigReq->save();
-
 
             $message = $finalStatus === 'inprogress'
                 ? 'Documents sent for signature successfully.'
@@ -620,8 +452,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-
-
     public function agreementPreview(Request $request)
     {
         $user = $request->user();
@@ -630,10 +460,6 @@ class ClmSignatureController extends Controller
         $data = $request->validate([
             'agreement_id'            => 'required|integer|exists:clm_agreement_library,id',
             'lead_id'                 => 'required|integer|exists:leads,id',
-            /* Per-send page-shell + body overrides — let the workplace
-             * Send-for-Signature flow tweak the agreement's header,
-             * footer and body content without mutating the saved row.
-             * Identical shape to the trade-doc preview override path. */
             'header_config_override'  => 'nullable|array',
             'footer_config_override'  => 'nullable|array',
             'content_override'        => 'nullable|string',
@@ -643,20 +469,12 @@ class ClmSignatureController extends Controller
             ->findOrFail($data['agreement_id']);
         $lead = Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id']);
 
-        // Resolve the primary party for placeholder replacement — buyer
-        // always wins when present, otherwise consignee. Suppliers aren't
-        // in the lead-side flow.
         [$primary, $primaryModel, $signers, $allParties] = $this->resolveAgreementSigners($agreement, $lead, $user);
 
         if (!$primary) {
             return response()->json(['status' => false, 'message' => 'No customer/consignee on this lead to render the agreement against.'], 422);
         }
 
-        // Diagnostic log — written every preview so the operator can
-        // confirm in storage/logs/laravel.log which parties got resolved
-        // and whether the agreement body actually contains tokens to
-        // substitute. Compact form: agreement + lead + party ids, plus
-        // a flag for whether the body had ANY `{{` placeholders.
         Log::info('agreement.preview', [
             'agreement_id'   => $agreement->id,
             'agreement_code' => $agreement->code,
@@ -699,9 +517,6 @@ class ClmSignatureController extends Controller
         }
 
         $data = $request->validate([
-            // Bulk-aware: callers can pass `agreement_ids[]` for a bulk send,
-            // or the legacy single `agreement_id` for one-shot. Both end up
-            // normalised into $ids below.
             'agreement_id'      => 'nullable|integer|exists:clm_agreement_library,id',
             'agreement_ids'     => 'nullable|array|min:1|max:10',
             'agreement_ids.*'   => 'integer|exists:clm_agreement_library,id',
@@ -709,23 +524,12 @@ class ClmSignatureController extends Controller
             'expiry_days'       => 'nullable|integer|min:1|max:90',
             'is_sequential'     => 'nullable|boolean',
             'notes'             => 'nullable|string|max:1000',
-            /* Per-doc signature placement keyed by agreement_id →
-             * { x, y, page, width, height }. Single map covers both
-             * single + bulk sends. mapClientCoordsToZohoDocIds expands
-             * it into per-Zoho-doc field entries. */
             'document_settings' => 'nullable|array',
-            /* Per-doc page-shell + body overrides keyed by agreement_id.
-             * Mirrors the trade-doc send override path so each agreement
-             * in a bulk send can carry its own brand band + body edits
-             * without mutating the saved row. */
             'header_config_overrides'   => 'nullable|array',
             'footer_config_overrides'   => 'nullable|array',
             'content_overrides'         => 'nullable|array',
         ]);
 
-        // Normalise the input — frontend may pass `agreement_ids` (bulk)
-        // or `agreement_id` (single). Either path lands in an ordered
-        // unique int[] preserving caller order.
         $rawIds = !empty($data['agreement_ids'])
             ? array_map('intval', $data['agreement_ids'])
             : (!empty($data['agreement_id']) ? [(int) $data['agreement_id']] : []);
@@ -744,17 +548,11 @@ class ClmSignatureController extends Controller
             return response()->json(['status' => false, 'message' => 'No accessible agreements in the selection.'], 422);
         }
 
-        // Preserve caller order (DB returns rows in arbitrary order).
         $orderedAgreements = collect($ids)
             ->map(fn($id) => $agreements->get($id))
             ->filter()
             ->values();
 
-        // Same-party constraint — every selected agreement must have an
-        // identical applicable_party CSV so the signer list resolves
-        // consistently across the bundle. Whitespace + casing are
-        // normalised before comparison so "Buyer, Consignee" and
-        // "buyer,consignee" group together.
         $normaliseParty = function (?string $p): string {
             return collect(explode(',', (string) $p))
                 ->map(fn($s) => strtolower(trim($s)))
@@ -772,8 +570,6 @@ class ClmSignatureController extends Controller
             ], 422);
         }
 
-        // Resolve signers from the first agreement (same party for all
-        // selected, so signer composition is identical).
         $headAgreement = $orderedAgreements->first();
         [$primary, $primaryModel, $signers, $allParties] = $this->resolveAgreementSigners($headAgreement, $lead, $user);
 
@@ -784,9 +580,6 @@ class ClmSignatureController extends Controller
             ], 422);
         }
 
-        // Collapse duplicate signers (same email) so one person isn't sent to
-        // Zoho as multiple signature actions — e.g. when the customer and
-        // consignee resolve to the same email. Keep the first occurrence.
         $seenAgreementEmails = [];
         $signers = collect($signers)
             ->filter(function ($s) use (&$seenAgreementEmails) {
@@ -802,9 +595,6 @@ class ClmSignatureController extends Controller
         $tempPaths    = [];
         $localDocMeta = [];
 
-        // Per-agreement overrides — keys can arrive as ints or numeric
-        // strings depending on how the JSON object was serialised, so
-        // we look up by both forms.
         $headerOverrides  = (array) ($data['header_config_overrides'] ?? []);
         $footerOverrides  = (array) ($data['footer_config_overrides'] ?? []);
         $contentOverrides = (array) ($data['content_overrides']       ?? []);
@@ -813,7 +603,6 @@ class ClmSignatureController extends Controller
         };
 
         try {
-            // 1. Render every agreement to a temp PDF.
             foreach ($orderedAgreements as $a) {
                 $headerOverride  = $pickOverride($headerOverrides,  $a->id);
                 $footerOverride  = $pickOverride($footerOverrides,  $a->id);
@@ -839,8 +628,7 @@ class ClmSignatureController extends Controller
                 ];
             }
 
-            // 2. Build Zoho request payload.
-            $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
+            $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));
             $actions = [];
             foreach ($signers as $i => $signer) {
                 $actions[] = [
@@ -869,24 +657,14 @@ class ClmSignatureController extends Controller
 
             $filenames = array_map(fn($m) => Str::slug($m['document_name']) ?: ('agreement_' . $m['id']), $localDocMeta);
 
-            // 3. Create Zoho request (multipart — JSON + N PDFs).
             $createResp    = $this->zoho->createRequestMultipart($tempPaths, $filenames, $requestBody);
             $zohoRequestId = data_get($createResp, 'requests.request_id');
             if (!$zohoRequestId) {
                 throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
             }
 
-            // 4. Fetch the created request and submit with signature fields.
             [$zohoActions, $zohoDocumentIds] = $this->zohoRequestShape($createResp, (string) $zohoRequestId);
 
-            // Tag each Zoho action with the CBC signer role (buyer /
-            // consignee) by matching its recipient_email against our
-            // resolved $signers list. submitWithFields uses `cbc_role`
-            // to look up per-signer coords on multi-party agreements
-            // (e.g. Buyer + Consignee), so each signer's signature box
-            // lands at the position the user dragged for THAT role —
-            // rather than every signer sharing one coord and visually
-            // stacking on top of each other.
             $signersByEmail = collect($signers)
                 ->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
             foreach ($zohoActions as &$zohoAction) {
@@ -907,14 +685,11 @@ class ClmSignatureController extends Controller
             $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
             $submitted  = isset($submitResp['requests']);
 
-            // 5. Read back final status — polled. See awaitSubmittedStatus().
             $finalStatus = 'draft';
             if ($submitted) {
                 $finalStatus = $this->awaitSubmittedStatus($zohoRequestId);
             }
 
-            // 6. Persist. `trade_doc_id`/`trade_doc_ids` reuse for agreement
-            //    ids — the polymorphic discriminator is `document_type`.
             $sigReq = new ClmSignatureRequest();
             $sigReq->client_id         = $user->client_id;
             $sigReq->branch_id         = $user->branch_id ?? null;
@@ -929,7 +704,6 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id   = $zohoRequestId;
             $sigReq->request_name      = $requestName;
             $sigReq->status            = $finalStatus;
-            // BR-13: record WHERE each signer must sign (see withPlacements).
             $sigReq->signers           = $this->withPlacements($signers, (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date       = now()->addDays($expiryDays);
             $sigReq->metadata          = [
@@ -993,18 +767,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /* ─────────────────────────────────────────────────────────────────────
-     * CTC (Case-to-Case Contract) → Send for Signature & Negotiation.
-     *
-     * Mirrors agreementSend(): renders the CTC contract body to a PDF and
-     * ships it to Zoho Sign for the chosen counterparty contact persons.
-     * Each signer gets a Signature field at the coordinates the user dragged
-     * in the preview (document_settings keyed by contract id → per-signer
-     * coords). The receiving-party {{signature}} placeholder is auto-filled
-     * with the branch signature + stamp. On success the contract advances to
-     * Stage 3 with a signing_recipients tracker linked to the Zoho request.
-     * ───────────────────────────────────────────────────────────────────── */
-
     public function ctcPreview(Request $request)
     {
         $user = $request->user();
@@ -1017,22 +779,6 @@ class ClmSignatureController extends Controller
         ]);
         $c = CtcContract::where('client_id', $user->client_id)->findOrFail($data['contract_id']);
 
-        /* Two callers, with opposite lifetimes.
-         *
-         * WITH overrides: the signature-placement editor, re-previewing after
-         * every adjustment. Each preview is a different document, so a long
-         * cache life would only fill the cache table with drafts nobody opens
-         * again. Keep the default.
-         *
-         * WITHOUT overrides: Agreements To Approve, showing a FINISHED
-         * contract to a reviewer. dompdf takes 57 s on a real 697 kB contract
-         * here and about 1.5 min on live, and the 30-minute default meant a
-         * second reviewer, a reviewer returning after lunch, or the same
-         * person reopening the document all paid it again. The key hashes the
-         * content, both updated_at stamps and every config, so an edited
-         * contract gets a different key and this can never show a stale one —
-         * a week only decides how often an UNCHANGED contract is re-rendered.
-         */
         $isFinishedDocument = ($data['header_config_override'] ?? null) === null
             && ($data['footer_config_override'] ?? null) === null
             && !array_key_exists('content_override', $data);
@@ -1080,8 +826,6 @@ class ClmSignatureController extends Controller
 
         $c = CtcContract::where('client_id', $user->client_id)->findOrFail($data['contract_id']);
 
-        // Stable per-signer role key (signer1, signer2, …) so submitWithFields
-        // can place each signer's field at its own dragged position.
         $signers = [];
         foreach (array_values($data['signers']) as $i => $s) {
             $signers[] = [
@@ -1107,9 +851,6 @@ class ClmSignatureController extends Controller
             file_put_contents($tmp, $bytes);
             $tempPaths[] = $tmp;
 
-            // Clamp to Zoho's accepted range — its expiration_days field rejects
-            // 3-digit values ("too many characters", error 9011). days_to_sign is
-            // a stored fallback that skips request validation, so cap it here.
             $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? ($c->days_to_sign ?: 30))));
             $actions = [];
             foreach ($signers as $i => $signer) {
@@ -1167,7 +908,6 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id   = $zohoRequestId;
             $sigReq->request_name      = $requestName;
             $sigReq->status            = $finalStatus;
-            // BR-13: record WHERE each signer must sign (see withPlacements).
             $sigReq->signers           = $this->withPlacements($signers, (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date       = now()->addDays($expiryDays);
             $sigReq->metadata          = [
@@ -1181,14 +921,6 @@ class ClmSignatureController extends Controller
             $sigReq->created_by = Auth::id();
             $sigReq->save();
 
-            // Advance the contract to Stage 3 with the signing tracker.
-            // BR-13: keep each signer's PLACEMENTS alongside the recipient, so
-            // the tracker can say where that person has to sign - "Page 1,
-            // Page 3, Page 5" - instead of only that they must sign. Zoho
-            // reports completion per RECIPIENT, never per field, so there is no
-            // honest per-placement status to store; the pages are what the UI
-            // can truthfully show. Read back out of the same
-            // document_settings the boxes were sent with.
             $perSigner = (array) (($data['document_settings'] ?? [])[$c->id]
                 ?? ($data['document_settings'] ?? [])[(string) $c->id] ?? []);
             $recipients = collect($signers)->map(function ($s) use ($perSigner) {
@@ -1203,12 +935,9 @@ class ClmSignatureController extends Controller
                     'contact' => $s['name'],
                     'signed' => false,
                     'signed_at' => null,
-                    // 1-based page numbers, in the order the boxes were placed.
                     'placements' => array_map(fn($b) => (int) ($b['page'] ?? 0) + 1, $boxes),
                 ];
             })->all();
-            // A resend after a decline carries the edited draft — persist it so
-            // the contract body, preview and version snapshot all reflect it.
             if (array_key_exists('content_override', $data) && $data['content_override'] !== null) {
                 $c->content = (string) $data['content_override'];
             }
@@ -1249,12 +978,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /**
-     * GET /clm/ctc-contracts/{id}/sync-signature
-     * Pull the live Zoho status for a CTC's signature request and reflect it
-     * onto the contract's signing_recipients (signed flags) + status. Returns
-     * the contract in the same shape as CtcContractController::show.
-     */
     public function ctcSignatureStatus(Request $request, int $id)
     {
         $user = $request->user();
@@ -1264,10 +987,6 @@ class ClmSignatureController extends Controller
             try {
                 $details   = $this->zoho->getRequest($c->zoho_request_id);
                 $reqStatus = strtolower((string) data_get($details, 'requests.request_status', 'inprogress'));
-                // Zoho doesn't document the decline-reason key consistently —
-                // it has surfaced as reason / reject_reason / decline_reason /
-                // recipient_comment depending on org/version. Pull the first
-                // non-empty from a broad candidate list on the action.
                 $pickReason = function (array $a): string {
                     foreach (['reason', 'reject_reason', 'rejection_reason', 'decline_reason', 'declined_reason', 'recipient_comment', 'comments', 'comment', 'action_comment'] as $k) {
                         if (!empty($a[$k])) return (string) $a[$k];
@@ -1300,8 +1019,6 @@ class ClmSignatureController extends Controller
                         $r['declined'] = false;
                     }
                     if (in_array($st, ['declined', 'rejected', 'recalled'])) {
-                        // Log the raw declined action once so the exact reason key
-                        // can be confirmed if it ever lands somewhere unexpected.
                         Log::info('CTC signer declined', ['contract' => $c->id, 'email' => $r['email'] ?? null, 'action' => $a['raw']]);
                         $reason = $a['reason'] ?: $reqLevelReason ?: ($r['decline_reason'] ?? '');
                         $r['declined'] = true;
@@ -1312,25 +1029,11 @@ class ClmSignatureController extends Controller
                     }
                 }
                 unset($r);
-                // 'expired' sits with the declines: section 8.8 gives expiry the
-                // same outcome - void the request and re-initiate for everyone -
-                // and BR-19 keeps it away from the Master freeze either way.
                 $isDeclined = $declinedBy !== null || in_array($reqStatus, ['declined', 'rejected', 'recalled', 'expired']);
                 $allSigned  = !$isDeclined && count($recipients) > 0 && collect($recipients)->every(fn($r) => !empty($r['signed']));
 
                 if ($isDeclined && empty($c->signature_declined_at)) {
-                    // First time we see the decline → stamp it + log a version event.
                     $c->signature_declined_at = now();
-                    // BR-16 / section 8.8: a decline (or expiry) voids the WHOLE
-                    // request, not just the declining party's task. Everyone else
-                    // must stop signing a document that is already dead, including
-                    // counterparties who have not opened it yet - the contract goes
-                    // out afresh to all of them once the draft is corrected. The
-                    // voided row is kept (never deleted) so the cycle stays
-                    // auditable; the next send creates a new request.
-                    // An expiry has no declining signer, so it must not be logged
-                    // as one - same outcome (void + re-initiate), different cause,
-                    // and the audit trail has to say which actually happened.
                     $expired  = $reqStatus === 'expired' && $declinedBy === null;
                     $voidWhy  = $expired
                         ? 'Signing request expired'
@@ -1349,8 +1052,6 @@ class ClmSignatureController extends Controller
                     }
                     unset($r2);
                     if (!$c->cp_signed_date) $c->cp_signed_date = now();
-                    // Pull the fully-signed PDF + certificate down from Zoho onto
-                    // the linked signature request so it can be shown/downloaded.
                     if ($c->signature_request_id) {
                         $sr = ClmSignatureRequest::find($c->signature_request_id);
                         if ($sr) {
@@ -1379,20 +1080,13 @@ class ClmSignatureController extends Controller
         $branch = $c->branch_id ? Branch::find($c->branch_id) : null;
         $c->org_signature_url = $branch?->signature_url;
         $c->signed_document_url = $this->ctcSignedDocumentUrl($c);
-        // Resolved preview (party + org tokens filled, leftovers blanked, but
-        // {{signature}} kept for the SPA) so Stage-3's live-polled record shows
-        // real data — not raw {{customer.*}} placeholders.
         $c->content_preview = $c->content ? $this->resolveCtcContent((string) $c->content, $c, true) : '';
-        // CBC-574: convert audit timestamps UTC → IST exactly like
-        // CtcContractController::show(), so the Stage-3 live-polled record shows
-        // the same times as the Version History modal (display only — not saved).
         $c->versions       = $this->istCtcEntries($c->versions ?? []);
         $c->clarifications = $this->istCtcEntries($c->clarifications ?? []);
         $c->approvers      = $this->istCtcEntries($c->approvers ?? []);
         return response()->json(['status' => true, 'data' => $c]);
     }
 
-    /** Public URL of the fully-signed PDF for a CTC (from its signature request), or null. */
     private function ctcSignedDocumentUrl(CtcContract $c): ?string
     {
         if (!$c->signature_request_id) return null;
@@ -1403,11 +1097,6 @@ class ClmSignatureController extends Controller
         return $first['file_url'] ?? $first['url'] ?? (isset($first['path']) ? file_url($first['path']) : null);
     }
 
-    /**
-     * POST /clm/ctc-contracts/{id}/remind-signing
-     * Nudge the counterparty signers to sign — Zoho Sign re-emails everyone
-     * who hasn't acted yet on the contract's active signature request.
-     */
     public function ctcRemindSigning(Request $request, int $id)
     {
         $user = $request->user();
@@ -1432,33 +1121,23 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /** Render a CTC contract body to a signature-ready PDF (page-shell + org sig). */
     /**
-     * @param int $cacheMinutes How long the rendered bytes stay cached. The key
-     *   below hashes the body, the configs, the logo and both updated_at
-     *   stamps, so a longer life can never serve a stale document — it only
-     *   decides how often an UNCHANGED one is re-rendered. The default suits
-     *   the signature-placement editor, which previews after every edit and
-     *   whose keys are therefore short-lived anyway; the approval view passes
-     *   a much longer one (see ctcPreview).
+     * Render the approver preview ahead of time so it is already in the cache.
+     * Same arguments as ctcPreview() with no overrides, so the cache key is the
+     * one the approver's request will look up; nothing about the PDF changes.
      */
+    public function warmCtcPreview(CtcContract $c): void
+    {
+        $this->renderCtcPdf($c, [], null, null, null, Str::uuid()->toString(), 60 * 24 * 7);
+    }
+
     private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid, int $cacheMinutes = 30)
     {
-        /* dompdf holds the whole document tree in memory. A 15-page contract
-           measured here peaks at 392 MB, and Review & Approve on live opens
-           documents of 305 pages — so on PHP's default limit this path simply
-           died, and the browser got a 500 after six seconds before falling
-           back to the stored version. 1024M is the ceiling every other PDF
-           path in the app already sets; this one only ever raised the TIME
-           limit, which is why it was the one that failed. */
         @ini_set('memory_limit', '1024M');
         @set_time_limit(180);
 
         $sourceHtml = $contentOverride !== null ? $contentOverride : (string) $c->content;
         $sig = $this->ctcOrgSignatureDataUri($c);
-        // Block-level so the signature image sits on its own line and never
-        // overlaps the org-detail text that follows it (it is 80px tall and, when
-        // inline, bled over the address line in both the approval view and PDF).
         $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />' : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $sourceHtml);
         $processedHtml = $this->resolveCtcContent($processedHtml, $c);
@@ -1472,14 +1151,6 @@ class ClmSignatureController extends Controller
             $client?->logo,
         );
 
-        /* Same render cache as the agreement and trade-doc paths. The CTC
-           draft editor previews on open and after every edit, and the send
-           renders the identical contract once more; a large contract paid
-           full dompdf time for each. The key is taken after token
-           resolution, so it already covers the body, the resolved
-           organisation fields and the signature substitution. page_config
-           joins it because, unlike the other two paths, a CTC carries its
-           own margins. */
         $cacheKey = 'clm:ctcpdf:' . sha1(implode('|', [
             (int) $c->client_id,
             (int) $c->id,
@@ -1498,7 +1169,6 @@ class ClmSignatureController extends Controller
                 return base64_decode($hit);
             }
         } catch (\Throwable $e) {
-            // fall through and render
         }
 
         $bytes = Pdf::loadView('pdf.clm-signature-document', [
@@ -1511,8 +1181,6 @@ class ClmSignatureController extends Controller
             'signers'          => $signers,
             'client'           => $client,
             'headerConfig'     => $headerConfig,
-            // Per-document page setup (left/right margin). Empty for rows saved
-            // before it existed — the blade falls back to the original 25px.
             'pageConfig'       => is_array($c->page_config ?? null) ? $c->page_config : [],
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
@@ -1522,30 +1190,18 @@ class ClmSignatureController extends Controller
             try {
                 Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes($cacheMinutes));
             } catch (\Throwable $e) {
-                // caching is an optimisation, never a requirement
             }
         }
 
         return $bytes;
     }
 
-    /**
-     * Resolve a CTC's party + organisation placeholders to real data and blank
-     * any leftover token. {{signature}} must already be substituted by the
-     * caller (renderCtcPdf) before this runs.
-     */
     private function resolveCtcContent(string $html, CtcContract $c, bool $keepSignature = false): string
     {
-        // Organisation tokens from the SELECTED "Our Organisation" BRANCH (the CTC
-        // org picker lists client branches, not the Company master). Resolving from
-        // Company master left company_no/email/contact/address BLANK on the
-        // approver's PDF while the Stage-2 preview (CtcContractController) showed
-        // them — this mirrors that branch-based resolution so both match.
         foreach ($this->ctcOrgBranchTokens($c) as $tok => $val) {
             $html = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $html);
         }
 
-        // Party tokens — one pass per counterparty against its live model.
         foreach ((is_array($c->counterparties) ? $c->counterparties : []) as $cp) {
             $type = strtolower((string) ($cp['source_type'] ?? ''));
             $id   = $cp['source_id'] ?? null;
@@ -1556,26 +1212,10 @@ class ClmSignatureController extends Controller
             if ($model) $html = self::replacePartyNamespaceTokens($html, $model, $modelName);
         }
 
-        // Blank any placeholder still left (unmapped party, missing data, typo).
-        // When keepSignature is set (preview use), leave {{signature}} for the SPA.
         $pattern = $keepSignature ? '/\{\{\s*(?!signature\s*\}\})[^{}]*\}\}/i' : '/\{\{[^{}]*\}\}/';
         return preg_replace($pattern, '', $html);
     }
 
-    /**
-     * Live model + CLM model-name for a CTC counterparty reference.
-     *
-     * Resolution order mirrors CtcContractController::partyByRef(): the numeric
-     * PK the counterparty picker recorded (`source_db_id`) first, then the
-     * display code scoped to the agreement's own branch, then client-wide.
-     *
-     * Customer / consignee / vendor codes are allocated PER BRANCH -- every
-     * branch owns its own C-001 / CN-001 / S-001 run -- so matching the code
-     * client-wide has one hit per branch and returns whichever the database
-     * hands back. That put a different branch's company name, GST and address
-     * into the agreement HTML, and unlike the Stage-2 preview this copy is the
-     * one rendered for signature and sent to Zoho.
-     */
     private function ctcLivePartyRow($q, $id, string $codeCol, $dbId = null, $branchId = null)
     {
         if ($dbId !== null && $dbId !== '' && (int) $dbId > 0) {
@@ -1611,48 +1251,11 @@ class ClmSignatureController extends Controller
         return [null, ''];
     }
 
-    /**
-     * Convert a CTC's audit arrays (versions / clarifications / approvers) from
-     * stored UTC to the display timezone, so this endpoint's live-polled record
-     * renders the SAME timestamps as show()-fed views. Without it the Stage-3
-     * Negotiation timeline showed raw UTC while show() showed IST (CBC-574).
-     *
-     * Both controllers now delegate to the ONE implementation in CtcAuditTime.
-     * They previously held two hand-maintained copies with a "keep these in
-     * sync" comment — which is exactly how CBC-574 happened.
-     */
-    private function istCtcStr(?string $s): string
-    {
-        return CtcAuditTime::str($s);
-    }
-
     private function istCtcEntries($arr): array
     {
         return CtcAuditTime::entries($arr);
     }
 
-    /** Append an audit/version entry to a CTC contract (mirrors CtcContractController). */
-    /**
-     * Void the whole Zoho request behind a CTC contract - BR-16 / section 8.8.
-     *
-     * One counterparty declining (or the window expiring) kills the cycle for
-     * EVERYONE: the spec forbids a partial re-send to just the declining party,
-     * so the remaining signers must be stopped rather than left able to sign a
-     * document that will never complete. Recalling at Zoho is what actually
-     * stops them; the local row is then marked recalled so the UI agrees.
-     *
-     * Deliberately NOT destructive:
-     *  - the request row is kept, never deleted, so the failed cycle stays
-     *    auditable (section 8.8) and the signed artefacts of parties who had
-     *    already finished remain attached to it;
-     *  - $c->signature_request_id is left alone. The next send writes a fresh
-     *    id, and until then the tracker still has something to show.
-     *
-     * Never throws. This runs inside a status sync triggered by opening a
-     * screen - if Zoho refuses the recall (commonly because it already voided
-     * the request itself on the decline) the local state must still be
-     * recorded, or the contract would look live on every reload.
-     */
     private function ctcVoidSignatureRequest(CtcContract $c, string $reason): void
     {
         if (!$c->signature_request_id) return;
@@ -1660,35 +1263,12 @@ class ClmSignatureController extends Controller
         if ($row) $this->voidSignatureRequest($row, $reason);
     }
 
-    /**
-     * Void one signature request at Zoho and locally - the module-agnostic half
-     * of BR-16, shared by CTC agreements, CLM agreements and trade documents.
-     * Section 2 forbids module-specific deviation, and the rule is the same
-     * everywhere: one party declining kills the cycle for all of them.
-     */
-    /**
-     * Stamp each signer with the PAGES they must sign on - BR-13.
-     *
-     * Zoho reports completion per RECIPIENT and never per field, so there is no
-     * honest per-placement status to store. What CAN be shown truthfully is
-     * where the person was asked to sign, and that only exists in the coords
-     * the SPA sent, so it is captured here at send time.
-     *
-     * Handles both payload shapes:
-     *   role-keyed  {docId: {buyer: {x,y,boxes:[...]}}}   - agreements, CTC
-     *   flat        {docId: {x,y,boxes:[...]}}            - single-signer sends
-     *
-     * @param  array $signers          rows carrying at least `role`
-     * @param  array $documentSettings raw document_settings from the request
-     * @return array the same rows, each with a `placements` int[] of 1-based pages
-     */
     private function withPlacements(array $signers, array $documentSettings): array
     {
         $pagesFor = function (?string $role) use ($documentSettings): array {
             $pages = [];
             foreach ($documentSettings as $coords) {
                 if (!is_array($coords)) continue;
-                // Role-keyed when the signer's role is a key; flat otherwise.
                 $slice = ($role !== null && isset($coords[$role]) && is_array($coords[$role]))
                     ? $coords[$role]
                     : (isset($coords['x']) ? $coords : null);
@@ -1710,17 +1290,12 @@ class ClmSignatureController extends Controller
 
     private function voidSignatureRequest(ClmSignatureRequest $row, string $reason): void
     {
-        // Already voided, or finished before the decline landed - leave both
-        // alone. Guarding here keeps repeat callbacks idempotent (BR-20).
         if (in_array($row->status, ['recalled', 'completed'], true)) return;
 
         if ($row->zoho_request_id) {
             try {
                 $this->zoho->recall($row->zoho_request_id, mb_substr($reason, 0, 500));
             } catch (\Throwable $e) {
-                // Zoho voids the request on decline by itself in most cases, so a
-                // refusal here is expected rather than exceptional. Logged, not
-                // surfaced: the local void below is what the UI reads.
                 Log::info('Signature void: Zoho recall refused', [
                     'request' => $row->id,
                     'zoho'    => $row->zoho_request_id,
@@ -1729,11 +1304,6 @@ class ClmSignatureController extends Controller
             }
         }
 
-        /* recalled_at is the record that the cycle was voided, and it is always
-           stamped. `status`, however, must keep saying WHY: a decline stays
-           'declined' so the tracker's decline banner and reason still render -
-           overwriting it with 'recalled' would hide the reason the counterparty
-           gave and make a refusal look like an internal withdrawal. */
         $row->recalled_at   = $row->recalled_at ?: now();
         $row->recall_reason = $reason;
         if (!in_array($row->status, ['declined', 'rejected'], true)) $row->status = 'recalled';
@@ -1754,13 +1324,6 @@ class ClmSignatureController extends Controller
         $c->versions = $versions;
     }
 
-    /**
-     * The SELECTED "Our Organisation" branch. The CTC org picker lists client
-     * branches (resolved by name — unique per client), falling back to the
-     * contract's own branch for older contracts. Mirrors
-     * CtcContractController::resolveOrgBranch so the approver PDF, the Stage-2
-     * preview and the signed copy all resolve the SAME organisation.
-     */
     private function resolveCtcOrgBranch(CtcContract $c): ?Branch
     {
         $orgName = trim((string) ($c->org_name ?? ''));
@@ -1770,7 +1333,6 @@ class ClmSignatureController extends Controller
         return $branch ?: ($c->branch_id ? Branch::find($c->branch_id) : null);
     }
 
-    /** Full postal address of a branch for the {{address}} token. */
     private function ctcBranchAddress(?Branch $b): string
     {
         if (!$b) return '';
@@ -1782,20 +1344,18 @@ class ClmSignatureController extends Controller
         ], fn($v) => $v !== '')), ', ');
     }
 
-    /** Organisation-detail tokens filled from the SELECTED branch's own data. */
     private function ctcOrgBranchTokens(CtcContract $c): array
     {
         $b = $this->resolveCtcOrgBranch($c);
         return [
             'company_name' => $c->org_name ?: ($b->name ?? ''),
-            'company_no'   => $b->cin ?? '',   // registered company number (CIN)
+            'company_no'   => $b->cin ?? '',
             'email'        => $b->email ?? '',
             'contact_no'   => $b->phone ?? '',
             'address'      => $this->ctcBranchAddress($b),
         ];
     }
 
-    /** Branch (receiving-party) signature + stamp image as a data URI. */
     private function ctcOrgSignatureDataUri(CtcContract $c): ?string
     {
         $branch = $this->resolveCtcOrgBranch($c);
@@ -1813,17 +1373,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /**
-     * Who a Quotation / PI would go to, without sending it.
-     *
-     * The send modal used to print a fixed sentence — "the customer's primary
-     * contact person (email from the customer record)" — and never the address
-     * itself, so the user signed off on a send without seeing where it was
-     * going. It also meant a customer with no contact email looked fine right
-     * up to the 422 on Send.
-     * This runs resolveSalesDocSigners(), the SAME resolver the send uses, so
-     * the screen and the mail can never disagree. Read-only.
-     */
     public function salesDocSigners(Request $request)
     {
         $user = $request->user();
@@ -1846,17 +1395,6 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-    /**
-     * Stage 5 (Quotation vs PI) → Send for Signature.
-     *
-     * Renders the Quotation / Proforma Invoice PDF (the same with-signature
-     * artifact used by preview + email, via SalesPdfController) and ships it
-     * to Zoho Sign for the buyer (customer) plus, when present/selected, the
-     * consignee. Mirrors agreementSend() — only the document source differs
-     * (a rendered sales PDF instead of a CLM library row). The persisted row
-     * uses document_type = quotation|proforma_invoice; status / remind /
-     * recall / signed-file streaming all reuse the generic methods below.
-     */
     public function salesDocSend(Request $request)
     {
         $user = $request->user();
@@ -1870,17 +1408,12 @@ class ClmSignatureController extends Controller
         $data = $request->validate([
             'doc_kind'          => 'required|string|in:quotation,proforma_invoice',
             'doc_id'            => 'required|integer',
-            // Lead is OPTIONAL — a quotation/PI created directly (no
-            // opportunity, e.g. a "Without Shipment" PI) has no lead. Signers
-            // are resolved from the document record itself, so a lead isn't
-            // needed to send for signature.
             'lead_id'           => 'nullable|integer|exists:leads,id',
             'signers'           => 'nullable|array|max:5',
             'signers.*.role'    => 'nullable|string|max:32',
             'signers.*.email'   => 'required_with:signers|email',
             'signers.*.name'    => 'nullable|string|max:255',
             'signers.*.order'   => 'nullable|integer|min:1',
-            // Per-signature placement keyed by doc_id → { role → {x,y,page,width,height} }.
             'document_settings' => 'nullable|array',
             'expiry_days'       => 'nullable|integer|min:1|max:90',
             'is_sequential'     => 'nullable|boolean',
@@ -1890,21 +1423,6 @@ class ClmSignatureController extends Controller
         $docKind = $data['doc_kind'];
         $docId   = (int) $data['doc_id'];
 
-        /* One live signature request per document — enforced HERE, before Zoho
-         * is touched.
-         *
-         * The screen already hides Send once a request is out, but a screen
-         * cannot hold this line: the send takes several seconds, and a second
-         * tab opened in that window still shows the document as unsent. Both
-         * tabs then send, Zoho issues two requests, and the customer receives
-         * two links for the same PI — signing either one leaves the other live.
-         * Nothing downstream reconciles that.
-         *
-         * `completed` is deliberately NOT blocked here — a signed document is
-         * already refused by hasSignedForDoc on the edit path, and blocking it
-         * again with this message would read as though it were merely pending.
-         * `superseded` and `recalled` are not blocked either: those are exactly
-         * the states a re-send is FOR. */
         $liveDocType = $docKind === 'quotation'
             ? ClmSignatureRequest::DOC_QUOTATION
             : ClmSignatureRequest::DOC_PROFORMA_INVOICE;
@@ -1922,15 +1440,10 @@ class ClmSignatureController extends Controller
                 'data'    => ['signature_request_id' => $live->id],
             ], 409);
         }
-        // Lead may be omitted (direct PI/quotation with no opportunity); when
-        // supplied it's tenant-scoped. Falls back to the document's own opp_id
-        // below once the record is loaded.
         $lead    = !empty($data['lead_id'])
             ? Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id'])
             : null;
 
-        // 1. Render the sales PDF to a temp file (reuses SalesPdfController so
-        //    the signed source byte-matches what preview/email produce).
         try {
             $rendered = app(SalesPdfController::class)->renderSalesDocPdfToTemp($docKind, $docId, $user, true);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -1939,20 +1452,15 @@ class ClmSignatureController extends Controller
         $tempPath = $rendered['path'];
         $record   = $rendered['record'];
 
-        // When no lead was supplied, adopt the document's own opportunity (if
-        // it has one) so the signature row still records the linkage.
         if (!$lead && !empty($record->opp_id)) {
             $lead = Lead::where('client_id', $user->client_id)->find($record->opp_id);
         }
-        // Defence-in-depth: when a lead IS in context, the doc must belong to
-        // it. A document with no opportunity simply has no lead linkage.
         if ($lead && (int) ($record->opp_id ?? 0) !== (int) $lead->id) {
             @unlink($tempPath);
             return response()->json(['status' => false, 'message' => 'This document does not belong to the supplied opportunity.'], 422);
         }
 
         try {
-            // 2. Resolve signers — buyer (customer) + optional consignee.
             $signers = $this->resolveSalesDocSigners($record, $data['signers'] ?? null);
             if (empty($signers)) {
                 @unlink($tempPath);
@@ -1962,17 +1470,14 @@ class ClmSignatureController extends Controller
                 ], 422);
             }
 
-            // Primary party owns the signature_requests row (scoping). Prefer
-            // the customer; fall back to consignee if there's no customer.
             $primaryIsCustomer = (int) ($record->customer_id ?? 0) > 0;
             $primaryId         = $primaryIsCustomer ? (int) $record->customer_id : (int) ($record->consignee_id ?? 0);
 
-            $expiryDays  = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
+            $expiryDays  = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));
             $shortLabel  = $docKind === 'quotation' ? 'QT' : 'PI';
             $docName     = $record->code ? "{$shortLabel} {$record->code}" : $rendered['filename'];
             $requestName = $record->code ?: $rendered['filename'];
 
-            // 3. Build Zoho actions.
             $actions = [];
             foreach ($signers as $i => $signer) {
                 $actions[] = [
@@ -1994,15 +1499,12 @@ class ClmSignatureController extends Controller
                 ],
             ];
 
-            // 4. Create Zoho request (multipart — JSON + the single PDF).
             $createResp    = $this->zoho->createRequestMultipart([$tempPath], [$rendered['filename']], $requestBody);
             $zohoRequestId = data_get($createResp, 'requests.request_id');
             if (!$zohoRequestId) {
                 throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
             }
 
-            // 5. Fetch the created request, tag actions with cbc_role, submit
-            //    with the per-signer signature-field coordinates.
             [$zohoActions, $zohoDocumentIds] = $this->zohoRequestShape($createResp, (string) $zohoRequestId);
 
             $signersByEmail = collect($signers)->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
@@ -2015,8 +1517,6 @@ class ClmSignatureController extends Controller
             }
             unset($zohoAction);
 
-            // document_settings arrives keyed by doc_id → { role → coords };
-            // mapClientCoordsToZohoDocIds re-keys it onto the Zoho doc id.
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
                 [$docId],
@@ -2026,14 +1526,11 @@ class ClmSignatureController extends Controller
             $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
             $submitted  = isset($submitResp['requests']);
 
-            // 6. Read back final status — polled. See awaitSubmittedStatus().
             $finalStatus = 'draft';
             if ($submitted) {
                 $finalStatus = $this->awaitSubmittedStatus($zohoRequestId);
             }
 
-            // 7. Persist. trade_doc_id/_ids reuse for the quotation/PI id —
-            //    the polymorphic discriminator is document_type.
             $sigReq = new ClmSignatureRequest();
             $sigReq->client_id         = $user->client_id;
             $sigReq->branch_id         = $user->branch_id ?? null;
@@ -2050,7 +1547,6 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id   = $zohoRequestId;
             $sigReq->request_name      = $requestName;
             $sigReq->status            = $finalStatus;
-            // BR-13: record WHERE each signer must sign (see withPlacements).
             $sigReq->signers           = $this->withPlacements($signers, (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date       = now()->addDays($expiryDays);
             $sigReq->metadata          = [
@@ -2066,13 +1562,6 @@ class ClmSignatureController extends Controller
 
             $label   = $docKind === 'quotation' ? 'Quotation' : 'Proforma Invoice';
 
-            // 8. Also email the rendered PDF to the signer (customer contact)
-            //    as an attachment, alongside Zoho's signing notification. The
-            //    email is best-effort: a mail hiccup must NOT fail an already-
-            //    created signature request, so failures are logged, not thrown.
-            //    Reuses $tempPath (cleaned up in the finally below) and the
-            //    SalesPdfController email builder so the body/branding match the
-            //    manual "Email document" flow byte-for-byte.
             $pdfEmailed   = false;
             $signerEmail  = (string) ($signers[0]['email'] ?? '');
             if ($signerEmail !== '') {
@@ -2136,15 +1625,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /**
-     * Build the signer list for a Quotation / PI send. Business rule:
-     * ONLY the customer's primary contact person signs (no consignee).
-     * The contact-person email/name come from the customer's primary
-     * address (cp_email / cp_name); `customers.primary_email` mirrors the
-     * primary contact's email, so it's the fallback. The $override is
-     * intentionally ignored — the authoritative signer is always the
-     * customer's primary contact.
-     */
     private function resolveSalesDocSigners($record, ?array $override): array
     {
         $customer = $record->customer;
@@ -2164,13 +1644,6 @@ class ClmSignatureController extends Controller
         ]];
     }
 
-    /**
-     * An applicable-party CSV as the user reads it. The value is stored as
-     * "Buyer" but the product calls that party the Customer, so messages that
-     * quote a document's party say "Customer" — "Buyer,Consignee" reads
-     * "Customer, Consignee". Customer is always named first, so "Consignee,Buyer"
-     * and "Buyer,Consignee" read the same and don't list twice in a message.
-     */
     private function partyLabel(?string $csv): string
     {
         return collect(explode(',', (string) $csv))
@@ -2182,13 +1655,6 @@ class ClmSignatureController extends Controller
             ->implode(', ');
     }
 
-    /**
-     * True when the lead's consignee is the customer itself — the consignee row
-     * is flagged `same_as_customer` and mirrors this lead's customer. Buyer and
-     * Consignee are then one company with one signer, so a Buyer-only, a
-     * Consignee-only and a Buyer+Consignee document all go to the same person
-     * and may share a signature request.
-     */
     private function leadConsigneeIsCustomer(?Lead $lead, $user): bool
     {
         if (!$lead || !$lead->consignee_id || !$lead->customer_id) return false;
@@ -2198,15 +1664,6 @@ class ClmSignatureController extends Controller
             && (int) $consignee->customer_id === (int) $lead->customer_id;
     }
 
-    /**
-     * Decode the agreement's `party` CSV against the lead's customer +
-     * consignee and produce a signer list ready for Zoho. Returns
-     *   [primaryPartyModel, 'Customer'|'Consignee', signersArray]
-     *
-     * Primary party is the buyer when present (customer), else consignee.
-     * Both are added as signers when the CSV calls for them. Supplier-*
-     * tokens are skipped — supplier signing belongs to procure-to-pay.
-     */
     private function resolveAgreementSigners(ClmAgreementLibrary $agreement, Lead $lead, $user): array
     {
         $partyTokens = collect(explode(',', (string) $agreement->party))
@@ -2227,9 +1684,6 @@ class ClmSignatureController extends Controller
                 'email' => $customer->primary_email,
                 'name'  => $customer->company_name ?: 'Buyer',
                 'order' => $order++,
-                // Role tag — used downstream to look up the per-signer
-                // signature box coords supplied by the SPA when the
-                // user drags each role's overlay independently.
                 'role'  => 'buyer',
             ];
         }
@@ -2242,24 +1696,15 @@ class ClmSignatureController extends Controller
             ];
         }
 
-        // All resolvable parties on the lead, keyed by model name, so the
-        // agreement render path can substitute placeholders for every
-        // applicable namespace (`{{customer.*}}` AND `{{consignee.*}}`
-        // on a Buyer+Consignee agreement, not just the primary's tokens).
-        // null entries are skipped so callers can rely on the keys being
-        // present iff the lead has that side mapped.
         $allParties = array_filter([
             'Customer'  => $customer,
             'Consignee' => $consignee,
         ]);
 
-        // Primary party = whichever side will own the signature_requests
-        // row (for tenant + visibility scoping). Prefer customer.
         if ($customer)      return [$customer,  'Customer',  $signers, $allParties];
         if ($consignee)     return [$consignee, 'Consignee', $signers, $allParties];
         return [null, 'Customer', $signers, $allParties];
     }
-
 
     private function renderAgreementPdf(
         ClmAgreementLibrary $agreement,
@@ -2273,36 +1718,13 @@ class ClmSignatureController extends Controller
         array $allParties = [],
         ?Lead $lead = null,
     ) {
-        // Body HTML: per-send override beats the saved row's content.
-        // The override path lets the workplace Send-for-Signature flow
-        // tweak agreement copy without mutating the master.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $agreement->content;
-        // Strip the wrong party family (supplier vs customer/consignee) per the
-        // agreement's applicable party BEFORE resolving tokens.
         $sourceHtml    = $this->hideOtherPartyTokens($sourceHtml, $agreement->party ?? null);
-        // $allParties carries every party the lead has mapped (Customer
-        // + Consignee for a Buyer+Consignee agreement). Without it,
-        // replacePlaceholders only substitutes the primary's tokens
-        // and `{{consignee.name}}` stays as literal text in the PDF.
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
-        // Expand the {{product.*}} table into one row per opportunity product.
         $processedHtml = $this->expandProductTable($processedHtml, $lead);
-        /* A `<td>` left outside its `<table>` makes dompdf throw "Parent table
-           not found for table cell" and the whole render 500s — the editor shows
-           such an orphan exactly like a browser does, so nobody can see it
-           coming. Repaired here, after the tokens and the product table have
-           been expanded, so generated markup is covered too. (QA #67) */
         $processedHtml = PdfHtml::repairTableMarkup($processedHtml);
         $client        = Client::find($agreement->client_id);
 
-        // Read the row's saved page-shell config (Stage 2 wizard) so the
-        // PDF matches what the user composed in the editor. Missing on
-        // pre-migration rows → empty array; blade falls back to a
-        // minimal client-name header so older agreements still render.
-        // Per-send overrides are LAYERED over the saved config (rather
-        // than replacing it wholesale) so the user can tweak one field
-        // — e.g. just the footer text — without having to repopulate
-        // every other column the editor would have shown.
         $savedHeader = is_array($agreement->header_config) ? $agreement->header_config : [];
         $savedFooter = is_array($agreement->footer_config) ? $agreement->footer_config : [];
         $headerConfig = is_array($headerOverride) ? array_replace($savedHeader, $headerOverride) : $savedHeader;
@@ -2314,41 +1736,6 @@ class ClmSignatureController extends Controller
             $client?->logo,
         );
 
-        // Build a stand-in object that the trade-doc blade can read with
-        // its existing `$document->title ?? $document->name ?? 'Document'`
-        // contract. We pass the agreement directly — title is present.
-        // Enable inline PHP execution so the blade's
-        // <script type="text/php"> page-number stamp can call
-        // $pdf->page_text(). The global config/dompdf.php has
-        // `enable_php = false` for safety, so we opt-in per render.
-        // Without this, {PAGE_NUM}/{PAGE_COUNT} never get substituted
-        // and the footer page number is silently dropped.
-        /* One render, reused by preview AND send.
-         *
-         * dompdf is the whole cost here and it degrades faster than the
-         * document grows: a 26-table agreement takes ~1.5 s, a 286-table one
-         * 52 s. Meanwhile the Send-for-Signature modal renders on open and
-         * again on every adjustment, then the send renders the very same
-         * document one final time — the same seconds paid over and over for
-         * bytes that were already produced.
-         *
-         * The key is taken AFTER token resolution, so it already reflects the
-         * agreement body, the resolved party fields and the product table.
-         * Header/footer config, the logo, the signer list and the party's own
-         * identity go in beside it, plus updated_at for the agreement, party
-         * and client so an edit anywhere in that chain misses rather than
-         * serving a stale document. Nothing outside this list reaches the
-         * blade.
-         *
-         * Safe to reuse: two renders of identical input differ only in the
-         * PDF's own CreationDate/ModDate/ID metadata — strip those three and
-         * the bytes are equal, verified on a 73 KB agreement. requestId and
-         * generatedDate are handed to the blade but the template never prints
-         * them, so they cannot vary the output either.
-         *
-         * Best-effort on both sides: a cache that is down, unmigrated or set
-         * to 'array' must never take a send down with it. The worst case is
-         * exactly the behaviour before this existed — render it. */
         $cacheKey = 'clm:agrpdf:' . sha1(implode('|', [
             (int) $agreement->client_id,
             (int) $agreement->id,
@@ -2369,7 +1756,6 @@ class ClmSignatureController extends Controller
                 return base64_decode($hit);
             }
         } catch (\Throwable $e) {
-            // fall through and render
         }
 
         $bytes = Pdf::loadView('pdf.clm-signature-document', [
@@ -2382,8 +1768,6 @@ class ClmSignatureController extends Controller
             'signers'          => $signers ?? [],
             'client'           => $client,
             'headerConfig'     => $headerConfig,
-            // Agreement-library / trade-document renders have no per-document
-            // page setup of their own — the blade's 25px default applies.
             'pageConfig'       => [],
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
@@ -2392,33 +1776,21 @@ class ClmSignatureController extends Controller
             ->setOption('isPhpEnabled', true)
             ->output();
 
-        /* Skip absurd blobs: the store is a database text column and a
-           multi-megabyte base64 row per render is not worth the write. */
         if (strlen($bytes) <= 5 * 1024 * 1024) {
             try {
                 Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(30));
             } catch (\Throwable $e) {
-                // caching is an optimisation, never a requirement
             }
         }
 
         return $bytes;
     }
 
-    /* ─────────────────────── LIST / SHOW ─────────────────────── */
-
     public function index(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Same-as-customer read-through: a consignee flagged
-        // `same_as_customer = true` has no signature requests of its own —
-        // its Stage 3 Trade Documents tab needs to surface the linked
-        // customer's signed PDFs (and any inprogress requests) as if they
-        // were the consignee's. Swap the (party_id, model_name) filter
-        // before the where() clauses so the rest of the pipeline (status,
-        // sync polling, fetchSignedArtifacts) operates uniformly.
         $filterPartyId   = $request->filled('party_id')   ? (int) $request->party_id : null;
         $filterModelName = $request->filled('model_name') ? (string) $request->model_name : null;
         if ($filterPartyId && $filterModelName === 'Consignee') {
@@ -2434,22 +1806,12 @@ class ClmSignatureController extends Controller
             }
         }
 
-        // Honour the BranchSwitcher (see CustomerController::index) so a
-        // client admin viewing "as" a specific branch only sees that
-        // branch's signature requests.
         $q = ClmSignatureRequest::query()
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->latest();
 
         if ($filterPartyId)   $q->where('party_id', $filterPartyId);
         if ($filterModelName) $q->where('model_name', $filterModelName);
-        // Doc-type scoping — the trade-doc and agreement Send flows share
-        // this index but ALWAYS want to see rows of their own doc type.
-        // Without the filter, the LeadAgreementSendModal poller would
-        // pick up trade-doc requests for the same party and try to
-        // project them onto agreement rows that happen to share numeric
-        // IDs. `lead_id` is also accepted so the agreement poller can
-        // scope strictly to the opportunity it's watching.
         if ($request->filled('document_type')) {
             $q->where('document_type', (string) $request->document_type);
         }
@@ -2463,33 +1825,9 @@ class ClmSignatureController extends Controller
 
         $rows = $q->limit(200)->get();
 
-        // Polling-mode refresh — when the caller passes ?sync=true (the
-        // Stage 3 Trade Documents tab does this every 15s), iterate any
-        // still-`inprogress` rows and pull their live status from Zoho.
-        // Newly-completed rows trigger a one-shot signed-PDF + certificate
-        // download so the next list response carries the artefact paths.
-        //
-        // Recovery path — also retry the artifact fetch for rows already
-        // marked `completed` locally but missing `signed_document_paths`
-        // on disk. That happens when the initial fetchSignedArtifacts
-        // succeeded for the certificate (separate try/catch) but Zoho's
-        // per-document PDF download failed transiently (network blip,
-        // Zoho's signed PDF still processing in their pipeline, etc.).
-        // Without this, the user is stuck seeing the Certificate icon
-        // enabled and the View / Download icons disabled forever.
         if ($request->boolean('sync') && $this->zoho->isConfigured()) {
             $changed = false;
 
-            /* Ask Zoho about every still-open request AT ONCE, before the loop.
-               This used to call getRequest() inside the loop, so the response
-               the browser was waiting on carried one serial Zoho round-trip per
-               open request — measured at ~295ms each, which is why a party with
-               several agreements out for signature took seconds to list (QA #7,
-               and the Evidence Vault's own open, which calls this with sync=1).
-               The calls are independent GETs on one cached token, so pooling
-               them costs the slowest call instead of the sum. Nothing is
-               skipped or deferred: the loop below is unchanged, it just reads
-               the details it already has. */
             $syncable = $rows->filter(function (ClmSignatureRequest $row) {
                 if (!$row->zoho_request_id) return false;
                 return $row->status === 'inprogress'
@@ -2508,16 +1846,9 @@ class ClmSignatureController extends Controller
                 if (!$isInProgress && !$isCompletedNoFile) continue;
 
                 try {
-                    /* Pre-fetched above. A key that is present but null means
-                       Zoho was asked and refused (a dead request id, say) —
-                       skip the row exactly as the old catch did, rather than
-                       asking again. Only a MISSING key falls back to a single
-                       call, which is the "never attempted" case. */
                     $key = (string) $row->zoho_request_id;
                     if (array_key_exists($key, $batch) && $batch[$key] === null) continue;
                     $details = $batch[$key] ?? $this->zoho->getRequest($row->zoho_request_id);
-                    // Capture per-signer Viewed / Signed activity from Zoho's
-                    // action_status so the Signing Tracker can show "Viewed on …".
                     if ($this->syncSignerActivity($row, $details)) $changed = true;
                     $newStatus = strtolower((string) data_get($details, 'requests.request_status', $row->status));
                     if ($newStatus !== $row->status) {
@@ -2528,17 +1859,9 @@ class ClmSignatureController extends Controller
                         $row->save();
                         $changed = true;
                     }
-                    // Capture WHO/WHY/WHEN on a decline (or recall) so the
-                    // tracker + list can show the reason & timestamp.
                     if (in_array($newStatus, ['declined', 'rejected', 'recalled'], true)) {
                         if ($this->stampDeclineFromZoho($row, $details)) $changed = true;
                     }
-                    // Retry artifact fetch on EVERY completed-with-no-file
-                    // pass too, not just on the status transition. Cheap
-                    // when files already exist (fetchSignedArtifacts
-                    // overwrites on success). The user's "View/Download
-                    // stuck disabled" stops as soon as the PDF download
-                    // succeeds.
                     if (
                         $newStatus === 'completed'
                         && empty($row->fresh()->signed_document_paths)
@@ -2555,20 +1878,7 @@ class ClmSignatureController extends Controller
             }
         }
 
-        // Resolve every stored file path into a public URL the SPA can
-        // open directly. We can't ship raw `uploads/…` paths in the JSON
-        // because on the deployed environment the files live in Azure
-        // (cbc-saas blob container) while the SPA is served from a
-        // different origin — a relative `/uploads/…` would 404 against
-        // the API host. Using file_url() (app/helpers.php) mirrors the
-        // pattern every other controller already uses (CustomerOwner,
-        // ConsigneeDocument, EmployeeDocument, …) so the frontend sees
-        // the same shape of URL on every endpoint.
         $rows->transform(function (ClmSignatureRequest $row) {
-            // Per-document URLs. Saved-paths shape is:
-            //   [ { zoho_document_id, document_name, path, url, file_url, size? }, … ]
-            // Older rows may carry only `path`. Resolve each into a fresh
-            // `file_url` so the frontend never has to know about disks.
             $multi = is_array($row->signed_document_paths) ? $row->signed_document_paths : [];
             $resolvedMulti = array_map(function ($entry) {
                 if (!is_array($entry)) return $entry;
@@ -2582,39 +1892,11 @@ class ClmSignatureController extends Controller
                 return $entry;
             }, $multi);
 
-            /* Disk-scan fallback. When status === 'completed' but
-             * signed_document_paths is empty, the actual signed PDFs
-             * frequently DO exist in the customer/consignee/vendor
-             * signed_documents folder — fetchSignedArtifacts wrote them
-             * successfully in a prior run but a later partial-fail or DB
-             * blip left the column unset.
-             *
-             * Rather than fight Zoho for another download, just list the
-             * folder and match by document-name slug (the same slug
-             * fetchSignedArtifacts uses when naming the blob:
-             * `signed_<slug>_<ts>_<i>.pdf`). Most-recent file per doc
-             * wins, surfacing the latest send.
-             *
-             * Results are merged into $resolvedMulti at READ time only —
-             * we don't persist them, so the next successful Zoho retry
-             * (which writes a richer payload with zoho_document_id +
-             * size) is still authoritative when it lands. */
             if (empty($resolvedMulti) && $row->status === 'completed') {
                 $fromDisk = $this->adoptSignedDocsFromDisk($row);
                 if (!empty($fromDisk)) $resolvedMulti = $fromDisk;
             }
 
-            // Surface the resolved URLs alongside the path columns so the
-            // frontend's polling loop (and any future consumer) can read
-            // them directly without re-resolving against another origin.
-            // Single-doc convenience pointer mirrors the multi array shape.
-            // NOTE: the signed-document URLs must NOT fall back to the
-            // certificate. The completion certificate is a different artifact
-            // (audit trail), exposed separately via `certificate_url`. When
-            // the actual signed PDF hasn't been fetched yet (e.g. the Zoho
-            // refresh token lacks the ZohoSign.documents.READ scope), these
-            // stay null so the UI shows "signed PDF unavailable" instead of
-            // silently serving the certificate as if it were the document.
             $firstSignedFromDisk = $resolvedMulti[0]['file_url'] ?? null;
             $signedUrl = file_url($row->signed_document_path) ?: $firstSignedFromDisk;
             $row->setAttribute('signed_document_url',  $signedUrl);
@@ -2627,21 +1909,12 @@ class ClmSignatureController extends Controller
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
-    /**
-     * Sync status from Zoho. When the request has just completed, this is
-     * also the point at which we pull the signed PDFs + completion
-     * certificate down into local storage.
-     */
     public function show(Request $request, $id)
     {
         $user = $request->user();
         if (!$user) abort(401);
         $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
 
-        // Per-recipient status from Zoho's `actions` array, keyed by email.
-        // Lets the tracker show each signer individually (one "Signed", one
-        // "Viewed", one "Pending") instead of painting every row with the
-        // single overall request status.
         $perSigner = [];
         $pickTimeMs = function (array $a, array $keys): ?string {
             foreach ($keys as $k) {
@@ -2669,14 +1942,8 @@ class ClmSignatureController extends Controller
                 }
             }
 
-            // Stamp per-signer Viewed/Signed times onto the stored row so the
-            // modal reflects the latest even when opened directly (not via the
-            // list's sync poll).
             $this->syncSignerActivity($row, $details);
 
-            // On a declined / recalled request, stamp the reason + timestamp
-            // (and mark the declining signer) — backfills older rows too since
-            // this runs on every show() regardless of a status change.
             if (in_array($zohoState, ['declined', 'rejected', 'recalled'], true)) {
                 $this->stampDeclineFromZoho($row, $details);
             }
@@ -2696,18 +1963,11 @@ class ClmSignatureController extends Controller
 
         $fresh   = $row->fresh();
         $overall = strtolower((string) $fresh->status);
-        // Normalise a raw Zoho action_status (or fall back to the overall
-        // request state when an action carries no explicit per-signer signal).
         $normalize = function (string $raw) use ($overall): string {
             if (in_array($raw, ['signed', 'completed', 'approved'], true))  return 'signed';
-            /* Checked BEFORE the decline bucket. An undelivered action carries
-               no refusal — nobody read the document, let alone rejected it —
-               and calling it "declined" is the false state this whole change
-               exists to remove. */
             if ($this->isUndeliveredStatus($raw))                           return 'undelivered';
             if (in_array($raw, ['declined', 'rejected', 'recalled'], true)) return 'declined';
             if ($raw === 'viewed')                                          return 'viewed';
-            // No explicit signal — a completed request means everyone signed.
             if ($overall === 'completed') return 'signed';
             return 'pending';
         };
@@ -2717,16 +1977,9 @@ class ClmSignatureController extends Controller
             $email = strtolower((string) ($s['email'] ?? ''));
             $info  = $perSigner[$email] ?? ['raw' => '', 'signed_at' => null, 'viewed_at' => null];
 
-            // Timestamps ALREADY captured on the stored signer by
-            // syncSignerActivity (from Zoho's request-level action_time) are
-            // authoritative — Zoho's per-action objects carry no view/sign
-            // time, so the freshly-derived $info times are almost always null.
-            // Preserve the stored ones; only fall back when they're missing.
             $storedViewed = $s['viewed_at'] ?? null;
             $storedSigned = $s['signed_at'] ?? null;
 
-            // Status: prefer a fresh Zoho action_status; fall back to the
-            // stored one so we never downgrade a known Signed/Viewed signer.
             $raw    = $info['raw'] !== '' ? $info['raw'] : strtolower((string) ($s['action_status'] ?? ''));
             $status = $normalize($raw);
 
@@ -2735,13 +1988,8 @@ class ClmSignatureController extends Controller
             $s['signed_at'] = $storedSigned
                 ?: ($info['signed_at']
                     ?? ($status === 'signed' ? optional($fresh->completed_at)->toIso8601String() : null));
-            /* A bounced recipient has no view time. Guard it here as well as in
-               syncSignerActivity, because this fallback reads `delivered_time`
-               into viewed_at — on a delivery failure that would resurrect the
-               very "Reviewed by signer(s)" claim we just removed. */
             $s['viewed_at'] = $status === 'undelivered' ? null : ($storedViewed ?: $info['viewed_at']);
 
-            // Explicit, so the UI never has to re-derive it from raw Zoho words.
             $s['delivery_failed']    = $status === 'undelivered';
             $s['delivery_failed_at'] = $s['delivery_failed']
                 ? ($s['delivery_failed_at'] ?? optional($fresh->updated_at)->toIso8601String())
@@ -2752,10 +2000,6 @@ class ClmSignatureController extends Controller
         $payload = $fresh->toArray();
         $payload['signers'] = $signersOut;
 
-        /* Request-level roll-up. The timeline needs one boolean to decide
-           whether this round ended in a bounce, and naming the recipients is
-           what makes the message actionable — "fix this address", not "an email
-           failed somewhere". */
         $undeliveredTo = collect($signersOut)
             ->filter(fn($s) => !empty($s['delivery_failed']))
             ->map(fn($s) => (string) ($s['name'] ?: $s['email'] ?: 'signer'))
@@ -2763,12 +2007,6 @@ class ClmSignatureController extends Controller
         $payload['delivery_failed']         = count($undeliveredTo) > 0;
         $payload['undelivered_recipients']  = $undeliveredTo;
 
-        // Attempt trail — a re-send after a decline is a fresh request, so the
-        // full decline→resend history for ONE document is spread across sibling
-        // rows. Return them (oldest→newest) so the tracker can show every
-        // attempt (Declined → Resent → …) in a single timeline. Only resolved
-        // for single-document types (PI / Quotation / PO) where trade_doc_id
-        // uniquely identifies the document; multi-doc bundles skip it (empty).
         $payload['attempts'] = [];
         if ($fresh->trade_doc_id) {
             try {
@@ -2780,17 +2018,11 @@ class ClmSignatureController extends Controller
                     ->orderBy('created_at')
                     ->get(['id', 'status', 'created_at', 'declined_at', 'decline_reason', 'recalled_at', 'recall_reason', 'completed_at', 'reminder_count', 'signers']);
                 $payload['attempts'] = $sibs->map(function ($r) {
-                    // Earliest "viewed" across this attempt's signers so each
-                    // round can render its own Sent → Viewed → Declined trail.
                     $viewed = collect(is_array($r->signers) ? $r->signers : [])
                         ->pluck('viewed_at')->filter()->sort()->first();
                     return [
                         'id'             => $r->id,
                         'status'         => $r->status,
-                        /* Whether THIS round bounced, read from its stored
-                           signers. The timeline used to infer it from a missing
-                           viewed_at, which was a guess — and a guess that broke
-                           as soon as anything else left viewed_at empty. */
                         'delivery_failed' => $this->rowHasDeliveryFailure($r),
                         'created_at'     => optional($r->created_at)->toIso8601String(),
                         'viewed_at'      => $viewed ?: null,
@@ -2812,25 +2044,10 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-    /**
-     * When Zoho reports a declined / rejected / recalled request, stamp the
-     * decline metadata onto the signature request so the tracker + lists can
-     * show WHO declined, WHY and WHEN. Without this the sync only flips
-     * `status` and `declined_at` / `decline_reason` stay null.
-     *
-     * Idempotent: the timestamp is written once (first time we see it); the
-     * reason is refreshed if Zoho later surfaces one. Also marks the declining
-     * signer(s) inside the stored `signers` array with their own reason so the
-     * per-signer detail table can render it. Returns true if anything changed
-     * (so the list sync knows to re-query). Mirrors the reason-extraction
-     * already used for CTC contracts in ctcSignatureStatus().
-     */
     private function stampDeclineFromZoho(ClmSignatureRequest $row, array $details): bool
     {
         $reqStatus = strtolower((string) data_get($details, 'requests.request_status', ''));
 
-        // Zoho's decline-reason key is inconsistent across orgs/versions —
-        // take the first non-empty from a broad candidate list.
         $pickReason = function (array $a): string {
             foreach (['reason', 'reject_reason', 'rejection_reason', 'decline_reason', 'declined_reason', 'recipient_comment', 'comments', 'comment', 'action_comment'] as $k) {
                 if (!empty($a[$k])) return (string) $a[$k];
@@ -2846,18 +2063,8 @@ class ClmSignatureController extends Controller
             }
         }
 
-        // Locate the declining signer(s) from the per-recipient actions.
         $reasonByEmail  = [];
         $declinedReason = '';
-        /* DECLINE actions only — `recalled` is not one.
-           This list used to include 'recalled', and $reasonByEmail then fed
-           $isDeclined below. So a single recipient action of `recalled` on a
-           request whose own status was still `inprogress` marked the entire
-           request DECLINED: the row went red, the timeline said "A signer
-           declined the document", and nobody had declined anything.
-           A recall is our side withdrawing the request; a decline is the
-           signer refusing it. They are opposite events and cannot share a
-           bucket. Recall is detected from the REQUEST status, just below. */
         foreach (data_get($details, 'requests.actions', []) as $a) {
             $st = strtolower((string) ($a['action_status'] ?? ''));
             if (!in_array($st, ['declined', 'rejected'], true)) continue;
@@ -2872,10 +2079,6 @@ class ClmSignatureController extends Controller
             || (!$isRecalled && !empty($reasonByEmail));
         if (!$isDeclined && !$isRecalled) return false;
 
-        // Use Zoho's ACTUAL action time (the instant the signer declined),
-        // not our sync-detection time. Zoho returns `action_time` (epoch-ms)
-        // for the most recent action — the decline/recall we're processing.
-        // Fall back to the declining action's own time, then to now().
         $actionMs = (int) (data_get($details, 'requests.action_time') ?: 0);
         if ($actionMs <= 0) {
             foreach (data_get($details, 'requests.actions', []) as $a) {
@@ -2912,22 +2115,12 @@ class ClmSignatureController extends Controller
                 $row->decline_reason = $reason;
                 $changed = true;
             }
-            /* BR-16 / section 8.8: one party declining voids the WHOLE request,
-               so the counterparties who have not signed yet are stopped instead
-               of being left able to complete a document that can never finish.
-               CTC agreements already did this from their own sync; agreements
-               and trade documents reach the decline here, and section 2 allows
-               no module-specific deviation. Only on the FIRST sighting - the
-               helper is idempotent anyway, but this avoids calling Zoho again
-               on every later status poll. The row is never deleted: the voided
-               cycle stays auditable and the next send creates a new request. */
             if ($firstSighting) {
                 $this->voidSignatureRequest($row, $reason !== '' ? $reason : 'Declined by a signer');
                 $changed = true;
             }
         }
 
-        // Tag the declining signer(s) in the stored signers array.
         if (!empty($reasonByEmail) && is_array($row->signers)) {
             $signers = $row->signers;
             $touched = false;
@@ -2973,9 +2166,6 @@ class ClmSignatureController extends Controller
             $row->reminder_count        = (int) $row->reminder_count + 1;
             $row->save();
 
-            // Echo the updated counter + timestamp so the frontend can
-            // bump the on-button badge without a full refetch. Customer /
-            // consignee / vendor / agreement flows all read these.
             return response()->json([
                 'status'  => true,
                 'message' => 'Reminder sent',
@@ -2987,12 +2177,6 @@ class ClmSignatureController extends Controller
             ]);
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
-            // Zoho error 4066 "Invalid Request ID" → the signing request no
-            // longer exists in the connected Zoho account (created under a
-            // different account / data-centre, sent in testing mode, or removed
-            // on Zoho's side). Reminding/recalling will always fail, leaving the
-            // document stuck in "Sent". Reset the LOCAL status so the user can
-            // simply send it for signature again with a fresh request.
             if (str_contains($msg, '4066') || stripos($msg, 'Invalid Request ID') !== false) {
                 $row->status      = 'recalled';
                 $row->recalled_at = now();
@@ -3029,8 +2213,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /* ─────────────────────── Signed-file streaming ─────────────────────── */
-
     public function downloadFile(Request $request, $id, $index)
     {
         return $this->streamSignedFile($request, $id, (int) $index, 'attachment');
@@ -3049,7 +2231,6 @@ class ClmSignatureController extends Controller
 
         $paths = is_array($row->signed_document_paths) ? $row->signed_document_paths : [];
         if (empty($paths)) {
-            // Lazy-pull from Zoho if the row says completed but local files are missing.
             if ($row->status === 'completed') {
                 $details = $this->zoho->getRequest($row->zoho_request_id);
                 $this->fetchSignedArtifacts($row, $details);
@@ -3095,12 +2276,6 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-    /**
-     * Download the DECLINED document — the version the signer reviewed and
-     * declined. A declined request has no signed PDF, so we pull the document
-     * straight from Zoho (downloadRequestPdf works regardless of status). Lets
-     * the sender see exactly what was rejected before re-sending.
-     */
     public function declinedFile(Request $request, $id)
     {
         $user = $request->user();
@@ -3114,9 +2289,6 @@ class ClmSignatureController extends Controller
             return response()->json(['status' => false, 'message' => 'The declined document is not available.'], 404);
         }
 
-        // Stored filename: <doc code>_<customer>_declined.pdf (e.g. the PI code
-        // + the customer/party name). Kept in our own storage so the file is
-        // served from us — not proxied from Zoho on every click.
         $slug = fn($s) => trim(preg_replace('/_+/', '_', preg_replace('/[^A-Za-z0-9]+/', '_', (string) $s)), '_');
         $party    = $row->party;
         $customer = (string) (data_get($party, 'company_name') ?: data_get($party, 'name') ?: '');
@@ -3124,13 +2296,8 @@ class ClmSignatureController extends Controller
         $fileBase = $slug($codeBase) . ($customer ? '_' . $slug($customer) : '') . '_declined';
         $storePath = 'signed_documents/declined/' . $row->id . '_' . $fileBase . '.pdf';
 
-        // Fetch + cache once; serve from our disk thereafter.
         if (!Storage::disk('public')->exists($storePath)) {
             try {
-                // A declined request has no signed/completed PDF, so pull the
-                // DOCUMENT that was sent (the version the signer reviewed) — the
-                // per-document endpoint works regardless of completion. Fall
-                // back to the request-level PDF only if no document id is stored.
                 $docIds  = is_array($row->zoho_document_ids) ? $row->zoho_document_ids : [];
                 $firstDoc = null;
                 foreach ($docIds as $d) {
@@ -3141,8 +2308,6 @@ class ClmSignatureController extends Controller
                     ? $this->zoho->downloadDocumentPdf($row->zoho_request_id, (string) $firstDoc)
                     : $this->zoho->downloadRequestPdf($row->zoho_request_id);
 
-                // Guard against Zoho handing back an error page / JSON with a 200
-                // (which is what produced the "Failed to load PDF" earlier).
                 if (substr($pdf, 0, 4) !== '%PDF') {
                     throw new RuntimeException('Zoho did not return a valid PDF for the declined document.');
                 }
@@ -3159,48 +2324,6 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-    /* ─────────────────────── Helpers ─────────────────────── */
-
-    /**
-     * Render a single ClmTradeDocLibrary draft into a DomPDF instance with
-     * the customer's data merged into placeholder tokens. Centralised so
-     * preview + send go through identical rendering.
-     */
-    /**
-     * Status of a just-submitted Zoho request, waiting only as long as it
-     * actually takes.
-     *
-     * Zoho needs a moment to flip a submitted request from 'draft' to
-     * 'inprogress', and all four send paths handled that with a flat
-     * sleep(1) followed by a single fetch. That second was spent on EVERY
-     * send whether Zoho had already flipped or not — dead time on top of a
-     * request already dominated by PDF rendering and four sequential Zoho
-     * round-trips.
-     *
-     * This polls instead and returns the moment the status is no longer
-     * 'draft', capped at the same one second so the worst case is never
-     * slower than before. Same status, same 'inprogress' fallback on error —
-     * only the waiting is shorter.
-     */
-    /**
-     * The recipient actions and document ids of a just-created Zoho request,
-     * without paying for a second round trip when the first already carried
-     * them.
-     *
-     * All four send paths created the request and then immediately fetched it
-     * back to read `actions` and `document_ids`. Zoho returns both on the
-     * create call itself, so that fetch was a whole network round trip spent
-     * re-reading what had just been handed over — on a request already paying
-     * for PDF rendering and two more Zoho calls.
-     *
-     * Both fields must be present and non-empty before the create response is
-     * trusted; anything less falls through to exactly the fetch that ran
-     * before. So a Zoho account or API version that omits them behaves as it
-     * always did, and nothing here can send a request with an empty action or
-     * document list.
-     *
-     * @return array{0:array,1:array} [actions, documentIds]
-     */
     private function zohoRequestShape($createResp, string $zohoRequestId): array
     {
         $actions = data_get($createResp, 'requests.actions',      []);
@@ -3217,7 +2340,7 @@ class ClmSignatureController extends Controller
     }
     private function awaitSubmittedStatus(string $zohoRequestId): string
     {
-        $deadline = microtime(true) + 1.0;   // never longer than the old sleep
+        $deadline = microtime(true) + 1.0;
         $status   = 'draft';
         do {
             try {
@@ -3228,7 +2351,7 @@ class ClmSignatureController extends Controller
                 return 'inprogress';
             }
             if ($status !== 'draft') return $status;
-            usleep(200_000);                 // 200 ms between checks
+            usleep(200_000);
         } while (microtime(true) < $deadline);
 
         return $status;
@@ -3244,88 +2367,34 @@ class ClmSignatureController extends Controller
         ?string $contentOverride = null,
         ?Lead $lead = null,
     ) {
-        /* dompdf is slow on a long body, and PHP's 60s default killed the modal's
-           preview mid-render (CS-414) — the request died inside dompdf's CSS
-           parser with nothing rendered. Raised per document, not per request, so
-           a bulk send of several documents gives each one the same room; every
-           other PDF path in the app already does this.
-           The memory limit goes with it, and for the same reason: dompdf holds
-           the whole document tree, a 15-page contract peaks at 392 MB here, and
-           the default killed long documents outright. */
         @ini_set('memory_limit', '1024M');
         @set_time_limit(180);
 
-        // Content override takes precedence over the row's saved HTML —
-        // used by the Send-for-Signature modal when the user pastes in
-        // a table via Insert Table or otherwise edits the body inline.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $doc->content;
-        // Strip the wrong party family (supplier vs customer/consignee) per the
-        // trade document's applicable party BEFORE resolving tokens — otherwise
-        // the lead's customer/consignee (always in $allParties) resolve into a
-        // supplier document and can't be removed afterwards.
         $sourceHtml    = $this->hideOtherPartyTokens($sourceHtml, $doc->party ?? null);
-        // Resolve EVERY party the opportunity has mapped so BOTH {{customer.*}}
-        // AND {{consignee.*}} tokens fill in. The trade-doc send flow only
-        // loads a single primary party ($party), so a Buyer+Consignee document
-        // was leaving the consignee tokens raw — pull the lead's customer +
-        // consignee here and hand them to replacePlaceholders as extra parties.
         $allParties = [];
         if ($lead) {
             $cust = $lead->customer_id  ? Customer::where('client_id', $doc->client_id)->find($lead->customer_id)   : null;
             $cons = $lead->consignee_id ? Consignee::where('client_id', $doc->client_id)->find($lead->consignee_id) : null;
             if ($cust) $allParties['Customer'] = $cust;
-            // Include the consignee whenever the lead has one. Even a
-            // same-as-customer consignee carries mirrored data and MUST resolve
-            // its own {{consignee.*}} tokens — the Customer entry only fills
-            // {{customer.*}}, so skipping it left {{consignee.*}} raw in the PDF.
             if ($cons) $allParties['Consignee'] = $cons;
         }
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
-        // Expand the {{product.*}} table into one row per opportunity product.
         $processedHtml = $this->expandProductTable($processedHtml, $lead);
-        /* A `<td>` left outside its `<table>` makes dompdf throw "Parent table
-           not found for table cell" and the whole render 500s — the editor shows
-           such an orphan exactly like a browser does, so nobody can see it
-           coming. Repaired here, after the tokens and the product table have
-           been expanded, so generated markup is covered too. (QA #67) */
         $processedHtml = PdfHtml::repairTableMarkup($processedHtml);
         $client = Client::find($doc->client_id);
 
-        // Saved Stage 2 page-shell config — drives the PDF's header/footer
-        // so the user's draft preview matches what gets sent. Cast pulls
-        // them back as arrays from the JSON column; missing on legacy
-        // rows → null (blade falls back to a minimal client-name header
-        // so older drafts still render).
-        //
-        // Per-render overrides win when present. The Send-for-Signature
-        // modal POSTs an in-progress header/footer config alongside the
-        // preview/send call so the user's inline tweaks render without
-        // mutating the saved row.
         $headerConfig = is_array($headerOverride) ? $headerOverride
             : (is_array($doc->header_config) ? $doc->header_config : []);
         $footerConfig = is_array($footerOverride) ? $footerOverride
             : (is_array($doc->footer_config) ? $doc->footer_config : []);
 
-        // dompdf can't fetch /storage URLs at render time, so resolve the
-        // saved header logo to a base64 data URL up-front. Prefer the
-        // per-doc header logo the user uploaded via HeaderFooterPanel.
-        // Fall back to the URL-encoded variant (rows seeded from /me's
-        // branch_logo only carry `logo_url`, not `logo_path`), then to
-        // the tenant client's branding logo for true legacy rows.
         $headerLogoBase64 = $this->resolveLogoBase64(
             $headerConfig['logo_path'] ?? null,
             $this->pathFromStorageUrl($headerConfig['logo_url'] ?? null),
             $client?->logo,
         );
 
-        // Opt-in to inline PHP so the blade's footer page-number
-        // <script type="text/php"> can stamp {PAGE_NUM}/{PAGE_COUNT}.
-        // See the agreement render path for the same toggle + rationale.
-        /* Same render cache as the agreement path above, same reasoning: the
-           preview renders on open and again on every adjustment, then the send
-           renders the identical document once more. See renderAgreementPdf()
-           for why the key is taken after token resolution and why reusing the
-           bytes is safe. */
         $cacheKey = 'clm:tdpdf:' . sha1(implode('|', [
             (int) $doc->client_id,
             (int) $doc->id,
@@ -3346,7 +2415,6 @@ class ClmSignatureController extends Controller
                 return base64_decode($hit);
             }
         } catch (\Throwable $e) {
-            // fall through and render
         }
 
         $bytes = Pdf::loadView('pdf.clm-signature-document', [
@@ -3359,8 +2427,6 @@ class ClmSignatureController extends Controller
             'signers'          => $signers ?? [],
             'client'           => $client,
             'headerConfig'     => $headerConfig,
-            // Agreement-library / trade-document renders have no per-document
-            // page setup of their own — the blade's 25px default applies.
             'pageConfig'       => [],
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
@@ -3373,19 +2439,12 @@ class ClmSignatureController extends Controller
             try {
                 Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(30));
             } catch (\Throwable $e) {
-                // caching is an optimisation, never a requirement
             }
         }
 
         return $bytes;
     }
 
-    /**
-     * Walk candidate storage paths in priority order and return the
-     * first one that resolves to a file on the public disk, base64-
-     * encoded for inline embedding in the PDF. Returns '' when none of
-     * them resolve, so the blade renders a text-only header band.
-     */
     private function resolveLogoBase64(?string ...$candidates): string
     {
         $disk = \Illuminate\Support\Facades\Storage::disk('public');
@@ -3394,11 +2453,6 @@ class ClmSignatureController extends Controller
             try {
                 if (!$disk->exists($path)) continue;
 
-                // Cache the flattened + encoded logo keyed by path + mtime so
-                // the Send-for-Signature modal — which re-renders the preview
-                // on every page-nav and inline edit — doesn't re-run the GD
-                // flatten + base64 on every call. A logo re-upload changes
-                // lastModified and busts the entry.
                 $stamp    = (string) ($disk->lastModified($path) ?: 0);
                 $cacheKey = 'clm_sig_logo_b64:' . md5($path . '|' . $stamp);
 
@@ -3407,34 +2461,16 @@ class ClmSignatureController extends Controller
                     now()->addDay(),
                     function () use ($disk, $path) {
                         $bytes = $disk->get($path);
-                        // Flatten any alpha channel onto white + downscale
-                        // before embedding. DomPDF renders transparent PNGs by
-                        // splitting an alpha mask pixel-by-pixel in pure PHP —
-                        // on a large logo that loop runs width×height times and
-                        // can blow past PHP's max_execution_time (the same
-                        // slowdown SalesPdfController::flattenImageForPdf fixes
-                        // for the Quotation/PI render). The blade always emits
-                        // `data:image/png;base64,…`, so PNG output is correct.
                         $flat = $this->flattenImageForPdf($bytes);
                         return base64_encode($flat ?? $bytes);
                     }
                 );
             } catch (\Throwable $e) {
-                // try the next candidate
             }
         }
         return '';
     }
 
-    /**
-     * Composite an image onto a solid white background (dropping any alpha
-     * channel) and downscale it to a sane max width, returning PNG bytes — or
-     * null if GD isn't available or the bytes aren't a decodable image.
-     *
-     * Mirrors SalesPdfController::flattenImageForPdf. Handing DomPDF an opaque
-     * (no-alpha) PNG avoids its pure-PHP transparent-PNG pixel walk, which is
-     * the main cause of slow / timing-out signature-document renders.
-     */
     private function flattenImageForPdf(string $bytes, int $maxWidth = 800): ?string
     {
         if (!function_exists('imagecreatefromstring')) return null;
@@ -3470,14 +2506,6 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /**
-     * Pull the storage-relative path out of a public-disk URL. Accepts
-     * both `/storage/foo/bar.png` and `https://example.com/storage/foo/bar.png`
-     * forms — anything after the first `/storage/` segment is the
-     * storage-relative path on the public disk. Used so existing trade-doc
-     * rows seeded from /me's branch_logo (URL only, no path) still render
-     * their logo in the PDF.
-     */
     private function pathFromStorageUrl(?string $url): ?string
     {
         if (!$url) return null;
@@ -3487,36 +2515,10 @@ class ClmSignatureController extends Controller
         return null;
     }
 
-    /**
-     * Replace the {{customer.*}} / {{consignee.*}} / {{supplier.*}} tokens
-     * the [[ClmInsertPlaceholderModal]] picker writes into the draft.
-     *
-     * Only the token namespace matching the request's $modelName is
-     * resolved from real data — the other two stay literal so they're
-     * visible to the human reviewer (and obvious when the wrong template
-     * is paired with the wrong party). The signature tokens for ALL
-     * three parties always become sig-boxes since visual placement is
-     * independent of which signer actually completes them.
-     *
-     * Customer / Consignee / Vendor share the same shape (company_name,
-     * primary_email, primaryAddress with cp_*), so a single resolver
-     * over the relevant party works for all three.
-     */
-    /**
-     * Hide the OTHER party family so the two sides never mix on a document.
-     * A Buyer / Consignee document must not show {{supplier.*}} and a Supplier
-     * document must not show {{customer.*}} / {{consignee.*}} ({{buyer.*}} alias).
-     * The sides are mutually exclusive (enforced when authoring the doc), so the
-     * document's own applicable-party decides which family to strip. Runs on the
-     * RAW content BEFORE token resolution (for a supplier doc the lead's customer
-     * + consignee are otherwise resolved into real text and can't be stripped
-     * afterwards). Blank/legacy party ⇒ no stripping (keeps old behaviour).
-     */
     private function hideOtherPartyTokens(string $html, ?string $applicableParty): string
     {
         $p = strtolower(trim((string) $applicableParty));
         if ($p === '' || $html === '') return $html;
-        // Decode entity-encoded braces (Word / Docs paste) so the regex matches.
         $html = str_replace(
             ['&#123;', '&#x7B;', '&#125;', '&#x7D;', '&lcub;', '&rcub;'],
             ['{',      '{',      '}',      '}',      '{',      '}'],
@@ -3533,32 +2535,13 @@ class ClmSignatureController extends Controller
     {
         if ($html === '') return '<p></p>';
 
-        // Substitute the primary party first, then iterate every extra
-        // party from $extraParties so a Buyer+Consignee agreement gets
-        // BOTH `{{customer.*}}` AND `{{consignee.*}}` resolved. The
-        // `extraParties` map is keyed by model name (Customer / Consignee
-        // / Vendor) so we can skip the primary when it appears in the
-        // map too.
         $html = $this->replacePartyNamespaceTokens($html, $party, $modelName);
         foreach ($extraParties as $extraModelName => $extraParty) {
             if (!$extraParty) continue;
-            if ($extraModelName === $modelName) continue; // already done
+            if ($extraModelName === $modelName) continue;
             $html = $this->replacePartyNamespaceTokens($html, $extraParty, $extraModelName);
         }
 
-        // Signature placeholders — every party variant becomes a styled
-        // sig-box. The unique invisible marker (rendered at 0.5pt in a
-        // near-white colour) is picked up by the frontend PDF.js detector
-        // so it can use the placeholder's rendered position as the default
-        // for the draggable signature overlay. Zoho's real signature
-        // widget is positioned by the (x, y, page) coords in the submit
-        // payload — the box here is purely visual + detection scaffolding.
-        //
-        // `buyer` is an alias for `customer` so the agreement Stage-2
-        // picker's `{{buyer.signature}}` resolves the same way as the
-        // trade-doc `{{customer.signature}}`. Regex pass instead of
-        // str_replace so `{{ buyer.signature }}` / case-variants also
-        // resolve (matches the body-token tolerance above).
         $signatureAliases = [
             'customer'  => 'customer',
             'buyer'     => 'customer',
@@ -3575,30 +2558,11 @@ class ClmSignatureController extends Controller
             $html = preg_replace($pattern, $sigBox, $html);
         }
 
-        // OUR-ORGANISATION tokens last. These are un-namespaced, so they can't
-        // collide with the {{ns.field}} party tokens resolved above, and the
-        // bare {{signature}} is untouched by the alias loop (every alias there
-        // requires a dot).
         $html = $this->replaceOrgBranchTokens($html);
 
         return $html;
     }
 
-    /**
-     * Our-organisation tokens for Trade Documents + Agreements —
-     * {{company_name}} {{company_no}} {{email}} {{contact_no}} {{address}}
-     * {{signature}} — the same set the CTC editor offers.
-     *
-     * Resolved from the BRANCH of the user raising the send. A branch login
-     * gets its own branch, and an employee under it gets that same branch, so
-     * the document always carries the issuing office's details. (CTC picks its
-     * organisation explicitly; Trade Docs / Agreements have no such picker,
-     * hence the sender's branch.)
-     *
-     * A missing branch (or a blank column) resolves to an empty string rather
-     * than being left alone: a raw {{company_no}} leaking into a signed PDF is
-     * worse than a blank.
-     */
     private function replaceOrgBranchTokens(string $html): string
     {
         if (strpos($html, '{{') === false) return $html;
@@ -3615,7 +2579,7 @@ class ClmSignatureController extends Controller
 
         $values = [
             'company_name' => e((string) ($branch->name  ?? '')),
-            'company_no'   => e((string) ($branch->cin   ?? '')),   // registered company number (CIN)
+            'company_no'   => e((string) ($branch->cin   ?? '')),
             'email'        => e((string) ($branch->email ?? '')),
             'contact_no'   => e((string) ($branch->phone ?? '')),
             'address'      => e($address),
@@ -3624,9 +2588,6 @@ class ClmSignatureController extends Controller
             $html = preg_replace('/\{\{\s*' . $token . '\s*\}\}/iu', $value, $html);
         }
 
-        // Authorised signatory + stamp. display:block for the same reason the
-        // CTC render carries it — an 80px image left inline overlaps the text
-        // above it in dompdf, which does not grow a line box to fit an image.
         $sig = $this->branchSignatureDataUri($branch);
         $sigHtml = $sig
             ? '<img src="' . $sig . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />'
@@ -3634,7 +2595,6 @@ class ClmSignatureController extends Controller
         return preg_replace('/\{\{\s*signature\s*\}\}/iu', $sigHtml, $html);
     }
 
-    /** A branch's signature+stamp image as a data URI (dompdf can't fetch URLs). */
     private function branchSignatureDataUri(?Branch $branch): ?string
     {
         $path = $branch?->signature_path;
@@ -3651,24 +2611,10 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /**
-     * Expand a {{product.*}} template row into one table row per product on
-     * the opportunity. The Insert Placeholder picker drops a product table
-     * whose single <tr> carries {{product.sr}} / {{product.code}} /
-     * {{product.name}} / {{product.segment}} / {{product.quantity}}. We locate
-     * that row and repeat it for every product mapped to the lead (same source
-     * the Sales-Matrix product tabs use), substituting the real values.
-     *
-     * No lead, no product token, or no products mapped → we still resolve the
-     * tokens (to a single blank/empty row) so raw {{product.*}} text never
-     * leaks into the signed PDF.
-     */
     private function expandProductTable(string $html, ?Lead $lead): string
     {
         if (strpos($html, '{{product.') === false) return $html;
 
-        // Decode entity-encoded braces (Word / Google-Docs paste) so the row
-        // regex below matches — mirrors replacePartyNamespaceTokens().
         $html = str_replace(
             ['&#123;', '&#x7B;', '&#125;', '&#x7D;', '&lcub;', '&rcub;'],
             ['{',      '{',      '}',      '}',      '{',      '}'],
@@ -3686,10 +2632,7 @@ class ClmSignatureController extends Controller
             ->get()
             : collect();
 
-        // Locate the single <tr> holding the product tokens. Non-greedy and
-        // guarded with a negative-lookahead so it can't swallow sibling rows.
         if (!preg_match('/<tr\b[^>]*>(?:(?!<\/tr>).)*?\{\{product\.[^}]*\}\}(?:(?!<\/tr>).)*?<\/tr>/is', $html, $m)) {
-            // Token used inline (not in a row) — fall back to the first product.
             return $this->fillProductTokens($html, $products->first(), 1);
         }
         $templateRow = $m[0];
@@ -3704,12 +2647,10 @@ class ClmSignatureController extends Controller
             }
         }
 
-        // Replace only the first occurrence of the template row.
         $pos = strpos($html, $templateRow);
         return substr_replace($html, $rows, $pos, strlen($templateRow));
     }
 
-    /** Substitute the {{product.*}} tokens inside one row / snippet. */
     private function fillProductTokens(string $snippet, ?LeadProduct $p, int $sr): string
     {
         return strtr($snippet, [
@@ -3724,24 +2665,8 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-    /**
-     * Substitute one party's tokens (`{{customer.name}}`, `{{customer.email}}`,
-     * etc.) into the HTML. Split out of replacePlaceholders so the agreement
-     * render path can call it once per applicable party — Customer + Consignee
-     * tokens both get resolved on a Buyer+Consignee agreement.
-     */
     public static function replacePartyNamespaceTokens(string $html, Model $party, string $modelName): string
     {
-        // Each Eloquent class maps to one OR MORE user-facing token
-        // namespaces because two pickers feed this resolver:
-        //   - The trade-doc Insert Placeholder modal uses canonical
-        //     `customer`, `consignee`, `supplier`.
-        //   - The agreement Stage-2 wizard's PlaceholderPicker uses
-        //     `buyer` (legacy alias for Customer), `consignee`,
-        //     `supplier`.
-        // Without the alias the agreement picker's `{{buyer.*}}` tokens
-        // survive raw into the rendered PDF — that's why the Segment
-        // Details preview was leaking placeholders.
         $partyToTokenNamespaces = [
             'Customer'  => ['customer', 'buyer'],
             'Consignee' => ['consignee'],
@@ -3750,36 +2675,14 @@ class ClmSignatureController extends Controller
         $namespaces = $partyToTokenNamespaces[$modelName] ?? null;
         if (empty($namespaces)) return $html;
 
-        // Decode the common HTML entity variants of `{` and `}` so tokens
-        // that came out of the contenteditable normalised (e.g. after
-        // copy-paste from Word / Google Docs) still match the regex below.
-        // Doing this on the body HTML is safe because braces have no
-        // structural meaning in HTML — they only matter for our tokens.
         $html = str_replace(
             ['&#123;', '&#x7B;', '&#125;', '&#x7D;', '&lcub;', '&rcub;'],
             ['{',      '{',       '}',      '}',      '{',      '}'],
             $html,
         );
 
-        // Prefer the flagged primary address; fall back to the party's first
-        // address when none is marked is_primary. Without this fallback every
-        // address-derived token ({{customer.address}}, .city, .state, .country,
-        // .phone, .contact_person …) came out blank for any party whose address
-        // rows never had is_primary set (CBC — placeholders fail to populate).
         $addr = $party->primaryAddress ?? $party->addresses()->first();
 
-        // The three address tables don't share a shape:
-        //   CustomerAddress / ConsigneeAddress → `country`, `state`, `pin`
-        //                                        are plain string columns.
-        //   VendorAddress                      → `country` / `state` are
-        //                                        BelongsTo relationships
-        //                                        (Countries / States) and
-        //                                        pincode lives in `pincode`.
-        // If we hand a model to e() the default __toString() returns its
-        // JSON dump — that's why the rendered PDF was printing
-        // `[{"id":15159,"client_id":null, …,"name":"India", …}]` in the
-        // country / address cells. Coerce each value down to a plain
-        // string before composition.
         $scalar = static function ($v): string {
             if ($v === null) return '';
             if (is_object($v)) return (string) ($v->name ?? '');
@@ -3804,32 +2707,16 @@ class ClmSignatureController extends Controller
             : ($modelName === 'Consignee' ? 'consignee_code'
                 : 'vendor_code');
 
-        // Pre-compute resolved values for the canonical field names.
         $nameValue   = e($party->company_name ?? '');
         $codeValue   = e($party->{$codeAttr} ?? '');
         $cityValue   = e($scalar($addr?->city ?? null));
 
-        // Field → resolved value. Includes:
-        //   - canonical names trade-doc tokens use ({name, code, ...})
-        //   - long-form aliases the agreement Stage-2 picker emits
-        //     ({buyer_name, consignee_name, supplier_name, vendor_code})
-        //   - picker fields that have no backing column yet (risk_level,
-        //     role, category, bank_account) — resolved to empty strings
-        //     so they at least disappear from the PDF instead of leaking
-        //     `{{buyer.risk_level}}` raw text.
-        // The regex below pairs each field with every namespace we know
-        // for this model, so {{customer.name}} AND {{buyer.name}} AND
-        // {{buyer.buyer_name}} all land on the same value.
         $values = [
             'name'            => $nameValue,
             'code'            => $codeValue,
             'buyer_name'      => $nameValue,
             'consignee_name'  => $nameValue,
             'supplier_name'   => $nameValue,
-            // Long-form `*_code` aliases — the agreement Stage-2 picker
-            // emits {{buyer.buyer_code}} (not {{buyer.code}}), and
-            // symmetric aliases are added for consignee/supplier so
-            // future picker entries resolve without another patch.
             'buyer_code'      => $codeValue,
             'consignee_code'  => $codeValue,
             'supplier_code'   => $codeValue,
@@ -3843,9 +2730,6 @@ class ClmSignatureController extends Controller
             'city'            => $cityValue,
             'address'         => e($addressLine),
             'zip_code'        => e($pinStr),
-            // Delivery address = the party's full address line (a consignee IS
-            // the delivery destination); kept as an explicit token so agreements
-            // can reference it distinctly (CBC-438).
             'delivery_address' => e($addressLine),
             'gst'             => '',
             'pan'             => '',
@@ -3865,14 +2749,6 @@ class ClmSignatureController extends Controller
             }
         }
 
-        // Blank any REMAINING token in this party's namespace(s) — an unknown /
-        // mis-spelled field (e.g. {{customer.foobar}}) that matched no value
-        // above. Without this the token survived as raw "{{customer.foobar}}"
-        // text in the rendered PDF (CBC — placeholders shown as plain text).
-        // The `signature` field is deliberately excluded: it is resolved later
-        // in replacePlaceholders() into a signature box, so it must NOT be
-        // stripped here. Product / org-level / other-party tokens live in
-        // different namespaces and are untouched by this scoped pass.
         foreach ($namespaces as $ns) {
             $leftover = '/\{\{\s*'
                 . preg_quote($ns, '/')
@@ -3883,33 +2759,11 @@ class ClmSignatureController extends Controller
         return $html;
     }
 
-    /**
-     * Unique marker text embedded inside each signature placeholder. The
-     * frontend's PDF.js detector greps each page's text content for these
-     * tokens to figure out the rendered coordinates of every sig-box and
-     * uses them as the default signature-field position per party.
-     *
-     * Format chosen to be vanishingly unlikely to appear in user-typed
-     * draft content (double-guillemets + uppercase party slug + numeric
-     * salt). Kept as a small constant so the PHP side and the JS regex
-     * stay aligned — see SIG_MARKER_REGEX in SalesCustomerSendForSignatureModal.
-     */
     public static function sigMarkerToken(string $party): string
     {
         return '«CBC-SIG-' . strtoupper($party) . '-9417»';
     }
 
-    /**
-     * The frontend keys document_settings by CBC's clm_trade_doc_library.id,
-     * but the Zoho submit payload wants the Zoho-side document_id. This
-     * walks the parallel arrays (same order, guaranteed by how we built
-     * the createRequestMultipart() call) and rewrites the map.
-     *
-     * @param  array<int|string, array{x?:float, y?:float, page?:int, width?:float, height?:float}>  $clientMap
-     * @param  array<int, int>     $cbcDocIdsOrdered
-     * @param  array<int, array{document_id?:string}>  $zohoDocsOrdered
-     * @return array<string, array<string, float|int>>
-     */
     private function mapClientCoordsToZohoDocIds(array $clientMap, array $cbcDocIdsOrdered, array $zohoDocsOrdered): array
     {
         $out = [];
@@ -3924,52 +2778,6 @@ class ClmSignatureController extends Controller
         return $out;
     }
 
-    /**
-     * Pull every signed PDF + the completion certificate from Zoho into
-     * Storage::disk('public') and update the row's path columns. Called
-     * lazily — show()/viewFile()/viewCertificate() all converge here.
-     *
-     * The 'public' disk swaps driver based on FILESYSTEM_DISK:
-     *   local mode → storage/app/public/uploads/signed_documents/…
-     *   azure mode → blob:cbc-saas/uploads/signed_documents/…
-     * Both code paths use the same Storage::disk('public') call, so the
-     * diagnostic noise below is the only way to tell which step ate the
-     * signed doc when only the certificate landed. Without it, the silent
-     * try/catch produced an empty signed_document_paths array on server
-     * and no clue why.
-     */
-    /**
-     * Capture per-signer Viewed / Signed activity from a Zoho getRequest
-     * payload onto the row's `signers` JSON, so the Signing Tracker can show
-     * "Viewed on …" before the document is signed.
-     *
-     * Zoho's getRequest gives a per-recipient `action_status`
-     * (UNOPENED → VIEWED → SIGNED) but NO per-recipient timestamp — only a
-     * request-level `action_time` (epoch-ms) for the MOST RECENT action. So
-     * we stamp viewed_at / signed_at from that action_time the first time we
-     * observe each transition (exact for the common single-signer case;
-     * accurate to the poll cadence when signers interleave). Once stamped,
-     * a value is never overwritten.
-     *
-     * @return bool true if any signer row changed (caller should re-fetch).
-     */
-    /**
-     * Zoho action_status values that mean THE MAIL NEVER ARRIVED — a bounce, a
-     * dead address, a rejecting mail server.
-     *
-     * Zoho documents UNDELIVERED; the others are spellings seen across org
-     * versions and are matched defensively because getting this wrong in the
-     * unknown direction is what produced the original bug. A status we fail to
-     * recognise here falls back to "still waiting", which is merely uninformative.
-     * A delivery failure misread as progress is actively wrong: it tells the
-     * salesperson the customer is sitting on the document when the customer
-     * never received it.
-     *
-     * Note what is NOT here: DECLINED and RECALLED. A decline is the signer
-     * refusing a document they DID receive, and a recall is our own side
-     * withdrawing it. Neither is a delivery problem, and folding them together
-     * is exactly the conflation this list exists to prevent.
-     */
     private const UNDELIVERED_ACTION_STATUSES = [
         'UNDELIVERED',
         'NOTDELIVERED',
@@ -3983,7 +2791,6 @@ class ClmSignatureController extends Controller
         'EMAIL_BOUNCED',
     ];
 
-    /** True when a raw Zoho action_status means the e-sign mail never landed. */
     private function isUndeliveredStatus(?string $raw): bool
     {
         $s = strtoupper(trim((string) $raw));
@@ -3991,11 +2798,6 @@ class ClmSignatureController extends Controller
         return in_array($s, self::UNDELIVERED_ACTION_STATUSES, true);
     }
 
-    /**
-     * True when ANY signer on a stored row is flagged as undelivered.
-     * Reads the persisted `signers` JSON (written by syncSignerActivity), so it
-     * works for historical attempts without re-querying Zoho.
-     */
     private function rowHasDeliveryFailure(ClmSignatureRequest $row): bool
     {
         foreach ((array) ($row->signers ?? []) as $sg) {
@@ -4017,7 +2819,6 @@ class ClmSignatureController extends Controller
             ? \Illuminate\Support\Carbon::createFromTimestampMs($actionMs)->toIso8601String()
             : now()->toIso8601String();
 
-        // Latest action_status per recipient email.
         $statusByEmail = [];
         foreach ($actions as $a) {
             $email = strtolower(trim((string) ($a['recipient_email'] ?? '')));
@@ -4031,14 +2832,6 @@ class ClmSignatureController extends Controller
             if ($email === '' || !array_key_exists($email, $statusByEmail)) continue;
             $st = $statusByEmail[$email];
 
-            /* A bounce is NOT an opening.
-               "Opened" was defined as "any status that isn't UNOPENED /
-               NOTVIEWED / UNRECEIVED", which quietly swept UNDELIVERED into the
-               opened bucket — so a mail that bounced got a viewed_at stamp and
-               the tracker reported "Reviewed by signer(s)" on a document the
-               signer never received. That stamp is also what defeated the
-               downstream guess-work (which inferred non-delivery from a missing
-               viewed_at), so the wrong answer propagated. */
             $undelivered = $this->isUndeliveredStatus($st);
             $opened = $st !== ''
                 && !in_array($st, ['UNOPENED', 'NOTVIEWED', 'UNRECEIVED'], true)
@@ -4058,13 +2851,6 @@ class ClmSignatureController extends Controller
                 $changed = true;
             }
 
-            /* Persist the failure so historical attempts keep it. The attempt
-               trail is built from stored rows, not from a fresh Zoho call —
-               without a stored flag an older bounced round is indistinguishable
-               from one that was simply superseded.
-               Cleared if a later poll shows the mail did get through (Zoho can
-               revise an action once a retry lands), so the flag can never
-               outlive the condition it describes. */
             if ($undelivered && empty($signers[$i]['delivery_failed_at'])) {
                 $signers[$i]['delivery_failed_at'] = $stamp;
                 $changed = true;
@@ -4088,10 +2874,6 @@ class ClmSignatureController extends Controller
         $diskName    = config('filesystems.disks.public.driver');
         $logCtx      = ['row_id' => $row->id, 'zoho_request_id' => $row->zoho_request_id, 'disk' => $diskName];
 
-        // makeDirectory is a no-op on the azure-storage-blob adapter (blob
-        // storage has no real directories — slashes in blob names are just
-        // path-style prefixes), and a real mkdir on the local driver. Either
-        // way, exists() before mkdir keeps the local path idempotent.
         try {
             if (!Storage::disk('public')->exists($basePath)) {
                 Storage::disk('public')->makeDirectory($basePath);
@@ -4111,21 +2893,11 @@ class ClmSignatureController extends Controller
             $zohoIds[] = $zohoId;
 
             try {
-                // Step 1 — pull bytes from Zoho. This is the step that
-                // most often fails on production: per-document endpoint
-                // (/requests/{id}/documents/{docId}/pdf) needs the
-                // ZohoSign.documents.READ scope; older refresh tokens
-                // don't have it even when the certificate scope works.
                 $bytes = $this->zoho->downloadDocumentPdf($row->zoho_request_id, $zohoId);
                 if (!is_string($bytes) || $bytes === '') {
                     throw new RuntimeException('Zoho returned empty bytes');
                 }
 
-                // Step 2 — write to the active disk. put() returns false
-                // instead of throwing because the public disk is configured
-                // with throw=false, so we check the boolean explicitly.
-                // Without this the next line would record an unverified
-                // blob path and the UI would link to a 404.
                 $safe     = Str::slug(pathinfo((string) $name, PATHINFO_FILENAME)) ?: ('document_' . ($i + 1));
                 $fileName = sprintf('signed_%s_%d_%d.pdf', $safe, time(), $i);
                 $path     = $basePath . '/' . $fileName;
@@ -4134,12 +2906,6 @@ class ClmSignatureController extends Controller
                     throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
                 }
 
-                // Step 3 — capture both `url` (legacy) and `file_url`
-                // (new pattern used by other modules). Use file_url() — the
-                // Azure-safe resolver — NOT Storage::disk('public')->url(),
-                // which throws "This driver does not support retrieving URLs"
-                // on the azure-storage-blob adapter and silently discarded
-                // every signed document on the server.
                 $publicUrl = file_url($path);
                 $savedPaths[] = [
                     'zoho_document_id' => $zohoId,
@@ -4151,9 +2917,6 @@ class ClmSignatureController extends Controller
                 ];
                 Log::info('signed_doc saved', $logCtx + ['zoho_doc_id' => $zohoId, 'path' => $path, 'size' => strlen($bytes)]);
             } catch (\Throwable $e) {
-                // Log loudly so a server-only failure (Zoho scope, blob
-                // container ACL, etc.) is visible in laravel.log instead
-                // of being eaten silently.
                 Log::error('signed_doc fetch failed', $logCtx + [
                     'zoho_doc_id' => $zohoId,
                     'err'         => $e->getMessage(),
@@ -4162,12 +2925,6 @@ class ClmSignatureController extends Controller
             }
         }
 
-        // Fallback: the per-document endpoint above produced nothing (the
-        // symptom seen on the deployed server, while it works locally). Try
-        // the request-level combined PDF, which downloads the whole signed
-        // request as one file. For these single-document sign requests that
-        // IS the signed PI/quotation/agreement, so it recovers the document
-        // without needing the per-document scope/endpoint to succeed.
         if (empty($savedPaths) && !empty($zohoIds)) {
             try {
                 $bytes = $this->zoho->downloadRequestPdf($row->zoho_request_id);
@@ -4179,7 +2936,7 @@ class ClmSignatureController extends Controller
                     if ($ok === false) {
                         throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
                     }
-                    $publicUrl = file_url($path);   // Azure-safe (see note above)
+                    $publicUrl = file_url($path);
                     $savedPaths[] = [
                         'zoho_document_id' => $zohoIds[0] ?? null,
                         'document_name'    => $row->request_name,
@@ -4200,12 +2957,9 @@ class ClmSignatureController extends Controller
             $row->signed_document_paths  = $savedPaths;
             $row->signed_document_path   = $savedPaths[0]['path'] ?? null;
         } else {
-            // Surface the empty-result case in the log so prod diagnosis
-            // doesn't require diffing the row before/after every poll.
             Log::warning('signed_doc fetch produced no saved paths', $logCtx + ['expected_count' => count($zohoIds)]);
         }
 
-        // Completion certificate is always one per request.
         try {
             $cert = $this->zoho->downloadCertificate($row->zoho_request_id);
             if (!is_string($cert) || $cert === '') {
@@ -4226,31 +2980,6 @@ class ClmSignatureController extends Controller
         $row->save();
     }
 
-    /**
-     * Disk-scan fallback for completed rows that have no
-     * `signed_document_paths` recorded in the DB.
-     *
-     * Production has hit a state where fetchSignedArtifacts uploads the
-     * signed PDFs to Azure successfully (the blob container has files
-     * like `signed_td-001-customer-trade-document_1779706863_0.pdf`)
-     * but the row never gets the JSON column populated — the most
-     * likely cause is a Zoho retry that throws AFTER the prior call's
-     * blobs were written but BEFORE the save() runs. We can't fix that
-     * race retroactively, so instead we recover at read time: list the
-     * party's signed_documents folder, match each blob filename against
-     * the request's document-name slugs, and synthesise the entries the
-     * frontend expects.
-     *
-     * Cost: one Storage::allFiles() call per affected row. On Azure this
-     * is a single LIST blob call against a tiny prefix
-     * (`uploads/signed_documents/{party}/`), well within free-tier IOPS.
-     *
-     * Returns an empty array when nothing matches — caller falls back
-     * to the existing "no attachment yet" UI without surprising the
-     * user with files from a different request.
-     *
-     * @return array<int, array{path:string, url:?string, file_url:?string, document_name:string, zoho_document_id:?string}>
-     */
     private function adoptSignedDocsFromDisk(ClmSignatureRequest $row): array
     {
         $names = is_array($row->document_names) ? $row->document_names : [];
@@ -4265,9 +2994,6 @@ class ClmSignatureController extends Controller
             return [];
         }
 
-        // Pull every signed_*.pdf in the party folder once. allFiles on
-        // the Azure adapter returns absolute prefixes (no leading slash),
-        // matching what fetchSignedArtifacts writes.
         try {
             $all = Storage::disk('public')->files($basePath);
         } catch (\Throwable $e) {
@@ -4291,9 +3017,6 @@ class ClmSignatureController extends Controller
             if ($slug === '') $slug = 'document-' . ($i + 1);
             $needle = '/signed_' . $slug . '_';
 
-            // Newest match wins — fetchSignedArtifacts encodes the run
-            // timestamp into the filename, so a higher numeric suffix is
-            // always a later send.
             $candidates = array_values(array_filter(
                 $signedOnly,
                 fn($p) => str_contains($p, $needle),

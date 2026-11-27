@@ -3,17 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Gives Payment Request Management (p2p.payment_request) its own row in the
- * permission tree, under P2P → Purchase Management.
- *
- * Until now the page had no module row and rode on the Purchase Order grant.
- * So that nobody loses the access they have today, every existing p2p.po
- * grant is copied onto the new module with the same flags — per user, per
- * department template and per plan. From here on the two are granted apart.
- *
- * Idempotent: rows that already exist are left untouched.
- */
 return new class extends Migration
 {
     private const SLUG = 'p2p.payment_request';
@@ -23,7 +12,7 @@ return new class extends Migration
         $parentId = DB::table('modules')->where('slug', 'p2p.purchase')->value('id');
         $poId = DB::table('modules')->where('slug', 'p2p.po')->value('id');
         if (!$parentId) {
-            return; // P2P tree not seeded on this install; ModuleSeeder adds it.
+            return;
         }
 
         $moduleId = DB::table('modules')->where('slug', self::SLUG)->value('id');
@@ -49,7 +38,6 @@ return new class extends Migration
 
         $flags = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
 
-        // Per-user grants.
         $have = DB::table('permissions')->where('module_id', $moduleId)->pluck('user_id')->flip();
         $rows = [];
         foreach (DB::table('permissions')->where('module_id', $poId)->get() as $p) {
@@ -65,7 +53,6 @@ return new class extends Migration
             DB::table('permissions')->insert($chunk);
         }
 
-        // Department (HOD) permission templates.
         $rows = [];
         foreach (DB::table('department_permissions')->where('module_id', $poId)->get() as $d) {
             $exists = DB::table('department_permissions')
@@ -82,7 +69,6 @@ return new class extends Migration
             DB::table('department_permissions')->insert($chunk);
         }
 
-        // Plans that sell Purchase Order also sell this page.
         $planHave = DB::table('plan_modules')->where('module_id', $moduleId)->pluck('plan_id')->flip();
         foreach (DB::table('plan_modules')->where('module_id', $poId)->get() as $pm) {
             if ($pm->plan_id === null || isset($planHave[$pm->plan_id])) continue;
@@ -96,7 +82,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Grants cascade off the module row.
         DB::table('modules')->where('slug', self::SLUG)->delete();
     }
 };

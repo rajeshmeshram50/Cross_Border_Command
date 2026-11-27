@@ -22,27 +22,22 @@
 <body
   style="margin:0;padding:0;background-color:#eef2f7;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;color:#0f172a;">
 
-  {{-- Preheader --}}
   <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#eef2f7;">
     Welcome to {{ $orgName }} on {{ $appName }}. Your account is ready.
   </div>
 
-  {{-- ============ WRAPPER ============ --}}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
     style="background-color:#eef2f7;padding:40px 16px;">
     <tr>
       <td align="center">
 
-        {{-- ============ CONTAINER ============ --}}
         <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0"
           style="max-width:640px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 40px rgba(15,23,42,0.06);">
 
-          {{-- ============ TOP DECORATIVE BAND (corner-fold approximation) ============ --}}
           <tr>
             <td
               style="padding:0;background:linear-gradient(225deg,#2563eb 0%,#2563eb 70px,transparent 70px),linear-gradient(225deg,#3b82f6 0%,#3b82f6 110px,transparent 110px);background-color:#ffffff;background-repeat:no-repeat;background-position:top right;">
 
-              {{-- HEADER --- org name as text wordmark --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:30px 40px 16px;">
@@ -65,7 +60,6 @@
                 </tr>
               </table>
 
-              {{-- HERO --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:36px 40px 16px;">
@@ -91,11 +85,9 @@
             </td>
           </tr>
 
-          {{-- ============ CREDENTIALS ROWS ============ --}}
           <tr>
             <td style="padding:28px 40px 0;">
 
-              {{-- Email card --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
                 style="background-color:#f3f4f6;border-radius:14px;margin-bottom:14px;">
                 <tr>
@@ -115,10 +107,6 @@
                         </td>
                         <td style="padding-left:14px;vertical-align:middle;">
                           <div style="font-size:12px;color:#64748b;line-height:1.3;">Email / Username</div>
-                          {{-- user-select:all makes a single click/tap select the
-                               whole value so it's quick to copy with the device's
-                               own Copy menu. A clickable copy BUTTON cannot work in
-                               email (clients strip JavaScript) — so no copy icon. --}}
                           <div
                             style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;user-select:all;-webkit-user-select:all;-moz-user-select:all;">
                             {{ $userEmail }}
@@ -132,7 +120,6 @@
               </table>
 
               @if (!empty($password))
-                {{-- Password card --}}
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
                   style="background-color:#f3f4f6;border-radius:14px;">
                   <tr>
@@ -172,7 +159,6 @@
             </td>
           </tr>
 
-          {{-- ============ CTA ============ --}}
           <tr>
             <td style="padding:32px 40px 8px;text-align:center;">
               <!--[if mso]>
@@ -200,13 +186,11 @@
             </td>
           </tr>
 
-          {{-- ============ 3 FEATURE CARDS ============ --}}
           <tr>
             <td style="padding:32px 40px 8px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
 
-                  {{-- Card 1 --}}
                   <td valign="top" align="center" width="33%" style="padding:0 10px;border-right:1px solid #e2e8f0;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                       <tr>
@@ -233,7 +217,6 @@
                     </table>
                   </td>
 
-                  {{-- Card 2 --}}
                   <td valign="top" align="center" width="33%" style="padding:0 10px;border-right:1px solid #e2e8f0;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                       <tr>
@@ -261,7 +244,6 @@
                     </table>
                   </td>
 
-                  {{-- Card 3 --}}
                   <td valign="top" align="center" width="33%" style="padding:0 10px;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                       <tr>
@@ -294,7 +276,6 @@
             </td>
           </tr>
 
-          {{-- ============ NEED HELP ============ --}}
           <tr>
             <td style="padding:32px 40px 0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -334,7 +315,6 @@
             </td>
           </tr>
 
-          {{-- ============ FOOTER (with bottom-left corner fold + dot grid) ============ --}}
           <tr>
             <td
               style="padding:0;background:linear-gradient(45deg,#2563eb 0%,#2563eb 60px,transparent 60px),linear-gradient(45deg,#3b82f6 0%,#3b82f6 95px,transparent 95px);background-color:#ffffff;background-repeat:no-repeat;background-position:bottom left;">
@@ -348,7 +328,6 @@
                   </td>
                 </tr>
                 <tr>
-                  {{-- Dot grid in bottom-right --}}
                   <td align="right" style="padding:0 28px 22px;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right">
                       @for ($r = 0; $r < 5; $r++)
@@ -370,12 +349,10 @@
           </tr>
 
         </table>
-        {{-- /Container --}}
 
       </td>
     </tr>
   </table>
-  {{-- /Wrapper --}}
 
 </body>
 

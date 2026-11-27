@@ -315,7 +315,7 @@ export default function AddPlan({ onBack, editId }: Props) {
           box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
         }
         .ap-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
-        .ap-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
+        .ap-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; }
         .ap-cstrip-back {
           display: inline-flex; align-items: center; justify-content: center; gap: 7px;
           padding: 0 18px; height: 44px; border-radius: 14px;
@@ -1615,9 +1615,10 @@ export default function AddPlan({ onBack, editId }: Props) {
                 <button
                   type="button"
                   onClick={onBack}
-                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  className="btn d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
                   style={{
-                    padding: '7px 16px',
+                    height: 40,
+                    padding: '0 16px',
                     fontSize: 12.5,
                     background: 'var(--vz-secondary-bg)',
                     color: 'var(--vz-body-color)',
@@ -1637,9 +1638,10 @@ export default function AddPlan({ onBack, editId }: Props) {
                     Object.keys(moduleAccess).forEach(k => { a[Number(k)] = 'not_included'; });
                     setModuleAccess(a);
                   }}
-                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  className="btn d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
                   style={{
-                    padding: '7px 16px',
+                    height: 40,
+                    padding: '0 16px',
                     fontSize: 12.5,
                     background: 'rgba(245,158,11,0.10)',
                     color: '#f59e0b',
@@ -1654,10 +1656,11 @@ export default function AddPlan({ onBack, editId }: Props) {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  className="btn d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
                   style={{
-                    padding: '7px 20px',
-                    fontSize: 13,
+                    height: 40,
+                    padding: '0 20px',
+                    fontSize: 12.5,
                     background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
                     color: '#fff',
                     border: 'none',

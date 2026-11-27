@@ -6,8 +6,6 @@
     @page { margin: 30px 34px; }
     * { box-sizing: border-box; }
     body {
-        /* Match the shared payslip PDF — narrow, clean Helvetica/Arial (dompdf
-         * ships Helvetica as a core font). Payslip has no ₹/unicode glyphs. */
         font-family: Helvetica, Arial, sans-serif;
         color: #1f2937;
         font-size: 11px;
@@ -16,7 +14,6 @@
     .muted   { color: #8a93a4; }
     .bold    { font-weight: bold; }
 
-    /* ── Header ── */
     .hdr { width: 100%; border-collapse: collapse; }
     .hdr td { vertical-align: top; }
     .hdr-logo img { max-height: 60px; max-width: 190px; }
@@ -27,13 +24,11 @@
     .co-name { font-size: 11.5px; font-weight: bold; margin-top: 10px; color: #111827; }
     .co-addr { font-size: 9px; color: #6b7280; line-height: 1.55; margin-top: 3px; }
 
-    /* Dark rule under the employee name; soft rule elsewhere. */
     .rule { border: 0; border-top: 1.5px solid #111827; margin: 8px 0 0; }
     .rule-soft { border: 0; border-top: 1px solid #d7dce8; margin: 0; }
 
     .emp-name { font-size: 13px; font-weight: bold; color: #111827; margin: 26px 0 0; }
 
-    /* ── Details grid ── */
     .grid { width: 100%; border-collapse: collapse; }
     .grid td { padding: 11px 4px; width: 25%; vertical-align: top; border-bottom: 1px solid #eef1f5; }
     .grid .lbl { font-size: 9px; color: #9aa2b1; text-transform: none; letter-spacing: 0.01em; }
@@ -41,10 +36,8 @@
 
     .section-title { font-size: 12px; font-weight: bold; color: #111827; margin: 26px 0 6px; }
 
-    /* ── Salary details strip ── */
     .sd td { padding: 11px 4px; width: 25%; border-bottom: 0; }
 
-    /* ── Earnings / deductions ── */
     .ed { width: 100%; border-collapse: collapse; margin-top: 18px; }
     .ed > tbody > tr > td { vertical-align: top; width: 50%; }
     .ed-col { padding: 0 16px 0 0; }
@@ -54,12 +47,9 @@
     .ed-line td { padding: 6px 0; font-size: 11px; }
     .ed-line td.amt { text-align: right; }
     .ed-total td { font-weight: bold; padding-top: 8px; }
-    /* A rate, not an amount earned — muted and ruled off from the total above
-       it so it cannot be read as another line item. */
     .ed-perday td { color: #6b7280; padding-top: 5px; border-top: 1px solid #eceef1; }
     .ed-perday-calc { color: #9aa1ab; }
 
-    /* ── Net pay ── */
     .net { width: 100%; border-collapse: collapse; background: #f6f7f9; margin-top: 22px; }
     .net td { padding: 13px 14px; vertical-align: middle; }
     .net .net-lbl { font-size: 11px; color: #1f2937; }
@@ -78,7 +68,6 @@
 </head>
 <body>
 
-    {{-- ── Header (logo LEFT, PAYSLIP + company RIGHT) ── --}}
     <table class="hdr">
         <tr>
             <td class="hdr-logo" style="width: 42%;">
@@ -97,33 +86,21 @@
         </tr>
     </table>
 
-    {{-- ── Employee name + dark rule under it ── --}}
     <div class="emp-name">
         {{ strtoupper($employee['name']) }}
         @if(!$isFinal)<span class="provisional">PROVISIONAL</span>@endif
     </div>
     <hr class="rule">
 
-    {{-- ── Details grid ── --}}
     <table class="grid">
         <tr>
             <td><div class="lbl">Employee Number</div><div class="val">{{ $employee['code'] }}</div></td>
             <td><div class="lbl">Date Joined</div><div class="val">{{ $employee['date_joined'] }}</div></td>
-            {{-- No "Sub Department" cell: there is no such column on employees
-                 and no such field on the Employee form, so it could only ever
-                 print the hardcoded 'N/A' it was fed. Department spans the
-                 freed cell to keep the grid four columns wide. (#138) --}}
             <td colspan="2"><div class="lbl">Department</div><div class="val">{{ $employee['department'] }}</div></td>
         </tr>
         <tr>
             <td><div class="lbl">Designation</div><div class="val">{{ $employee['designation'] }}</div></td>
             <td><div class="lbl">Payment Mode</div><div class="val">{{ $employee['payment_mode'] }}</div></td>
-            {{-- UAN only. "PF Number" sat beside it as a second cell that was
-                 fed a hardcoded 'N/A' — there is no PF-account-number column on
-                 employees — so every payslip printed the same fact twice, once
-                 with a value and once permanently blank. Spans the freed cell
-                 the way the Bank Name row below already does, keeping the grid
-                 four columns wide. (#137) --}}
             <td colspan="2"><div class="lbl">UAN</div><div class="val">{{ $employee['uan'] }}</div></td>
         </tr>
         <tr>
@@ -133,14 +110,10 @@
         </tr>
     </table>
 
-    {{-- ── Salary details strip ── --}}
     <div class="section-title">SALARY DETAILS</div>
     <hr class="rule-soft">
     <table class="grid sd">
         <tr>
-            {{-- Days in Month first: it is the figure the other three are read
-                 against, and without it "Total Working Days 11" on an August
-                 slip gives the reader nothing to compare with. (#91) --}}
             @if(!empty($days['in_month']))
                 <td><div class="lbl">Days In Month</div><div class="val">{{ $days['in_month'] }}</div></td>
             @endif
@@ -149,8 +122,6 @@
             <td>
                 <div class="lbl">Loss Of Pay Days</div>
                 <div class="val">{{ $days['lop'] }}</div>
-                {{-- Says why LOP can exceed the days missed: the late-mark rule
-                     charges pay for days that were actually worked. (#114) --}}
                 @if(!empty($days['late_lop']))
                     <div class="lbl" style="margin-top:1px">incl. {{ $days['late_lop'] }} late marks</div>
                 @endif
@@ -159,7 +130,6 @@
         </tr>
     </table>
 
-    {{-- ── Earnings / Deductions ── --}}
     <table class="ed">
         <tr>
             <td class="ed-col">
@@ -169,8 +139,6 @@
                         <tr><td>{{ $e['label'] }}</td><td class="amt">{{ number_format($e['amount'], 2) }}</td></tr>
                     @endforeach
                     <tr class="ed-total"><td>Total Earnings (A)</td><td class="amt">{{ number_format($totalEarnings, 2) }}</td></tr>
-                    {{-- The rate the total was built from. Below it, not in
-                         it, so the column still adds up. (#156) --}}
                     @if(!empty($perDaySalary))
                         <tr class="ed-perday">
                             <td>Per Day Salary <span class="ed-perday-calc">({{ number_format($totalEarnings, 2) }} &divide; {{ rtrim(rtrim(number_format($payableDays, 2), '0'), '.') }} payable days)</span></td>
@@ -193,7 +161,6 @@
         </tr>
     </table>
 
-    {{-- ── Net pay ── --}}
     <table class="net">
         <tr>
             <td style="width: 38%;"><span class="net-lbl">Net Salary Payable ( A - B )</span></td>

@@ -143,8 +143,11 @@ export default function MapInvoiceModal({
   // Direct), so the invoice form opens with them already in flight (CS-937).
   useEffect(() => {
     if (mode === 'with-po') spiPrefetch.prime(poPicked?.vendor_id ?? null, poPicked?.id ?? null);
-    else spiPrefetch.prime(direct.supplierId ?? null);
-  }, [mode, poPicked, direct.supplierId]);
+    /* The Direct flow knows its shipment here too, so its PI lines warm with
+       the rest instead of being fetched once Stage 1 is already on screen. */
+    else spiPrefetch.prime(direct.supplierId ?? null, null,
+      direct.shipment === 'with' ? direct.shipmentOrderId ?? null : null);
+  }, [mode, poPicked, direct.supplierId, direct.shipment, direct.shipmentOrderId]);
 
   const [sdxReady, setSdxReady] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);

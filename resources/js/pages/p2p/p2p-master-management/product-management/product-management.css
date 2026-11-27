@@ -67,8 +67,6 @@
   overflow-y: auto;
 }
 
-/* Narrower than the page: the product popup reads as a dialog, not a screen
-   (CS-409). Below this the two-column body still holds at 1024px. */
 .prd-detail-modal {
   width: 100%;
   max-width: 1180px;
@@ -581,7 +579,6 @@
   background: linear-gradient(180deg, rgba(15, 23, 42, .04) 0%, transparent 32%, transparent 60%, rgba(15, 23, 42, .28) 100%);
 }
 
-/* Reg badge sits in the opposite corner of the thumbnail, clear of the segment chip. */
 .prd-pcard-thumb-reg {
   position: absolute;
   right: 10px;
@@ -635,8 +632,6 @@
   transition: opacity .16s ease, background .15s ease, color .15s ease, transform .16s ease;
 }
 
-/* Revealed on card hover, on keyboard focus, and while it is loading — a
-   spinner must not vanish just because the pointer moved off the card. */
 .prd-pcard:hover .prd-pcard-edit,
 .prd-pcard:focus-within .prd-pcard-edit,
 .prd-pcard-edit:focus-visible,
@@ -646,8 +641,6 @@
   pointer-events: auto;
 }
 
-/* Touch / no-hover devices never fire :hover, so keep it permanently on
-   there rather than leaving the action unreachable. */
 @media (hover: none) {
   .prd-pcard-edit {
     opacity: 1;
@@ -668,8 +661,6 @@
   outline-offset: 2px;
 }
 
-/* Inline spinner for card / row controls that are waiting on their modal.
-   Sized to the icon it replaces so the control doesn't resize mid-click. */
 .prd-btn-spinner {
   display: inline-block;
   flex-shrink: 0;
@@ -688,8 +679,6 @@
   }
 }
 
-/* A busy control keeps its normal colours (not the greyed-out `:disabled`
-   look) — it is working, not unavailable. */
 .prd-pcard-edit.is-busy,
 .prd-pcard-info-item--link.is-busy,
 .prd-card-vendor-cell--link.is-busy,
@@ -697,8 +686,6 @@
   cursor: progress;
 }
 
-/* Siblings of the busy control are disabled for the moment — dim them so the
-   card reads as "one thing is loading" rather than "everything broke". */
 .prd-pcard-edit:disabled:not(.is-busy),
 .prd-pcard-info-item--link:disabled:not(.is-busy),
 .prd-card-vendor-cell--link:disabled:not(.is-busy),
@@ -848,8 +835,6 @@
   opacity: .85;
 }
 
-/* Supplier count opens the Mapped Suppliers popup — it is a <button>, so the
-   UA styling has to be reset back to the surrounding info row's look. */
 .prd-pcard-info-item--link {
   font-family: inherit;
   padding: 2px 6px;
@@ -2271,7 +2256,6 @@
   font-style: italic;
 }
 
-/* Sections with no API behind them yet: shown, but locked to their defaults. */
 .prd-filter-row.is-frozen {
   color: #9b91b8;
   cursor: default;
@@ -2367,7 +2351,6 @@
   transform: translate(-50%, -50%);
 }
 
-/* "Custom" row on Product Creation Date: type the number of days. */
 .prd-filter-days {
   display: flex;
   align-items: center;
@@ -2937,10 +2920,6 @@
 }
 
 [data-bs-theme="dark"] .prd-filter-body {
-  /* The scroll container carries `background: #fff` in light mode and had no
-     dark counterpart, so it painted white OVER the drawer's #110c25 — and the
-     collapsed panels are transparent in dark, so the whole list sat on white
-     with near-white labels (#ede9fe) on top of it. Matches the drawer. */
   background: #110c25;
   scrollbar-color: #a78bfa #221852;
 }
@@ -3783,8 +3762,6 @@
   margin-bottom: 9px;
 }
 
-/* Cold chain pill, right-aligned in the Product Details header. Blue with
-   the °C range for cold-chain products, muted grey "–" otherwise. */
 .pv2pd-coldchain {
   margin-left: auto;
   display: inline-flex;
@@ -4175,6 +4152,13 @@
   background: rgba(124, 58, 237, .14);
 }
 
+/* Dark hover: a violet wash, not the light theme's 60% white — on the dark
+   rail that read as a grey slab under purple text. */
+[data-bs-theme="dark"] .pv2pd-tab:not(.is-active):hover {
+  color: #ddd6fe;
+  background: rgba(139, 92, 246, .28);
+}
+
 [data-bs-theme="dark"] .pv2pd-tab-body {
   color: #ced4da;
 }
@@ -4217,8 +4201,6 @@
 
 .apm-modal {
   width: 100%;
-  /* Trimmed from 1300: the figma is fit-content and 1300 read stretched, but the
-     wizard's four-column rows still need the room. */
   max-width: 1180px;
   max-height: calc(100vh - 48px);
   margin: auto;
@@ -4773,8 +4755,6 @@
   height: 14px;
 }
 
-/* Section heading and subheading in the Customer form's type
-   (.acm-section-title 11px / 600, .acm-section-sub 10.5px / 500). */
 .apm-section-title {
   font-size: 11px;
   font-weight: 600;
@@ -4826,7 +4806,6 @@
   gap: 12px;
 }
 
-/* Cold chain temperature range: Min °C  to  Max °C, with preset chips. */
 .apm-span-2 {
   grid-column: span 2;
   min-width: 0;
@@ -4864,7 +4843,6 @@
   opacity: .6;
 }
 
-/* Cold chain panel: tinted, rounded box grouping the flag + range. */
 .apm-coldchain-box {
   border: 1px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0);
   background: color-mix(in srgb, #7c3aed 3%, #fff);
@@ -4912,8 +4890,6 @@
   color: #64748b;
 }
 
-/* Presets sit at the right end of the label row, so undo the label's
-   uppercase / letter-spacing for them. */
 .apm-field-label-extra {
   margin-left: auto;
   display: inline-flex;
@@ -4968,16 +4944,6 @@
   min-width: 0;
 }
 
-/* Live character counter for a length-capped textarea. Deliberately in normal
-   flow rather than absolutely positioned: .apm-field establishes no containing
-   block of its own, so an absolute counter resolves against .apm-section and
-   drifts to the bottom-right of the whole section card instead of sitting
-   under the field it counts.
-
-   Stays grey at the cap. Reaching the limit is not an error — the text is
-   simply clipped — and a red counter next to a red-bordered field read as a
-   failed save. text-align covers the icon-field case: those children sit in
-   .apm-master-field (a plain block), where align-self has nothing to act on. */
 .apm-char-count {
   align-self: flex-end;
   text-align: right;
@@ -5092,6 +5058,15 @@
 
 .apm-field.has-error .apm-field-label {
   color: #ef4444 !important;
+}
+
+.apm-field.has-error .apm-dropzone {
+  border-color: #ef4444 !important;
+  background: rgba(239, 68, 68, .05) !important;
+}
+
+[data-bs-theme="dark"] .apm-field.has-error .apm-dropzone {
+  background: rgba(239, 68, 68, .12) !important;
 }
 
 .apm-field.is-disabled {
@@ -5476,6 +5451,19 @@
   color: #ddd6fe;
 }
 
+.apm-upload-filebox .apm-upload-filechip,
+[data-bs-theme="dark"] .apm-upload-filebox .apm-upload-filechip,
+[data-bs-theme="dark"] .apm-upload-filebox .apm-upload-filechip:hover {
+  min-height: 32px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.apm-upload-filebox .apm-upload-filename {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
 .apm-upload-more {
   padding: 0;
   cursor: pointer;
@@ -5599,16 +5587,6 @@
   padding: 0;
 }
 
-/* Add Supplier wizard launched from the "+" beside Supplier Name.
-   The vendor module's own layers (gate + wizard 1090, the wizard's Quick-Add
-   and Contact Person popups 1100) were written to sit above a plain page — but
-   opened from here they land among the product form's popups (.apm-backdrop
-   1090, .apm-sup-overlay 1095, .apm-mv-backdrop 1100) and the Map Supplier
-   popup covered them.
-   The whole family is lifted by one step, PRESERVING its internal order so the
-   wizard's child popups still sit above the wizard. Applied only while the
-   product form is the opener, so the Supplier master's own use of the same
-   components keeps its original layering. */
 body.apm-supplier-wizard-open .supch-ov,
 body.apm-supplier-wizard-open .avm-backdrop {
   z-index: 1200;
@@ -5617,6 +5595,103 @@ body.apm-supplier-wizard-open .avm-backdrop {
 body.apm-supplier-wizard-open .avm-qa-backdrop,
 body.apm-supplier-wizard-open .avm-cp-backdrop {
   z-index: 1210;
+}
+
+body.apm-supplier-wizard-open :is(.apm-backdrop, .apm-sup-overlay, .apm-mv-backdrop) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.apm-supplier-wizard-open:has(.apm-backdrop) {
+  --avmv-rgb-082f49: 32, 8, 73;
+  --avmv-0891b2: #7c3aed;
+  --avmv-rgb-0891b2: 124, 58, 237;
+  --avmv-0a161d: #110a1d;
+  --avmv-0b3142: #1f0b42;
+  --avmv-0b4f63: #2b0b63;
+  --avmv-0c1a22: #140c22;
+  --avmv-0c4a6e: #300c6e;
+  --avmv-0e7490: #6d28d9;
+  --avmv-rgb-0e7490: 109, 40, 217;
+  --avmv-rgb-0ea6cd: 84, 14, 205;
+  --avmv-10222b: #1a102b;
+  --avmv-22b8d6: #6422d6;
+  --avmv-22d3ee: #a78bfa;
+  --avmv-rgb-22d3ee: 167, 139, 250;
+  --avmv-rgb-25e9fb: 115, 37, 251;
+  --avmv-67e8f9: #c4b5fd;
+  --avmv-rgb-67e8f9: 196, 181, 253;
+  --avmv-8fb2c2: #a28fc2;
+  --avmv-94b4bf: #a494bf;
+  --avmv-a5e4f0: #c1a5f0;
+  --avmv-a5e9f5: #c2a5f5;
+  --avmv-a5f3fc: #ddd6fe;
+  --avmv-rgb-a5f3fc: 221, 214, 254;
+  --avmv-a9d9e6: #bfa9e6;
+  --avmv-rgb-b3fcff: 207, 179, 255;
+  --avmv-bfe3ec: #d0bfec;
+  --avmv-bfe9f1: #d1bff1;
+  --avmv-c4ecf4: #d6c4f4;
+  --avmv-cdeef5: #dccdf5;
+  --avmv-cfe3ea: #d9cfea;
+  --avmv-cfe9f0: #dbcff0;
+  --avmv-cfeff6: #ddcff6;
+  --avmv-cff7fd: #e0cffd;
+  --avmv-d3e4ea: #dbd3ea;
+  --avmv-d5eef4: #e0d5f4;
+  --avmv-d5f1f7: #e1d5f7;
+  --avmv-d7eef4: #e2d7f4;
+  --avmv-dbe6ec: #e1dbec;
+  --avmv-dceef3: #e4dcf3;
+  --avmv-e0f7fb: #eae0fb;
+  --avmv-e2eef2: #e8e2f2;
+  --avmv-e2eef3: #e8e2f3;
+  --avmv-e2f1f5: #e9e2f5;
+  --avmv-e2f3f7: #eae2f7;
+  --avmv-e3f1f5: #eae3f5;
+  --avmv-e6f5f8: #ede6f8;
+  --avmv-e8fbfe: #f0e8fe;
+  --avmv-eaf7fb: #f0eafb;
+  --avmv-ecfeff: #f5f3ff;
+  --avmv-eef5f8: #f2eef8;
+  --avmv-eef6f8: #f2eef8;
+  --avmv-eef7fa: #f2eefa;
+  --avmv-effcff: #f5efff;
+  --avmv-f0fbfd: #f5f0fd;
+  --avmv-f0fdff: #f6f0ff;
+  --avmv-f1fcfe: #f6f1fe;
+  --avmv-f2fdff: #f7f2ff;
+  --avmv-f4f8fa: #f6f4fa;
+  --avmv-f4fbfd: #f7f4fd;
+  --avmv-f4fcfe: #f8f4fe;
+  --avmv-f6fbfc: #f8f6fc;
+  --avmv-f6fdfe: #f9f6fe;
+  --avmv-f6feff: #f9f6ff;
+  --avmv-f7fdfe: #faf7fe;
+  --avmv-rgb-f7fdfe: 250, 247, 254;
+  --avmv-f7feff: #faf7ff;
+  --avmv-f9feff: #fbf9ff;
+  --avmv-fbfeff: #fcfbff;
+  --avmv-rgb-061218: 13, 6, 24;
+  --avmv-rgb-06b6d4: 139, 92, 246;
+  --avmv-0d9488: #7c3aed;
+  --avmv-5b7d90: #6e5b90;
+  --avmv-5eead4: #c4b5fd;
+  --avmv-99f6e4: #ddd6fe;
+  --avmv-9db3c1: #aa9dc1;
+  --avmv-a5d8e6: #bda5e6;
+  --avmv-bdf0f7: #d2bdf7;
+  --avmv-cffafe: #ede9fe;
+  --avmv-e0fbff: #ebe0ff;
+  --avmv-e6fafe: #efe6fe;
+  --avmv-ecfbff: #f3ecff;
+  --avmv-eef3f6: #f1eef6;
+  --avmv-eef4f7: #f1eef7;
+  --avmv-f0fdfa: #f5f3ff;
+  --avmv-f4fdff: #f8f4ff;
+}
+
+body.apm-map-gate-open .supch-ov {
+  z-index: 1120;
 }
 
 .apm-mv-backdrop {
@@ -5639,10 +5714,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   max-width: 1060px;
   margin: auto;
   background: #fff;
-  /* 22px to match .avm-modal in AddVendorModal — the two popups sit in the
-     same flow and a 6px difference in corner radius reads as one of them
-     being from a different design. overflow:hidden below is what lets the
-     gradient header take the rounded top corners. */
   border-radius: 22px;
   overflow: hidden;
   display: flex;
@@ -5680,10 +5751,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
 }
 
-/* The second Figma layer — a soft highlight down the TOP HALF only. The corner
-   bloom above was already here; without this the bar still reads a little flat
-   against the supplier form's header, which carries both (.avm-head::before /
-   ::after in AddVendorModal). Same values, so the two headers match. */
 .apm-mv-popup-head::after {
   content: '';
   position: absolute;
@@ -6175,9 +6242,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   }
 }
 
-/* Shell sized like the Customer form's (QA #93): the card fits the viewport,
-   the header, stepper and footer never shrink, and only the body scrolls, so
-   a short viewport (DevTools open, zoom) no longer squashes the header. */
 .apm-backdrop {
   padding: 16px;
   overflow: hidden;
@@ -6272,8 +6336,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
     font-size: 11.5px;
   }
 
-  /* Static, so the close button below pins to the header's corner rather
-     than the actions row; the buttons keep their own layer over the sheen. */
   .apm-head-actions {
     position: static;
   }
@@ -6449,25 +6511,12 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   color: #a78bfa;
 }
 
-/* A dropdown at rest is a field you can type into, so it carries the SAME
-   surface as .apm-input — #110c25, not a violet-lifted one.
-
-   It was color-mix(#a78bfa 12%, #110c25), i.e. rgb(35,27,63) against the
-   inputs' rgb(17,12,37). Two problems came out of that one value: Segment sat
-   visibly lighter than Product Name beside it (#86), and it was the exact
-   shade this file uses for a DISABLED input below — so an open dropdown read
-   as greyed out while a greyed-out text box read as editable. One surface for
-   "you can edit this", one for "you cannot", and no overlap. */
 [data-bs-theme="dark"] .apm-master-select .master-select-wrap .master-select-toggle {
   background: #110c25 !important;
   border-color: #3b2a6b !important;
   color: #ede9fe !important;
 }
 
-/* The disabled dropdown had no dark rule at all, so the light-mode
-   `background: #f5f3ff !important` painted it near-WHITE on a dark form.
-   Same oversight the disabled input note below describes, and the same fix:
-   carry the disabled surface, not the light one. */
 [data-bs-theme="dark"] .apm-master-select .master-select-wrap.disabled .master-select-toggle {
   background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
   border-color: #3b2a6b !important;
@@ -6509,10 +6558,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   color: #6d6391;
 }
 
-/* A disabled text input inside a disabled field (e.g. the cold chain Min / Max
-   while Cold Chain is No) matches a disabled dropdown such as Haz Class —
-   otherwise the light-mode `.apm-field.is-disabled .apm-input` !important
-   grey shows through in dark mode. */
 [data-bs-theme="dark"] .apm-field.is-disabled .apm-input {
   background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
   border-color: #3b2a6b !important;
@@ -6596,9 +6641,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   border-top-color: rgba(167, 139, 250, .16);
 }
 
-/* "STAGE 1 — PRODUCT CORE" is #166534 in light mode — a deep green that all
-   but disappeared on the #241a47 panel here. Same light green the extras label
-   already uses in dark. */
 [data-bs-theme="dark"] .apm-prev-sumtitle {
   color: #86efac;
 }
@@ -6700,8 +6742,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   -webkit-backdrop-filter: none;
 }
 
-/* Shimmer placeholders for the Mapped Suppliers popup while it loads.
-   Sized to the real controls so nothing shifts when the data lands. */
 .apm-sup-shim-search {
   flex: 1;
   max-width: 340px;
@@ -6750,21 +6790,19 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 40px 24px;
+  padding: 32px 24px;
   overflow-y: auto;
   font-family: var(--font-sans);
 }
 
 .apm-sup-modal {
   width: 100%;
-  max-width: 1080px;
+  max-width: 1320px;
   margin: auto;
   background: #fff;
-  border: 1px solid rgba(196, 181, 253, .6);
-  /* 22px — same as .avm-modal and .apm-mv-popup, so every popup in this
-     flow has the same corner. */
+  border: 0;
   border-radius: 22px;
   overflow: hidden;
   box-shadow: 0 30px 80px rgba(20, 10, 60, .45);
@@ -6825,8 +6863,8 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 17px 22px;
+  gap: 14px;
+  padding: 18px 22px;
   font-size: 16px;
   font-weight: 800;
   color: #fff;
@@ -6846,18 +6884,16 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
 }
 
-/* Top-half sheen — the second Figma layer, matching .avm-head::after in
-   AddVendorModal and .apm-mv-popup-head::after above. This header had the
-   corner bloom but not this, so it sat flatter than the two beside it. */
 .apm-sup-head::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
+  right: -60px;
+  top: -80px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  border: 36px solid rgba(255, 255, 255, .08);
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .16), transparent);
 }
 
 .apm-sup-head-ico,
@@ -6868,15 +6904,23 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 }
 
 .apm-sup-head-ico {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, .18);
-  border: 1px solid rgba(255, 255, 255, .25);
+  color: #7c3aed;
+  background: linear-gradient(145deg, #fff, #ede9fe);
+  border: 0;
+  box-shadow: 0 12px 26px -10px rgba(0, 0, 0, .4), inset 0 -2px 0 rgba(124, 58, 237, .15), inset 0 1px 0 rgba(255, 255, 255, .7);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.apm-sup-head-ico svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2;
 }
 
 .apm-sup-head-txt {
@@ -6885,33 +6929,41 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 }
 
 .apm-sup-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: -.2px;
+  letter-spacing: -.3px;
 }
 
-.apm-sup-sub {
+.apm-sup-head .apm-sup-sub {
   font-size: 11.5px;
-  color: rgba(255, 255, 255, .82);
-  margin-top: 1px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, .88);
+  margin-top: 3px;
+  white-space: normal;
 }
 
 .apm-sup-close {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, .25);
-  background: rgba(255, 255, 255, .14);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  background: rgba(255, 255, 255, .16);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background .15s;
+  transition: background .15s, transform .12s;
+}
+
+.apm-sup-close svg {
+  width: 14px;
+  height: 14px;
 }
 
 .apm-sup-close:hover:not(:disabled) {
   background: rgba(255, 255, 255, .26);
+  transform: rotate(90deg);
 }
 
 .apm-sup-close:disabled {
@@ -6920,7 +6972,7 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 }
 
 .apm-sup-body {
-  padding: 16px 20px;
+  padding: 12px 18px;
   background: #fff;
   max-height: calc(100vh - 220px);
   overflow-y: auto;
@@ -6928,35 +6980,98 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 
 .apm-sup-foot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 20px;
-  background: #faf8ff;
+  gap: 12px;
+  padding: 12px 22px 14px;
+  background: linear-gradient(180deg, #fff, #faf8ff);
   border-top: 1px solid #efe9fb;
+}
+
+.apm-sup-card {
+  position: relative;
+  overflow: hidden;
+  padding: 0 18px 16px 22px;
+  border: 1px solid #e9e1fb;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, .06);
+}
+
+.apm-sup-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed 55%, #5b21b6);
+}
+
+.apm-sup-card-ico {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c3aed;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+}
+
+.apm-sup-card-ico svg {
+  width: 14px;
+  height: 14px;
+}
+
+.apm-sup-card-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #6d28d9;
+}
+
+.apm-sup-card-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: -4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 3px 8px -2px rgba(124, 58, 237, .5);
+  font-variant-numeric: tabular-nums;
 }
 
 .apm-sup-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 10px;
+  padding: 12px 0;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #f1ecfd;
 }
 
-/* Search over the mapped rows — sits where the "N suppliers mapped" pill was
-   (the count now lives in the pager's "Showing X–Y of Z"). */
 .apm-sup-search {
   --ui-search-clear: #7c3aed;
   flex: 1;
   max-width: 340px;
-  height: 34px;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 6px 0 11px;
+  padding: 0 6px 0 13px;
   background: #fff;
   border: 1.5px solid #e2d4fa;
-  border-radius: 9px;
+  border-radius: 11px;
   color: #a78bfa;
   transition: border-color .16s, box-shadow .16s;
 }
@@ -6990,25 +7105,35 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 
 .apm-sup-map {
   margin-left: auto;
+  height: 40px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 7px;
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: -.1px;
+  white-space: nowrap;
   color: #fff;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 40%, #7c3aed 72%, #a78bfa 100%);
   border: none;
-  border-radius: 9px;
-  padding: 7px 12px;
+  border-radius: 11px;
+  padding: 0 18px;
   cursor: pointer;
-  box-shadow: 0 3px 9px rgba(124, 58, 237, .42);
-  transition: transform .14s, box-shadow .14s;
+  box-shadow: 0 8px 18px -8px rgba(124, 58, 237, .7), inset 0 1px 0 rgba(255, 255, 255, .22);
+  transition: transform .12s, box-shadow .15s, background .15s;
+}
+
+.apm-sup-map svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .apm-sup-map:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(124, 58, 237, .52);
+  box-shadow: 0 10px 22px -8px rgba(124, 58, 237, .8), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
 
 .apm-sup-map:disabled {
@@ -7017,6 +7142,14 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   cursor: not-allowed;
   opacity: .75;
   transform: none;
+}
+
+.apm-sup-bar > span:has(> .apm-sup-map) {
+  margin-left: auto;
+}
+
+.apm-sup-bar > span:has(> .apm-sup-map) > .apm-sup-map {
+  margin-left: 0;
 }
 
 .apm-sup-map span {
@@ -7041,8 +7174,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   border-radius: 12px;
 }
 
-/* Table + pager read as one card: the table gives up its bottom corners and
-   the shared .wl-pager band closes the card underneath it. */
 .apm-sup-tablewrap.has-pager {
   border-bottom: none;
   border-radius: 12px 12px 0 0;
@@ -7058,33 +7189,32 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 .apm-sup-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11.5px;
   white-space: nowrap;
 }
 
-/* Tinted header strip, matching the Mapped Products table in the Add Supplier
-   modal (.avm-mapped-table) so both "mapped" grids read as the same component. */
 .apm-sup-table thead tr {
   background: linear-gradient(135deg, #faf8ff, #f3eefe);
 }
 
 .apm-sup-table thead th {
-  text-align: left;
+  text-align: center;
   background: transparent;
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: .06em;
+  letter-spacing: .07em;
   text-transform: uppercase;
   color: #8b7bb8;
-  padding: 10px 14px;
+  padding: 11px 12px;
   border-bottom: 1px solid #efe9fb;
 }
 
 .apm-sup-table tbody td {
-  padding: 11px 14px;
+  padding: 12px;
+  text-align: center;
   border-bottom: 1px solid #f4f0fc;
   color: #334155;
-  font-weight: 600;
+  font-weight: 500;
   vertical-align: middle;
 }
 
@@ -7129,6 +7259,45 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   border-radius: 6px;
   padding: 2px 8px;
 }
+
+.apm-sup-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.apm-sup-origin--dom  { color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; }
+.apm-sup-origin--intl { color: #0e7490; background: #ecfeff; border: 1px solid #a5e8f5; }
+
+.apm-sup-sub {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #8b8a94;
+  margin-top: 1px;
+  white-space: nowrap;
+}
+
+.apm-sup-nogst {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.apm-sup-dash { color: #b9b8c2; }
+
+[data-bs-theme="dark"] .apm-sup-origin--dom  { color: #4ade80; background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.32); }
+[data-bs-theme="dark"] .apm-sup-origin--intl { color: #67e8f9; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); }
+[data-bs-theme="dark"] .apm-sup-nogst { color: #cbd5e1; background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.13); }
+[data-bs-theme="dark"] .apm-sup-sub { color: #94a3b8; }
+[data-bs-theme="dark"] .apm-sup-head .apm-sup-sub { color: rgba(255, 255, 255, .88); }
 
 .apm-sup-ctotal {
   font-weight: 800;
@@ -7262,6 +7431,32 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 
 [data-bs-theme="dark"] .apm-sup-body {
   background: #1a1430;
+}
+
+[data-bs-theme="dark"] .apm-sup-card {
+  background: #221c3d;
+  border-color: rgba(167, 139, 250, .22);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
+}
+
+[data-bs-theme="dark"] .apm-sup-card-ico {
+  background: rgba(124, 58, 237, .18);
+  border-color: rgba(167, 139, 250, .30);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-sup-card-title {
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-sup-bar {
+  border-bottom-color: rgba(167, 139, 250, .18);
+}
+
+[data-bs-theme="dark"] .apm-sup-map:disabled {
+  background: rgba(124, 58, 237, .28);
+  color: rgba(255, 255, 255, .55);
+  opacity: 1;
 }
 
 [data-bs-theme="dark"] .apm-sup-foot {
@@ -7671,7 +7866,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   height: 48px;
 }
 
-/* Reset frozen while no filter is applied (QA #86). */
 .prd-fbtn:disabled,
 .prd-fbtn.ghost:disabled:hover {
   opacity: .5;
@@ -7689,9 +7883,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   border-color: rgba(255, 255, 255, .12);
 }
 
-/* Header tab row: 8px from the panel edge, not 12 (+1px border ≈ 14) — QA #27.
-   The cards below take the same 8px sides and top so their left edge stays
-   level with the first tab. */
 .prd-toolbar {
   padding: 8px 8px 1px;
 }
@@ -7701,9 +7892,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   padding: 8px;
 }
 
-/* The badge dot keeps its own colour on the selected tab (QA #28) — green for
-   Active, red for Inactive — instead of turning white when the tab switches.
-   A light ring keeps it readable on the violet tab. */
 .dt-tab.on .prd-tab-badge--active .prd-tab-badge-dot {
   background: #22c55e;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
@@ -7714,9 +7902,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
 }
 
-/* Add Product form: labels and fields in the Customer form's type
-   (.acm-field .avm-field-label / .avm-input) — labels 11px / 500 in normal case,
-   inputs and dropdowns 13px / 400. */
 .apm-field-label {
   font-size: 11px;
   font-weight: 500;
@@ -7730,11 +7915,8 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   font-weight: 400;
 }
 
-/* Filter button text = the tab labels' 12.5px (QA #92). */
 .prd-filter-btn { font-size: 12.5px; }
 
-/* Tabs are the Customer list's dt-tabrail; on a phone the stacked toolbar
-   gives the rail the full width, as the old tab row had. */
 @media (max-width: 640px) {
   .prd-toolbar .dt-tabrail,
   .prd-toolbar .dt-tabs {
@@ -7747,8 +7929,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   }
 }
 
-/* Filter button without the effects: no shine sweep, no drifting gradient,
-   no hover lift — a still button that only brightens on hover. */
 .prd-filter-btn {
   animation: none;
   background-size: 100% 100%;
@@ -7763,8 +7943,6 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   transform: none;
 }
 
-/* Add Product form placeholders = the Customer form's (add-vendor-modal.css
-   .avm-input::placeholder): #94a3b8 at .45 opacity, 13px / 400. */
 .apm-input::placeholder,
 .apm-modal textarea::placeholder,
 .apm-master-select .master-select-placeholder {
@@ -7772,4 +7950,281 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   opacity: .45 !important;
   font-size: 13px !important;
   font-weight: 400 !important;
+}
+
+.apm-mv-sec {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 0 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #6d28d9;
+}
+
+.apm-mv-sec::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, #e9e1fb, transparent);
+}
+
+.apm-grid-3 + .apm-mv-sec {
+  margin-top: 16px;
+}
+
+.apm-mv-popup .apm-field-label {
+  min-height: 22px;
+}
+
+.apm-auto-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid #e2d4fa;
+  background: #f5f3ff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #7c3aed;
+  text-transform: none;
+}
+
+.apm-field.is-auto .apm-input.apm-readonly {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 13px 13px;
+}
+
+.apm-mv-origin {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 9px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  background: rgba(255, 255, 255, .18);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  color: #fff;
+  vertical-align: middle;
+}
+
+[data-bs-theme="dark"] .apm-auto-chip {
+  background: rgba(124, 58, 237, .18);
+  border-color: rgba(167, 139, 250, .35);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-mv-sec {
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-mv-sec::after {
+  background: linear-gradient(90deg, rgba(255, 255, 255, .12), transparent);
+}
+
+.apm-sup-origin svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
+.apm-mv-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.apm-mv-grid > .apm-field {
+  min-width: 0;
+}
+
+.apm-mv-grid-sup > .apm-field:first-child {
+  grid-column: span 2;
+}
+
+.apm-mv-grid + .apm-mv-sec {
+  margin-top: 16px;
+}
+
+@media (max-width: 880px) {
+  .apm-mv-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .apm-mv-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .apm-mv-grid-sup > .apm-field:first-child {
+    grid-column: auto;
+  }
+}
+
+.apm-mv-sec svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.apm-mv-sec-note {
+  order: 3;
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid #e2d4fa;
+  border-radius: 999px;
+  background: #f5f3ff;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #6d28d9;
+}
+
+.apm-mv-sec::after {
+  order: 2;
+}
+
+.apm-mv-origin svg {
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.apm-mv-popup-foot {
+  justify-content: space-between;
+}
+
+.apm-mv-foot-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.apm-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1.5px solid #e2d4fa;
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6d28d9;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.apm-btn-back:hover:not(:disabled) {
+  background: #f5f3ff;
+  border-color: #c4b5fd;
+}
+
+.apm-btn-back:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.apm-btn-back svg {
+  width: 13px;
+  height: 13px;
+}
+
+.apm-btn-tick {
+  width: 13px;
+  height: 13px;
+}
+
+[data-bs-theme="dark"] .apm-mv-sec-note {
+  background: rgba(124, 58, 237, .18);
+  border-color: rgba(167, 139, 250, .35);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .apm-btn-back {
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(255, 255, 255, .14);
+  color: #c4b5fd;
+}
+
+.apm-mv-popup .apm-input {
+  background: #fff;
+  border-color: #ddd6fe;
+}
+
+.apm-mv-popup .apm-input:focus,
+.apm-mv-popup .apm-input:focus-visible {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, .15);
+}
+
+.apm-mv-popup .apm-field.is-auto .apm-input.apm-readonly {
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #64748b;
+  font-weight: 600;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+
+.apm-mv-popup .apm-field.is-auto .apm-input.apm-readonly::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+[data-bs-theme="dark"] .apm-mv-popup .apm-input {
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(255, 255, 255, .14);
+}
+
+[data-bs-theme="dark"] .apm-mv-popup .apm-field.is-auto .apm-input.apm-readonly {
+  background-color: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+  color: #94a3b8;
+}
+
+.prd-panel > .prd-pagination { margin-top: auto; }
+
+/* QA #106 - Products list: the header's Add Product button reads 12.5px like Filter beside it
+   (the shared .sup-fig strip sets 11.5px; scoped here so other list pages keep theirs). */
+.prd-root .sup-fig .cstrip__action-btn { font-size: 12.5px; }
+
+/* QA #107 - Product Details: every button 40px tall with 12.5px text; the three tabs are 40px
+   buttons inside a 48px bar (4px padding each side). */
+.pv2pd-root .pv2pd-hbtn,
+.pv2pd-root .pv2pd-act {
+  box-sizing: border-box;
+  height: 40px;
+  min-height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12.5px;
+}
+.pv2pd-root .pv2pd-tabs {
+  box-sizing: border-box;
+  min-height: 48px;
+}
+.pv2pd-root .pv2pd-tab {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12.5px;
 }

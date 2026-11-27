@@ -589,7 +589,9 @@ export default function BranchForm({ onBack, editId }: Props) {
   }, []);
 
   const countryOptions = useMemo(
-    () => countries.map(c => ({ label: c.name, value: c.name })),
+    () => countries
+      .filter(c => String(c.status ?? 'Active').toLowerCase() === 'active') // active only
+      .map(c => ({ label: c.name, value: c.name })),
     [countries]
   );
 
@@ -599,6 +601,7 @@ export default function BranchForm({ onBack, editId }: Props) {
     if (!selected) return [];
     return statesAll
       .filter(s => Number(s.country_id) === selected.id)
+      .filter(s => String(s.status ?? 'Active').toLowerCase() === 'active') // active only
       .map(s => ({ label: s.name, value: s.name }));
   }, [form.country, countries, statesAll]);
 
@@ -1594,9 +1597,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>Branch Logo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <StagedFileField accept="image/jpeg,image/png,image/webp,image/svg+xml"
-                    staged={logoFile} saved={savedLogo}
-                    onPick={handleLogoChange} onClear={() => handleLogoChange(null)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>PNG, JPG, WebP, SVG &middot; Recommended 200&times;400 px &middot; Max 2 MB &middot; Falls back to client logo if blank</small>
               </Col>
@@ -1604,9 +1605,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>Profile Photo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <StagedFileField accept="image/jpeg,image/png"
-                    staged={profilePhotoFile} saved={savedProfilePhoto}
-                    onPick={handleProfilePhotoChange} onClear={() => handleProfilePhotoChange(null)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>JPG, PNG &middot; Square 200&times;200 px recommended &middot; Max 2 MB</small>
               </Col>
@@ -1614,9 +1613,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>Authorized Signatory (Stamp &amp; Signature)</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {signaturePreview && <img src={signaturePreview} alt="signature" style={{ width: 60, height: 40, objectFit: 'contain', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', background: '#ffffff', padding: '2px', flexShrink: 0 }} />}
-                  <StagedFileField accept="image/jpeg,image/png,image/webp"
-                    staged={signatureFile} saved={savedSignature}
-                    onPick={handleSignatureChange} onClear={() => handleSignatureChange(null)} />
+                  <Input style={{ fontSize: '12.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleSignatureChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>PNG (transparent bg) preferred &middot; Appears on signed Quotation / PI PDFs &middot; Max 2 MB</small>
               </Col>

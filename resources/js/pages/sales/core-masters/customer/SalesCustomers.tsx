@@ -55,6 +55,13 @@ function SegChip({ name, status, split = false }: { name: string; status?: strin
   return clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip;
 }
 
+function TypePill({ value, style }: { value: string; style: React.CSSProperties }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const clipped = useIsClipped(ref, value);
+  const pill = <span ref={ref} className="smc-type-pill" style={style}>{value}</span>;
+  return clipped ? <Tooltip label={value}>{pill}</Tooltip> : pill;
+}
+
 type Customer = {
   id: string; db_id?: number;
   company: string; type: string; segment: string;
@@ -78,7 +85,9 @@ const TYPE_COLORS: Record<string, { bg: string; color: string; border: string }>
   'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)' },
 };
 
-const ROWS_PER_PAGE = 10;
+/** 12 entries per page; the table card is sized to fit exactly 12 rows. */
+const TABLE_ROWS = 12;
+const ROWS_PER_PAGE = TABLE_ROWS;
 const titleCase = (s: string): string => {
   if (!s) return s;
   if (s === s.toUpperCase() && /[A-Z]/.test(s)) return s;
@@ -110,12 +119,16 @@ function useDebouncedValue<T>(value: T, ms = 300): T {
 }
 
 
-const bottomReserve = (): number => {
+/* Room to leave under the card. The app footer usually sits OUTSIDE the
+   scroller (its own slot below .main-content), so the scroller's height already
+   leaves it out and only .page-content's 8px bottom padding is left to keep.
+   Counting the footer again here left an empty ~40px band above it. Only a
+   footer inside the scroller takes room here (same rule as CredVault's fill). */
+const bottomReserve = (scroller: HTMLElement | null): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
-  // Reserve the footer height + 8px so the card ends above it (see DataTable).
-  const fh = f?.offsetHeight ?? 0;
-  return fh > 0 ? fh + 8 : 15;
+  const fh = f && (!scroller || scroller.contains(f)) ? f.offsetHeight : 0;
+  return fh > 0 ? fh + 8 : scroller ? 8 : 15;
 };
 
 export default function SalesCustomers() {
@@ -179,7 +192,7 @@ export default function SalesCustomers() {
         ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
         : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
       const spaceH = scroller ? scroller.clientHeight : window.innerHeight;
-      const cardSpace = spaceH - offsetTop - bottomReserve();
+      const cardSpace = spaceH - offsetTop - bottomReserve(scroller);
 
       delete el.dataset.unpinned;
       const h = Math.max(240, cardSpace);
@@ -191,7 +204,6 @@ export default function SalesCustomers() {
         el.style.maxHeight = next;
       }
 
-      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
 
       const filterbarH = (el.querySelector('.smc-filterbar') as HTMLElement | null)?.offsetHeight || 0;
@@ -206,8 +218,10 @@ export default function SalesCustomers() {
         ? scrollBox.clientHeight - theadH
         : h - toolbarH - filterbarH - theadH - footerH - 8;
 
-      const rowsFit = Math.max(5, Math.floor((avail + 2) / rowH));
-      setPageSize(rowsFit);
+      /* The card keeps the height of the space under the header: the table scrolls
+         inside it, not the page. */
+      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
+      setPageSize(TABLE_ROWS);
     };
     const onResize = () => fit();
     fit();
@@ -285,8 +299,11 @@ export default function SalesCustomers() {
   if (filters.whatsapp) filterChips.push({ label: `Whatsapp: ${filters.whatsapp}`, onRemove: () => setFilters(f => ({ ...f, whatsapp: undefined })) });
 
   useEffect(() => {
-    if (readCustomerMasterBundle()) return;
     const warm = () => {
+      // Fetch the form's code ahead of the first click so Add Customer opens
+      // straight into the form, not the loading shell (same module as the lazy import).
+      import('./AddCustomerModal').catch(() => {  });
+      if (readCustomerMasterBundle()) return;
       api.get('/customers/master-bundle')
         .then(res => writeCustomerMasterBundle(res.data))
         .catch(() => {  });
@@ -354,11 +371,7 @@ export default function SalesCustomers() {
         const v = info.getValue() as string | null;
         if (!v) return <span className="text-muted">—</span>;
         const t = TYPE_COLORS[v] || { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)' };
-        return (
-          <span className="smc-type-pill" style={{ background: t.bg, color: t.color, borderColor: t.border }}>
-            {v}
-          </span>
-        );
+        return <TypePill value={v} style={{ background: t.bg, color: t.color, borderColor: t.border }} />;
       },
     },
     {
@@ -614,7 +627,7 @@ export default function SalesCustomers() {
               divClass="table-responsive"
               SearchPlaceholder="Search customers..."
               worklistPagination
-              pageSizeOptions={[5, 10, 15, 25, 50]}
+              pageSizeOptions={[5, 10, 12, 15, 25, 50]}
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}

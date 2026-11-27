@@ -14,20 +14,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * P2P · SPI Stage 04 — temporary put-away. /api/p2p/spi/{id}/putaway
- *
- * The operator scans a chain: box -> location -> rack -> shelf, then confirms.
- * Until confirmed the box is PICKED BUT NOT PLACED.
- *
- * Every attempt is written to p2p_spi_scan_logs, success and failure alike. A
- * rejected scan never touches the put-away row, so without that log it would
- * be invisible — and "the scanner isn't working" would be unanswerable.
- *
- * An own warehouse allocates rack and shelf; a third party is summary only.
- * Which it is comes from inventory_warehouses.wh_type, never from a column here
- * that could contradict it.
- */
 class SpiPutawayController extends Controller
 {
     public function __construct(
@@ -47,7 +33,6 @@ class SpiPutawayController extends Controller
         return SupplierInvoice::findOrFail($id);
     }
 
-    /** True when the chosen warehouse is ours, so rack and shelf are allocated. */
     private function isFullPutaway(?int $warehouseId): bool
     {
         if (!$warehouseId) return true;
@@ -55,9 +40,6 @@ class SpiPutawayController extends Controller
         return DB::table('inventory_warehouses')->where('id', $warehouseId)->value('wh_type') === 'own';
     }
 
-    /* ══════════════════════════ READ ══════════════════════════ */
-
-    /** GET /p2p/spi/{id}/putaway */
     public function index(Request $request, int $id)
     {
         try {
@@ -92,8 +74,6 @@ class SpiPutawayController extends Controller
         }
     }
 
-    /* ══════════════════════════ WRITE ══════════════════════════ */
-
     public function setStorageType(Request $request, int $id)
     {
         try {
@@ -109,10 +89,6 @@ class SpiPutawayController extends Controller
                     'message' => "{$spi->code} is {$spi->status} and can no longer be edited.",
                 ], 422));
             }
-            /* Fixed only once putaway has actually STARTED — a box assigned a
-               location commits the warehouse. Box packaging being complete does
-               not: before any box is placed, changing the warehouse is safe, and
-               the Stage 03->04 capability blocker depends on being able to. */
             if ($spi->putaways()->exists()) {
                 abort(response()->json([
                     'status'  => false,
@@ -135,15 +111,6 @@ class SpiPutawayController extends Controller
                 ]], 200);
             }
 
-            /* Scoped to the invoice's client AND BRANCH: an id alone is not
-               proof of ownership, and this column has no foreign key behind it.
-
-               The branch matters as much as the client. A warehouse is
-               branch-wise and so are the zones, racks and shelves under it, so
-               a warehouse from another branch would send the scanner looking
-               for locations this invoice's branch does not own. A null
-               branch_id is a client-wide site, which belongs to every branch —
-               the same rule BaseInventoryController::scopeTenant reads by. */
             $wh = DB::table('inventory_warehouses')
                 ->where('id', $data['warehouse_id'])
                 ->where('client_id', $spi->client_id)
@@ -152,7 +119,6 @@ class SpiPutawayController extends Controller
             if (!$wh) {
                 abort(response()->json(['status' => false, 'message' => 'That warehouse does not exist.'], 422));
             }
-            // Status is 0/1 on the Inventory masters, not the string 'Active'.
             if ((int) $wh->status !== 1) {
                 abort(response()->json([
                     'status'  => false,
@@ -160,8 +126,6 @@ class SpiPutawayController extends Controller
                 ], 422));
             }
 
-            // Cold-chain / hazardous boxes need a warehouse with a zone that
-            // allows it — the putaway would otherwise have nowhere to land.
             $missing = $this->capability->missingFor($spi->id, (int) $wh->id);
             if ($missing) {
                 abort(response()->json([
@@ -182,11 +146,6 @@ class SpiPutawayController extends Controller
                 'warehouse_id' => $wh->id,
                 'wh_name'      => $wh->wh_name,
                 'wh_type'      => $wh->wh_type,
-                /* A third party gets no rack or shelf allocation.
-                   Through isFullPutaway(), which reads the stored value 'own' —
-                   this line compared against the LABEL 'Own Warehouse' and so
-                   called every own warehouse a third party, sending the screen
-                   down the summary path the moment a warehouse was chosen. */
                 'putaway_mode' => $this->isFullPutaway((int) $wh->id) ? 'full' : 'summary',
             ]], 200);
         } catch (\Throwable $e) {
@@ -195,14 +154,6 @@ class SpiPutawayController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/{id}/warehouse-eligibility
-     *
-     * What this invoice's boxes require (cold-chain / hazardous) and, for every
-     * own warehouse in scope, whether it can hold them. Drives the change-
-     * warehouse picker: incompatible warehouses are shown with the reason, and
-     * the Stage 03 -> 04 move is blocked until a compatible one is set.
-     */
     public function warehouseEligibility(Request $request, int $id)
     {
         $this->tenantUser($request);
@@ -235,16 +186,6 @@ class SpiPutawayController extends Controller
         ]], 200);
     }
 
-    /**
-     * POST /p2p/spi/{id}/putaway/scan — one scan per call.
-     *
-     * POST, not PUT: each scan stamps its own timestamp, so it is not
-     * idempotent. Every attempt is logged before anything is decided.
-     *
-     * The refusal checks run BEFORE the transaction opens, on purpose: a
-     * refusal writes its scan-log row and then aborts, and a rollback would
-     * destroy the one record the rejection exists to leave behind.
-     */
     public function scan(Request $request, int $id)
     {
         $user = $this->tenantUser($request);
@@ -260,8 +201,6 @@ class SpiPutawayController extends Controller
 
         $full = $this->isFullPutaway($spi->warehouse_id);
         [$box, $other] = $this->resolveScannedBox($spi, $data);
-
-        // ── Refusals. Each one is logged with the reason before it aborts. ──
 
         if ($data['scan_type'] === 'box' && !$box) {
             $value = $data['scanned_value'];
@@ -305,9 +244,6 @@ class SpiPutawayController extends Controller
             );
         }
 
-        /* Resolve WHERE the scan points, not just that it happened. Without
-           this the row records four timestamps and no location, which is the
-           one thing Stage 04 exists to capture. */
         $place = $this->resolveLocation($data['scan_type'], $data['scanned_value'], $spi, $row);
         if (is_string($place)) {
             $this->refuse(
@@ -324,8 +260,6 @@ class SpiPutawayController extends Controller
                 $row
             );
         }
-
-        // ── Accepted ──
 
         try {
             DB::beginTransaction();
@@ -363,7 +297,6 @@ class SpiPutawayController extends Controller
         }
     }
 
-    /** PUT /p2p/spi/{id}/putaway/{row}/confirm — the box is now placed. */
     public function confirm(Request $request, int $id, int $rowId)
     {
         try {
@@ -416,33 +349,12 @@ class SpiPutawayController extends Controller
         }
     }
 
-    /**
-     * The box a scan names, and — when it is not one of this invoice's — the
-     * box it actually is, so the refusal can say which invoice to open.
-     *
-     * Resolved by ID first. A box id is unique across every invoice, client and
-     * branch; a box CODE is only unique inside its own invoice, because every
-     * invoice starts again at B-001. The sticker QR therefore carries the id,
-     * and a numeric scan needs no invoice context at all.
-     *
-     * A textual scan is still accepted — someone keying the printed code by
-     * hand — and that one is matched inside this invoice only.
-     *
-     * Both lookups go through the tenant scope, so a box of another client or
-     * another branch is simply not found. The old version bypassed that scope
-     * and searched everywhere, which made "belongs to another invoice" fire for
-     * every typo once B-001 existed on more than one SPI.
-     *
-     * @return array{0: ?SpiBox, 1: ?SpiBox} the box on this invoice, the box scanned
-     */
     private function resolveScannedBox(SupplierInvoice $spi, array $data): array
     {
         $value = trim((string) ($data['box_code'] ?? $data['scanned_value']));
 
         if ($value === '') return [null, null];
 
-        // The sticker URL, when that is what came off the carton. Older labels
-        // carry the bare id and still arrive as digits below.
         if ($id = StickerKey::idFor($value, 'BOX')) $value = (string) $id;
 
         if (ctype_digit($value)) {
@@ -454,25 +366,14 @@ class SpiPutawayController extends Controller
         $box = SpiBox::where('supplier_invoice_id', $spi->id)->where('box_code', $value)->first();
         if ($box) return [$box, $box];
 
-        // The same code on another of this tenant's invoices — name it.
         return [null, SpiBox::with('invoice:id,code')->where('box_code', $value)->first()];
     }
 
-    /**
-     * Turn a scanned barcode into the id it names.
-     *
-     * Returns the columns to write, or a string naming why it was refused:
-     * 'unknown' · 'inactive' · 'not_on_rack'.
-     *
-     * A box scan carries no location of its own, so it writes nothing here —
-     * the box has already been resolved by the caller.
-     */
     private function resolveLocation(string $type, string $value, SupplierInvoice $spi, SpiPutaway $row): array|string
     {
         if ($type === 'box') return [];
 
         if ($type === 'location') {
-            // The zone within the invoice's warehouse.
             $zone = $this->matchLocation('inventory_zones', 'ZN', $value)
                 ->where('warehouse_id', $spi->warehouse_id)->first();
             if (!$zone) return 'unknown';
@@ -486,30 +387,25 @@ class SpiPutawayController extends Controller
                 ->where('warehouse_id', $spi->warehouse_id)->first();
             if (!$rack) return 'unknown';
             if ((int) $rack->status !== 1) return 'inactive';
-            // A rack in another zone than the one just scanned is a wrong turn.
             if ($row->zone_id && (int) $rack->zone_id !== (int) $row->zone_id) return 'not_on_rack';
 
             return ['rack_id' => $rack->id];
         }
 
-        // shelf
         $shelf = $this->matchShelf($value, $row)->first();
         if (!$shelf) return 'unknown';
         if ((int) $shelf->status !== 1) return 'inactive';
-        // The shelf must belong to the rack the operator just scanned.
         if ($row->rack_id && (int) $shelf->rack_id !== (int) $row->rack_id) return 'not_on_rack';
 
         return ['shelf_id' => $shelf->id];
     }
 
-    /** The human-readable placement, rebuilt after every scan. */
     private function describe(SpiPutaway $row): string
     {
         $wh   = DB::table('inventory_warehouses')->where('id', $row->warehouse_id)->value('code');
         $zone = $row->zone_id ? DB::table('inventory_zones')->where('id', $row->zone_id)->value('code') : null;
         $rack = $row->rack_id ? DB::table('inventory_racks')->where('id', $row->rack_id)->value('code') : null;
 
-        // A shelf has no code column — it is its rack's code plus the level.
         $shelf = null;
         if ($row->shelf_id) {
             $level = DB::table('inventory_shelves')->where('id', $row->shelf_id)->value('level_no');
@@ -519,27 +415,11 @@ class SpiPutawayController extends Controller
         return implode(' / ', array_filter([$wh, $zone, $rack, $shelf]));
     }
 
-    /**
-     * A scanned label, matched against an Inventory master.
-     *
-     * TWO FORMS reach here and both have to work:
-     *   · 'ZN:14'  — what the QR on the printed label carries (a rack reads
-     *                'RC:7'). Codes are
-     *                numbered per BRANCH, so three branches each have a ZN-001
-     *                and the code alone no longer names one row; the QR carries
-     *                the id for that reason. See BaseInventoryController.
-     *   · 'ZN-001' — the code printed under the QR, which is what gets typed
-     *                when the label is scuffed and the camera will not read it.
-     *
-     * The caller still scopes the result to the invoice's warehouse, so a valid
-     * id from somewhere else is refused rather than trusted.
-     */
     private function matchLocation(string $table, string $kind, string $value)
     {
         $value = trim($value);
         $q     = DB::table($table);
 
-        // The sticker URL now printed on the label, read back to an id.
         $type = ['ZN' => 'ZONE', 'RC' => 'RACK', 'SH' => 'SHELF', 'WH' => 'WAREHOUSE'][strtoupper($kind)] ?? '';
         if ($id = StickerKey::idFor($value, $type)) return $q->where('id', $id);
 
@@ -548,10 +428,6 @@ class SpiPutawayController extends Controller
             : $q->where('code', 'ilike', $value);
     }
 
-    /**
-     * The shelf, which has no code column of its own: 'RC-002-SH-03' is its
-     * rack's code plus the level. 'SH:41' is the QR, matched on the id.
-     */
     private function matchShelf(string $value, SpiPutaway $row)
     {
         $value = trim($value);
@@ -563,21 +439,13 @@ class SpiPutawayController extends Controller
             return $q->where('id', (int) $m[1]);
         }
 
-        // Typed: take the level off the tail, within the rack already scanned.
         if (preg_match('/sh-?(\d+)$/i', $value, $m) && $row->rack_id) {
             return $q->where('rack_id', $row->rack_id)->where('level_no', (int) $m[1]);
         }
 
-        // Nothing recognisable — fall back to the name, which is free text.
         return $q->where('shelf_name', 'ilike', $value);
     }
 
-    /* ══════════════════════════ SCAN LOG ══════════════════════════ */
-
-    /**
-     * Log the rejection, then abort with it. The log row is the point, which
-     * is why no transaction is open around the refusal path.
-     */
     private function refuse(
         SupplierInvoice $spi,
         array $data,
@@ -594,12 +462,6 @@ class SpiPutawayController extends Controller
         abort(response()->json(['status' => false, 'message' => $message], 422));
     }
 
-    /**
-     * $resolvedId is what the scan actually named, which is not always a box of
-     * THIS invoice — a carton from the next SPI resolves fine and is still
-     * refused. box_id stays null in that case so the log cannot be read as if
-     * the box belonged here, while resolved_id keeps the evidence.
-     */
     private function logScan(
         SupplierInvoice $spi,
         array $data,
@@ -617,8 +479,6 @@ class SpiPutawayController extends Controller
             'putaway_id'          => $row?->id,
             'box_id'              => $box?->id,
             'scan_type'           => $data['scan_type'],
-            // The raw string the scanner reported, kept even when unreadable —
-            // that string is the evidence.
             'scanned_value'       => $data['scanned_value'],
             'resolved_id'         => $resolvedId ?? $box?->id,
             'result'              => $result,

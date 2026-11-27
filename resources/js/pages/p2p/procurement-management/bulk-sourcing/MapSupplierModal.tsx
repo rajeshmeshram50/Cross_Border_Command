@@ -7,6 +7,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../../../components/ui/MasterMultiSelect';
 import { SegmentTags } from './SegmentTags';
 import { useModalGuard } from './useModalGuard';
+import SupplierPriceFields, { emptyPrice, priceErrors, pricePayload, rateOf, type PriceDraft, type PriceMasters } from './SupplierPriceFields';
 import Tooltip from '../../../../components/ui/Tooltip';
 import './bulk-sourcing.css';
 
@@ -17,13 +18,15 @@ import './bulk-sourcing.css';
  * On confirm → POST /p2p/sourcing-targets/{targetId}/products/{productId}/suppliers,
  * then onMapped(name). Static supplier data removed (see API.md). */
 
-export type SupplierMaster = { id: string; code: string; name: string; segment: string; contact: string; mobile: string; email: string; country?: string; region?: string };
+export type SupplierMaster = { id: string; code: string; name: string; segment: string; contact: string; mobile: string; email: string; country?: string; region?: string; origin?: 'domestic' | 'international'; currency?: string };
 // Master-backed dropdowns for the New Supplier form, from GET /p2p/form-masters.
 type FormMasters = {
   segments: { id: number; name: string }[];
   countries: { id: number; name: string }[];
   states: { id: number; country_id: number; name: string }[];
   stateCodes: { id: number; state_id: number; state_code: string }[];
+  currencies?: PriceMasters['currencies'];
+  gstRates?: number[];
 };
 
 export type MapProduct = { name: string; code?: string; segment?: string; price?: string; supplierCount: number };
@@ -163,6 +166,9 @@ export default function MapSupplierModal({ product, targetId, productId, editSup
   // Server-side validation errors mapped back onto the fields (e.g. a length
   // the client didn't catch) so they render inline in red, not just as a toast.
   const [srvErrs, setSrvErrs] = useState<Record<string, string>>({});
+  // Supplier price (unit price + GST, or currency + exchange rate) — required to map.
+  const [price, setPrice] = useState<PriceDraft>(emptyPrice());
+  const [priceTried, setPriceTried] = useState(false);
 
   useEffect(() => { api.get<{ data: SupplierMaster[] }>('/p2p/suppliers').then(r => setSuppliers(r.data?.data ?? [])).catch(() => {}); }, []);
   useEffect(() => {
@@ -225,6 +231,17 @@ export default function MapSupplierModal({ product, targetId, productId, editSup
   };
 
   const supplier = suppliers.find(s => s.id === sel);
+  const priceMasters: PriceMasters = { currencies: masters.currencies ?? [], gstRates: masters.gstRates ?? [] };
+  const masterOrigin = supplier?.origin ?? (supplier?.region === 'International' ? 'international' : 'domestic');
+  const newOrigin = selectedCountryName && selectedCountryName.trim().toLowerCase() !== 'india' ? 'international' : 'domestic';
+  // An overseas supplier starts with its usual currency and the master exchange rate.
+  useEffect(() => {
+    if (step !== 'master' || !supplier || masterOrigin !== 'international' || price.currency) return;
+    const cur = supplier.currency && supplier.currency !== 'INR' ? supplier.currency : 'USD';
+    setPrice(p => ({ ...p, currency: cur, rate: rateOf(priceMasters, cur) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, step, masters]);
+  const priceErrs = (origin: 'domestic' | 'international') => (priceTried ? priceErrors(origin, price) : {});
   const mapUrl = `/p2p/sourcing-targets/${targetId}/products/${productId}/suppliers`;
   const doMap = (payload: object, name: string) => {
     const done = (n: string) => (isEdit ? (onUpdated ?? onMapped)(n) : onMapped(n));
@@ -256,7 +273,12 @@ export default function MapSupplierModal({ product, targetId, productId, editSup
       })
       .finally(() => setSaving(false));
   };
-  const saveMaster = () => { if (!supplier) { toast.warning('Select a supplier', 'Please pick a supplier from the list.'); return; } doMap({ supplier_id: supplier.id }, supplier.name); };
+  const saveMaster = () => {
+    if (!supplier) { toast.warning('Select a supplier', 'Please pick a supplier from the list.'); return; }
+    setPriceTried(true);
+    if (Object.keys(priceErrors(masterOrigin, price)).length) { toast.warning('Missing price', 'Enter the supplier price fields highlighted in red.'); return; }
+    doMap({ supplier_id: supplier.id, ...pricePayload(masterOrigin, price) }, supplier.name);
+  };
   // Inline required-field validation. Errors appear after the first save
   // attempt (`submitted`) and clear live as the user fills each field.
   const newSupplierErrors = (): Record<string, string> => {
@@ -283,13 +305,15 @@ export default function MapSupplierModal({ product, targetId, productId, editSup
     setSubmitted(true);
     setSrvErrs({});
     const e = newSupplierErrors();
-    if (Object.keys(e).length) { toast.warning('Missing details', 'Please fill all the required fields highlighted in red.'); return; }
+    if (!isEdit) setPriceTried(true);
+    const pe = isEdit ? {} : priceErrors(newOrigin, price);
+    if (Object.keys(e).length || Object.keys(pe).length) { toast.warning('Missing details', 'Please fill all the required fields highlighted in red.'); return; }
     const countryName = masters.countries.find(c => c.id === countryId)?.name ?? '';
     const stateName = masters.states.find(s => s.id === stateId)?.name ?? '';
     // India stores the number with its +91 country code; other countries store
     // the number as entered.
     const mobileOut = isIndiaMobile ? `+91 ${mobile}` : mobile;
-    doMap({ new_supplier: { name: co.trim(), contact, mobile: mobileOut, segment: seg.join(', '), email, gmaps, address: addr, country: countryName, state: stateName, state_code: stateCode, city, card } }, co.trim());
+    doMap({ new_supplier: { name: co.trim(), contact, mobile: mobileOut, segment: seg.join(', '), email, gmaps, address: addr, country: countryName, state: stateName, state_code: stateCode, city, card }, ...(isEdit ? {} : pricePayload(newOrigin, price)) }, co.trim());
   };
 
   return createPortal(
@@ -374,6 +398,11 @@ export default function MapSupplierModal({ product, targetId, productId, editSup
                 </div>
               </div>
             )}
+            {supplier && (
+              <div className="snf-body" style={{ padding: 0, marginTop: 14 }}>
+                <SupplierPriceFields origin={masterOrigin} value={price} onChange={setPrice} masters={priceMasters} targetPrice={product.price} errors={priceErrs(masterOrigin)} />
+              </div>
+            )}
             <div className="smp-form-foot">
               <button className="smp-btn-back" onClick={() => setStep('choose')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>Back</button>
               <button className="smp-btn-save smp-btn-map" onClick={saveMaster} disabled={saving}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>{saving ? 'Mapping…' : 'Map Supplier'}</button>
@@ -416,6 +445,9 @@ export default function MapSupplierModal({ product, targetId, productId, editSup
                 <div className="snf-field"><label className="snf-lbl">City <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.city)} maxLength={128} value={city} onChange={e => setCity(e.target.value)} placeholder="City name" />{errMsg(errs.city)}</div>
               </div>
             </div>
+            {!isEdit && (
+              <SupplierPriceFields origin={newOrigin} value={price} onChange={setPrice} masters={priceMasters} targetPrice={product.price} errors={priceErrs(newOrigin)} />
+            )}
             <div className="snf-section snf-last">
               <div className="snf-sec-hdr"><div className="snf-sec-icon amber-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div><span>Documents</span></div>
               {card ? (

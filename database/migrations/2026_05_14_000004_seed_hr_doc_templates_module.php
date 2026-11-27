@@ -3,11 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Registers the HR > Document & Evidence > "Document Templates" module
- * (slug: hr.doc_templates) and back-fills permission rows from a donor
- * (hr.broadcast — another HR document-and-evidence leaf with full ACL).
- */
 return new class extends Migration
 {
     public function up(): void

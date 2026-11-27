@@ -9,9 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            // Role & Hierarchy
             $table->string('user_type', 20)->nullable()->default('branch_user')
-                ->after('email'); // super_admin, client_admin, client_user, branch_user
+                ->after('email');
             $table->foreignId('client_id')->nullable()->after('user_type')
                 ->constrained('clients')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->after('client_id')
@@ -19,31 +18,24 @@ return new class extends Migration
             $table->foreignId('department_id')->nullable()->after('branch_id')
                 ->constrained('departments')->nullOnDelete();
 
-            // Contact
             $table->string('phone', 20)->nullable()->after('password');
 
-            // Status
             $table->string('status', 20)->nullable()->default('active')
-                ->after('phone'); // active, inactive, suspended, pending
+                ->after('phone');
 
-            // Profile
             $table->string('avatar', 500)->nullable()->after('status');
             $table->string('designation', 255)->nullable()->after('avatar');
             $table->string('employee_code', 50)->nullable()->after('designation');
 
-            // Auth tracking
             $table->timestamp('last_login_at')->nullable()->after('remember_token');
             $table->string('last_login_ip', 45)->nullable()->after('last_login_at');
             $table->integer('login_count')->nullable()->default(0)->after('last_login_ip');
 
-            // Future: app login
-            $table->string('device_token', 500)->nullable()->after('login_count'); // for push notifications
-            $table->string('login_source', 20)->nullable()->after('device_token'); // web, app
+            $table->string('device_token', 500)->nullable()->after('login_count');
+            $table->string('login_source', 20)->nullable()->after('device_token');
 
-            // Soft delete
             $table->softDeletes();
 
-            // Indexes
             $table->index('user_type');
             $table->index('client_id');
             $table->index('branch_id');

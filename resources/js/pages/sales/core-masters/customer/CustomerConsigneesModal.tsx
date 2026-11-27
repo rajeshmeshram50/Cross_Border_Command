@@ -94,8 +94,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   const custDomestic = (customer?.country ?? '').trim() === 'India';
   const mappableConsignees = useMemo(
     () => allConsignees.filter(c =>
-      !c.same_as_customer
-      && !rows.some(r => r.db_id === c.db_id)
+      !rows.some(r => r.db_id === c.db_id)
       && (((c.country ?? '').trim() === 'India') === custDomestic)
     ),
     [allConsignees, rows, custDomestic],

@@ -502,6 +502,8 @@ export default function Payments() {
               minWidth={1500}
               fitToViewport
               autoFitRows
+              minAutoRows={10}
+              fillToFooter
               loading={loading}
               tabs={statusTabs}
               activeTab={statusFilter || 'all'}
@@ -714,7 +716,8 @@ export default function Payments() {
                 <Button
                   type="button"
                   onClick={() => setViewPayment(null)}
-                  className="rounded-pill fw-semibold px-4 pmt-btn-ghost"
+                  className="rounded-pill fw-semibold pmt-btn-ghost d-inline-flex align-items-center justify-content-center"
+                  style={{ height: 40, fontSize: 12.5, padding: '0 18px' }}
                 >
                   Close
                 </Button>
@@ -722,9 +725,10 @@ export default function Payments() {
                   <Button
                     color="primary"
                     onClick={() => viewInvoice(viewPayment)}
-                    className="btn-label waves-effect waves-light rounded-pill"
+                    className="rounded-pill fw-semibold d-inline-flex align-items-center justify-content-center gap-1"
+                    style={{ height: 40, fontSize: 12.5, padding: '0 18px' }}
                   >
-                    <i className="ri-file-pdf-2-line label-icon align-middle rounded-pill fs-16 me-2" />
+                    <i className="ri-file-pdf-2-line fs-16" />
                     View Invoice PDF
                   </Button>
                 )}

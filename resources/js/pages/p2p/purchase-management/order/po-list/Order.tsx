@@ -1,4 +1,3 @@
-// P2P → Order: purchase order list, loaded from /api/p2p/orders.
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
@@ -13,9 +12,8 @@ import { useServerList } from '../../../../../hooks/useServerList';
 import { useFitPageSize } from '../../../../../hooks/useFitPageSize';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { ccyCode, ccySymbol } from '../../../../../utils/currency';
+import Amount from '../../../../../components/ui/Amount';
 const RecoverPaymentModal = lazy(() => import('../../../payment-management/advance-refund/RecoverPaymentModal'));
-// The PO form is a screen of its own: loaded only when one is being created,
-// so the list page doesn't carry it. The type import costs nothing at runtime.
 import type { PoLink } from '../create-po/CreatePoForm';
 const CreatePoForm = lazy(() => import('../create-po/CreatePoForm'));
 const PhysicalInspectionModal = lazy(() => import('../physical-inspection/PhysicalInspectionModal'));
@@ -98,9 +96,6 @@ const GUIDE_STEPS: GuideStep[] = [
 
 type TabKey = 'all' | 'with' | 'without' | 'cancelinit' | 'cancelclosed';
 
-/* `sub` is the parenthetical half of a tab label. It renders quieter than the
-   label so "PO Cancellation Initiated" reads first and "(Recovery Pending)"
-   qualifies it, rather than the two competing. */
 type ListTab = { key: TabKey; label: string; sub?: string; danger?: boolean; icon: ReactNode };
 
 const tabIconProps = {
@@ -167,10 +162,10 @@ export const ORDER_COLUMNS: Column[] = [
   { label: 'Supplier',                   width: 164 },
   { label: 'Risk Alert',                 width: 100 },
   { label: 'Expected Delivery Date',     width: 104 },
-  { label: 'Total PO Amount',            width: 106 },
-  { label: 'Net Payable Amount',         width: 112 },
-  { label: 'Total Paid Amount',          width: 110 },
-  { label: 'Balance Amount',             width: 106, groupEnd: true },
+  { label: 'Total PO Amount',            width: 126 },
+  { label: 'Net Payable Amount',         width: 130 },
+  { label: 'Total Paid Amount',          width: 122 },
+  { label: 'Balance Amount',             width: 126, groupEnd: true },
   { label: "Mapped SPI's",               width: 188 },
   { label: "GRN ID's",                   width: 158 },
   { label: "QA ID's",                    width: 158 },
@@ -180,7 +175,6 @@ export const ORDER_COLUMNS: Column[] = [
   { label: 'Advance Receipt Refund Adjustment', width: 238 },
   { label: 'Payment Recovery Status',    width: 246 },
   { label: 'PO Status',                  width: 118 },
-  // Four buttons on one line: Cancel, Edit, Evidence Vault, PO Timeline.
   { label: 'Action',                     width: 530 },
 ];
 
@@ -203,65 +197,44 @@ type RiskLevel = 'high' | 'medium' | 'low';
 type PaymentNote = { kind: 'ready' | 'waiting'; amount: number };
 
 export type AdvanceRefund = {
-  /** Latest note number; older ones are counted, not listed. */
   no: string;
   date: string;
   count: number;
-  /** What went out to the supplier as an advance. */
   paid: number;
-  /** What the credit note brings back. */
   credited: number;
 };
 
 export type OrderRow = {
-  /** Database id — set on rows loaded from /p2p/orders. */
   id?: number;
-  /** Saved but not yet submitted. */
   draft?: boolean;
   po: string; poDate: string; physicalInspection: boolean;
   type: PoType; docType: DocType;
-  /** The PO's own currency — payment screens print in it, not in ₹. */
   currency?: string | null;
   shipment: string | null; shipmentDate: string;
-  // An empty id renders as a dash (standalone PO, no procurement linked yet).
   opportunity: string; opportunityDate: string;
   procurement: string; procurementDate: string;
   supplier: string; supplierCategory: SupplierCategory;
-  /** The supplier master's own category text when it isn't one of the four known ones. */
   supplierCategoryText?: string;
   risk: RiskLevel | null;
   expectedDelivery: string;
   total: number; net: number; paid: number; balance: number;
-  /** Real split of the PO value, on rows loaded from /p2p/orders. */
   breakdown?: { base: number; gst: number; extra: number };
-  /** Supplier master code, on rows loaded from /p2p/orders. */
   supplierCode?: string;
   invoices: InvoiceLine[];
   spis?: { code: string; date: string }[];
   zohoSynced: boolean;
-  /** Something of this PO is already in Zoho — the tracker has a story to tell. */
   zohoStarted: boolean;
   inspectionDone: boolean;
   paymentRequests: number;
   paymentNote?: PaymentNote;
   cancelled?: boolean;
   cancelReason?: string;
-  /** A document is out for signature or signed — view-only until declined / recalled. */
   signingStarted?: boolean;
-  /* The advance-receipt refund adjustment raised when the PO is cancelled.
-     Absent until one exists — a PO that never took an advance owes nothing. */
   adr?: AdvanceRefund;
-  /* Amounts recovered from the supplier so far, one per recovery entry. */
   recoveries?: number[];
-  /* Cancellation runs in two stages: initiating the refund adjustment moves the
-     PO to "Recovery Pending", and it moves itself to "Recovery Completed" once
-     every rupee released against it has been recovered. */
   cancelStage?: 'initiated' | 'closed';
-  /** The refund adjustment behind adr — Manage Recovery opens it. */
   refundId?: number;
-  /** Stored recovered total of the refund adjustment. */
   recoveredAmt?: number;
-  /** Why the last Zoho Books sync failed, or payments still to post. */
   zohoError?: string;
   zohoUnposted?: number;
 };
@@ -347,7 +320,6 @@ const PAYMENT_LABEL: Record<PaymentStatus, string> = {
 
 const seqOf = (id: string) => id.match(/(\d+)$/)?.[1] ?? id;
 
-// Every amount on a PO row prints in that PO's own currency, never a fixed ₹.
 const formatMoney = (value: number, ccy?: string | null) => {
   const code = ccyCode(ccy);
   return ccySymbol(code) + (value || 0).toLocaleString(code === 'INR' ? 'en-IN' : 'en-US');
@@ -355,8 +327,6 @@ const formatMoney = (value: number, ccy?: string | null) => {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// "2026-03-03" → "03-Mar-2026". Splits the text instead of new Date(), which reads
-// the string as UTC and can show the previous day in timezones behind UTC.
 function formatDate(iso: string): string {
   const [year, month, day] = iso.split('-');
   const monthName = MONTHS[Number(month) - 1];
@@ -364,7 +334,6 @@ function formatDate(iso: string): string {
   return `${day}-${monthName}-${year}`;
 }
 
-/** Category badge: one of the four known categories, else the master's own text. */
 function categoryOf(row: OrderRow) {
   if (row.supplierCategoryText) return { label: row.supplierCategoryText, variant: 'info' as BadgeVariant, icon: ICON_CHECK };
   return SUPPLIER_CATEGORY[row.supplierCategory];
@@ -389,7 +358,6 @@ export function categoryKeyOf(text: string | null): SupplierCategory | null {
   return null;
 }
 
-// Mapped SPIs come from the API; GRN / QA are not built on the new PO yet, so they start empty.
 export function toOrderRow(r: PoListRow): OrderRow {
   const catKey = categoryKeyOf(r.supplier_category);
   return {
@@ -410,13 +378,11 @@ export function toOrderRow(r: PoListRow): OrderRow {
     supplierCategoryText: catKey ? undefined : (r.supplier_category || undefined),
     risk: riskOf(r.supplier_risk),
     expectedDelivery: r.expected_delivery_date ?? '',
-    // Payment position as stored on the PO: net = grand total − TDS; balance = net − paid.
     total: Number(r.grand_total) || 0,
     net: Math.max(0, (Number(r.grand_total) || 0) - (Number(r.tds_amount) || 0)),
     paid: Number(r.paid_amount) || 0,
     balance: Number(r.balance_amount) || 0,
     breakdown: { base: Number(r.taxable_total) || 0, gst: Number(r.gst_total) || 0, extra: Number(r.charges_total) || 0 },
-    // One line per mapped SPI. GRN / QA are not built yet, so they stay empty and render as a dash.
     invoices: (r.spis ?? []).map((s): InvoiceLine => {
       const amount = Number(s.amount) || 0;
       const paid = Number(s.paid) || 0;
@@ -428,8 +394,6 @@ export function toOrderRow(r: PoListRow): OrderRow {
       };
     }),
     spis: (r.spis ?? []).map(s => ({ code: s.code, date: s.date ?? '' })),
-    // Synced once the PO + bill are in Zoho, every payment is posted to the bill and,
-    // on a cancelled PO, the vendor credit and its refunds are there too.
     zohoSynced: r.zoho_status === 'synced' && !r.zoho_unposted_payments && (!r.refund || r.refund.zoho_synced),
     zohoStarted: !!r.zoho_started,
     zohoError: r.zoho_status === 'failed' ? (r.zoho_error ?? undefined)
@@ -450,7 +414,6 @@ export function toOrderRow(r: PoListRow): OrderRow {
 }
 
 function IdCell({ id, date }: { id: string; date: string }) {
-  // Not linked (e.g. a PO without a shipment): N/A rather than a dash.
   if (!id) return <span className="ord-dash">N/A</span>;
   return (
     <div className="ord-idcell">
@@ -498,7 +461,7 @@ function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: n
       </td>
 
       <td className="ord-doc ord-doc--grn">
-        {!line.grn ? <span className="ord-dash">—</span> : (
+        {!line.grn ? <span className="ord-dash">N/A</span> : (
         <div className="ord-doc__card">
           <DocTop label="GRN" index={index} count={count} id={line.grn} />
           <div className="ord-doc__meta">
@@ -515,7 +478,7 @@ function InvoiceCells({ line, index, count, ccy }: { line: InvoiceLine; index: n
       </td>
 
       <td className="ord-doc ord-doc--qa">
-        {!line.qa ? <span className="ord-dash">—</span> : (
+        {!line.qa ? <span className="ord-dash">N/A</span> : (
         <div className="ord-doc__card">
           <DocTop label="QA" index={index} count={count} id={line.qa} />
           <div className="ord-doc__meta">
@@ -570,7 +533,6 @@ const ICON_CANCEL = (
 const ICON_EDIT = (
   <svg {...btnIconProps}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
 );
-// Money coming back — the return arrow.
 const ICON_RECOVER = (
   <svg {...btnIconProps} strokeWidth={2.2}>
     <polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" />
@@ -587,15 +549,11 @@ const ICON_VAULT = (
   </svg>
 );
 
-// Cancelled POs are read-only: their action buttons render disabled.
 function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error, readOnly = false }: {
   synced: boolean; cancelled?: boolean; unpaid?: boolean;
   onSync?: () => void | Promise<void>; error?: string;
-  /** Shown inside the request view: the status, without the action. */
   readOnly?: boolean;
 }) {
-  /* The sync talks to Zoho — several calls, a few seconds — so the button spins
-     until it comes back rather than looking like nothing happened. */
   const [busy, setBusy] = useState(false);
   const go = async () => {
     if (!onSync || busy) return;
@@ -609,7 +567,6 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error, re
       </div>
     );
   }
-  // Cancelled with nothing released: no bill was ever raised, so nothing will go across.
   if (cancelled && unpaid) {
     return (
       <div className="ord-statcell">
@@ -622,9 +579,6 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error, re
   return (
     <div className="ord-statcell">
       <span className="ord-status ord-status--bad" title={error}><span className="ord-status__dot" />Not Sync</span>
-      {/* The bill carries the payments, so the first payment has to exist before anything goes across.
-          A cancelled PO still syncs: the same press also sends its vendor credit and refunds. */}
-      {/* Clickable even when it can't go across: the press says why. */}
       {!readOnly && <button type="button" className={`ord-btn ord-btn--zoho${busy ? ' is-syncing' : ''}`}
         disabled={busy} onClick={() => void go()}
         title={busy ? 'Sending to Zoho Books…' : unpaid
@@ -640,7 +594,6 @@ function ZohoCell({ synced, cancelled = false, unpaid = false, onSync, error, re
 
 function InspectionCell({ required, done, cancelled = false, onOpen, readOnly = false }: {
   required: boolean; done: boolean; cancelled?: boolean; onOpen: () => void;
-  /** Shown inside the request view: the status, without the action. */
   readOnly?: boolean;
 }) {
   if (!required) {
@@ -667,8 +620,10 @@ function InspectionCell({ required, done, cancelled = false, onOpen, readOnly = 
 
 function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onManage: (row: OrderRow) => void; readOnly?: boolean }) {
   const toast = useToast();
-  const pct = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
-  const status: PaymentStatus = pct >= 100 ? 'full' : pct > 0 ? 'partial' : 'pending';
+  const settled = row.paid > 0 && row.net - row.paid < 1;
+  const pct = settled ? 100 : row.net > 0 ? Math.min(99, Math.floor((row.paid / row.net) * 100)) : 0;
+  const due = settled ? 0 : row.balance;
+  const status: PaymentStatus = settled ? 'full' : row.paid > 0 ? 'partial' : 'pending';
   const label = status === 'full' ? 'Payment Completed' : PAYMENT_LABEL[status];
   const done = status === 'full';
 
@@ -693,7 +648,7 @@ function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onMan
         </div>
         <div className="ord-progress__meta">
           <span className="ord-progress__paid"><span className="ord-progress__mdot" />{formatMoney(row.paid, row.currency)} paid</span>
-          <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(row.balance, row.currency)} due</span>
+          <span className="ord-progress__due"><span className="ord-progress__mdot" />{formatMoney(due, row.currency)} due</span>
         </div>
 
         {row.paymentNote && (
@@ -707,13 +662,6 @@ function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onMan
         )}
       </div>
 
-      {/* Payments wait for the paperwork: the button keeps its name, and says
-          why it will not open until the PO has gone out for signature.
-
-          Nothing more can be raised on a PO that is paid in full or cancelled —
-          but what happened on it is still a record, so the button turns into
-          View Request Details rather than going dead. Only a PO cancelled before
-          anything was requested or paid has nothing behind it (CS-593). */}
       {!readOnly && (() => {
         const history = row.paymentRequests > 0 || row.paid > 0;
         const viewOnly = done || !!row.cancelled;
@@ -726,7 +674,6 @@ function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onMan
             title={nothing ? 'This PO was cancelled before any payment request was raised.'
               : row.cancelled ? 'This PO is cancelled — its payment requests open to be read.' : undefined}
             onClick={() => {
-              // A record opens whatever the paperwork did; only a live PO waits for it.
               if (!viewOnly && !row.signingStarted) {
                 toast.warning('PO not sent for signature',
                   `Send ${row.po} to the supplier from Stage 04 — payment requests open once the documents are out.`);
@@ -748,10 +695,6 @@ function PaymentCell({ row, onManage, readOnly = false }: { row: OrderRow; onMan
   );
 }
 
-/* Advance Receipt Refund Adjustment — answers three things and no more: which
-   note, what went out, and what is coming back. The shortfall is only named
-   when the two don't match. The progress bar belongs to Payment Recovery
-   Status, which is where the movement actually happens. */
 function AdrCell({ adr, ccy }: { adr?: AdvanceRefund; ccy?: string | null }) {
   if (!adr) return <span className="ord-dash">—</span>;
 
@@ -784,10 +727,6 @@ function AdrRow({ label, value, tone }: { label: string; value: string; tone?: '
   );
 }
 
-/* What the supplier owes back is what the credit note says, not everything
-   that was paid — an amount retained against cancellation charges is never
-   coming back. So the note sets the target, and until one exists there is
-   nothing to recover against. */
 function recoveryOf(row: OrderRow) {
   const target = row.adr ? row.adr.credited : 0;
   const entries = row.recoveries?.length ?? 0;
@@ -807,14 +746,10 @@ function recoveryOf(row: OrderRow) {
   };
 }
 
-/* Payment Recovery Status — the mirror of Payment Progress for money coming
-   back rather than going out. It reuses that cell's progress, pill and note
-   styles; only the two states Payment Progress never has are new. */
 function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: OrderRow) => void }) {
   const g = recoveryOf(row);
   const entryWord = (n: number) => `${n} entr${n === 1 ? 'y' : 'ies'}`;
 
-  // Nothing released → nothing to recover. Say so rather than draw an empty bar.
   if (g.paid <= 0) {
     return (
       <div className="ord-paycell">
@@ -849,7 +784,6 @@ function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: Ord
     </button>
   );
 
-  // Paid out, but no credit note yet — the note decides what is recoverable.
   if (!g.noteRaised) {
     return (
       <div className="ord-paycell">
@@ -866,7 +800,6 @@ function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: Ord
     );
   }
 
-  // Reuses Payment Progress's three states: full / partial / pending.
   const status: PaymentStatus = g.complete ? 'full' : g.started ? 'partial' : 'pending';
   const label = g.complete ? 'Fully Recovered' : g.started ? 'Partially Recovered' : 'Recovery Not Started';
   const noteTitle = `${formatMoney(g.target, row.currency)} recoverable under ${g.noteNo}`
@@ -898,35 +831,26 @@ function RecoveryCell({ row, onRecover }: { row: OrderRow; onRecover?: (row: Ord
   );
 }
 
-/** Same rule as the server: a pending / approved request, or money paid. */
 const paymentsStarted = (row: OrderRow) => row.paid > 0 || !!row.paymentNote;
 
-/** Why the PO opens view-only, or undefined when it can be edited. Same rules
-    as the server's edit gate. */
 const viewOnlyReason = (row: OrderRow) =>
   row.cancelled ? 'This PO is cancelled — it opens view-only'
     : paymentsStarted(row) ? 'Payments have started — the PO opens view-only'
       : row.signingStarted ? 'Documents sent for signature — view-only unless the request is declined or recalled'
         : undefined;
 
-/** Cancelled with the refund still being chased — what is left to recover. */
 const recoverPendingOf = (row: OrderRow) =>
   (row.cancelStage === 'initiated' ? formatMoney(recoveryOf(row).pending, row.currency) : undefined);
 
 function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onTrack, trackable = false, onVault, viewOnly, recoverPending, onRecover }: {
   cancelled?: boolean; cancelReason?: string; onEdit: () => void; onCancel?: () => void; onTrack?: () => void;
-  /** Nothing of this PO is in Zoho yet, so there is no chain to track. */
   trackable?: boolean; onVault?: () => void;
-  /** Set when the form opens read-only — the reason, shown on hover. */
   viewOnly?: string;
-  /** Cancelled with money still to come back: what is left, formatted. */
   recoverPending?: string;
   onRecover?: () => void;
 }) {
   return (
     <div className="ord-actions">
-      {/* Cancellation is not instant on a PO with money against it: while the
-          refund is being chased this slot is the way into Manage Recovery. */}
       {recoverPending ? (
         <Tooltip label={`Cancellation initiated — ${recoverPending} still to recover. Opens Manage Recovery.`}>
           <button type="button" className="ord-btn ord-btn--cancel is-initiated" onClick={onRecover}>
@@ -944,7 +868,6 @@ function ActionCell({ cancelled = false, cancelReason, onEdit, onCancel, onTrack
           <button type="button" className="ord-btn ord-btn--cancel" onClick={onCancel}>{ICON_CANCEL}<span>Cancel PO</span></button>
         </Tooltip>
       )}
-      {/* A cancelled PO still opens — read-only, so its terms stay readable. */}
       <Tooltip label={viewOnly || 'Open this Purchase Order'}>
         <button type="button" className="ord-btn ord-btn--edit" onClick={onEdit}>
           {viewOnly ? ICON_EYE : ICON_EDIT}<span>{viewOnly ? 'View PO' : 'Edit PO'}</span>
@@ -972,12 +895,10 @@ const ICON_X_SM = (
   </svg>
 );
 
-// Red "Cancelled" chip under the PO number; hover shows the reason.
 function CancelBadge({ reason }: { reason?: string }) {
   return <Badge appearance="outline" variant="danger" icon={ICON_X_SM} className="ord-cancelbadge" title={reason}>Cancelled</Badge>;
 }
 
-/** Draft → Submitted, or Cancelled (reason on hover). */
 function StatusBadge({ row }: { row: OrderRow }) {
   if (row.cancelled) return <CancelBadge reason={row.cancelReason} />;
   if (row.draft) return <Badge appearance="outline" variant="warning" icon={ICON_CLOCK} className="ord-status-badge" title="Saved, not yet submitted">Draft</Badge>;
@@ -989,14 +910,10 @@ function RiskBadge({ risk }: { risk: RiskLevel | null }) {
   return <Badge appearance="outline" variant={RISK_LEVEL[risk].variant} icon={RISK_LEVEL[risk].icon} className="ord-risk">{RISK_LEVEL[risk].label}</Badge>;
 }
 
-// One PO as it appears on the list: a <tbody> spanning a row per mapped SPI.
-// Payment Request Management reuses it (without the Action column) for its status tabs.
 export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, onZoho, onTrack, onCancel, onVault, onRecover, summary = false }: {
   row: OrderRow; sr: number; inspected: boolean;
   onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
   onEdit?: (row: OrderRow) => void; onZoho?: (row: OrderRow) => void; onTrack?: (row: OrderRow) => void; onCancel?: (row: OrderRow) => void; onVault?: (row: OrderRow) => void; onRecover?: (row: OrderRow) => void;
-  /* The request view shows the order as it stands and nothing more: no actions,
-     and none of the cancellation columns, which are not on that screen. */
   summary?: boolean;
 }) {
   const lines = row.invoices.length > 0 ? row.invoices : [null];
@@ -1064,11 +981,11 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
 
                 <PoCell span={span}><span className="ord-edd">{row.expectedDelivery ? formatDate(row.expectedDelivery) : '—'}</span></PoCell>
 
-                <PoCell span={span}><span className="ord-amt">{formatMoney(row.total, row.currency)}</span></PoCell>
-                <PoCell span={span}><span className="ord-amt ord-amt--net">{formatMoney(row.net, row.currency)}</span></PoCell>
-                <PoCell span={span}><span className="ord-amt ord-amt--paid">{formatMoney(row.paid, row.currency)}</span></PoCell>
+                <PoCell span={span}><Amount className="ord-amt" text={formatMoney(row.total, row.currency)} /></PoCell>
+                <PoCell span={span}><Amount className="ord-amt ord-amt--net" text={formatMoney(row.net, row.currency)} /></PoCell>
+                <PoCell span={span}><Amount className="ord-amt ord-amt--paid" text={formatMoney(row.paid, row.currency)} /></PoCell>
                 <PoCell span={span} groupEnd>
-                  <span className="ord-amt ord-amt--bal">{formatMoney(row.balance, row.currency)}</span>
+                  <Amount className="ord-amt ord-amt--bal" text={formatMoney(row.balance, row.currency)} />
                 </PoCell>
               </>
             )}
@@ -1077,9 +994,9 @@ export function OrderRowBody({ row, sr, inspected, onInspect, onManage, onEdit, 
               <InvoiceCells line={line} index={lineIndex} count={span} ccy={row.currency} />
             ) : (
               <>
-                <td className="ord-doc ord-doc--spi"><span className="ord-dash">—</span></td>
-                <td className="ord-doc ord-doc--grn"><span className="ord-dash">—</span></td>
-                <td className="ord-doc ord-doc--qa"><span className="ord-dash">—</span></td>
+                <td className="ord-doc ord-doc--spi"><span className="ord-dash">N/A</span></td>
+                <td className="ord-doc ord-doc--grn"><span className="ord-dash">N/A</span></td>
+                <td className="ord-doc ord-doc--qa"><span className="ord-dash">N/A</span></td>
               </>
             )}
 
@@ -1182,7 +1099,7 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onTrack, o
 
       <div className="ord-card__section">
         <span className="ord-card__label">Mapped SPI / GRN / QA ({count})</span>
-        {count === 0 && <span className="ord-dash">—</span>}
+        {count === 0 && <span className="ord-dash">N/A</span>}
         {row.invoices.map((line, i) => (
           <div className="ord-card__invoice" key={line.spi}>
             <DocTop label="SPI" index={i} count={count} id={line.spi} />
@@ -1231,7 +1148,6 @@ function OrderCard({ row, index, onManage, onInspect, onEdit, onZoho, onTrack, o
         <PaymentCell row={row} onManage={onManage} />
       </div>
 
-      {/* Only worth a section on the card when a note actually exists. */}
       {row.adr && (
         <div className="ord-card__section">
           <span className="ord-card__label">Advance Receipt Refund Adjustment</span>
@@ -1261,12 +1177,10 @@ export default function Order() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 400);
   const isPhone = useIsPhone();
-  // Rows per page as in the Segment Master: what fits the table, never fewer than 10 (phone cards: server default).
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fitSize, setFitSize, refitSize] = useFitPageSize(scrollRef, { enabled: !isPhone });
   const pageSize = isPhone ? undefined : fitSize;
 
-  // Tabs, search and paging all run on the server; phone cards load the next page on scroll.
   const list = useServerList(
     (q) => poApi.list({ ...q, tab: q.tab as TabKey }).then(({ rows, meta }) => ({ rows: rows.map(toOrderRow), meta })),
     { perPage: pageSize, search: debouncedSearch, tab: activeTab, append: isPhone },
@@ -1274,37 +1188,27 @@ export default function Order() {
   );
   const loadRows = list.reload;
 
-  // Not built on the new PO yet.
   const comingSoon = (what: string) => () => toast.info('Feature coming soon', `${what} will be available shortly.`);
-  // Payments run on a submitted PO; a draft has no final value to pay against yet.
   const [manageRow, setManageRow] = useState<OrderRow | null>(null);
-  /* Opened from the inspection's "Continue to payment request": the payments
-     screen comes up already on the raise form. */
   const [raiseFor, setRaiseFor] = useState<OrderRow | null>(null);
   const onManage = (row: OrderRow) => {
     if (!row.id) return;
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before managing payments.`); return; }
     setManageRow(row);
   };
-  // Inspection runs on a submitted PO only; a draft has nothing to inspect yet.
   const [inspectRow, setInspectRow] = useState<OrderRow | null>(null);
   const onInspect = (row: OrderRow) => {
     if (!row.id) return;
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before inspecting.`); return; }
     setInspectRow(row);
   };
-  // Zoho Books: PO + bill once, then the payments not posted yet.
   const [syncingId, setSyncingId] = useState<number | null>(null);
-  // Read-only: where the PO already stands in Zoho, whether or not it can sync now.
   const [trackRow, setTrackRow] = useState<OrderRow | null>(null);
   const onTrack = (row: OrderRow) => { if (row.id) setTrackRow(row); };
 
   const onZoho = async (row: OrderRow) => {
     if (!row.id || syncingId) return;
     if (row.draft) { toast.info('Submit the PO first', `${row.po} is still a draft — submit it before syncing to Zoho Books.`); return; }
-    /* A cancelled PO still syncs from here: the press sends the whole chain —
-       PO, bill, payments, then the vendor credit and each refund. */
-    // The Zoho bill is what payments are posted against, so one has to exist first.
     if (row.paid <= 0) {
       toast.warning('No payment found against this PO', `Nothing has been released on ${row.po} yet — record a payment, then sync.`);
       return;
@@ -1321,12 +1225,10 @@ export default function Order() {
       setSyncingId(null);
     }
   };
-  // Manage Recovery: the refund adjustment's recoveries, in the same popup as the refund list.
   const [recoverId, setRecoverId] = useState<number | null>(null);
   const onRecover = (row: OrderRow) => { if (row.refundId) setRecoverId(row.refundId); };
   const navigate = useNavigate();
 
-  // Cancel PO: nothing paid → confirm and cancel; money released → refund-adjustment gate.
   const [cancelRow, setCancelRow] = useState<OrderRow | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const onCancel = (row: OrderRow) => { if (row.id) setCancelRow(row); };
@@ -1339,7 +1241,6 @@ export default function Order() {
       await poApi.cancel(cancelRow.id, 'Cancelled from the Purchase Order list');
       toast.success(`${cancelRow.po} cancelled`, 'Nothing to recover — moved to PO Cancellation Closed.');
       setCancelRow(null);
-      // Land where the order now lives; the tab change reloads the list.
       if (activeTab === 'cancelclosed') loadRows(); else selectTab('cancelclosed');
     } catch (e) {
       toast.error('Could not cancel the PO', e instanceof PoApiError ? e.firstError : 'Please try again.');
@@ -1348,18 +1249,15 @@ export default function Order() {
     }
   };
 
-  // Create PO runs in two screens: the link popup, then the full-page form.
   const [createOpen, setCreateOpen] = useState(false);
   const [poLink, setPoLink] = useState<PoLink | null>(null);
 
-  // Edit PO opens the same form straight past the link popup; it loads the saved PO itself.
   const openEdit = (row: OrderRow) => {
     if (row.id) setPoLink({ mode: row.shipment ? 'with' : 'without', editId: row.id });
   };
 
 
   const rows = list.rows;
-  // Re-measure once real rows are on screen; a larger fit fetches that many.
   useEffect(() => { if (rows.length) refitSize(); }, [rows.length, refitSize]);
   const total = list.meta?.total ?? 0;
   const perPage = list.meta?.per_page ?? DEFAULT_PAGE_SIZE;
@@ -1377,7 +1275,6 @@ export default function Order() {
     scrollListToTop();
   };
 
-  // Changing the tab, search or page size re-queries from page 1 (the hook does that).
   const selectTab = (tab: TabKey) => {
     setActiveTab(tab);
     scrollListToTop();
@@ -1391,7 +1288,6 @@ export default function Order() {
     scrollListToTop();
   };
 
-  // Phone cards: the next page loads when the last card scrolls into view.
   const moreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = moreRef.current;
@@ -1402,16 +1298,11 @@ export default function Order() {
   });
 
   const scrollTimer = useRef<number | undefined>(undefined);
-  /* The table is swapped for the shimmer while it reloads, which would drop
-     the reader back to the first column — and Edit PO lives in the last ones.
-     Remember how far across they were and put them back there. */
   const scrollLeft = useRef(0);
   useEffect(() => {
     if (!list.loading && !list.replacing && scrollRef.current) scrollRef.current.scrollLeft = scrollLeft.current;
   }, [list.loading, list.replacing]);
 
-  // Ignore the mouse while scrolling so hover animations don't repaint mid-scroll.
-  // Refs, not state: scroll fires many times a second and must not re-render.
   const onTableScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -1434,7 +1325,6 @@ export default function Order() {
   return (
     <div className="ord-page">
 
-      {/* Mounted only while open, so the scroll lock and key listener exist only then. */}
       {createOpen && (
         <CreatePoModal
           initial={poLink}
@@ -1460,8 +1350,6 @@ export default function Order() {
         </Suspense>
       )}
 
-      {/* The same screen, opened from the inspection sign-off, already on the
-          form that raises a request. */}
       {raiseFor && (
         <Suspense fallback={null}>
           <ManagePaymentRequestsModal row={raiseFor} startWithRaise onClose={() => { setRaiseFor(null); loadRows(); }} />
@@ -1507,14 +1395,11 @@ export default function Order() {
             row={inspectRow}
             onClose={() => setInspectRow(null)}
             onChanged={loadRows}
-            /* Sign-off done: close the inspection and open this PO's payment
-               requests, on the raise form (CS-417). */
             onContinueToPayment={() => { const r = inspectRow; setInspectRow(null); setRaiseFor(r); }}
           />
         </Suspense>
       )}
 
-      {/* Header strip, guide, tabs and search use the shared SPI styles (spi-*). */}
       <div className="spi-head">
         <div className="spi-head-left">
           <div className="spi-head-icon">
@@ -1608,7 +1493,6 @@ export default function Order() {
                   role="tab"
                   aria-selected={isActive}
                   className={classes}
-                  // The qualifier is hidden on a narrow row (order.css) — the hover keeps it.
                   title={tab.sub ? `${tab.label} ${tab.sub}` : undefined}
                   onClick={() => selectTab(tab.key)}
                 >
@@ -1629,10 +1513,6 @@ export default function Order() {
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
 
-            {/* Now that the box grows into the row it can name what it
-                searches instead of just "Search PO list" — the short wording
-                was only there because the old fixed-width box cut a fuller
-                placeholder mid-word. The rest is still on hover. */}
             <input
               type="text"
               aria-label="Search purchase orders"
@@ -1641,18 +1521,14 @@ export default function Order() {
               value={search}
               onChange={(e) => changeSearch(e.target.value)}
             />
-            {/* Emptying it by hand left a filtered list reading as "no orders". */}
             <SearchClear show={search} onClear={() => changeSearch('')} />
           </div>
 
         </div>
 
-        {/* Any load that replaces the rows — the first one, a reload after a
-            save, a tab, page or search change — shows the shimmer. Dimming the
-            old rows instead left the list looking washed out. */}
         {list.loading || list.replacing ? (
           <OrderListSkeleton phone={isPhone} rows={fitSize || DEFAULT_PAGE_SIZE} />
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && isPhone ? (
           <div className="ord-empty">
             {search.trim()
               ? 'No purchase orders match your search.'
@@ -1677,13 +1553,12 @@ export default function Order() {
                 inspected={row.inspectionDone}
               />
             ))}
-            {/* Reaching this loads the next page; it disappears on the last one. */}
             {list.hasMore && <div ref={moreRef} className="ord-more">{list.refreshing ? 'Loading more…' : ''}</div>}
           </div>
         ) : (
 
         <div className="ord-table-scroll" ref={scrollRef} onScroll={onTableScroll}>
-          <table className="ord-table" style={{ width: TABLE_WIDTH }}>
+          <table className={`ord-table${rows.length === 0 ? ' ord-table--empty' : ''}`} style={{ width: TABLE_WIDTH }}>
 
             <colgroup>
               {ORDER_COLUMNS.map((col) => (
@@ -1700,6 +1575,23 @@ export default function Order() {
                 ))}
               </tr>
             </thead>
+
+            {rows.length === 0 && (
+              <tbody>
+                <tr className="ord-emptyrow">
+                  <td colSpan={ORDER_COLUMNS.length}>
+                    <div className="ord-emptybox">
+                      <b>{search.trim() ? 'No matching purchase orders' : 'No entries yet'}</b>
+                      <span>
+                        {search.trim()
+                          ? `Nothing here matches “${search.trim()}”. Try a different PO number, supplier, ID or status.`
+                          : 'No purchase orders in this category yet. Create one to see it here.'}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            )}
 
             {rows.map((row, poIndex) => (
               <OrderRowBody
@@ -1721,8 +1613,7 @@ export default function Order() {
         </div>
         )}
 
-        {/* Phone cards page by scrolling instead. */}
-        {rows.length > 0 && !isPhone && (
+        {!isPhone && (
           <WorklistPager
             className="wl-teal"
             total={total}
@@ -1738,10 +1629,6 @@ export default function Order() {
   );
 }
 
-/* Shown for the moment the PO form's code is being fetched. It mirrors the
-   form's own layout — header, four step cards, two field sections — so the
-   screen doesn't jump when the real thing arrives. Shimmer classes come from
-   the shared P2P wizard styles this page already loads. */
 function CreatePoSkeleton() {
   return (
     <div className="spi-dt-overlay ord-skl">
@@ -1784,9 +1671,6 @@ function CreatePoSkeleton() {
   );
 }
 
-/* List shimmer. Mirrors the real grid — same column widths, same two-line
-   invoice rows — so the table doesn't jump when the rows arrive. On a phone it
-   mirrors the cards instead. The shimmer bar is a shared P2P style. */
 function OrderListSkeleton({ phone, rows = DEFAULT_PAGE_SIZE }: { phone: boolean; rows?: number }) {
   if (phone) {
     return (
@@ -1822,8 +1706,6 @@ function OrderListSkeleton({ phone, rows = DEFAULT_PAGE_SIZE }: { phone: boolean
             ))}
           </tr>
         </thead>
-        {/* One row per PO, as many as a full page shows, so the shimmer fills
-            the whole list instead of only the top few rows (QA #159). */}
         <tbody>
           {Array.from({ length: Math.max(1, rows) }).map((_, rowIndex) => (
             <tr key={rowIndex} className="ord-skel-tr">

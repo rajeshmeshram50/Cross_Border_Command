@@ -23,30 +23,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Stage 04 · the handheld that closes a put-away task.
- *
- * AUTHENTICATED BY DEVICE, NOT BY SESSION. The floor does not log in for every
- * carton. A handheld proves itself with the credential installed when somebody
- * logged in to enroll it, and that person authors everything it confirms —
- * scan_devices.enrolled_by. So the tenant is read off the DEVICE row, never
- * off the request, and a credential for another client simply cannot see this
- * client's boxes.
- *
- * TWO SLOTS, EITHER ORDER. The box and the location can arrive in either
- * sequence, because both are real ways to work: box-at-the-bench-then-walk,
- * or scan-the-rack-then-feed-boxes-into-it. What is being proved is that the
- * PAIR matches the task, and a pair does not care which half arrived first.
- *
- * SCAN AND CONFIRM ARE SEPARATE. A scan is a barcode passing a lens; the
- * confirm is a person reading the screen and agreeing. Both are recorded,
- * because only the second one is evidence that somebody looked.
- *
- * NOTHING REACHES THE MAIN TABLES UNTIL complete(). Scans and confirms write
- * only to the task and to the activity log. The occupancy flip, the put-away
- * row and the shelf counters all happen in one transaction at the end, so an
- * abandoned task leaves no half-placed box behind.
- */
 class SpiPutawayScanController extends Controller
 {
     public function __construct(
@@ -56,14 +32,6 @@ class SpiPutawayScanController extends Controller
         private SupplierInvoiceService $svc,
     ) {}
 
-    /* ════════════════════════════ ENDPOINTS ════════════════════════════ */
-
-    /**
-     * POST /scan/putaway/session — who is this handheld, and what is open.
-     *
-     * The first call the page makes. A device that is not enrolled, suspended
-     * or retired is told so here rather than halfway through a put-away.
-     */
     public function session(Request $request)
     {
         $device = $this->device($request);
@@ -91,11 +59,6 @@ class SpiPutawayScanController extends Controller
         ]], 200);
     }
 
-    /**
-     * GET /scan/putaway/{task}/boxes — every box in this task's SPI, with its
-     * put-away status and Box-QR/Shelf-QR progress. Powers the per-SPI sheet
-     * the box card's SPI pill opens (as opposed to the device-wide queue).
-     */
     public function spiBoxes(Request $request, int $taskId)
     {
         $device = $this->device($request);
@@ -117,7 +80,6 @@ class SpiPutawayScanController extends Controller
 
                 return [
                     'box_code'    => $p->box?->box_code,
-                    // placed · box_scanned · pending — what the sheet's chip reads.
                     'status'      => $placed ? 'placed' : ($boxQr ? 'box_scanned' : 'pending'),
                     'box_qr'      => $boxQr,
                     'shelf_qr'    => $shelfQr,
@@ -133,17 +95,11 @@ class SpiPutawayScanController extends Controller
         ]], 200);
     }
 
-    /** GET /scan/putaway/{task} — the current state, for a page refresh. */
     public function show(Request $request, int $taskId)
     {
         $device = $this->device($request);
-        // Read-only, so a finished task may be looked at. Only the calls that
-        // WRITE require it to still be open.
         $task   = $this->findTask($device, $taskId, false);
 
-        /* Reopened after sitting idle: hand back a clean task rather than a
-           half-walked one the next scan would throw away anyway. Doing it
-           here means a refresh and a fresh scan agree about what is owed. */
         $stale = $task->isOpen() ? $this->dropStaleScans($task, $device) : false;
 
         $body = ['status' => true, 'data' => $this->state($task, $device)];
@@ -155,14 +111,6 @@ class SpiPutawayScanController extends Controller
         return response()->json($body, 200);
     }
 
-    /**
-     * POST /scan/putaway/scan — a barcode arrived.
-     *
-     * The server decides what it was and whether it belongs here; the handheld
-     * is never trusted to know which step it is on. Every outcome writes an
-     * activity row, pass or fail — a refusal is the one thing the log exists
-     * to remember.
-     */
     public function scan(Request $request)
     {
         $device = $this->device($request);
@@ -170,28 +118,17 @@ class SpiPutawayScanController extends Controller
         $data = $request->validate([
             'scanned_value'   => ['required', 'string', 'max:255'],
             'task_id'         => ['nullable', 'integer'],
-            // A location scanned BEFORE any box: the page holds it and hands it
-            // back with the box scan. Re-proved here — it is a client value.
             'staged_location' => ['nullable', 'integer'],
             'staged_kind'     => ['nullable', Rule::in(['shelf', 'zone', 'rack'])],
         ]);
 
         $hit = $this->classify($data['scanned_value']);
 
-        /* A task id the handheld is still carrying. Looked up LENIENTLY and
-           dropped if it has since closed: the page keeps the id in storage so
-           a camera scan survives the page reload, and that outlives the task.
-           Failing the scan because of it would mean one finished put-away
-           blocks every later one until storage is cleared by hand. The box
-           scan finds the right open task on its own. */
         $task = isset($data['task_id']) ? $this->findTask($device, (int) $data['task_id'], false) : null;
         if ($task && !$task->isOpen()) $task = null;
 
-        // Half-scanned and abandoned: start that one clean before going on.
         $stale = $task ? $this->dropStaleScans($task, $device) : false;
 
-        // A signed sticker whose signature does not check out is refused before
-        // anything is looked up — the id inside it is not evidence of anything.
         if ($hit['signed'] && !$hit['valid']) {
             return $this->refuse($task, $device, 'bad_signature',
                 'That label did not pass its signature check. Use the printed label.', $data);
@@ -206,11 +143,6 @@ class SpiPutawayScanController extends Controller
             ? $this->scanBox($device, $task, $hit, $data)
             : $this->scanLocation($device, $task, $hit, $data);
 
-        /* The scan that closes the pair finishes the put-away.
-           Both halves had to match this task to be accepted, so by the time
-           both are in, the barcodes have already proved everything a button
-           press could. Asking for one more tap only leaves a placed box
-           sitting un-placed in the system while the operator walks away. */
         $body = $res->getData(true);
         $done = $body['data']['task']['id'] ?? null;
 
@@ -222,9 +154,6 @@ class SpiPutawayScanController extends Controller
             }
         }
 
-        /* Say the old run was dropped. Silently restarting is worse than not
-           restarting: the operator scans a shelf, is told to scan the box,
-           and has no idea the screen threw away what they did earlier. */
         if ($stale) {
             $body = $res->getData(true);
             $body['stale_reset'] = true;
@@ -235,12 +164,6 @@ class SpiPutawayScanController extends Controller
         return $res;
     }
 
-    /**
-     * POST /scan/putaway/{task}/confirm — the operator read the screen back.
-     *
-     * Confirms whichever slot is scanned but unconfirmed. It writes no
-     * placement; it only records that a person agreed with what was shown.
-     */
     public function confirm(Request $request, int $taskId)
     {
         $device = $this->device($request);
@@ -250,7 +173,7 @@ class SpiPutawayScanController extends Controller
             'slot' => ['required', Rule::in(['box', 'shelf', 'zone'])],
         ]);
 
-        $slot = $data['slot'] === 'box' ? 'box' : 'shelf';   // one column pair for either location kind
+        $slot = $data['slot'] === 'box' ? 'box' : 'shelf';
         $col  = $slot . '_confirmed_at';
 
         if (!$task->{$slot . '_scan_at'}) {
@@ -269,25 +192,6 @@ class SpiPutawayScanController extends Controller
         return response()->json(['status' => true, 'data' => $this->state($task->refresh(), $device)], 200);
     }
 
-    /**
-     * POST /scan/putaway/{task}/complete — the only call that moves stock.
-     *
-     * Everything before this was evidence-gathering. Here the reservation
-     * becomes an occupation, the put-away row is marked placed, the shelf lock
-     * is given back and the task is closed — one transaction, so a box is
-     * never half-placed.
-     */
-    /**
-     * POST /scan/putaway/{task}/release — the operator put the box back.
-     *
-     * Everything the run had proved is given up: a scan is proof that the
-     * carton was in hand at that moment, and the moment ends when they walk
-     * away. Keeping box_scan_at across an abandoned run let the next session
-     * skip the one check that ties the label to the carton.
-     *
-     * The task itself stays open and pending — it still needs doing, by this
-     * device or another.
-     */
     public function release(Request $request, int $taskId)
     {
         $device = $this->device($request);
@@ -308,8 +212,6 @@ class SpiPutawayScanController extends Controller
             'shelf_scan_at'      => null,
             'shelf_confirmed_at' => null,
             'completed_scans'    => 0,
-            /* The handheld gave the task up; the next one to open it starts
-               clean rather than inheriting this device's half-run. */
             'device_id'          => null,
             'device_serial'      => null,
         ])->save();
@@ -337,22 +239,10 @@ class SpiPutawayScanController extends Controller
         return $this->commit($task, $device);
     }
 
-    /**
-     * Place the box. Called by the Complete button, and by the scan that
-     * finishes the pair on its own.
-     *
-     * The scans ARE the proof: both halves had to match this task to get
-     * here, and a button press adds no verification the barcodes have not
-     * already given. So the pair closing is enough to move the stock.
-     */
     private function commit(SpiPutawayTask $task, ScanDevice $device)
     {
         $actor = $device->actorId();
 
-        /* Both slots acknowledged. Stamped before the transaction so the
-           columns still record agreement separately from when each barcode
-           was read — whether that came from the Complete button or from the
-           scan that closed the pair. */
         $task->forceFill([
             'box_confirmed_at'   => $task->box_confirmed_at ?: now(),
             'shelf_confirmed_at' => $task->shelf_confirmed_at ?: now(),
@@ -428,42 +318,19 @@ class SpiPutawayScanController extends Controller
         }
     }
 
-    /* ═══════════════════════════ SCAN HANDLERS ═══════════════════════════ */
-
-    /** The box half of the pair. */
     private function scanBox(ScanDevice $device, ?SpiPutawayTask $task, array $hit, array $data)
     {
-        /* The box by id first, then judged — not filtered by client.
-         *
-         * Scoping the lookup made the client a hidden filter, so a box
-         * belonging to another organisation or another branch came back as
-         * "no box matches that label". The operator is holding a carton whose
-         * label just passed its signature check and is told it does not exist,
-         * which sends them off to raise a duplicate.
-         *
-         * Looking it up unscoped is a cross-tenant READ, so the refusals below
-         * say nothing ABOUT the other tenant — no name, no invoice, no
-         * location, only that this device may not touch it. Reachable only
-         * with a genuinely signed label, since the signature is checked before
-         * anything here runs.
-         */
         $box = SpiBox::withoutGlobalScopes()->whereNull('deleted_at')->find($hit['id']);
         if (!$box) {
             return $this->refuse($task, $device, 'unknown_box',
                 'No box matches that label.', $data);
         }
 
-        /* Whose box is it? The device's client is the PERMISSION, and it is
-           the one thing a printed label can never prove — a sticker can be
-           photographed or reprinted by anyone. */
         if ((int) $box->client_id !== (int) $device->client_id) {
             return $this->refuse($task, $device, 'device_wrong_client',
                 'That box belongs to another organisation. This device is not allocated to it.', $data);
         }
 
-        /* Right client, wrong branch. A null branch on either side is
-           client-wide, mirroring the tenant scope — otherwise a shared box
-           would be unreachable from every branch at once. */
         $deviceBranch = TenantContext::branchId();
         if ($deviceBranch !== null && $box->branch_id !== null
             && (int) $box->branch_id !== (int) $deviceBranch) {
@@ -472,19 +339,10 @@ class SpiPutawayScanController extends Controller
                 . 'to allocate this device to that branch.', $data);
         }
 
-        /* THE INVOICE THIS CARTON WAS PACKED UNDER — resolved before anything
-           else is looked up, and every lookup below is scoped to it.
-           box_code is only unique WITHIN an invoice: each one starts again at
-           B-001, so four different cartons on this floor answer to that name.
-           A row joined on box_code alone, or a message that says "B-001", is
-           talking about a carton nobody can identify. */
         $spi = $box->supplier_invoice_id
             ? SupplierInvoice::where('client_id', $device->client_id)->find($box->supplier_invoice_id)
             : null;
 
-        /* Not packed under any invoice. The label exists and its signature is
-           good, but nothing says which consignment the carton belongs to —
-           there is no put-away to do and no way to name what they are holding. */
         if (!$spi) {
             return $this->refuse($task, $device, 'box_not_packed',
                 "{$box->box_code} is not packed against any supplier invoice. It cannot be put away.", $data);
@@ -496,33 +354,17 @@ class SpiPutawayScanController extends Controller
             ->open()->first();
 
         if (!$open) {
-            /* Three different situations end up here and they need three
-               different answers. "Allocate it first" told the operator to go
-               and allocate a box that was already sitting on a shelf — true
-               that no task is open, and the worst possible next instruction. */
-            /* Scoped to the box's OWN invoice, and newest first. Unscoped,
-               a box re-allocated under a later invoice could be judged by a
-               row belonging to a different consignment — and `first()` with
-               no order picks whichever the planner happens to return. */
             $row = SpiPutaway::where('box_id', $box->id)
                 ->where('supplier_invoice_id', $spi->id)
                 ->where('client_id', $device->client_id)
                 ->latest('id')->first();
 
-            /* Name where they are standing, when a location was scanned
-               first. "No put-away initiated for B-001" is true but reads as a
-               dead end; the operator is at a rack holding a carton and needs
-               to know this box is not the one that belongs here. */
             $at = !empty($data['staged_location'])
                 ? $this->nameLocation($data['staged_kind'] ?? 'shelf', (int) $data['staged_location'])
                 : null;
             $here = $at ? " It does not belong at {$at}." : '';
 
             if ($row?->isPlaced()) {
-                /* Already put away. Show the SAME full details screen as a fresh
-                   scan — box, products and where it now sits — marked done, not a
-                   bare "already placed" line. The completed task carries all of
-                   it (destination = its current zone/rack/shelf). (CS-956 #64) */
                 $placed = [
                     'box_code'    => $box->box_code,
                     'spi_code'    => $spi->code,
@@ -540,9 +382,6 @@ class SpiPutawayScanController extends Controller
                     ->whereNotNull('completed_at')->latest('completed_at')->first();
 
                 if ($done) {
-                    // Re-scanning a box that is already placed is a read-only lookup — it
-                    // must NOT log a "Box scanned" row, or a completed box's timeline fills
-                    // with scans that never moved it. Show the details; write nothing.
                     return response()->json([
                         'status'         => true,
                         'notice'         => "{$box->box_code} of {$spi->code} is already put away.",
@@ -551,17 +390,12 @@ class SpiPutawayScanController extends Controller
                     ], 200);
                 }
 
-                /* Hand-confirmed / legacy with no completed task row — the proof only. */
                 return $this->refuse($task, $device, 'already_placed',
                     "{$box->box_code} of {$spi->code} is already put away.", $data, ['placed' => $placed], false);
             }
 
             $named = "{$box->box_code} of {$spi->code}";
 
-            /* No open task — nothing to place, but still open the box's details so
-               the operator can read what it is. A read-only lookup: no scan log is
-               written and no state changes. Raising a task or confirming it by hand
-               is a desktop action, not something to do from here. */
             $allocated = $row?->zone_id ? [
                 'full'  => $row->destination,
                 'zone'  => $row->zone_id ? DB::table('inventory_zones')->where('id', $row->zone_id)->value('code') : null,
@@ -586,11 +420,6 @@ class SpiPutawayScanController extends Controller
             ], 200);
         }
 
-        /* Scanning a different box mid-task is a wrong turn, not a new task.
-           Lead with the box this task actually wants: the operator is holding
-           the wrong carton and needs to know which one to reach for. Naming
-           two task codes and no box, as this did, describes the problem
-           accurately and helps with nothing. */
         if ($task && (int) $task->id !== (int) $open->id) {
             $wants = $this->boxCode($task);
 
@@ -600,13 +429,9 @@ class SpiPutawayScanController extends Controller
 
         $task = $open;
 
-        /* A location scanned before any box. Now that the task is known, the
-           pair can finally be judged — this is the reverse-order check. */
         if (!empty($data['staged_location'])) {
             $slot     = $task->locationSlot();
             $expected = (int) ($task->shelf_id ?: $task->zone_id);
-            // Kind as well as id, for the same reason as a live location scan:
-            // rack 1 and shelf 1 are different places with the same number.
             $kindOk   = ($data['staged_kind'] ?? $slot) === $slot;
 
             if (!$kindOk || (int) $data['staged_location'] !== $expected) {
@@ -615,7 +440,6 @@ class SpiPutawayScanController extends Controller
                     . '. You are at ' . ($this->nameLocation($data['staged_kind'] ?? $slot, (int) $data['staged_location']) ?: 'a different location') . '.', $data);
             }
 
-            // Right place, reached the other way round: fill both slots.
             $task->forceFill([
                 'shelf_scan_at'      => $task->shelf_scan_at ?: now(),
                 'shelf_confirmed_at' => $task->shelf_confirmed_at ?: now(),
@@ -635,13 +459,6 @@ class SpiPutawayScanController extends Controller
             'meta'   => ['act' => 'scan', 'slot' => 'box', 'value' => $data['scanned_value']],
         ]);
 
-        /* Say which box this now is.
-           A location scanned first carries no task, so any box due there is
-           legitimately picked up — that is the trolley-at-the-rack flow. But
-           the operator may have reached for the wrong carton, and a screen
-           that answers "accepted" tells them nothing about WHICH put-away
-           they are now on. Naming it is what lets them catch it before
-           pressing Complete. */
         return response()->json([
             'status' => true,
             'notice' => "{$box->box_code} · {$task->task_code}",
@@ -649,29 +466,15 @@ class SpiPutawayScanController extends Controller
         ], 200);
     }
 
-    /** The location half — a shelf, or the zone in a rackless warehouse. */
     private function scanLocation(ScanDevice $device, ?SpiPutawayTask $task, array $hit, array $data)
     {
-        /* No task yet: the rack was scanned before any box. Nothing can be
-           judged, so the location is handed back for the page to hold and
-           re-present with the box scan. Resolved here anyway, so a bad id is
-           caught now rather than two scans later. */
         if (!$task) {
-            // Its OWN kind. Passing 'shelf' for anything non-zone made a rack
-            // label report the shelf that happened to share its id.
             $name = $this->nameLocation($hit['kind'], $hit['id'], $device);
             if (!$name) {
                 return $this->refuse(null, $device, 'unknown_location',
                     "No {$hit['kind']} on this account matches that label.", $data);
             }
 
-            /* Is anything actually due here?
-               Staging a location that no open task points at sends the
-               operator looking for a box that does not exist — the screen
-               says "scan the box" and every box they try will be refused.
-               Cheaper to say it now. */
-            // Count against the column for THIS kind. 'shelf_id' for a rack
-            // scan counted tasks whose shelf happened to share the rack's id.
             $col = ['zone' => 'zone_id', 'rack' => 'rack_id', 'shelf' => 'shelf_id'][$hit['kind']] ?? 'shelf_id';
 
             $dueTasks = SpiPutawayTask::where('client_id', $device->client_id)
@@ -683,10 +486,6 @@ class SpiPutawayScanController extends Controller
 
             $due = $dueTasks->count();
 
-            /* Nothing due — so answer the other question instead.
-               A refusal here wastes the scan. The operator is standing at the
-               location with the label already read; what they want next is
-               almost always "what is in here?". Same scan, useful answer. */
             if ($due === 0) {
                 $this->log2($device, PutawayActivityLog::SCAN_PASSED, [
                     'meta' => ['act' => 'lookup', 'slot' => $hit['kind'], 'location_id' => $hit['id']],
@@ -707,19 +506,15 @@ class SpiPutawayScanController extends Controller
                 'staged_kind'     => $hit['kind'],
                 'staged_name'     => $name,
                 'due_here'        => $due,
-                /* WHICH boxes, not just how many. "3 boxes due here" sends the
-                   operator hunting; the codes let them pick one off the trolley. */
                 'due_boxes'       => $dueTasks->map(fn (SpiPutawayTask $t) => [
                     'id'          => (int) $t->id,
                     'task_code'   => $t->task_code,
-                    // Tapping a row scans that box, so the id has to travel.
                     'box_id'      => (int) $t->box_id,
                     'box_code'    => $t->box?->box_code,
                     'spi_code'    => $t->invoice?->code,
                     'step'        => $t->currentStep(),
                     'step_label'  => $t->stepLabel(),
                     'destination' => $this->describe($t),
-                    // Untouched or half-walked — the floor sorts them apart.
                     'started'     => (bool) ($t->box_scan_at || $t->zone_scan_at || $t->rack_scan_at || $t->shelf_scan_at),
                 ])->values(),
                 'step'            => 'scan_box',
@@ -728,7 +523,6 @@ class SpiPutawayScanController extends Controller
                     : "{$due} boxes due at {$name} — scan one",
                 'device'          => $this->deviceBody($device),
                 'task'            => null,
-                // The same picture as a lookup: standing here, what is here.
                 'location'        => $this->locationContents($hit['kind'], (int) $hit['id'], $name, (int) $device->client_id),
             ]], 200);
         }
@@ -740,10 +534,6 @@ class SpiPutawayScanController extends Controller
 
         $kind = $hit['kind'];
 
-        /* ANY LEVEL OF THE ADDRESS IS ACCEPTED — zone, rack or shelf — because
-           operators prove where they are in whichever way suits the aisle.
-           What must hold is that the level scanned IS this task's level: the
-           task's own rack, not merely some rack. */
         $expected = $task->levelIdFor($kind);
 
         if ($expected === null) {
@@ -752,13 +542,7 @@ class SpiPutawayScanController extends Controller
                 . '. Scan the ' . $task->locationSlot() . ' — ' . $this->describe($task) . '.', $data);
         }
 
-        /* THE KIND BEFORE THE ID. Shelves, racks and zones number from their
-           own sequences, so shelf 1, rack 1 and zone 1 all exist at once —
-           comparing ids alone would take a rack label as proof of standing at
-           the shelf. levelIdFor() has already matched kind to kind. */
         if ((int) $hit['id'] !== $expected) {
-            // A label naming nothing is a different fault from the wrong
-            // place, and "a different rack — unknown" describes neither.
             $at = $this->nameLocation($kind, (int) $hit['id'], $device);
 
             return $this->refuse($task, $device, 'wrong_location',
@@ -768,11 +552,9 @@ class SpiPutawayScanController extends Controller
                 $data);
         }
 
-        // Right id, but the row has to be real, active and in this warehouse.
         $why = $this->locationUsable($kind, $expected, $task);
         if ($why) return $this->refuse($task, $device, 'location_unusable', $why, $data);
 
-        // Marks this level and every level above it — a shelf proves its rack.
         $task->markLocationScanned($kind);
         $task->forceFill(['fail_count' => 0, 'updated_by' => $device->actorId()])->save();
 
@@ -783,22 +565,6 @@ class SpiPutawayScanController extends Controller
         return response()->json(['status' => true, 'data' => $this->state($task->refresh(), $device)], 200);
     }
 
-    /* ════════════════════════════ REFUSALS ════════════════════════════ */
-
-    /**
-     * A refused scan: logged, counted, and on the third one in a row the
-     * operator is sent back to the box.
-     *
-     * Written OUTSIDE any transaction on purpose. The log row is the only
-     * thing a refusal leaves behind, and a rollback would destroy the one
-     * record it exists to make.
-     */
-    /**
-     * @param array $extra Anything the screen needs to explain this refusal.
-     * @param bool  $blame Whether it counts against the task's attempts. A
-     *                     scan that proves nothing about THIS put-away — a
-     *                     carton already away, say — must not burn one.
-     */
     private function refuse(?SpiPutawayTask $task, ScanDevice $device, string $code, string $message, array $data, array $extra = [], bool $blame = true)
     {
         $reset = false;
@@ -839,7 +605,6 @@ class SpiPutawayScanController extends Controller
         ] + $extra, 422);
     }
 
-    /** A plain refusal with no scan behind it — nothing to count. */
     private function reject(string $message, SpiPutawayTask $task, ScanDevice $device)
     {
         return response()->json([
@@ -848,20 +613,8 @@ class SpiPutawayScanController extends Controller
         ], 422);
     }
 
-    /* ════════════════════════════ HELPERS ════════════════════════════ */
-
-    /**
-     * The handheld, proved by its credential.
-     *
-     * Everything downstream scopes to $device->client_id, so this is the only
-     * place a tenant is established for these endpoints.
-     */
     private function device(Request $request): ScanDevice
     {
-        // Cert-only first: the front door (proxy / Apache) verifies the client
-        // certificate and passes its CN here, having stripped any client-sent
-        // copy — so this header is trustworthy and the device needs no token.
-        // The old X-Scan-Device token still works as a fallback.
         $device = $this->deviceFromCert($request)
             ?: ScanDevice::findByToken((string) ($request->header('X-Scan-Device') ?: $request->input('device_token')));
 
@@ -882,18 +635,6 @@ class SpiPutawayScanController extends Controller
             ], 403));
         }
 
-        /* Act as the person who enrolled this handheld.
-         *
-         * Not cosmetic. Half the machinery below reaches for auth()->user()
-         * without being asked to — the tenant trait that fills client_id,
-         * SupplierInvoiceService::log()'s performed_by — and on a request with
-         * no session those come back null and hit a NOT NULL column at the
-         * last step. Resolving the actor here fixes all of them in one place,
-         * and it is what the device MEANS: it is that person's credential.
-         *
-         * setUser() only populates the guard for this request. No session is
-         * started and no token is issued.
-         */
         $actor = $device->actorId()
             ? User::where('client_id', $device->client_id)->find($device->actorId())
             : null;
@@ -908,15 +649,6 @@ class SpiPutawayScanController extends Controller
 
         Auth::setUser($actor);
 
-        /* And the tenant, which auth() alone does not carry.
-         *
-         * TenantContext is normally set by middleware on the logged-in routes;
-         * these are public, so nothing had set it and BelongsToTenant was
-         * filling client_id with null — invisible until it reached the one
-         * table with a NOT NULL on that column, at the last step of a
-         * put-away. Setting it here also turns the tenant scope back on, so a
-         * device can only ever reach its own client's rows.
-         */
         TenantContext::fromUser($actor);
 
         $device->forceFill(['last_seen_at' => now()])->save();
@@ -924,12 +656,6 @@ class SpiPutawayScanController extends Controller
         return $device;
     }
 
-    /**
-     * Resolve the handheld from its client certificate's CN, which the front
-     * door injects as X-Scan-Cert-CN after verifying it against the Device CA.
-     * The CN is "zebra-<serial>"; the serial is the device's own serial. Null
-     * when no cert CN is present, so the caller falls back to the token.
-     */
     private function deviceFromCert(Request $request): ?ScanDevice
     {
         $cn = trim((string) $request->header('X-Scan-Cert-CN'));
@@ -947,9 +673,6 @@ class SpiPutawayScanController extends Controller
             abort(response()->json(['status' => false, 'message' => "No put-away task found with id {$taskId}."], 404));
         }
         if ($mustBeOpen && !$task->isOpen()) {
-            // Say what happened to it, in the words the floor uses. The status
-            // column is a developer's word: "is scanned — it can no longer be
-            // scanned" is both circular and no help to anyone holding a box.
             abort(response()->json([
                 'status'  => false,
                 'message' => match ($task->status) {
@@ -964,13 +687,6 @@ class SpiPutawayScanController extends Controller
         return $task;
     }
 
-    /**
-     * What a scanned string is.
-     *
-     * Four shapes reach here and all of them still exist on labels in the
-     * building: the signed sticker URL, the short 'SH:41' form, a typed code,
-     * and a bare box id from the oldest stickers.
-     */
     private function classify(string $value): array
     {
         if ($p = StickerKey::parse($value)) {
@@ -994,7 +710,6 @@ class SpiPutawayScanController extends Controller
             ];
         }
 
-        // A bare number is a box: that is what the first sticker run encoded.
         if (ctype_digit($v)) {
             return ['kind' => 'box', 'id' => (int) $v, 'signed' => false, 'valid' => true];
         }
@@ -1002,11 +717,8 @@ class SpiPutawayScanController extends Controller
         return ['kind' => null, 'id' => null, 'signed' => false, 'valid' => false];
     }
 
-    /** Real, active, and in this task's warehouse — or why not. */
     private function locationUsable(string $slot, int $id, SpiPutawayTask $task): ?string
     {
-        // Org-scoped: a location owned by another client is not this task's to
-        // use, whatever its id. (CS-956: other-org location scan)
         $row = match ($slot) {
             'zone'  => DB::table('inventory_zones')->where('id', $id)->where('client_id', $task->client_id)->first(['id', 'status', 'warehouse_id']),
             'rack'  => DB::table('inventory_racks')->where('id', $id)->where('client_id', $task->client_id)->first(['id', 'status', 'warehouse_id']),
@@ -1023,22 +735,10 @@ class SpiPutawayScanController extends Controller
         return null;
     }
 
-    /**
-     * A location's printed code, for a message that names where they stand.
-     *
-     * Each kind reads from its own table. This used to send anything that was
-     * not a zone down the shelf path, so a RACK id was rendered as a shelf
-     * code — and because rack 1 and shelf 1 both exist, it produced a
-     * confident, wrong answer rather than failing.
-     */
     private function nameLocation(string $slot, ?int $id, ?ScanDevice $device = null): ?string
     {
         if (!$id) return null;
 
-        // Scope to the device's organisation — a zone/rack/shelf owned by another
-        // client must read as "not on this account", exactly like the box scan.
-        // $device is null only for internal display of a task already scoped to
-        // its client. (CS-956: other-org location scan)
         $scope = fn ($q) => $device ? $q->where('client_id', $device->client_id) : $q;
 
         if ($slot === 'zone') return $scope(DB::table('inventory_zones')->where('id', $id))->value('code');
@@ -1052,16 +752,6 @@ class SpiPutawayScanController extends Controller
         return ($rack ?: 'RC-???') . '-SH-' . str_pad((string) $shelf->level_no, 2, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * What is actually in a location right now.
-     *
-     * Read from inventory_location_occupancy, not from the shelf's own
-     * counters: those are a recomputed cache, and this has to list the boxes
-     * anyway. Reserved rows are included and marked — a box on its way here
-     * is occupying the space even though nobody has put it down yet, and an
-     * operator looking at a half-empty shelf needs to know it is spoken for.
-     */
-    /** The handling flags the packer ticked, named. */
     private function boxFlags(?SpiBox $box): array
     {
         $ids = collect((array) $box?->flags)
@@ -1075,14 +765,6 @@ class SpiPutawayScanController extends Controller
             ->all();
     }
 
-    /**
-     * What is inside a carton, as the floor reads it: a picture, a name, a
-     * segment and a quantity per line.
-     *
-     * The product master carries the picture and the segment; the invoice line
-     * carries what was actually billed, and the box item what was packed. One
-     * query for the products rather than one per line.
-     */
     private function boxProducts(?SpiBox $box): array
     {
         $items = $box?->items ?? collect();
@@ -1117,7 +799,6 @@ class SpiPutawayScanController extends Controller
                 'hsn'         => $line?->hsn_code,
                 'quantity'    => (float) $i->quantity,
                 'uom'         => $line?->uom ?: $p?->uom,
-                // Stamped on the carton's own line, not on the product.
                 'batch_no'    => $i->batch_no,
                 'lot_no'      => $i->lot_no,
                 'serial_no'   => $i->serial_no,
@@ -1128,7 +809,6 @@ class SpiPutawayScanController extends Controller
         })->values()->all();
     }
 
-    /** Zone / rack / shelf codes for a location, read upwards from what was scanned. */
     private function addressOf(string $slot, int $id): array
     {
         $zoneId = null;
@@ -1156,13 +836,6 @@ class SpiPutawayScanController extends Controller
         ];
     }
 
-    /**
-     * The master's own description of a location, as label/value rows.
-     *
-     * Flat pairs rather than a shaped object: what is worth showing differs
-     * per kind (a zone has a temperature band, a shelf a weight limit), and
-     * the screen should not have to know which.
-     */
     private function locationDetails(string $slot, int $id): array
     {
         $flag = fn ($v) => $v ? 'Allowed' : 'Not allowed';
@@ -1228,13 +901,6 @@ class SpiPutawayScanController extends Controller
         return $rows;
     }
 
-    /**
-     * What sits one level down, with the work owed to each.
-     *
-     * A rack label is scanned by someone standing in front of several
-     * shelves; telling them the rack has three boxes due without saying WHICH
-     * shelf leaves them opening every one.
-     */
     private function locationChildren(string $slot, int $id, ?int $clientId): array
     {
         if ($slot === 'rack') {
@@ -1242,8 +908,6 @@ class SpiPutawayScanController extends Controller
                 ->orderBy('level_no')->get(['id', 'shelf_name', 'level_no', 'max_weight_kg', 'status']);
             $col = 'shelf_id';
         } elseif ($slot === 'zone') {
-            /* A floor zone stores cartons on the floor, so there is no level
-               below it — the boxes themselves are the answer, not racks. */
             if (DB::table('inventory_zones')->where('id', $id)->value('rack_mode') !== 'rack') return [];
 
             $kids = DB::table('inventory_racks')->where('zone_id', $id)
@@ -1257,7 +921,6 @@ class SpiPutawayScanController extends Controller
 
         $ids = $kids->pluck('id')->all();
 
-        // Two grouped reads rather than one per child.
         $due = $clientId
             ? SpiPutawayTask::where('client_id', $clientId)->open()->whereIn($col, $ids)
                 ->with(['box:id,box_code', 'invoice:id,code'])->get()->groupBy($col)
@@ -1269,8 +932,6 @@ class SpiPutawayScanController extends Controller
             ->get(['occupant_id', 'box_code', 'weight_kg', 'status', $col])
             ->groupBy($col);
 
-        /* A rack is read by how many shelves it offers, not by how many
-           cartons happen to be on it — that is the shelf's question. */
         $shelves = $slot === 'zone'
             ? DB::table('inventory_shelves')->whereIn('rack_id', $ids)
                 ->selectRaw('rack_id, count(*) as n')->groupBy('rack_id')->pluck('n', 'rack_id')
@@ -1289,7 +950,6 @@ class SpiPutawayScanController extends Controller
                 'max_weight_kg' => $slot === 'rack' && $k->max_weight_kg ? (float) $k->max_weight_kg : null,
                 'used_weight_kg' => round((float) $boxes->sum('weight_kg'), 3),
                 'stored'  => $boxes->where('status', LocationOccupancy::OCCUPIED)->count(),
-                // Racks are counted in shelves; null on a shelf, which has none.
                 'shelves' => $slot === 'zone' ? (int) ($shelves[$k->id] ?? 0) : null,
                 'pending' => $mine->map(fn (SpiPutawayTask $t) => [
                     'box_code'   => $t->box?->box_code,
@@ -1303,8 +963,6 @@ class SpiPutawayScanController extends Controller
 
     private function locationContents(string $slot, int $id, string $name, ?int $clientId = null): array
     {
-        // Each kind has its own column; a rack is not a shelf with the
-        // same number, however often their ids happen to agree.
         $col = ['zone' => 'zone_id', 'rack' => 'rack_id', 'shelf' => 'shelf_id'][$slot] ?? 'shelf_id';
 
         $rows = DB::table('inventory_location_occupancy')
@@ -1313,8 +971,6 @@ class SpiPutawayScanController extends Controller
             ->orderByDesc('id')
             ->get(['occupant_id', 'box_code', 'weight_kg', 'status', 'placed_at', 'reserved_at']);
 
-        // Only a shelf carries a weight limit — a zone or rack is a sum
-        // of its children, and quoting one here would invent a figure.
         $cap = $slot === 'shelf'
             ? (float) DB::table('inventory_shelves')->where('id', $id)->value('max_weight_kg')
             : null;
@@ -1325,8 +981,6 @@ class SpiPutawayScanController extends Controller
             'kind'     => $slot,
             'id'       => $id,
             'name'     => $name,
-            // The address as its parts, so the screen can show where this is
-            // rather than make the operator read it out of one long string.
             'address'  => $this->addressOf($slot, $id) + ['code' => $name],
             'details'  => $this->locationDetails($slot, $id),
             'children' => $this->locationChildren($slot, $id, $clientId),
@@ -1335,7 +989,6 @@ class SpiPutawayScanController extends Controller
                 'box_code'  => $r->box_code,
                 'weight_kg' => $r->weight_kg !== null ? (float) $r->weight_kg : null,
                 'status'    => $r->status,
-                // The word an operator would use, not the column's.
                 'state'     => $r->status === LocationOccupancy::OCCUPIED ? 'stored' : 'on its way',
                 'since'     => $r->placed_at ?: $r->reserved_at,
             ])->values(),
@@ -1347,16 +1000,6 @@ class SpiPutawayScanController extends Controller
         ];
     }
 
-    /**
-     * Clear a half-finished scan that has been sitting too long.
-     *
-     * Enforced HERE rather than in the page, because the page is reloaded on
-     * every camera scan and anything it was holding could simply be re-sent.
-     * The server is the only place that can say how old a scan really is.
-     *
-     * Logged, so a run that restarted mid-aisle is visible afterwards —
-     * otherwise the trail shows a box scanned twice with no reason why.
-     */
     private function dropStaleScans(SpiPutawayTask $task, ScanDevice $device): bool
     {
         if (!$task->scansAreStale()) return false;
@@ -1371,7 +1014,6 @@ class SpiPutawayScanController extends Controller
         return true;
     }
 
-    /** An activity row with no task behind it — a lookup, not a put-away. */
     private function log2(ScanDevice $device, string $event, array $attrs): void
     {
         $this->activity->log(
@@ -1382,7 +1024,6 @@ class SpiPutawayScanController extends Controller
         );
     }
 
-    /** The full address a task points at. */
     private function describe(SpiPutawayTask $task): string
     {
         $wh   = DB::table('inventory_warehouses')->where('id', $task->warehouse_id)->value('code');
@@ -1393,13 +1034,6 @@ class SpiPutawayScanController extends Controller
         return implode(' / ', array_filter([$wh, $zone, $rack, $shelf]));
     }
 
-    /**
-     * How a carton is named to an operator.
-     *
-     * Always WITH its invoice. box_code restarts at B-001 for every supplier
-     * invoice, so "this task wants B-001" is four different cartons on a busy
-     * floor and tells the person holding one of them nothing.
-     */
     private function boxCode(SpiPutawayTask $task): string
     {
         $code = $task->box?->box_code ?: ('Box ' . $task->box_id);
@@ -1433,16 +1067,10 @@ class SpiPutawayScanController extends Controller
     {
         return $device->toClient() + [
             'actor_id' => $device->actorId(),
-            /* Whether a PERSON has claimed this handheld, as opposed to it
-               falling back to the admin who added the row. The page uses this
-               to offer binding once, quietly, instead of asking every shift. */
             'claimed'  => $device->enrolled_by !== null,
         ];
     }
 
-    /** Everything the scan page draws, in one shape for every endpoint. */
-    /** The box as the handheld reads it — code, scenario, dims, flags, products.
-     *  Shared by the live task state and the no-task lookup, so both agree. */
     private function boxBody(SpiBox $box, ?string $spiCode): array
     {
         return [
@@ -1493,8 +1121,6 @@ class SpiPutawayScanController extends Controller
                 'step_label'         => $task->stepLabel(),
                 'expected'           => $task->expectedScans(),
                 'location_slot'      => $task->locationSlot(),
-                /* The address as steps, so the screen can show how far in the
-                   operator is. Scanning the shelf ticks all three at once. */
                 'chain'              => array_map(fn (array $s) => $s + [
                     'name' => $this->nameLocation($s['kind'], $s['id']),
                 ], $task->locationChain()),
@@ -1508,8 +1134,6 @@ class SpiPutawayScanController extends Controller
                 'shelf_scan_at'      => optional($task->shelf_scan_at)->toIso8601String(),
                 'shelf_confirmed_at' => optional($task->shelf_confirmed_at)->toIso8601String(),
                 'ready_to_complete'  => $task->readyToComplete(),
-                /* The idle clock, so the handheld can give up a half-walked
-                   run on its own. The page owns no threshold of its own. */
                 'last_activity_at'   => optional($task->lastScanAt())->toIso8601String(),
                 'idle_after_minutes' => (int) config('inventory.scan_stale_minutes', 5),
                 'idle_seconds_left'  => $task->idleSecondsLeft(),

@@ -2,33 +2,13 @@
   $h = is_array($header) ? $header : [];
   $f = is_array($footer) ? $footer : [];
 
-  /* Letterhead name, resolved at RENDER time. (#113)
-   *
-   * Templates seeded before the organisation name was available stored the
-   * placeholder words "Company Name" / "Company Name Pvt. Ltd." as plain text,
-   * so every document built from them printed those words as if they were the
-   * letterhead — and in Evidence Vault the footer read "Company Name
-   * Confidential". Plain text has nothing to resolve, so fixing the seed only
-   * helps templates written from now on; the documents already in the vault
-   * needed the substitution to happen here, where they are drawn.
-   *
-   * $companyName is passed by the controllers and resolves per document to the
-   * legal entity, then the client org name, then the employee's own BRANCH —
-   * the branch-name default this ticket asks for. When it cannot be resolved
-   * the placeholder is dropped rather than printed, so a footer degrades to
-   * "Confidential" instead of asserting a company that does not exist.
-   *
-   * Also swaps the {{CompanyName}} token, which new templates now seed when the
-   * author has no organisation of their own. */
   $orgName = trim((string) ($companyName ?? ''));
   $fillOrg = function (string $s) use ($orgName): string {
       if ($s === '') return $s;
       $s = preg_replace('/\{\{\s*CompanyName\s*\}\}/i', $orgName, $s);
-      // Longest first — "Company Name Pvt. Ltd." must not be half-replaced.
       foreach (['Company Name Pvt. Ltd.', 'Company Name'] as $ph) {
           $s = str_ireplace($ph, $orgName, $s);
       }
-      // A dropped name can leave "  |  Confidential" or a trailing separator.
       $s = preg_replace('/\s*\|\s*\|\s*/', ' | ', $s);
       $s = preg_replace('/^\s*\|\s*|\s*\|\s*$/', '', $s);
       return trim(preg_replace('/\s{2,}/', ' ', $s));
@@ -40,17 +20,6 @@
   $hBg      = (string) ($h['background'] ?? '#ffffff');
   $hFg      = (string) ($h['text_color'] ?? '#111827');
   $showLogo = ($h['show_logo'] ?? true) && !empty($logoDataUri);
-  /* Configured logo height, same clamp and same 62px fallback as the template
-     editor, the DOCX renderer and the CLM signature PDF (#2). This blade used
-     to hard-code max-height:50px, so the size chosen in the editor never
-     reached the finished PDF.
-
-     The header band is a FIXED-height fragment repeated on every page, so it
-     has to be grown to match or a tall logo is simply cut off by it. 30px is
-     the breathing room the original 80px band left around its 50px logo; the
-     page's top margin and the band's offset are derived from the same figure
-     so the three stay in step instead of being three constants to keep
-     aligned by hand. */
   $logoH   = max(24, min(200, (int) ($h['logo_height'] ?? 62)));
   $headerH = max(80, $logoH + 30);
   $showTitle= ($h['show_title'] ?? true);
@@ -91,15 +60,8 @@
   .body p { margin: 0 0 8px 0; }
   .body h1, .body h2, .body h3 { margin: 14px 0 8px; }
   .body table { width: 100%; border-collapse: collapse; }
-  /* Cell padding for imported Word tables. The DOCX → HTML converter used to
-     stamp this on every single cell; it says it once here instead, and a cell
-     that still carries its own inline copy is saying the same thing. */
   .body td, .body th { padding: 6px 8px; vertical-align: top; }
   .body img { max-width: 100%; }
-  /* Explicit break emitted by the editor's Page Break button. The div is
-     zero-height and invisible in print; only the instruction matters. Matched
-     on the class AND the data attribute so a stripped stylesheet or a
-     sanitiser that drops classes still leaves the break standing. */
   .body div.page-break,
   .body div[data-page-break] {
     page-break-after: always;
@@ -113,12 +75,6 @@
     <tr>
       <td class="logo">
         @if($showLogo)
-          {{-- `height` outright, not max-height: a max only shrinks, and a wide
-               logo hits max-width first and takes its height from the aspect
-               ratio — which is why changing logo_height moved nothing here.
-               max-width stays purely as an overflow guard. Written on one line
-               because a value split across lines renders as "62 px", and
-               dompdf drops the invalid declaration silently. --}}
           <img src="{{ $logoDataUri }}" style="height:{{ $logoH }}px; width:auto; max-width:240px;" />
         @endif
       </td>

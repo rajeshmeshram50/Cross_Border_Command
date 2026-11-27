@@ -8,20 +8,6 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
-/**
- * Daily expiry-reminder engine for tracked third-party subscriptions.
- *
- * The scheduler runs this once a day (see routes/console.php). For every
- * 'active' subscription it works out how many days are left until the renewal
- * date, then — for each per-service `reminder_days` threshold that has been
- * reached but NOT yet mailed for the current expires_at — sends the owner one
- * reminder and records the threshold in `reminders_sent`.
- *
- * Idempotency: `reminders_sent` is keyed to the current expires_at (the
- * controller clears it whenever the date changes), so re-running the command on
- * the same day, or missing a day and catching up, never double-mails a
- * milestone. A special threshold value 0 covers "on/after the expiry day".
- */
 class SendSubscriptionExpiryReminders extends Command
 {
     protected $signature = 'subscriptions:send-expiry-reminders
@@ -43,19 +29,15 @@ class SendSubscriptionExpiryReminders extends Command
         $sent = 0;
 
         foreach ($subs as $sub) {
-            $daysLeft   = $sub->daysLeft();                 // negative once past due
+            $daysLeft   = $sub->daysLeft();
             $thresholds = collect($sub->reminder_days ?? [])->map(fn ($d) => (int) $d);
             $already    = collect($sub->reminders_sent ?? [])->map(fn ($d) => (int) $d);
 
-            // Which configured milestones have now been reached and not yet mailed.
-            // "Reached" = days-left has fallen to or below the threshold.
             $due = $thresholds
                 ->filter(fn ($t) => $daysLeft <= $t && !$already->contains($t))
-                ->sort()                    // smallest (most urgent) first
+                ->sort()
                 ->values();
 
-            // Once past due, also fire a single "expired" reminder (threshold 0)
-            // if it wasn't one of the configured milestones already handled.
             if ($daysLeft < 0 && !$already->contains(0) && !$due->contains(0)) {
                 $due->push(0);
             }
@@ -64,8 +46,6 @@ class SendSubscriptionExpiryReminders extends Command
                 continue;
             }
 
-            // Only the MOST-URGENT reached milestone needs an email this run; the
-            // rest are still marked sent so a later run doesn't re-fire them.
             $mailThreshold = $due->first();
 
             $this->line(sprintf(

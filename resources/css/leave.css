@@ -454,6 +454,7 @@
 }
 
 .lp-section-label {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
   color: var(--vz-secondary-color, #6b7280); text-transform: uppercase;
   margin-top: 4px;
@@ -512,6 +513,23 @@
   padding: 1px 8px; border-radius: 999px;
   background: #d3f0ee; color: #0a716a;
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
+}
+.lp-inactive-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 8px; border-radius: 999px;
+  background: #fee2e2; color: #b91c1c;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.lp-active-pill {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border-radius: 999px;
+  background: #dcfce7; color: #15803d;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.lp-inactive-pill--lg {
+  padding: 3px 10px; font-size: 11px; letter-spacing: 0; font-weight: 600;
 }
 .lp-new-plan-btn {
   margin-top: auto;
@@ -1493,6 +1511,14 @@
   background: rgba(10, 179, 156, 0.20);
   color: #5eead4;
 }
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lp-active-pill {
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+}
+:is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lp-inactive-pill {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
 :is([data-bs-theme="dark"], [data-layout-mode="dark"]) .lts-back-btn {
   background: rgba(124, 92, 252, 0.18);
   color: #c4b5fd;
@@ -1536,8 +1562,23 @@
   padding: 10px 4px; min-height: 36px;
   font-size: 12px; color: var(--vz-secondary-color, #878a99);
 }
+/* Short count badge/pill, sitting at the right of the LEAVE PLANS header (#190).
+   text-transform:none so it stays "5 plans", not the header's uppercase. */
 .lp-plan-count-note {
-  padding: 8px 4px 0;
-  font-size: 11.5px; letter-spacing: .02em;
-  color: var(--vz-secondary-color, #878a99);
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .01em;
+  text-transform: none;
+  color: var(--vz-primary, #7c3aed);
+  background: rgba(124, 58, 237, .10);
+  border: 1px solid rgba(124, 58, 237, .20);
 }
+[data-bs-theme="dark"] .lp-plan-count-note {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, .14);
+  border-color: rgba(167, 139, 250, .28);
+}
+[data-bs-theme="dark"] .lp-plan-count { color: #cfd4dd; }

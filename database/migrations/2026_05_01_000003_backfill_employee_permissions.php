@@ -3,14 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Backfill `master.employees` permissions for users who were already
- * provisioned before that module existed.
- *
- * Strategy: copy each user's flag set from their `master.departments` row
- * (peer module under "Identity & Entity") onto a fresh `master.employees`
- * row. Skips users who already have one. Idempotent.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -49,7 +41,6 @@ return new class extends Migration
             ];
         }
         if (!empty($insert)) {
-            // Chunk inserts to keep memory bounded on large tenant counts.
             foreach (array_chunk($insert, 500) as $chunk) {
                 DB::table('permissions')->insert($chunk);
             }

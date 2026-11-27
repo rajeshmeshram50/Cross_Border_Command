@@ -5,7 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-
 return new class extends Migration
 {
     public function up(): void
@@ -16,39 +15,37 @@ return new class extends Migration
             $t->id();
             $t->unsignedBigInteger('client_id')->index();
             $t->unsignedBigInteger('branch_id')->nullable()->index();
-            
+
             $t->string('code', 20);
 
-            $t->string('type', 20);                     // login | bank | totp | … (25 types)
-            $t->string('category_group', 40);           // Logins & Access | Finance & Banking | …
+            $t->string('type', 20);
+            $t->string('category_group', 40);
             $t->string('name', 150);
-            $t->string('scope', 10)->default('personal');   // personal | team
+            $t->string('scope', 10)->default('personal');
             $t->unsignedBigInteger('owner_id')->index();
-            // The team a team-scope credential belongs to (master_departments.id).
             $t->unsignedBigInteger('department_id')->nullable()->index();
 
             $t->string('url', 500)->nullable();
             $t->string('username', 191)->nullable();
-            $t->text('secret')->nullable();             // encrypted
+            $t->text('secret')->nullable();
             $t->string('secret_hash', 64)->nullable()->index();
-            $t->text('fields')->nullable();             // encrypted json
-            $t->text('notes')->nullable();              // encrypted
-            $t->json('attachments')->nullable();        // [{name,size,mime,path,at}]
+            $t->text('fields')->nullable();
+            $t->text('notes')->nullable();
+            $t->json('attachments')->nullable();
 
-            $t->string('risk', 10)->default('medium');  // low | medium | high | critical
-            $t->unsignedTinyInteger('strength')->default(0);   // 0 none … 4 strong
+            $t->string('risk', 10)->default('medium');
+            $t->unsignedTinyInteger('strength')->default(0);
             $t->boolean('has_password')->default(false);
-            $t->string('twofa', 3)->default('na');      // yes | no | na
+            $t->string('twofa', 3)->default('na');
             $t->unsignedSmallInteger('rotation_days')->nullable();
             $t->timestamp('password_changed_at')->nullable();
 
-         
             $t->boolean('lock_admin')->default(false);
             $t->boolean('lock_manager')->default(false);
             $t->boolean('lock_otp')->default(false);
             $t->unsignedBigInteger('lock_admin_user_id')->nullable();
             $t->unsignedBigInteger('lock_manager_user_id')->nullable();
-            $t->text('totp_secret')->nullable();        // encrypted base32
+            $t->text('totp_secret')->nullable();
             $t->timestamp('totp_linked_at')->nullable();
 
             $t->unsignedBigInteger('created_by')->nullable();

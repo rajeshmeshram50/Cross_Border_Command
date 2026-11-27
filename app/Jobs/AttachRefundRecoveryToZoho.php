@@ -13,14 +13,6 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Puts the proof of a refund received back from the supplier into Zoho Books, on
- * the VENDOR CREDIT the refund was taken against. A Zoho refund is a sub-record
- * of its credit and carries no attachment endpoint of its own, so the credit is
- * where the evidence can live and still be found from the refund.
- *
- * Runs on the QUEUE and is best-effort: the refund is recorded either way.
- */
 class AttachRefundRecoveryToZoho implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -30,7 +22,6 @@ class AttachRefundRecoveryToZoho implements ShouldQueue
 
     public function __construct(public int $recoveryId) {}
 
-    /** Wait between retries: 30s, then 2min. */
     public function backoff(): array
     {
         return [30, 120];
@@ -47,8 +38,6 @@ class AttachRefundRecoveryToZoho implements ShouldQueue
         $books = app(ZohoBooksService::class);
         if (!$books->isConfigured()) return;
 
-        /* The whole set when the row has one, else the single legacy column —
-           the same reading the download endpoint does. */
         $files = array_values(array_filter(
             is_array($rec->proof_files) ? $rec->proof_files : [],
             fn ($f) => is_array($f) && !empty($f['path']),
@@ -68,7 +57,6 @@ class AttachRefundRecoveryToZoho implements ShouldQueue
                 continue;
             }
             $name = $f['name'] ?: basename($f['path']);
-            // Named by the recovery, so several refunds on one credit stay tellable apart.
             $filename = 'REFUND-' . $rec->id . '-' . preg_replace('/[^A-Za-z0-9._-]/', '_', $name);
 
             try {
@@ -80,8 +68,6 @@ class AttachRefundRecoveryToZoho implements ShouldQueue
             }
         }
 
-        /* Zoho's attachment endpoint accumulates rather than replaces, so a retry
-           would duplicate whatever already landed. Only retry when none did. */
         if ($failed && $sent === 0) {
             throw new \RuntimeException('Zoho attachment failed for refund recovery ' . $rec->id);
         }

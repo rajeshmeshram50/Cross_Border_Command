@@ -51,7 +51,10 @@ export default function NativeTitleTooltips() {
        would otherwise drift apart. */
     const el = triggerRef.current;
     const trig = el ? (visibleTextRect(el) ?? el.getBoundingClientRect()) : undefined;
-    const pill = pillRef.current?.getBoundingClientRect();
+    /* Layout size, not the bounding rect - the entrance animation's scale(.86)
+       made the width read short and the edge clamp stop too late (see Tooltip). */
+    const pillEl = pillRef.current;
+    const pill = pillEl ? new DOMRect(0, 0, pillEl.offsetWidth, pillEl.offsetHeight) : undefined;
     if (trig && pill) setCoords(placeTip(trig, pill, tip.position, 8));
   }, [tip]);
 

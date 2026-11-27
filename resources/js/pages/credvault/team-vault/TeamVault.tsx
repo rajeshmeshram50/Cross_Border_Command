@@ -60,8 +60,11 @@ export default function TeamVault() {
   const seq = useRef(0);
   const bdRef = useRef<HTMLDivElement | null>(null);
   const splitRef = useRef<HTMLDivElement | null>(null);
-  // Both panes reach the footer, never shorter than 620px: a short screen scrolls the page down to them instead of crushing them.
-  useFillToFoot(splitRef, (el, px) => el.style.setProperty('--tv-h', `${px}px`), 620);
+  /* Both panes end at the footer and the credential rows scroll inside the right pane (tv-pane--fit),
+     so the page itself never scrolls - the whole-page scroll lagged. The floor was 620px, which on
+     any screen with less room than that pushed the panes past the footer; 320 only applies on a
+     genuinely tiny window. */
+  useFillToFoot(splitRef, (el, px) => el.style.setProperty('--tv-h', `${px}px`), 320);
 
   const deptId = dept && dept.key !== 'admin' ? dept.key : null;
   // The admin node sees everything, as in the prototype — no member filter for it.
@@ -161,7 +164,6 @@ export default function TeamVault() {
         icon={TV_IC.team}
         label="Team Vault"
         sub="Keeping your team's shared logins in one place, giving each member the right access, and tracking how they are used."
-        defaultOpen
         steps={[
           { icon: TV_IC.cred, title: 'Add Team Credentials', desc: 'Save logins, API keys and accounts the whole team uses, instead of passing them around in chats or sheets.' },
           { icon: TV_IC.perm, title: 'Control Member Access', desc: 'Decide who can use, view, copy or fully manage each credential, and for how long.' },
@@ -185,7 +187,7 @@ export default function TeamVault() {
           <TeamDetails dept={dept} onOpenDept={openDept} selected={member} onSelect={selectMember} />
         </section>
 
-        <section className="tv-pane tv-pane--r">
+        <section className="tv-pane tv-pane--r tv-pane--fit">
           <div className="tv-pane__hd">
             <span className="tv-pane__ico"><Svg d={TV_IC.cred} size={14} sw={2.1} /></span>
             <div className="tv-pane__t"><b>Credentials</b><small>{rightSub}</small></div>
@@ -211,6 +213,7 @@ export default function TeamVault() {
                 </div>
               )}
               <CredentialTable
+                secretLabels
                 rows={rows}
                 startIndex={((meta?.current_page ?? page) - 1) * perPage}
                 loading={loading}

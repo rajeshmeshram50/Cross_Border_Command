@@ -7,6 +7,8 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import FullPageLoader from '../../components/ui/FullPageLoader';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 import {
   employeeBalancesApi,
   leaveRequestsApi,
@@ -93,6 +95,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
   const darkTheme = theme === 'dark';
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [balances, setBalances] = useState<ApiEmployeeBalanceResponse | null>(null);
+  // undefined = current year (server default); set to view another year's balances.
+  const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   /* The active status tab. 'All' first, the way every HRMS list opens. */
   const [leaveTab, setLeaveTab] = useState<'All' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'>('All');
@@ -111,7 +115,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
       const [reqs, bal] = await Promise.all([
         leaveRequestsApi.list(Number.isFinite(empId) && empId > 0 ? { employee_id: empId } : {}),
         Number.isFinite(empId) && empId > 0
-          ? employeeBalancesApi.fetch(empId)
+          ? employeeBalancesApi.fetch(empId, selectedYear)
           : Promise.resolve(null),
       ]);
       setRequests(reqs);
@@ -121,7 +125,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
     } finally {
       setLoading(false);
     }
-  }, [employeeId]);
+  }, [employeeId, selectedYear]);
 
   useEffect(() => { refetch(); }, [refetch]);
 
@@ -245,6 +249,9 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
 
   return (
     <div className="leave-summary-panel lsp-surface mb-4" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05)' }}>
+      {/* The cancel POST plus its refetch is a blocking write, so it gets the
+          same veil as the rest of the module (QA #164). */}
+      {cancellingId !== null && <FullPageLoader label="Cancelling leave request…" />}
       {/* Status pill tints. Light mode keeps the original pastel chips; the
           dark-mode overrides (which out-rank the inline-free class colours via
           !important) swap to deep tints so the badges don't wash out to bright
@@ -454,7 +461,17 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
       </div>
 
       <div className="mb-3">
-        <h6 className="fw-bold mb-2 ep-sec-head">Leave Balances</h6>
+        <div className="d-flex align-items-center justify-content-between mb-2">
+          <h6 className="fw-bold mb-0 ep-sec-head">Leave Balances</h6>
+          {(balances?.years?.length ?? 0) > 0 && (
+            <MasterSelect
+              value={String(selectedYear ?? balances?.year ?? '')}
+              options={(balances?.years ?? []).map(y => ({ value: String(y), label: String(y) }))}
+              onChange={v => setSelectedYear(Number(v))}
+              fitWidth
+            />
+          )}
+        </div>
         {loading ? (
           <div className="d-flex gap-3 flex-wrap">
             {[0, 1, 2].map(i => (

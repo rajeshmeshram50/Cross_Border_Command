@@ -11,8 +11,6 @@ return new class extends Migration
         Schema::create('department_permissions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('client_id')->nullable()->constrained('clients')->cascadeOnDelete();
-            // References master_departments.id — no FK constraint (masters can be
-            // pruned/replaced by the seeder); indexed for the per-department read.
             $table->unsignedBigInteger('department_id');
             $table->foreignId('module_id')->constrained('modules')->cascadeOnDelete();
 
@@ -27,7 +25,6 @@ return new class extends Migration
             $table->foreignId('granted_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
 
-            // One permission row per (tenant, department, module).
             $table->unique(['client_id', 'department_id', 'module_id'], 'dept_perm_unique');
             $table->index(['client_id', 'department_id']);
         });

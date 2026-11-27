@@ -16,10 +16,25 @@ class VendorTypes extends Model
         'client_id',
         'branch_id',
         'name',
+        'kind',
+        'service_type',
+        'classification',
         'description',
         'status',
+        'is_system',
         'created_by',
     ];
+
+    protected $casts = ['is_system' => 'boolean'];
+
+    public function getGroupAttribute(): ?string
+    {
+        return match ($this->service_type) {
+            'self_consumable'   => 'Self Consumable Service Provider',
+            'other_operational' => 'Other Operational Service Provider',
+            default             => null,
+        };
+    }
 
     public function client(): BelongsTo
     {

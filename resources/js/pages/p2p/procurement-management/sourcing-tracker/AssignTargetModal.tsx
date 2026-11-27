@@ -1,165 +1,218 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  ASSIGNEES, MASTER_PRODUCTS, nextCode, todayIso,
-  type DraftProduct, type SourcingTarget, type SourceType,
-} from './data';
+import api from '../../../../api';
+import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
+import { todayIso, type DraftProduct, type SourcingTarget, type SourceType } from './data';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import Tooltip from '../../../../components/ui/Tooltip';
+import TruncText from '../../../../components/ui/TruncText';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import { useSaveGuard } from './useSaveGuard';
+import { dmy, limitNum } from './format';
+import { usePopup } from './popupHooks';
+import ClipText from './ClipText';
+import ClarityDialog, { clarityPreview, type Clarity } from './ClarityDialog';
+import { clarityPaths, viewDocument } from './targetProducts';
+import { Shimmer } from '../../../../components/ui/Shimmer';
+import ClarityNoteView from './ClarityNoteView';
+import { apiErrorMessage, apiFieldErrors } from './apiError';
+import { uploadP2pFile } from './upload';
+import './popup-shell.css';
 import './assign-target-modal.css';
-/* Assign Sourcing Target popup — Figma cha DOM element for element (ast-* / asrc-* classes).
-   Dummy data var; API nantar — onCreate chi jagi POST yeil. */
+import { IcoCal, IcoCheck, IcoEdit, IcoPlus, IcoSearch, IcoUsers, IcoX, Svg } from './icons';
+
+/** Product List rows shown before the list scrolls inside the popup. */
+const PLIST_ROWS = 4;
+/** The highest target price: the supplier price ceiling (SupplierPricing::MAX_PRICE). */
+const MAX_TARGET_PRICE = 9_999_999_999.99;
+
+/* Assign / Edit Sourcing Target popup, built element for element from the Figma (sta-* / stsrc-*
+   classes). Data (see the Postman collection "P2P · Sourcing Management Tracker"):
+     GET  /p2p/products                 → Select Products
+     GET  /p2p/team-members             → Assign To
+     GET  /p2p/sourcing-targets/next-code → the ID card (Add)
+     GET  /p2p/sourcing-targets/{id}    → the form (Edit)
+     POST /p2p/upload (kind = clarity)  → a clarity document, uploaded on save
+     POST /p2p/sourcing-targets · PUT /p2p/sourcing-targets/{id} → save
+   Edit rules from the API: the assignee is fixed, the source is locked, a product that already has
+   suppliers mapped cannot be removed, and a target whose assignee is inactive is view-only. */
 
 type Props = {
-  existing: SourcingTarget[];
   /** Edit mode: pass the row. Add mode: leave out. */
   initial?: SourcingTarget;
   onClose: () => void;
-  /** Add → new target; Edit → the same target, updated (parent decides which). */
-  onSave: (t: SourcingTarget) => void;
+  /** Called after the server saved the target. */
+  onSaved: (r: { code: string; count: number; assignee: string; isEdit: boolean }) => void;
 };
 
-/** DUMMY: the list has no product rows yet, so edit seeds them from the target's counts.
-    With the API this is a GET of the target's products — nothing else changes. */
-const seedProducts = (t: SourcingTarget): DraftProduct[] => {
-  const hasM = t.sources.includes('Product Master');
-  const hasX = t.sources.includes('Manual Entry');
-  const nManual = !hasX ? 0 : !hasM ? t.totalProducts : Math.max(1, Math.floor(t.totalProducts / 4));
-  const seed = parseInt(t.code.replace(/\D/g, ''), 10) || 1;
-  const out: DraftProduct[] = [];
-  for (let i = 0; i < t.totalProducts; i++) {
-    const manual = i >= t.totalProducts - nManual;
-    const price = String(1000 + ((i * 7919 + seed * 131) % 19000));
-    if (manual) {
-      out.push({ key: `x-${i}`, source: 'Manual Entry', code: '—', name: i === 0 ? t.firstProduct : `Manual item ${i + 1}`, segment: '—', hsn: '—', targetPrice: price, clarity: '' });
-    } else {
-      const m = MASTER_PRODUCTS[i % MASTER_PRODUCTS.length];
-      out.push({ key: `m-${i}`, source: 'Product Master', code: m.code, name: i === 0 ? t.firstProduct : m.name, segment: m.segment, hsn: m.hsn, targetPrice: price, clarity: '' });
-    }
-  }
-  return out;
+type MasterProduct = { code: string; name: string; segment: string; hsn: string };
+/** GET /p2p/team-members row. `emp_code` (or `code`) is the employee code, shown before the name
+    (employees.emp_code). */
+type Member = { id: string | number; name: string; role?: string | null; emp_code?: string | null; code?: string | null; department?: string | null };
+type ApiClarity = { type: 'text' | 'link' | 'pdf'; val: string } | null;
+type EditRow = { id: number; mapped?: boolean; code?: string; name: string; segment?: string | null; hsn?: string | null; price?: string | number | null; clarity?: ApiClarity };
+type EditLoad = {
+  id: string; source?: string; start?: string; due?: string;
+  assignee?: string; assigneeId?: string | null; assigneeActive?: boolean;
+  masterRows?: EditRow[]; manualRows?: EditRow[];
 };
 
-const dmy = (iso: string) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
-const Svg = ({ size = 16, sw = 2.2, stroke = 'currentColor', children }: { size?: number; sw?: number; stroke?: string; children: ReactNode }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-);
-const IcoCheckBox = ({ size = 14 }: { size?: number }) => <Svg size={size} stroke="#fff"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></Svg>;
-const IcoEditBox = () => <Svg size={18} stroke="#fff"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></Svg>;
-const IcoX = ({ size = 15, sw = 2.6 }: { size?: number; sw?: number }) => <Svg size={size} sw={sw}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Svg>;
-const IcoPlus = ({ size = 13 }: { size?: number }) => <Svg size={size} sw={2.6} stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Svg>;
-const IcoCal = ({ size = 13, stroke = 'currentColor' }: { size?: number; stroke?: string }) => <Svg size={size} stroke={stroke}><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></Svg>;
+/** "18,500" → "18500": the server keeps the price as typed; the input holds plain digits. */
+const plainPrice = (v: unknown) => String(v ?? '').replace(/,/g, '');
+const toClarity = (c?: ApiClarity): Clarity | undefined => (c && c.val ? { type: c.type, value: c.val } : undefined);
+
+/** Product names longer than this are cut with "…"; the full name shows in the tooltip. */
+/** A product name, cut to 30 characters with its full text in a tooltip (no tooltip when it fits):
+    the shared TruncText. */
+const ProductName = ({ name, className }: { name: string; className?: string }) => <TruncText text={name} max={30} className={className} />;
+
+const IcoCheckBox =({ size = 14 }: { size?: number }) => <Svg size={size} stroke="#fff"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></Svg>;
 const IcoLock = ({ size = 12 }: { size?: number }) => <Svg size={size} sw={2.5}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></Svg>;
-const IcoUsers = () => <Svg size={13}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Svg>;
-const IcoSearch = () => <Svg size={13} sw={2.2}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></Svg>;
-const IcoTrash = () => <Svg size={13}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></Svg>;
-const IcoTick = () => <Svg size={11} sw={3} stroke="#fff"><polyline points="20 6 9 17 4 12" /></Svg>;
-
-type ClarityType = 'text' | 'link' | 'pdf';
-/** Clarity of one product: notes, a link, or a PDF. API nantar — PDF upload hya jagi hoil. */
-type Clarity = { type: ClarityType; value: string; file?: File };
-
-const IcoPen = () => <Svg size={16} stroke="#fff"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></Svg>;
-const IcoUpload = () => <Svg size={16}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></Svg>;
-
-function ClarityDialog({ product, initial, onCancel, onSave }: {
-  product: DraftProduct; initial?: Clarity; onCancel: () => void; onSave: (c: Clarity | null) => void;
-}) {
-  const [type, setType] = useState<ClarityType>(initial?.type ?? 'text');
-  const [text, setText] = useState(initial?.type === 'text' ? initial.value : '');
-  const [link, setLink] = useState(initial?.type === 'link' ? initial.value : '');
-  const [file, setFile] = useState<File | undefined>(initial?.file);
-  const [fileName, setFileName] = useState(initial?.type === 'pdf' ? initial.value : '');
-  const [err, setErr] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const pickFile = (f?: File) => {
-    if (!f) return;
-    if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { setErr('Only PDF files are allowed'); return; }
-    if (f.size > 10 * 1024 * 1024) { setErr('PDF must be 10 MB or smaller'); return; }
-    setErr(''); setFile(f); setFileName(f.name);
-  };
-
-  const save = () => {
-    if (type === 'text') {
-      const v = text.trim();
-      return onSave(v ? { type, value: v } : null);          // khali = clarity kadhun taka
-    }
-    if (type === 'link') {
-      const v = link.trim();
-      if (!v) return onSave(null);
-      if (!/^https?:\/\/\S+\.\S+/i.test(v)) { setErr('Enter a valid link starting with http:// or https://'); return; }
-      return onSave({ type, value: v });
-    }
-    if (!fileName) return onSave(null);
-    onSave({ type, value: fileName, file });
-  };
-
-  return createPortal(
-    <div className="ast-overlay ast-overlay--top" onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div className="ast-modal ast-modal--sm" role="dialog" aria-modal="true" aria-label="Product Clarity">
-        <div className="ast-head ast-head--sm">
-          <div className="ast-head-ico"><IcoPen /></div>
-          <div className="ast-head-txt">
-            <div className="ast-title">Product Clarity</div>
-            <div className="ast-sub">{product.code !== '—' ? `${product.code} — ` : ''}{product.name}</div>
-          </div>
-          <button type="button" className="ast-close ast-close--sm" aria-label="Close" onClick={onCancel}><IcoX size={14} /></button>
-        </div>
-        <div className="ast-pop-body">
-          <div className="ast-tabs" role="tablist">
-            {(['text', 'link', 'pdf'] as ClarityType[]).map(t => (
-              <button key={t} type="button" role="tab" aria-selected={type === t} className={`asrc-ltab${type === t ? ' is-active' : ''}`}
-                onClick={() => { setType(t); setErr(''); }}>{t === 'pdf' ? 'PDF' : t[0].toUpperCase() + t.slice(1)}</button>
-            ))}
-          </div>
-
-          {type === 'text' && (
-            <textarea className="ast-inp ast-inp--area" autoFocus rows={4} placeholder="Add notes or specs..." value={text} onChange={e => setText(e.target.value)} />
-          )}
-          {type === 'link' && (
-            <input type="url" className={`ast-inp${err ? ' has-err' : ''}`} autoFocus placeholder="https://..." value={link}
-              onChange={e => { setLink(e.target.value); setErr(''); }} onKeyDown={e => { if (e.key === 'Enter') save(); }} />
-          )}
-          {type === 'pdf' && (
-            <>
-              <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={e => pickFile(e.target.files?.[0])} />
-              <button type="button" className={`ast-drop${fileName ? ' has-file' : ''}`} onClick={() => fileRef.current?.click()}
-                onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); pickFile(e.dataTransfer.files?.[0]); }}>
-                <IcoUpload />
-                <b>{fileName || 'Choose a PDF'}</b>
-                <small>{fileName ? 'Click to replace' : 'or drag and drop here · max 10 MB'}</small>
-              </button>
-            </>
-          )}
-          {err && <div className="ast-pop-err">{err}</div>}
-
-          <div className="ast-pop-foot">
-            <button type="button" className="ast-btn ast-btn-ghost" onClick={onCancel}>Cancel</button>
-            <button type="button" className="ast-btn ast-btn-primary" onClick={save}>Save Clarity</button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+/** A saved clarity's chip, by type: the note (hover shows it), the link (opens it) or the document
+    (opens it in a new tab — a picked file straight away, a stored one through the API). */
+function ClarityOpen({ c, onViewNote }: { c: Clarity; onViewNote: () => void }) {
+  const toast = useToast();
+  if (c.type === 'text') {
+    return (
+      <Tooltip label={c.value.length > 60 ? `${c.value.slice(0, 60).trimEnd()}…` : c.value}>
+        <button type="button" className="sta-cla-open is-text" onClick={onViewNote} aria-label="Read the clarity note">
+          <Svg size={11} sw={2.4}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></Svg>
+          Text note
+        </button>
+      </Tooltip>
+    );
+  }
+  if (c.type === 'link') {
+    return (
+      <Tooltip label={c.value}>
+        <a className="sta-cla-open is-link" href={c.value} target="_blank" rel="noopener noreferrer">
+          <Svg size={11} sw={2.4}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></Svg>
+          Open link
+        </a>
+      </Tooltip>
+    );
+  }
+  const paths = c.file ? [] : clarityPaths(c);
+  const src: File | string | undefined = c.file ?? paths[0];
+  const more = paths.length > 1 ? paths.length - 1 : 0;
+  return (
+    <Tooltip label={clarityPreview(c)}>
+      <button type="button" className="sta-cla-open is-pdf" disabled={!src}
+        onClick={() => { if (src) viewDocument(src).catch(() => toast.error('Couldn’t open the document', 'Please try again.')); }}>
+        <Svg size={11} sw={2.4}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></Svg>
+        View {/\.pdf$/i.test(c.file?.name ?? paths[0] ?? '') ? 'PDF' : 'file'}{more > 0 && <small>+{more}</small>}
+      </button>
+    </Tooltip>
   );
 }
 
-export default function AssignTargetModal({ existing, initial, onClose, onSave }: Props) {
-  const isEdit = !!initial;
-  const today = useMemo(todayIso, []);
-  const startDate = initial?.startDate ?? today;
-  const code = useMemo(() => initial?.code ?? nextCode(existing), [existing, initial]);
+const IcoTrash = () => <Svg size={13}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></Svg>;
 
-  const firstSource: SourceType = initial && !initial.sources.includes('Product Master') ? 'Manual Entry' : 'Product Master';
+export default function AssignTargetModal({ initial, onClose, onSaved }: Props) {
+  const isEdit = !!initial;
+  const toast = useToast();
+  // The signed-in user creates the target, so they cannot be its assignee.
+  const { user } = useAuth();
+  const myId = user?.id != null ? String(user.id) : null;
+  // One save at a time: spinner on the button, form locked, × / Cancel / Esc off while it runs (V-C01).
+  const { saving, busy, run } = useSaveGuard();
+  const today = useMemo(todayIso, []);
+
+  // Reference data and, on Edit, the target itself.
+  const [products, setProducts] = useState<MasterProduct[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [code, setCode] = useState(initial?.code ?? '');
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
+  const [viewOnly, setViewOnly] = useState(false);
+  const [startDate, setStartDate] = useState(initial?.startDate || today);
+  const [assigneeName, setAssigneeName] = useState(initial?.assignedTo ?? '');
+
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
-  const [assignee, setAssignee] = useState(initial && initial.assignedTo !== 'Unassigned' ? initial.assignedTo : '');
-  const [source, setSource] = useState<SourceType>(firstSource);
-  const [list, setList] = useState<DraftProduct[]>(() => (initial ? seedProducts(initial) : []));
-  const [listTab, setListTab] = useState<SourceType>(firstSource);
+  const [assignee, setAssignee] = useState('');   // team member id (Add only; fixed on Edit)
+  // Edit: start on the row's own source (the list already has it), so a Manual target doesn't
+  // show "From Product Master" first and jump to Manual when the server's copy arrives.
+  const rowSource: SourceType = initial?.sources?.[0] === 'Manual Entry' ? 'Manual Entry' : 'Product Master';
+  const [source, setSource] = useState<SourceType>(rowSource);
+  const [list, setList] = useState<DraftProduct[]>([]);
+  const [listTab, setListTab] = useState<SourceType>(rowSource);
   const [tried, setTried] = useState(false);
+  // Field messages the server sent back (422), shown under the field until it changes.
+  const [serverErr, setServerErr] = useState<{ due?: string; assignee?: string }>({});
+  /** Product rows (by key) whose target price the server refused — marked until edited. */
+  const [serverPriceKeys, setServerPriceKeys] = useState<Set<string>>(() => new Set());
   const [claKey, setClaKey] = useState<string | null>(null);
+  // The product whose Text clarity is being read (the note popup).
+  const [noteKey, setNoteKey] = useState<string | null>(null);
+  const noteProduct = noteKey ? list.find(r => r.key === noteKey) : undefined;
   const [clarities, setClarities] = useState<Record<string, Clarity>>({});
-  const claOpen = useRef(false);
-  claOpen.current = claKey !== null;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const claProduct = claKey ? list.find(r => r.key === claKey) : undefined;
+
+  useEffect(() => {
+    api.get<{ data: MasterProduct[] }>('/p2p/products').then(r => setProducts(r.data?.data ?? [])).catch(() => {
+      toast.error('Products not loaded', 'The Product Master list could not be loaded.');
+    });
+    if (!isEdit) {
+      api.get<{ data: Member[] }>('/p2p/team-members').then(r => setMembers(r.data?.data ?? [])).catch(() => {
+        toast.error('Team not loaded', 'The Assign To list could not be loaded.');
+      });
+      api.get<{ data: { code: string } }>('/p2p/sourcing-targets/next-code').then(r => setCode(r.data?.data?.code ?? '')).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Edit: fill the form from the server's copy of the target.
+  const needClean = useRef(false);
+  useEffect(() => {
+    if (!initial) return;
+    api.get<{ data: EditLoad }>(`/p2p/sourcing-targets/${encodeURIComponent(initial.code)}`)
+      .then(r => {
+        const d = r.data?.data;
+        if (!d) return;
+        const masters = (d.masterRows ?? []).map<DraftProduct>(p => ({
+          key: `s-${p.id}`, id: p.id, mapped: !!p.mapped, source: 'Product Master', code: p.code || '—', name: p.name,
+          segment: p.segment || '—', hsn: p.hsn || '—', targetPrice: plainPrice(p.price),
+        }));
+        const manuals = (d.manualRows ?? []).map<DraftProduct>(p => ({
+          key: `s-${p.id}`, id: p.id, mapped: !!p.mapped, source: 'Manual Entry', code: '—', name: p.name,
+          segment: '—', hsn: '—', targetPrice: plainPrice(p.price),
+        }));
+        const cl: Record<string, Clarity> = {};
+        [...(d.masterRows ?? []), ...(d.manualRows ?? [])].forEach(p => { const c = toClarity(p.clarity); if (c) cl[`s-${p.id}`] = c; });
+        const first: SourceType = d.source === 'Manual Entry' ? 'Manual Entry' : 'Product Master';
+        setList([...masters, ...manuals]);
+        setClarities(cl);
+        setSource(first);
+        // The Product List opens on the target's own source (Manual target -> Manual tab); only when
+        // that source has no rows does it show the other tab.
+        const ownRows = first === 'Manual Entry' ? manuals.length : masters.length;
+        const otherRows = first === 'Manual Entry' ? masters.length : manuals.length;
+        setListTab(ownRows || !otherRows ? first : (first === 'Manual Entry' ? 'Product Master' : 'Manual Entry'));
+        if (d.due) setDueDate(d.due);
+        if (d.start) setStartDate(d.start);
+        if (d.id) setCode(d.id);
+        setAssigneeName(d.assignee || initial.assignedTo);
+        if (d.assigneeActive === false) {
+          setViewOnly(true);
+          toast.info('View only', 'This sourcing target’s assignee is inactive or exited, so it can’t be edited.');
+        }
+        needClean.current = true;
+      })
+      .catch(e => toast.error('Couldn’t open the target', apiErrorMessage(e, 'Please try again.')))
+      .finally(() => setLoadingEdit(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When the Clarity dialog closes, focus goes back to that row's clarity button. Saving swaps
+  // "Add clarity" for the "✓ Text" chip (a new element), so it is found by its row key.
+  const lastClaKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (claKey) { lastClaKey.current = claKey; return; }
+    const k = lastClaKey.current;
+    lastClaKey.current = null;
+    if (k) dialogRef.current?.querySelector<HTMLElement>(`[data-clarity="${CSS.escape(k)}"]`)?.focus({ preventScroll: true });
+  }, [claKey]);
 
   const [q, setQ] = useState('');
   const [picking, setPicking] = useState(false);
@@ -169,34 +222,122 @@ export default function AssignTargetModal({ existing, initial, onClose, onSave }
   const [mName, setMName] = useState('');
   const [mPrice, setMPrice] = useState('');
   const [mTried, setMTried] = useState(false);
+  const manualSeq = useRef(0);   // unique keys for manual products (two adds in one ms can't collide)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key !== 'Escape') return; if (claOpen.current) setClaKey(null); else onClose(); };
-    document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [onClose]);
+  // Has anything changed since the popup opened (or, on Edit, since the target loaded)? Then Esc
+  // does not close it (only × / Cancel do), so typed data is never lost to one key press.
+  const snapshot = JSON.stringify([dueDate, assignee, source, list, pending, q, mName, mPrice,
+    Object.entries(clarities).map(([k, c]) => [k, c.type, c.value])]);
+  const [cleanSnapshot, setCleanSnapshot] = useState(snapshot);
+  useEffect(() => { if (needClean.current) { needClean.current = false; setCleanSnapshot(snapshot); } }, [snapshot]);
+  const dirty = snapshot !== cleanSnapshot;
 
+  // Scroll lock, Esc and focus. Esc is held back while saving, while the product picker is open
+  // (the picker closes itself on Esc) and once the form has changes.
+  usePopup(dialogRef, { onClose, blocked: () => busy.current || picking || moreOpenRef.current || dirty });
+
+  /* The open list is pinned to the screen (position: fixed) at the search box, so it opens OVER the
+     popup's footer instead of being cut off inside the scrolling body. Below the box when there is
+     room, else above it; it follows the box when the body scrolls or the window resizes. */
+  const [pickAt, setPickAt] = useState<CSSProperties | null>(null);
+  useLayoutEffect(() => {
+    if (!picking) { setPickAt(null); return; }
+    const place = () => {
+      const r = pickRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 18;
+      const above = r.top - 18;
+      const up = below < 200 && above > below;
+      const maxHeight = Math.max(120, Math.min(248, up ? above : below));
+      setPickAt({ position: 'fixed', left: r.left, width: r.width, right: 'auto', maxHeight,
+        ...(up ? { top: 'auto', bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6, bottom: 'auto' }) });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  }, [picking]);
+
+  // The open picker closes on Esc, on a click outside it, and when focus leaves it (Tab out).
   useEffect(() => {
     if (!picking) return;
-    const h = (e: MouseEvent) => { if (!pickRef.current?.contains(e.target as Node)) setPicking(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    const outside = (t: EventTarget | null) => !pickRef.current?.contains(t as Node);
+    const onDown = (e: MouseEvent) => { if (outside(e.target)) setPicking(false); };
+    const onFocus = (e: FocusEvent) => { if (outside(e.target)) setPicking(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPicking(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('focusin', onFocus);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('focusin', onFocus);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [picking]);
+
+  /* Chosen products: the "+N" list. Pinned to the screen at its button (like the picker), so the
+     scrolling body never cuts it off; it closes on Esc, a click outside, or when one product is left. */
+  const nameOf = (code: string) => products.find(p => p.code === code)?.name ?? code;
+  const unpick = (code: string) => setPending(p => p.filter(x => x !== code));
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const morePopRef = useRef<HTMLDivElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreAt, setMoreAt] = useState<CSSProperties | null>(null);
+  // Read by the popup's Esc guard above: Esc closes this list first, not the whole form.
+  const moreOpenRef = useRef(false);
+  moreOpenRef.current = moreOpen;
+  useEffect(() => { if (pending.length < 2) setMoreOpen(false); }, [pending.length]);
+  useLayoutEffect(() => {
+    if (!moreOpen) { setMoreAt(null); return; }
+    /* Follows the button every frame while open: the chips row can still move after opening
+       (the picker list closing, the body settling), and a scroll / resize alone missed that. */
+    let raf = 0;
+    let last = '';
+    const place = () => {
+      const r = moreRef.current?.getBoundingClientRect();
+      if (r) {
+        const w = 300;
+        const left = Math.round(Math.max(12, Math.min(r.left, window.innerWidth - w - 12)));
+        const below = window.innerHeight - r.bottom - 16;
+        const up = below < 180 && r.top > below;
+        const y = Math.round(up ? window.innerHeight - r.top + 6 : r.bottom + 6);
+        const key = `${left}|${y}|${up}`;
+        if (key !== last) {
+          last = key;
+          setMoreAt({ position: 'fixed', left, width: w, ...(up ? { bottom: y } : { top: y }) });
+        }
+      }
+      raf = requestAnimationFrame(place);
+    };
+    place();
+    return () => cancelAnimationFrame(raf);
+  }, [moreOpen]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!morePopRef.current?.contains(t) && !moreRef.current?.contains(t)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoreOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [moreOpen]);
 
   const added = useMemo(() => new Set(list.filter(p => p.source === 'Product Master').map(p => p.code)), [list]);
   const options = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return MASTER_PRODUCTS.filter(p => !s || `${p.code} ${p.name} ${p.segment}`.toLowerCase().includes(s));
-  }, [q]);
+    return products.filter(p => !s || `${p.code} ${p.name} ${p.segment}`.toLowerCase().includes(s));
+  }, [q, products]);
 
-  const switchSource = (s: SourceType) => { if (isEdit) return; setSource(s); setListTab(s); setPicking(false); };
+  const locked = saving || viewOnly || loadingEdit;
+  // Edit can switch the source too: each product keeps its own source (`from`), so the list may hold both.
+  const switchSource = (s: SourceType) => { if (s === source || locked) return; setSource(s); setListTab(s); setPicking(false); };
 
   const addMasters = () => {
-    const rows = MASTER_PRODUCTS.filter(p => pending.includes(p.code) && !added.has(p.code)).map<DraftProduct>(p => ({
+    const rows = products.filter(p => pending.includes(p.code) && !added.has(p.code)).map<DraftProduct>(p => ({
       key: `m-${p.code}`, source: 'Product Master', code: p.code, name: p.name,
-      segment: p.segment, hsn: p.hsn, targetPrice: '', clarity: '',
+      segment: p.segment || '—', hsn: p.hsn || '—', targetPrice: '',
     }));
     if (rows.length) setList(l => [...l, ...rows]);
     setPending([]); setQ(''); setPicking(false); setListTab('Product Master');
@@ -204,7 +345,11 @@ export default function AssignTargetModal({ existing, initial, onClose, onSave }
   const addManual = () => {
     const name = mName.trim();
     if (!name || !(Number(mPrice) > 0)) { setMTried(true); return; }
-    setList(l => [...l, { key: `x-${Date.now()}`, source: 'Manual Entry', code: '—', name, segment: '—', hsn: '—', targetPrice: mPrice, clarity: '' }]);
+    if (list.some(r => r.source === 'Manual Entry' && r.name.trim().toLowerCase() === name.toLowerCase())) {
+      toast.warning('Already in the list', `“${name}” is already a manual product on this target.`);
+      return;
+    }
+    setList(l => [...l, { key: `x-${++manualSeq.current}`, source: 'Manual Entry', code: '—', name, segment: '—', hsn: '—', targetPrice: mPrice }]);
     setMName(''); setMPrice(''); setMTried(false); setListTab('Manual Entry');
   };
   const patch = (key: string, p: Partial<DraftProduct>) => setList(l => l.map(r => (r.key === key ? { ...r, ...p } : r)));
@@ -213,25 +358,104 @@ export default function AssignTargetModal({ existing, initial, onClose, onSave }
     setClarities(c => { const n = { ...c }; delete n[key]; return n; });
   };
 
-  const errDue = !dueDate ? 'Pick the target completion date' : dueDate < startDate ? 'TAT cannot be before the start date' : '';
+  const errDue = serverErr.due || (!dueDate ? 'Pick the target completion date'
+    : !isEdit && dueDate < today ? 'The Sourcing TAT cannot be in the past'
+      : dueDate < startDate ? 'TAT cannot be before the start date' : '');
   const days = dueDate ? Math.round((Date.parse(dueDate) - Date.parse(startDate)) / 86400000) : 0;
-  const assignees = assignee && !ASSIGNEES.includes(assignee) ? [assignee, ...ASSIGNEES] : ASSIGNEES;
+  const errAssignee = isEdit ? '' : serverErr.assignee || (!assignee ? 'Assign this target to a team member' : '');
   const errNone = list.length === 0;
-  const errPrice = list.some(r => !(Number(r.targetPrice) > 0));
-  const valid = !errDue && !errNone && !errPrice;
+  /* A target price the server accepts: more than 0, plain digits with up to 2 decimals, at most 64
+     characters (validatePayload). Checked here too, so a bad price (".5", "1.234", 65+ digits) marks
+     its own row instead of coming back only as an "Assign failed" toast. A row the server still
+     refuses is marked from its 422 (products.N.target_price). */
+  /* Also capped at the supplier price ceiling (₹9,99,99,99,999.99, SupplierPricing::MAX_PRICE): a
+     target no supplier quote can reach can't be compared, and 30-digit targets broke every screen
+     that shows the price. */
+  const priceBad = (r: DraftProduct) => {
+    const v = r.targetPrice.trim();
+    return !(Number(v) > 0) || Number(v) > MAX_TARGET_PRICE || v.length > 64
+      || !/^\d+(\.\d{1,2})?$/.test(v) || serverPriceKeys.has(r.key);
+  };
+  const errPrice = list.some(priceBad);
+  // Edit lets the creator rename a manual product: it cannot be left empty.
+  const errName = list.some(r => r.source === 'Manual Entry' && !r.name.trim());
+  const valid = !errDue && !errAssignee && !errNone && !errPrice && !errName;
+
+  /** Upload the clarity documents picked in this session; already-saved ones keep their path. */
+  const uploadClarities = async (): Promise<Record<string, ApiClarity>> => {
+    const out: Record<string, ApiClarity> = {};
+    await Promise.all(list.map(async r => {
+      const c = clarities[r.key];
+      if (!c) { out[r.key] = null; return; }
+      if (c.type !== 'pdf' || !c.file) { out[r.key] = { type: c.type, val: c.value }; return; }
+      out[r.key] = { type: 'pdf', val: await uploadP2pFile(c.file, 'clarity') };
+    }));
+    return out;
+  };
+
+  /** Assign / Update with something missing: bring the FIRST missing field (top to bottom) into
+      view and put the cursor in it, so the user does not have to hunt for the red text. Runs on
+      the next frame, once the error marks (and a list-tab switch) have rendered. */
+  const goToFirstError = () => {
+    const dialog = dialogRef.current;
+    const mark = dialog?.querySelector<HTMLElement>('.sta-tat-hint.is-err, .sta-empty.has-err, .sta-pl-price.has-err');
+    if (!mark) return;
+    const field = mark.matches('.sta-tat-hint') ? (mark.closest<HTMLElement>('.sta-field') ?? mark) : mark;
+    field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const control = mark.matches('input')
+      ? mark
+      : field.querySelector<HTMLElement>('input:not([disabled]):not([readonly]), button:not([disabled]), [tabindex="0"]');
+    control?.focus({ preventScroll: true });
+  };
 
   const submit = () => {
     setTried(true);
-    if (!valid) return;
-    onSave({
-      code, startDate, dueDate,
-      sources: Array.from(new Set(list.map(r => r.source))),
-      createdBy: initial?.createdBy ?? '',             // add: parent ME bharto
-      assignedTo: assignee || 'Unassigned',
-      firstProduct: list[0].name,
-      totalProducts: list.length,
-      completedProducts: Math.min(initial?.completedProducts ?? 0, list.length),
-      mappedSuppliers: initial?.mappedSuppliers ?? 0,
+    if (viewOnly || loadingEdit) return;
+    if (!valid || busy.current) {
+      // A product price that is missing may be on the other list tab: switch to it.
+      const bad = list.find(r => priceBad(r) || (r.source === 'Manual Entry' && !r.name.trim()));
+      if (!errDue && !errAssignee && bad && bad.source !== listTab) setListTab(bad.source);
+      if (!valid) requestAnimationFrame(goToFirstError);
+      return;
+    }
+    void run(async () => {
+      try {
+        const cl = await uploadClarities();
+        const body = {
+          source: source === 'Manual Entry' ? 'manual' : 'master',
+          due_date: dueDate,
+          // Ignored by the server on Edit (the assignee is fixed); sent so the body matches create.
+          assignee_id: isEdit ? (initial?.assigneeId ?? null) : assignee,
+          products: list.map(r => ({
+            ...(r.id ? { id: r.id } : {}),
+            from: r.source === 'Manual Entry' ? 'manual' : 'master',
+            ...(r.source === 'Manual Entry' ? { name: r.name } : { code: r.code }),
+            target_price: r.targetPrice,
+            clarity: cl[r.key],
+          })),
+        };
+        const res = isEdit
+          ? await api.put<{ data: { id: string } }>(`/p2p/sourcing-targets/${encodeURIComponent(initial!.code)}`, body)
+          : await api.post<{ data: { id: string } }>('/p2p/sourcing-targets', body);
+        const name = isEdit ? assigneeName : (members.find(m => String(m.id) === assignee)?.name ?? '');
+        onSaved({ code: res.data?.data?.id ?? code, count: list.length, assignee: name, isEdit });
+      } catch (e) {
+        const fields = apiFieldErrors(e);
+        setServerErr({ due: fields.due_date, assignee: fields.assignee_id });
+        // products.N.target_price → the row sent at index N (the body is the list, in order).
+        const badKeys = new Set(Object.keys(fields)
+          .map(k => /^products\.(\d+)\.target_price$/.exec(k)?.[1])
+          .filter((i): i is string => i !== undefined)
+          .map(i => list[Number(i)]?.key)
+          .filter((k): k is string => !!k));
+        setServerPriceKeys(badKeys);
+        if (badKeys.size) {
+          const first = list.find(r => badKeys.has(r.key));
+          if (first && first.source !== listTab) setListTab(first.source);
+          requestAnimationFrame(goToFirstError);
+        }
+        toast.error(isEdit ? 'Update failed' : 'Assign failed', apiErrorMessage(e, 'Please try again.'));
+      }
     });
   };
 
@@ -239,119 +463,202 @@ export default function AssignTargetModal({ existing, initial, onClose, onSave }
   const manuals = list.filter(r => r.source === 'Manual Entry');
   const isM = listTab === 'Product Master';
   const shown = isM ? masters : manuals;
-  const rowCls = isM ? 'asrc-row asrc-row--m' : 'asrc-row asrc-row--n';
+
+  // Product List: after 4 products the list scrolls inside (sticky header). Measured from the real
+  // rows (they hold a price input and buttons), so the cut lands exactly on row 4.
+  const plistRef = useRef<HTMLDivElement>(null);
+  const [plistMax, setPlistMax] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = plistRef.current;
+    if (!el || shown.length <= PLIST_ROWS) { setPlistMax(null); return; }
+    const measure = () => {
+      const last = el.querySelectorAll<HTMLElement>('.stsrc-row:not(.stsrc-row--head)')[PLIST_ROWS - 1];
+      if (last) setPlistMax(Math.ceil(last.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop) + 1);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [listTab, shown.length]);
+  const rowCls = isM ? 'stsrc-row stsrc-row--m' : 'stsrc-row stsrc-row--n';
+  /* Assign To: every eligible team member across departments, self-assign
+     allowed. The creator's row is marked "(You)"; the department shows as a
+     badge beside each name. */
+  const memberOptions = members.map(m => {
+    const empCode = (m.emp_code ?? m.code ?? '').trim();
+    const dept = (m.department ?? '').trim();
+    const isMe = myId !== null && String(m.id) === myId;
+    return {
+      value: String(m.id),
+      ...(empCode ? { code: empCode } : {}),
+      label: `${m.name}${isMe ? ' (You)' : ''}${m.role ? ` · ${m.role}` : ''}`,
+      selectedLabel: empCode ? `${empCode} · ${m.name}` : m.name,
+      ...(dept ? { badge: { text: dept, tone: 'violet' as const, listOnly: true } } : {}),
+    };
+  });
+  const assignableCount = memberOptions.length;
 
   return createPortal(
-    <div className="ast-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="ast-modal" role="dialog" aria-modal="true" aria-label={isEdit ? 'Edit Sourcing Target' : 'Assign Sourcing Target'}>
+    // A click on the backdrop does nothing. Esc closes only an unchanged form; × and Cancel always close.
+    <div className="sta-overlay">
+      <div ref={dialogRef} className={`sta-modal${saving ? ' is-saving' : ''}`} role="dialog" aria-modal="true" aria-busy={saving || loadingEdit || undefined}
+        aria-label={isEdit ? 'Edit Sourcing Target' : 'Assign Sourcing Target'}>
 
-        <div className="ast-head">
-          <div className="ast-head-ico">{isEdit ? <IcoEditBox /> : <IcoCheckBox size={18} />}</div>
-          <div className="ast-head-txt">
-            <div className="ast-title">{isEdit ? `Edit Sourcing Target — ${code}` : 'Assign Sourcing Target'}</div>
-            <div className="ast-sub">{isEdit ? 'Update sourcing details and product list.' : 'Create a sourcing target across products.'}</div>
+        <div className="sta-head">
+          <div className="sta-head-ico">{isEdit ? <IcoEdit size={18} stroke="#fff" /> : <IcoCheckBox size={18} />}</div>
+          <div className="sta-head-txt">
+            <div className="sta-title">{isEdit ? `Edit Sourcing Target — ${code}` : 'Assign Sourcing Target'}</div>
+            <div className="sta-sub">{isEdit ? 'Update sourcing details and product list.' : 'Create a sourcing target across products.'}</div>
           </div>
-          <div className="ast-head-idcard"><span className="ast-head-idcard-label">Sourcing Target ID</span><span className="ast-head-idcard-val">{code}</span></div>
-          <button type="button" className="ast-close" aria-label="Close" onClick={onClose}><IcoX /></button>
-          <span className="ast-head-accent" />
+          {/* Add: the server's next ID, a preview only (the real one is given on save). */}
+          <div className="sta-head-idcard"><span className="sta-head-idcard-label">Sourcing Target ID</span><span className="sta-head-idcard-val">{code || '…'}</span></div>
+          <button type="button" className="sta-close" aria-label="Close" onClick={onClose} disabled={saving}><IcoX /></button>
+          <span className="sta-head-accent" />
         </div>
 
-        <div className="ast-body">
+        {/* While saving, the whole form is inert: no typing, clicking or tabbing into it. */}
+        <div className="sta-body sct-scroller" inert={saving}>
 
           {/* 1. Sourcing Details */}
-          <div className="ast-srccard">
-            <div className="ast-srccard-head">
-              <span className="ast-srccard-ico"><IcoCal size={16} stroke="#fff" /></span>
-              <div className="ast-srccard-htxt"><b>Sourcing Details</b><small>Identification and timeline for this sourcing</small></div>
-              {isEdit
-                ? <span className="ast-srccard-tag ast-srccard-tag--edit"><span className="ast-srccard-dot ast-srccard-dot--edit" />Edit Mode</span>
-                : <span className="ast-srccard-tag"><span className="ast-srccard-dot" />New</span>}
+          <div className="sta-srccard">
+            <div className="sta-srccard-head">
+              <span className="sta-srccard-ico"><IcoCal size={16} stroke="#fff" /></span>
+              <div className="sta-srccard-htxt"><b>Sourcing Details</b><small>Identification and timeline for this sourcing</small></div>
+              {viewOnly
+                ? <span className="sta-srccard-tag sta-srccard-tag--edit"><span className="sta-srccard-dot sta-srccard-dot--edit" />View Only</span>
+                : isEdit
+                  ? <span className="sta-srccard-tag sta-srccard-tag--edit"><span className="sta-srccard-dot sta-srccard-dot--edit" />Edit Mode</span>
+                  : <span className="sta-srccard-tag"><span className="sta-srccard-dot" />New</span>}
             </div>
-            <div className="ast-srccard-body">
-              <div className="ast-srcgrid">
-                <div className="ast-field">
-                  <div className="ast-lab">Start Date <span className="ast-lock"><IcoLock size={9} /> Today</span></div>
-                  <div className="ast-inputwrap is-frozen">
-                    <span className="ast-input-ico"><IcoCal /></span>
-                    <input type="text" className="ast-inp has-ico" value={dmy(startDate)} readOnly tabIndex={-1} />
-                    <span className="ast-freeze-ico"><IcoLock /></span>
+            <div className="sta-srccard-body">
+              <div className="sta-srcgrid">
+                <div className="sta-field">
+                  <div className="sta-lab">Start Date <span className="sta-lock"><IcoLock size={9} /> {isEdit ? 'Locked' : 'Today'}</span></div>
+                  <div className="sta-inputwrap is-frozen">
+                    <span className="sta-input-ico"><IcoCal size={13} /></span>
+                    <input type="text" className="sta-inp has-ico" value={dmy(startDate)} readOnly tabIndex={-1} />
+                    <span className="sta-freeze-ico"><IcoLock /></span>
                   </div>
                 </div>
-                <div className="ast-srcgrid-sep" />
-                <div className="ast-field">
-                  <div className="ast-lab">Sourcing TAT <span className="ast-req">*</span></div>
-                  <div className="ast-inputwrap ast-inputwrap--active">
-                    <span className="ast-input-ico"><IcoCal /></span>
-                    <input type="date" className={`ast-inp has-ico${tried && errDue ? ' has-err' : ''}`} min={startDate}
-                      value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                <div className="sta-srcgrid-sep" />
+                <div className="sta-field">
+                  <div className="sta-lab">Sourcing TAT <span className="sta-req">*</span></div>
+                  <div className="sta-inputwrap sta-inputwrap--active">
+                    <span className="sta-input-ico"><IcoCal size={13} /></span>
+                    {/* The app's own calendar (MasterDatePicker), not the browser's native date input.
+                        Same ISO value; days before the Start Date (Add: before today) are blocked. */}
+                    <div className="sta-dp">
+                      <MasterDatePicker value={dueDate} minDate={isEdit ? startDate : today} placeholder="Select date" disabled={locked}
+                        invalid={!!(tried && errDue)} onChange={v => { setDueDate(v); setServerErr(s => ({ ...s, due: undefined })); }} />
+                    </div>
                   </div>
-                  <div className={`ast-tat-hint${tried && errDue ? ' is-err' : ''}`}>{tried && errDue ? errDue : dueDate ? `${days} days turnaround from start` : 'Pick the target completion date'}</div>
+                  <div className={`sta-tat-hint${tried && errDue ? ' is-err' : ''}`}>{tried && errDue ? errDue : dueDate ? `${days} days turnaround from start` : 'Pick the target completion date'}</div>
                 </div>
-                <div className="ast-srcgrid-sep" />
-                <div className="ast-field">
-                  <div className="ast-lab">Assign To</div>
-                  <div className="ast-inputwrap">
-                    <span className="ast-input-ico"><IcoUsers /></span>
-                    <select className="ast-inp has-ico" value={assignee} onChange={e => setAssignee(e.target.value)}>
-                      <option value="">Unassigned</option>
-                      {assignees.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                  </div>
+                <div className="sta-srcgrid-sep" />
+                <div className="sta-field">
+                  <div className="sta-lab">Assign To {isEdit ? <span className="sta-lock"><IcoLock size={9} /> Fixed</span> : <span className="sta-req">*</span>}</div>
+                  {isEdit ? (
+                    // The assignee is fixed once the target exists (the API ignores a change).
+                    <div className="sta-inputwrap is-frozen">
+                      <span className="sta-input-ico"><IcoUsers size={13} /></span>
+                      <input type="text" className="sta-inp has-ico" value={assigneeName} readOnly tabIndex={-1} aria-label="Assigned to" />
+                      <span className="sta-freeze-ico"><IcoLock /></span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="sta-inputwrap">
+                        <span className="sta-input-ico"><IcoUsers size={13} /></span>
+                        <div className="sta-ms">
+                          <MasterSelect value={assignee} placeholder={assignableCount ? 'Select team member' : 'No team members available'}
+                            searchable={assignableCount > 6} searchPlaceholder="Search people…" disabled={locked}
+                            invalid={!!(tried && errAssignee)} options={memberOptions}
+                            onChange={v => { setAssignee(v); setServerErr(s => ({ ...s, assignee: undefined })); }} />
+                        </div>
+                      </div>
+                      {tried && errAssignee && <div className="sta-tat-hint is-err">{errAssignee}</div>}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
           {/* 2. Product Details */}
-          <div className="ast-srccard">
-            <div className="ast-srccard-head">
-              <span className="ast-srccard-ico ast-srccard-ico--teal"><Svg size={16} stroke="#fff"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></Svg></span>
-              <div className="ast-srccard-htxt"><b>Product Details</b><small>Choose how to add products</small></div>
-              <span className="ast-srccard-tag"><span className="ast-srccard-dot ast-srccard-dot--teal" />Products</span>
+          <div className="sta-srccard">
+            <div className="sta-srccard-head sta-srccard-head--teal">
+              <span className="sta-srccard-ico sta-srccard-ico--teal"><Svg size={16} stroke="#fff"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></Svg></span>
+              <div className="sta-srccard-htxt"><b>Product Details</b><small>Choose how to add products</small></div>
+              <span className="sta-srccard-tag sta-srccard-tag--teal"><span className="sta-srccard-dot sta-srccard-dot--teal" />Products</span>
             </div>
-            <div className="ast-srccard-body">
-              <div className="ast-field" style={{ marginBottom: isEdit ? 0 : 13 }}>
-                <div className="ast-lab">I want to source from <span className="ast-req">*</span>{isEdit && <span className="ast-locked"><IcoLock size={10} /> Locked</span>}</div>
-                <div className="ast-radios" role="radiogroup">
-                  <button type="button" role="radio" aria-checked={source === 'Product Master'} className={`ast-radio${source === 'Product Master' ? ' is-sel' : ''}${isEdit ? ' is-locked' : ''}`} onClick={() => switchSource('Product Master')}>
-                    <span className="ast-radio-dot" /><span className="ast-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span>
+            <div className="sta-srccard-body">
+              <div className={`sta-field${viewOnly ? '' : ' sta-field--gap'}`}>
+                <div className="sta-lab">I want to source from <span className="sta-req">*</span></div>
+                {loadingEdit ? (
+                  // Edit: shimmer until the target's source is known, so no option shows selected and then switches.
+                  <div className="sta-radios" aria-hidden><Shimmer height={58} radius={12} /><Shimmer height={58} radius={12} /></div>
+                ) : <div className="sta-radios" role="radiogroup">
+                  <button type="button" role="radio" aria-checked={source === 'Product Master'} className={`sta-radio${source === 'Product Master' ? ' is-sel' : ''}`} onClick={() => switchSource('Product Master')}>
+                    <span className="sta-radio-dot" /><span className="sta-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span>
                   </button>
-                  <button type="button" role="radio" aria-checked={source === 'Manual Entry'} className={`ast-radio${source === 'Manual Entry' ? ' is-sel' : ''}${isEdit ? ' is-locked' : ''}`} onClick={() => switchSource('Manual Entry')}>
-                    <span className="ast-radio-dot" /><span className="ast-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span>
+                  <button type="button" role="radio" aria-checked={source === 'Manual Entry'} className={`sta-radio${source === 'Manual Entry' ? ' is-sel' : ''}`} onClick={() => switchSource('Manual Entry')}>
+                    <span className="sta-radio-dot" /><span className="sta-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span>
                   </button>
-                </div>
+                </div>}
               </div>
 
-              {isEdit ? null : source === 'Product Master' ? (
-                <div className="ast-field">
-                  <div className="ast-lab">Select Products <span className="ast-hint">(choose one or more, then click Add)</span></div>
-                  <div className="asrc-picker">
-                    <div className="asrc-pick-chips">
+              {/* Add products — on Add, and on Edit too (the creator adds to the target; the PUT adds
+                  every product sent without an id). The source is locked on Edit, so the adder of the
+                  target's own source shows. Not on a view-only target. */}
+              {loadingEdit ? (
+                <div className="sta-shim-adder" aria-hidden><Shimmer height={46} radius={10} /><Shimmer height={46} radius={10} /><Shimmer height={46} radius={10} /></div>
+              ) : viewOnly ? null : source === 'Product Master' ? (
+                <div className="sta-field">
+                  <div className="sta-lab">Select Products <span className="sta-hint">(choose one or more, then click Add)</span></div>
+                  <div className="stsrc-picker">
+                    <div className="stsrc-pick-chips">
+                      {/* One chip, then "+N": the rest open in a list (as the Segments "+1" on the Supplier list). */}
                       {pending.length === 0
-                        ? <span className="asrc-pick-ph">No products chosen yet</span>
-                        : pending.map(c => (
-                          <span key={c} className="asrc-pick-chip">{MASTER_PRODUCTS.find(p => p.code === c)?.name}
-                            <button type="button" aria-label="Remove" onClick={() => setPending(p => p.filter(x => x !== c))}><IcoX size={10} sw={3} /></button>
+                        ? <span className="stsrc-pick-ph">No products chosen yet</span>
+                        : <>
+                          <span className="stsrc-pick-chip"><ProductName className="stsrc-pick-chip-txt" name={nameOf(pending[0])} />
+                            <button type="button" aria-label="Remove" onClick={() => unpick(pending[0])}><IcoX size={10} sw={3} /></button>
                           </span>
-                        ))}
+                          {pending.length > 1 && (
+                            <button type="button" ref={moreRef} className={`stsrc-pick-more${moreOpen ? ' is-open' : ''}`} aria-haspopup="dialog" aria-expanded={moreOpen}
+                              aria-label={`View ${pending.length - 1} more selected products`} onClick={() => setMoreOpen(o => !o)}>+{pending.length - 1}</button>
+                          )}
+                        </>}
                     </div>
-                    <div className="asrc-pick-search" ref={pickRef}>
-                      <IcoSearch />
+                    {moreOpen && pending.length > 1 && (
+                      <div ref={morePopRef} className="stsrc-more-pop" role="dialog" aria-label="Selected products" style={moreAt ?? { visibility: 'hidden' }}>
+                        <div className="stsrc-more-title">Selected products ({pending.length})</div>
+                        <div className="stsrc-more-list sct-scroller">
+                          {pending.map((c, i) => (
+                            <div key={c} className={`stsrc-more-row${i % 2 ? ' alt' : ''}`}>
+                              {/* Code and name in ONE pill: "P-003  Premium Travel Backpack". */}
+                              <span className="stsrc-more-name"><b className="stsrc-more-code">{c}</b><ProductName name={nameOf(c)} /></span>
+                              <button type="button" aria-label={`Remove ${nameOf(c)}`} onClick={() => unpick(c)}><IcoX size={10} sw={3} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="stsrc-pick-search" ref={pickRef}>
+                      <IcoSearch size={13} />
                       <input type="text" placeholder="Search products..." value={q}
                         onFocus={() => setPicking(true)} onChange={e => { setQ(e.target.value); setPicking(true); }} />
-                      <button type="button" className="ast-btn ast-btn-primary asrc-pick-add" disabled={!pending.length} onClick={addMasters}><IcoPlus /> Add</button>
+                      <button type="button" className="sta-btn sta-btn-primary stsrc-pick-add" disabled={!pending.length} onClick={addMasters}><IcoPlus size={13} sw={2.6} /> Add</button>
                       {picking && (
-                        <div className="asrc-pick-list" role="listbox" aria-multiselectable>
-                          {options.length === 0 ? <div className="asrc-pick-none">No products found</div>
+                        <div className="stsrc-pick-list sct-scroller" role="listbox" aria-multiselectable style={pickAt ?? undefined}>
+                          {options.length === 0 ? <div className="stsrc-pick-none">{products.length ? 'No products found' : 'No products in the Product Master'}</div>
                             : options.map(p => {
                               const isAdded = added.has(p.code);
                               const on = pending.includes(p.code);
                               return (
                                 <button key={p.code} type="button" role="option" aria-selected={on || isAdded}
-                                  className={`asrc-pick-opt${on || isAdded ? ' is-on' : ''}`}
+                                  className={`stsrc-pick-opt${on ? ' is-on' : ''}${isAdded ? ' is-added' : ''}`}
                                   onClick={() => { if (!isAdded) setPending(s => (on ? s.filter(x => x !== p.code) : [...s, p.code])); }}>
-                                  <span className="asrc-pick-check">{(on || isAdded) && <IcoTick />}</span>
-                                  <span className="asrc-pick-txt"><b>{p.code}</b> — {p.name}{isAdded && <i> (added)</i>}</span>
+                                  <span className="stsrc-pick-check">{(on || isAdded) && <IcoCheck size={11} sw={3} />}</span>
+                                  <span className="stsrc-pick-txt"><b>{p.code}</b> — <ProductName name={p.name} />{isAdded && <i> (added)</i>}</span>
                                 </button>
                               );
                             })}
@@ -361,19 +668,19 @@ export default function AssignTargetModal({ existing, initial, onClose, onSave }
                   </div>
                 </div>
               ) : (
-                <div className="ast-grid-3">
-                  <div className="ast-field">
-                    <div className="ast-lab">Product Name <span className="ast-req">*</span></div>
-                    <input type="text" className={`ast-inp${mTried && !mName.trim() ? ' has-err' : ''}`} placeholder="e.g. Office Printer A4"
+                <div className="sta-grid-3">
+                  <div className="sta-field">
+                    <label className="sta-lab" htmlFor="sta-m-name">Product Name <span className="sta-req">*</span></label>
+                    <input id="sta-m-name" type="text" maxLength={255} className={`sta-inp${mTried && !mName.trim() ? ' has-err' : ''}`} placeholder="e.g. Office Printer A4"
                       value={mName} onChange={e => setMName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addManual(); }} />
                   </div>
-                  <div className="ast-field">
-                    <div className="ast-lab">Target Price (₹) <span className="ast-req">*</span></div>
-                    <input type="text" inputMode="decimal" className={`ast-inp${mTried && !(Number(mPrice) > 0) ? ' has-err' : ''}`} placeholder="Required"
-                      value={mPrice} onChange={e => setMPrice(e.target.value.replace(/[^\d.]/g, ''))} onKeyDown={e => { if (e.key === 'Enter') addManual(); }} />
+                  <div className="sta-field">
+                    <label className="sta-lab" htmlFor="sta-m-price">Target Price (₹) <span className="sta-req">*</span></label>
+                    <input id="sta-m-price" type="text" inputMode="decimal" className={`sta-inp${mTried && !(Number(mPrice) > 0) ? ' has-err' : ''}`} placeholder="Required"
+                      value={mPrice} onChange={e => setMPrice(limitNum(e.target.value))} onKeyDown={e => { if (e.key === 'Enter') addManual(); }} />
                   </div>
-                  <div className="ast-field">
-                    <button type="button" className="ast-btn ast-btn-primary" style={{ width: '100%' }} onClick={addManual}><IcoPlus /> Add to List</button>
+                  <div className="sta-field">
+                    <button type="button" className="sta-btn sta-btn-primary sta-btn--block" onClick={addManual}><IcoPlus size={13} sw={2.6} /> Add to List</button>
                   </div>
                 </div>
               )}
@@ -381,44 +688,77 @@ export default function AssignTargetModal({ existing, initial, onClose, onSave }
           </div>
 
           {/* 3. Product List */}
-          <div className="ast-srccard">
-            <div className="ast-srccard-head">
-              <span className="ast-srccard-ico ast-srccard-ico--teal"><Svg size={16} stroke="#fff"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></Svg></span>
-              <div className="ast-srccard-htxt"><b>Product List</b><small>Mapped products for this sourcing</small></div>
-              <div className="asrc-listtabs">
-                <button type="button" className={`asrc-ltab${isM ? ' is-active' : ''}`} onClick={() => setListTab('Product Master')}>Masters <span className="asrc-ltab-c">{masters.length}</span></button>
-                <button type="button" className={`asrc-ltab${!isM ? ' is-active' : ''}`} onClick={() => setListTab('Manual Entry')}>Manual <span className="asrc-ltab-c">{manuals.length}</span></button>
+          <div className="sta-srccard">
+            <div className="sta-srccard-head sta-srccard-head--teal">
+              <span className="sta-srccard-ico sta-srccard-ico--teal"><Svg size={16} stroke="#fff"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></Svg></span>
+              <div className="sta-srccard-htxt"><b>Product List</b><small>Mapped products for this sourcing</small></div>
+              <div className="stsrc-listtabs" role="tablist" aria-label="Product list">
+                <button type="button" role="tab" aria-selected={!loadingEdit && isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && isM ? ' is-active' : ''}`} onClick={() => setListTab('Product Master')}>Masters <span className="stsrc-ltab-c">{loadingEdit ? 0 : masters.length}</span></button>
+                <button type="button" role="tab" aria-selected={!loadingEdit && !isM} disabled={loadingEdit} className={`stsrc-ltab${!loadingEdit && !isM ? ' is-active' : ''}`} onClick={() => setListTab('Manual Entry')}>Manual <span className="stsrc-ltab-c">{loadingEdit ? 0 : manuals.length}</span></button>
               </div>
             </div>
-            <div className="ast-srccard-body">
-              {shown.length === 0 ? (
-                <div className={`ast-empty${tried && errNone ? ' has-err' : ''}`}>
+            <div className="sta-srccard-body sta-srccard-body--list">
+              {loadingEdit ? (
+                <div className="sta-shim-list" aria-busy="true" aria-label="Loading the target’s products">
+                  {[0, 1, 2].map(i => <Shimmer key={i} height={44} radius={10} />)}
+                </div>
+              ) : shown.length === 0 ? (
+                <div className={`sta-empty${tried && errNone ? ' has-err' : ''}`}>
                   {tried && errNone ? 'Add at least one product'
                     : isM ? 'No master products added yet. Select from the dropdown above and click Add.'
                       : 'No manual products added yet. Enter a name and price above and click Add to List.'}
                 </div>
               ) : (
-                <div className="ast-plist">
-                  <div className={`${rowCls} asrc-row--head`}>
+                <div className="sta-plist sct-scroller" ref={plistRef} style={plistMax ? { maxHeight: plistMax } : undefined}>
+                  <div className={`${rowCls} stsrc-row--head`}>
                     <span>Sr</span>{isM && <span>Product Code</span>}<span>Product Name</span>{isM && <><span>Segment</span><span>HSN Code</span></>}
-                    <span>Target Price (₹) <b className="asrc-th-req">*</b></span><span>Clarity <i className="asrc-th-opt">(optional)</i></span><span />
+                    <span>Target Price (₹) <b className="stsrc-th-req">*</b></span><span>Clarity <i className="stsrc-th-opt">(optional)</i></span><span className="stsrc-th-act">Action</span>
                   </div>
                   {shown.map((r, i) => (
-                    <div key={r.key}>
-                      <div className={rowCls}>
-                        <span className="asrc-sr">{i + 1}</span>
-                        {isM && <span className="asrc-code">{r.code}</span>}
-                        <span className="asrc-name">{r.name}</span>
-                        {isM && <><span>{r.segment}</span><span className="asrc-hsn">{r.hsn}</span></>}
-                        <span><input type="text" inputMode="decimal" className={`ast-pl-price${tried && !(Number(r.targetPrice) > 0) ? ' has-err' : ''}`} placeholder="Required"
-                          value={r.targetPrice} onChange={e => patch(r.key, { targetPrice: e.target.value.replace(/[^\d.]/g, '') })} /></span>
+                    <div key={r.key} className={rowCls}>
+                        <span className="stsrc-sr">{i + 1}</span>
+                        {isM && <span className="stsrc-code">{r.code}</span>}
+                        {/* Edit: a manual product's name can be corrected, even with suppliers mapped (the
+                            mapping is by the product's id, not its name — it only cannot be removed). */}
+                        {isEdit && r.source === 'Manual Entry' && !viewOnly ? (
+                          <span><input type="text" maxLength={255} aria-label={`Product name for ${r.name || 'manual product'}`}
+                            className={`sta-pl-price sta-pl-name${tried && !r.name.trim() ? ' has-err' : ''}`} placeholder="Product name"
+                            value={r.name} onChange={e => patch(r.key, { name: e.target.value })} /></span>
+                        ) : <ProductName className="stsrc-name" name={r.name} />}
+                        {isM && <><span><ClipText text={r.segment} /></span><span className="stsrc-hsn">{r.hsn}</span></>}
+                        <span><input type="text" inputMode="decimal" aria-label={`Target price for ${r.name}`} className={`sta-pl-price${tried && priceBad(r) ? ' has-err' : ''}`} placeholder="Required"
+                          title={tried && priceBad(r) ? 'Enter a price more than 0 and up to ₹9,99,99,99,999.99, with at most 2 decimals' : undefined}
+                          value={r.targetPrice} readOnly={viewOnly} onChange={e => {
+                            patch(r.key, { targetPrice: limitNum(e.target.value) });
+                            if (serverPriceKeys.has(r.key)) setServerPriceKeys(s => { const n = new Set(s); n.delete(r.key); return n; });
+                          }} /></span>
                         <span>
-                          <button type="button" className={`ast-pl-clarity${clarities[r.key] ? ' has-val' : ''}`} onClick={() => setClaKey(r.key)}>
-                            {clarities[r.key] ? 'Edit clarity' : <><IcoPlus size={11} />Add clarity</>}
-                          </button>
+                          {clarities[r.key] ? (
+                            // Chip first (opens it), ✏ after (edits it): what the
+                            // clarity is, then the action on it.
+                            <span className="sta-cla-cell">
+                              <ClarityOpen c={clarities[r.key]} onViewNote={() => setNoteKey(r.key)} />
+                              <Tooltip label="Edit clarity">
+                                <button type="button" className="sta-cla-edit" data-clarity={r.key} disabled={viewOnly} onClick={() => setClaKey(r.key)}
+                                  aria-label={`Edit clarity of ${r.name}`}>
+                                  <Svg size={12} sw={2.3}><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></Svg>
+                                </button>
+                              </Tooltip>
+                            </span>
+                          ) : (
+                            <button type="button" className="sta-pl-clarity" data-clarity={r.key} disabled={viewOnly} onClick={() => setClaKey(r.key)}><IcoPlus size={11} sw={2.6} />Add clarity</button>
+                          )}
                         </span>
-                        <span><button type="button" className="ast-pl-del" title="Delete" aria-label={`Remove ${r.name}`} onClick={() => remove(r.key)}><IcoTrash /></button></span>
-                      </div>
+                        <span>
+                          {/* A product with suppliers mapped stays on the target (only its price and clarity change). */}
+                          {r.mapped ? (
+                            <Tooltip label="Suppliers are mapped to this product — it can’t be removed">
+                              <span className="sta-pl-del is-locked" aria-label={`${r.name} has suppliers mapped and can't be removed`}><IcoLock size={12} /></span>
+                            </Tooltip>
+                          ) : (
+                            <button type="button" className="sta-pl-del" title="Delete" aria-label={`Remove ${r.name}`} disabled={viewOnly} onClick={() => remove(r.key)}><IcoTrash /></button>
+                          )}
+                        </span>
                     </div>
                   ))}
                 </div>
@@ -427,24 +767,30 @@ export default function AssignTargetModal({ existing, initial, onClose, onSave }
           </div>
         </div>
 
-        <div className="ast-foot">
-          <button type="button" className="ast-btn ast-btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="ast-btn ast-btn-primary" onClick={submit}>{isEdit ? <IcoEditBox /> : <IcoCheckBox />} {isEdit ? 'Update Target' : 'Assign Target'}</button>
+        <div className="sta-foot">
+          <button type="button" className="sta-btn sta-btn-ghost" onClick={onClose} disabled={saving}>{viewOnly ? 'Close' : 'Cancel'}</button>
+          {!viewOnly && (
+            <button type="button" className="sta-btn sta-btn-primary" onClick={submit} disabled={saving || loadingEdit} aria-busy={saving || undefined}>
+              {saving
+                ? <><span className="sct-spin" aria-hidden />{isEdit ? 'Updating…' : 'Assigning…'}</>
+                : <>{isEdit ? <IcoEdit size={18} stroke="#fff" /> : <IcoCheckBox />} {isEdit ? 'Update Target' : 'Assign Target'}</>}
+            </button>
+          )}
         </div>
       </div>
 
-        {claKey && (() => {
-          const prod = list.find(r => r.key === claKey);
-          if (!prod) return null;
-          return (
-            <ClarityDialog key={claKey} product={prod} initial={clarities[claKey]}
-              onCancel={() => setClaKey(null)}
-              onSave={c => {
-                setClarities(m => { const n = { ...m }; if (c) n[claKey] = c; else delete n[claKey]; return n; });
-                setClaKey(null);
-              }} />
-          );
-        })()}
+        {noteKey && noteProduct && clarities[noteKey]?.type === 'text' && (
+          <ClarityNoteView productName={noteProduct.name} note={clarities[noteKey].value} onClose={() => setNoteKey(null)}
+            onEdit={viewOnly ? undefined : () => { const k = noteKey; setNoteKey(null); setClaKey(k); }} />
+        )}
+        {claKey && claProduct && (
+          <ClarityDialog key={claKey} product={claProduct} initial={clarities[claKey]}
+            onCancel={() => setClaKey(null)}
+            onSave={c => {
+              setClarities(m => { const n = { ...m }; if (c) n[claKey] = c; else delete n[claKey]; return n; });
+              setClaKey(null);
+            }} />
+        )}
     </div>,
     document.body,
   );

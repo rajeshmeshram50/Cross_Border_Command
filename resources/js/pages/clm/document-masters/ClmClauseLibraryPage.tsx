@@ -12,7 +12,7 @@ import { CLM_CSS, loadFailed, usePagedList, useAutoFitRows } from '../shared/clm
 const CLAUSE_TYPES_URL   = '/clm/clause-types';
 const CLAUSE_LIBRARY_URL = '/clm/clause-library';
 import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
-import { DeleteConf } from '../shared/clmCommon';
+import { DeleteConf, TruncCell } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
@@ -136,7 +136,7 @@ export default function ClmClauseLibraryPage() {
 
 function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<ClType>(CLAUSE_TYPES_URL, reloadKey);
   const [editing, setEditing] = useState<ClType | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -150,9 +150,9 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
      on screen: a first load has no rows, so it gets the skeleton; a refetch
      still shows the previous page, so it is dimmed rather than blanked —
      blanking it would make a page change look like the list emptied. */
-  const firstLoad  = loading && (rows.length === 0 || replacing);
+  /* Skeleton before the first answer only. A search keystroke or page move keeps the last answer on screen, dimmed, instead of blanking the table and making it jump. */ const firstLoad  = loading && !booted;
   const refreshing = loading && !firstLoad;
-  const isEmpty   = !loading && rows.length === 0;
+  const isEmpty   = booted && rows.length === 0;
   const start     = (page - 1) * rpp;
   const safePage  = page;
   const autoFitRef = useRef(true);
@@ -209,10 +209,10 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
-            <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 {/* Shares, not pixels — the Segment Master pattern. With three
                     pixel-width columns and one free one, the name column
@@ -238,7 +238,10 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td className="clm-td-name">{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30) + '…'}</span></Tooltip> : r.name}</td>
+                    {/* Fills the column, then ellipsis with the full name in a
+                        tooltip - as the DD document name does (QA #49). A flat
+                        30-character cut left most of a 46% column empty. */}
+                    <TruncCell value={r.name} />
                     <td style={{ textAlign: 'center' }}>
                       <Tooltip label={(r.in_use ?? 0) > 0 ? `Used by ${r.in_use} clause${r.in_use === 1 ? '' : 's'} in the Clause Library` : 'Not used by any clause yet'}>
                         <span className={`clm-use-count${(r.in_use ?? 0) > 0 ? ' is-used' : ''}`}>{r.in_use ?? 0}</span>
@@ -283,7 +286,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bCl}</div>
@@ -296,7 +299,8 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 </div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {/* Shown when empty too (QA #47): the footer is part of the card, and without it an empty list was a bare box with nothing at the bottom. */}
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
@@ -310,7 +314,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
 
 function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
-  const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
+  const { rows, total, loading, booted, search, setSearch, page, setPage, rpp, setRpp } =
     usePagedList<ClLib>(CLAUSE_LIBRARY_URL, reloadKey);
   const [editing, setEditing] = useState<ClLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -319,9 +323,9 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   /* `rows` IS the page — the endpoint sorts, searches and slices. */
   const slice      = rows;
   // See the note in TypesPane — one `loading` split by what is already on screen.
-  const firstLoad  = loading && (rows.length === 0 || replacing);
+  /* Skeleton before the first answer only. A search keystroke or page move keeps the last answer on screen, dimmed, instead of blanking the table and making it jump. */ const firstLoad  = loading && !booted;
   const refreshing = loading && !firstLoad;
-  const isEmpty    = !loading && rows.length === 0;
+  const isEmpty    = booted && rows.length === 0;
   const start      = (page - 1) * rpp;
   const safePage   = page;
   const autoFitRef = useRef(true);
@@ -352,7 +356,11 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   const onDelete = async () => {
     if (!pendingDelete) return;
     try { await api.delete(`/clm/clause-library/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.name); setPendingDelete(null); reload(); }
-    catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    catch (e: any) {
+      toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete');
+      // 409 = it became used since the list loaded: close the popup and refresh so the lock shows.
+      if (e?.response?.status === 409) { setPendingDelete(null); reload(); }
+    }
   };
 
   const typeBadge = (t: string) => {
@@ -381,10 +389,10 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
-            <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>CLAUSE ID</th>
@@ -398,19 +406,25 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td style={{ textAlign: 'center' }}>{r.clause_type.length > 30
-                      ? <Tooltip label={r.clause_type}><span className={`clm-badge ${typeBadge(r.clause_type)}`}>{r.clause_type.slice(0, 30) + '…'}</span></Tooltip>
-                      : <span className={`clm-badge ${typeBadge(r.clause_type)}`}>{r.clause_type}</span>}</td>
-                    <td className="clm-td-name">{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30) + '…'}</span></Tooltip> : r.name}</td>
+                    {/* The badge stops at the column's edge with an ellipsis. A
+                        30-character cut made it wider than its 170px column, so it
+                        ran under the Clause Name beside it. */}
+                    <td style={{ textAlign: 'center' }}>
+                      <Tooltip label={r.clause_type} disabled={r.clause_type.length <= 22}>
+                        <span className={`clm-badge ${typeBadge(r.clause_type)}`} style={{ display: 'inline-block', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{r.clause_type}</span>
+                      </Tooltip>
+                    </td>
+                    {/* Fills the column, then ellipsis (QA #50) - see Clause Types. */}
+                    <TruncCell value={r.name} />
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         <Tooltip label="Edit"><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
                         {(() => {
-                          // A clause inserted into a CTC agreement can't be deleted
-                          // (best-effort match, see libraryIndex). Guard mirrors clause types.
+                          // A clause inserted into a CTC agreement, Agreement Library, T&C or Trade Document
+                          // can't be deleted (best-effort match, see libraryIndex). Guard mirrors clause types.
                           const used = (r.in_use ?? 0) > 0;
                           return (
-                            <Tooltip label={used ? "Used in one or more CTC agreements — can't delete." : 'Delete'}>
+                            <Tooltip label={used ? "Used in a CTC agreement, Agreement Library, Terms and Conditions or Trade Document — can't delete." : 'Delete'}>
                               <button className="clm-act clm-act-del" aria-label="Delete" disabled={used} style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined} onClick={() => { if (used) return; setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                             </Tooltip>
                           );
@@ -420,7 +434,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bCl}</div>
@@ -430,7 +444,8 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                 </div>
               </div>
             )}
-            {!loading && total > 0 && (
+            {/* Shown when empty too (QA #47): the footer is part of the card, and without it an empty list was a bare box with nothing at the bottom. */}
+            {booted && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>

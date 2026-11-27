@@ -5,14 +5,12 @@ namespace App\Mail;
 use App\Models\Announcement;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
-
 
 class AnnouncementPublishedMail extends Mailable
 {
@@ -55,26 +53,12 @@ class AnnouncementPublishedMail extends Mailable
         return new Content(
             view: 'emails.announcement-published',
             with: [
-                // Public http(s) URL of the attachment when it's an image, so
-                // the template can render it inline with a normal <img src>.
-                // We deliberately use a real URL (not $message->embed()/cid:)
-                // because the in-app /gmail viewer renders the stored HTML in a
-                // browser, which can't resolve cid: references. Null for
-                // non-image attachments (PDF/DOCX) — those keep the text notice.
                 'inlineImageUrl' => $this->isImageAttachment() ? $attachmentUrl : null,
-                // Public http(s) URL of the attachment for ANY file type, so the
-                // template can render the filename as a clickable open/download
-                // link. The in-app /gmail viewer only renders the HTML body (the
-                // real MIME attachment isn't reachable there), so without this a
-                // PDF/DOCX shows as plain, un-openable text.
                 'attachmentUrl' => $attachmentUrl,
             ],
         );
     }
 
-    /**
-     * True when the stored attachment is an image we can preview inline.
-     */
     private function isImageAttachment(): bool
     {
         $rel = $this->announcement->attachment_path;
@@ -84,14 +68,6 @@ class AnnouncementPublishedMail extends Mailable
         return in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'], true);
     }
 
-    /**
-     * Returns a public URL for the attachment (any file type), or null when
-     * there's no attachment or the file is missing on disk. Used BOTH to
-     * preview images inline and to turn the filename into a clickable
-     * open/download link — the in-app /gmail viewer renders only the HTML
-     * body, so the MIME attachment isn't reachable there without this URL.
-     */
-    /** Normalise the stored path to a key relative to the 'public' disk root. */
     private function normalisedPath(): ?string
     {
         $rel = $this->announcement->attachment_path;
@@ -105,22 +81,14 @@ class AnnouncementPublishedMail extends Mailable
     private function resolveAttachmentUrl(): ?string
     {
         $norm = $this->normalisedPath();
-        // Confirm the file exists on the 'public' DISK (local folder OR Azure).
         if (!$norm || !Storage::disk('public')->exists($norm)) return null;
 
-        // Link to our own signed, streaming route — NOT a raw /storage or Azure
-        // blob URL. That route reads the bytes off the disk, so the link opens on
-        // local AND Azure (public or private container) and works even when the
-        // recipient isn't logged in. `signed` makes the id tamper-proof.
         return URL::signedRoute('announcements.attachment', ['id' => $this->announcement->id]);
     }
 
     public function attachments(): array
     {
         $norm = $this->normalisedPath();
-        // Attach by reading the BYTES from the disk (works on local AND Azure);
-        // fromPath()/is_file() only worked on a local disk, so on the server the
-        // file silently dropped off the email.
         if (!$norm || !Storage::disk('public')->exists($norm)) return [];
 
         $name = $this->announcement->attachment_original_name ?: basename($norm);

@@ -226,23 +226,19 @@ function NeedToggle({ value, busy, selected, onSet }: {
     // the send gate is what enforces it, this only reports.
     return <span className="lasm-need-tag is-none">Not necessary</span>;
   }
-  const btn = (on: boolean, label: string, active: boolean, tone: string) => (
+  // Colours live in classes (not inline) so the dark-mode rules can re-tint.
+  const btn = (on: boolean, label: string, active: boolean, tone: 'yes' | 'no') => (
     <button
       type="button" disabled={busy}
       onClick={e => { e.stopPropagation(); onSet(on); }}
-      className="lasm-need-btn"
-      style={{
-        background: active ? tone : 'transparent',
-        color: active ? '#fff' : '#64748b',
-        borderColor: active ? tone : '#e2e8f0',
-        cursor: busy ? 'wait' : 'pointer',
-      }}
+      className={`lasm-need-btn lasm-need-${tone}${active ? ' is-active' : ''}`}
+      style={{ cursor: busy ? 'wait' : 'pointer' }}
     >{label}</button>
   );
   return (
     <div className="lasm-need-row">
-      {btn(true,  'Yes', value === true,  '#0ab39c')}
-      {btn(false, 'No',  value === false, '#94a3b8')}
+      {btn(true,  'Yes', value === true,  'yes')}
+      {btn(false, 'No',  value === false, 'no')}
     </div>
   );
 }
@@ -3062,6 +3058,14 @@ const LASM_CSS = `
   transition: background .12s, color .12s, border-color .12s;
 }
 .lasm-need-btn:disabled { opacity: .6; }
+.lasm-need-yes, .lasm-need-no { background: transparent; color: #64748b; border-color: #e2e8f0; }
+.lasm-need-yes.is-active { background: #0ab39c; border-color: #0ab39c; color: #fff; }
+.lasm-need-no.is-active  { background: #94a3b8; border-color: #94a3b8; color: #fff; }
+[data-bs-theme="dark"] .lasm-need-yes, [data-bs-theme="dark"] .lasm-need-no { color: #94a3b8; border-color: rgba(148,163,184,.35); }
+[data-bs-theme="dark"] .lasm-need-yes:hover:not(.is-active):not(:disabled),
+[data-bs-theme="dark"] .lasm-need-no:hover:not(.is-active):not(:disabled) { background: rgba(148,163,184,.12); color: #e2e8f0; }
+[data-bs-theme="dark"] .lasm-need-yes.is-active { background: #0ab39c; border-color: #0ab39c; color: #fff; }
+[data-bs-theme="dark"] .lasm-need-no.is-active  { background: #64748b; border-color: #64748b; color: #fff; }
 /* Shown only while the answer is still null. Wording matters: the row is not
    "optional", nobody has decided about it yet. */
 .lasm-bulk-need { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; }
@@ -3072,6 +3076,19 @@ const LASM_CSS = `
 .lasm-need-bulk.is-yes { background: #fff; border-color: #fff; color: #7c3aed; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
 .lasm-need-bulk.is-yes:hover { background: #f5f3ff; }
 .lasm-need-bulk:not(.is-yes):hover { background: rgba(255,255,255,.24); }
+[data-bs-theme="dark"] .lasm-bulk-bar {
+  background: #1e1b2e; border: 1px solid rgba(139,92,246,.35);
+  box-shadow: 0 12px 34px rgba(0,0,0,.50), 0 0 0 1px rgba(139,92,246,.10);
+}
+[data-bs-theme="dark"] .lasm-bulk-info { color: #e2e8f0; }
+[data-bs-theme="dark"] .lasm-bulk-clear { background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.28); color: #cbd5e1; }
+[data-bs-theme="dark"] .lasm-bulk-clear:hover { background: rgba(148,163,184,.20); }
+[data-bs-theme="dark"] .lasm-need-bulk { background: transparent; border-color: rgba(148,163,184,.35); color: #cbd5e1; box-shadow: none; }
+[data-bs-theme="dark"] .lasm-need-bulk:not(.is-yes):hover { background: rgba(148,163,184,.12); color: #f1f5f9; }
+[data-bs-theme="dark"] .lasm-need-bulk.is-yes { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.45); color: #ddd6fe; }
+[data-bs-theme="dark"] .lasm-need-bulk.is-yes:hover { background: rgba(167,139,250,.28); }
+[data-bs-theme="dark"] .lasm-bulk-send { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); color: #fff; box-shadow: 0 2px 10px rgba(124,58,237,.35); }
+[data-bs-theme="dark"] .lasm-bulk-send:hover:not(:disabled) { background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); box-shadow: 0 6px 16px rgba(124,58,237,.45); }
 
 .lasm-need-undecided {
   font-size: 9.5px; font-weight: 700; color: #b45309;
@@ -3093,6 +3110,12 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-st-recalled { background: rgba(245,158,11,.18); color: #fde68a; }
 [data-bs-theme="dark"] .lasm-st-expired  { background: rgba(168,85,247,.22); color: #d8b4fe; }
 [data-bs-theme="dark"] .lasm-st-draft    { background: rgba(148,163,184,.20); color: #cbd5e1; }
+/* Necessary column tags — same translucent tint as the Status pills beside
+   them, instead of the light theme's solid pastel pills. */
+[data-bs-theme="dark"] .lasm-need-tag.is-yes  { background: rgba(10,179,156,.18); color: #5eead4; }
+[data-bs-theme="dark"] .lasm-need-tag.is-no   { background: rgba(148,163,184,.20); color: #cbd5e1; }
+[data-bs-theme="dark"] .lasm-need-tag.is-none { background: rgba(148,163,184,.14); color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-need-undecided   { background: rgba(245,158,11,.18); color: #fde68a; }
 
 [data-bs-theme="dark"] .lasm-party-tab { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lasm-party-tab:hover { border-color: rgba(148,163,184,.32); }

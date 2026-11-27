@@ -9,43 +9,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Inventory · Shelf Master. /api/inventory/racks/{rack}/shelves
- *
- * Nested under the rack because a shelf has no meaning without one, and every
- * check it has to pass is a comparison against that rack: its length and width
- * cap the shelf's, and the shelves already stacked cap the height left.
- *
- * Those comparisons are all made in centimetres, whatever unit was typed —
- * which is why height_cm is stored as well as height.
- *
- * used_weight_kg and boxes_count are not writable here. They belong to the SPI
- * put-away, and a master form that could set them would let someone mark a
- * shelf empty while boxes are still on it.
- */
 class ShelfController extends BaseInventoryController
 {
     public function __construct(private InventoryMasterService $svc) {}
 
-    /* ══════════════════════════ READ ══════════════════════════ */
-
-    /**
-     * GET /inventory/racks/{rack}/shelves
-     * The shelf drawer: the levels, plus the KPI strip above them and the room
-     * left, so the Add Shelf form opens already knowing its limits.
-     */
-    /**
-     * GET /inventory/racks/{rack}/shelves/next-code
-     *
-     * A shelf code is not built from the shelf's own id — it is
-     * RC-003-SH-02, the RACK's code plus the shelf's level within it. So the
-     * next code is the next LEVEL in this rack, not the next sequence value,
-     * and unlike the other three it is contiguous: levels are counted, not
-     * handed out, so a deleted shelf's level is reused by the next one.
-     *
-     * Still a preview — two people adding a shelf to the same rack are both
-     * shown this, and the second will get the level after.
-     */
     public function nextCode(Request $request, int $rackId)
     {
         $user = $this->tenantUser($request);
@@ -72,17 +39,11 @@ class ShelfController extends BaseInventoryController
 
             $f = $request->validate($this->listRules());
 
-            // `rack` for the shelf_code accessor — one query for the page
-            // rather than one per shelf.
             $base = Shelf::where('rack_id', $rack->id)->with('rack:id,code,rack_name,height,dim_unit');
             $tabs = $this->tabCounts(clone $base);
 
             $q = $base->orderBy('level_no');
             $this->applyTab($q, $f['tab'] ?? null);
-            /* The shelf code is derived, so it is not a column to search.
-               Every shelf here belongs to $rack, so a term carrying a level —
-               "SH-03", or the whole "RC-002-SH-03" — is answered by matching
-               the level, once any rack-code part names THIS rack. */
             $this->applySearch($q, $f['q'] ?? null, ['shelf_name', 'shelf_type', 'purpose'],
                 function ($w, $term) use ($rack) {
                     if (!preg_match('/^(.*?)-?sh-?(\d+)$/i', $term, $m)) return;
@@ -132,7 +93,6 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /** GET /inventory/shelves/{id} */
     public function show(Request $request, int $id)
     {
         try {
@@ -154,32 +114,24 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /* ══════════════════════════ WRITE ══════════════════════════ */
-
-    /** POST /inventory/racks/{rack}/shelves */
     public function store(Request $request, int $rackId)
     {
         try {
             DB::beginTransaction();
 
             $user = $this->tenantUser($request);
-            /* Locked: every rule below compares against the rack and the
-               shelves already in it. Two shelves added at once both read the
-               same free height and the same free level; the second now waits. */
             $rack = $this->ownedQuery(Rack::query(), $user)->with('zone')->lockForUpdate()->findOrFail($rackId);
             $data = $this->settle($request->validate($this->rules()), $rack, null);
 
             $this->guard($data, $rack, null);
 
             $shelf = new Shelf($data);
-            // The rack's tenancy, never the user's — see ZoneController::store.
             $shelf->client_id      = $rack->client_id;
             $shelf->branch_id      = $rack->branch_id;
             $shelf->rack_id        = $rack->id;
             $shelf->height_cm      = $this->svc->toCm((float) $data['height'], $data['dim_unit']);
             $shelf->cold_chain     = (int) ($data['cold_chain'] ?? 0);
             $shelf->hazardous      = (int) ($data['hazardous'] ?? 0);
-            // Occupancy belongs to the put-away; a new shelf starts empty.
             $shelf->used_weight_kg = 0;
             $shelf->boxes_count    = 0;
             $shelf->created_by     = $user->id;
@@ -194,16 +146,12 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /** PUT /inventory/shelves/{id} */
     public function update(Request $request, int $id)
     {
         try {
             DB::beginTransaction();
 
             $user  = $this->tenantUser($request);
-            /* Rack, then shelf — always this order here, so two saves cannot
-               deadlock. A put-away locks only the shelf, so its boxes_count
-               cannot move under the occupied-shelf rules below. */
             $rackId = $this->ownedQuery(Shelf::query(), $user)->whereKey($id)->value('rack_id') ?? abort(404);
             $rack   = Rack::with('zone')->lockForUpdate()->findOrFail($rackId);
             $shelf  = Shelf::lockForUpdate()->findOrFail($id);
@@ -227,16 +175,12 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /** PUT /inventory/shelves/{id}/status */
     public function setStatus(Request $request, int $id)
     {
         try {
             DB::beginTransaction();
 
             $user  = $this->tenantUser($request);
-            /* Locked as the put-away locks it, so boxes_count cannot change
-               between this read and the save — a box reserved meanwhile used
-               to land on a shelf being switched off. */
             $shelf = $this->ownedQuery(Shelf::query(), $user)->lockForUpdate()->findOrFail($id);
             $data  = $request->validate(['status' => ['required', 'integer', 'in:0,1']]);
 
@@ -258,7 +202,6 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /** DELETE /inventory/shelves/{id} */
     public function destroy(Request $request, int $id)
     {
         try {
@@ -270,7 +213,6 @@ class ShelfController extends BaseInventoryController
             if ((int) $shelf->boxes_count > 0) {
                 $this->reject("{$shelf->shelf_name} still holds {$shelf->boxes_count} box(es).", null, 409);
             }
-            // Released history too — it names this shelf, and the level would be reused.
             if ($used = $this->referencedBy('shelf_id', $shelf->id)) {
                 $this->reject("{$shelf->shelf_name} is used by {$used}. Deactivate it instead of deleting it.", null, 409);
             }
@@ -286,13 +228,6 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /**
-     * GET /inventory/shelves/{id}/preview — the label as data.
-     *
-     * The screen shows the QR and the details first; the download comes after,
-     * from the same numbers. Both read labelData(), so the modal and the paper
-     * can never disagree.
-     */
     public function preview(Request $request, int $id)
     {
         try {
@@ -312,7 +247,6 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /** GET /inventory/shelves/{id}/label — the same label, as a 4x3in PDF. */
     public function label(Request $request, int $id)
     {
         try {
@@ -330,10 +264,6 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /**
-     * What the shelf label prints. Scanned at put-away as scan_type 'shelf' —
-     * the last link, and the one that records where the box actually went.
-     */
     private function labelData(Request $request, int $id): array
     {
         $user = $this->tenantUser($request);
@@ -374,39 +304,20 @@ class ShelfController extends BaseInventoryController
         ];
     }
 
-    /**
-     * GET /inventory/shelves/{id}/qr — the QR and nothing else.
-     *
-     * A bare PNG, served inline so it drops straight into an <img src>. The
-     * label endpoint wraps the same code in a printable card; this one is for
-     * a screen that places it itself.
-     *
-     * ?scale=10 sets pixels per module (1-20).
-     */
     public function qrImage(Request $request, int $id)
     {
         $data = $this->labelData($request, $id);
 
-        /* Whatever the printed label encodes, byte for byte — one source,
-           so a QR saved from this screen and one glued to the rack can never
-           resolve to different things. Carries the row id, because codes
-           restart at 001 in every branch and "WH-001" names three of them. */
         return $this->qrPng($this->stickerPayload($data), (int) $request->input('scale', 10), $data['code'] ?? null);
     }
-
-    /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     private function rules(): array
     {
         return [
             'shelf_name'    => ['required', 'string', 'max:180'],
-            // Upper bounds are the columns' (smallint, numeric) — past them is
-            // a database error, not a 422.
-            // Ignored — settle() assigns it. Optional so an older form still saves.
             'level_no'      => ['nullable', 'integer', 'min:1', 'max:32767'],
             'shelf_type'    => ['required', Rule::in(Shelf::TYPES)],
             'max_weight_kg' => ['required', 'numeric', 'min:1', 'max:999999999999'],
-            // Free text once the dropdown is on 'Other', so no Rule::in here.
             'purpose'       => ['required', 'string', 'max:120'],
             'cold_chain'    => ['nullable', 'integer', 'in:0,1'],
             'hazardous'     => ['nullable', 'integer', 'in:0,1'],
@@ -416,21 +327,9 @@ class ShelfController extends BaseInventoryController
             'height'        => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
             'area'          => ['nullable', 'numeric', 'min:0', 'max:999999999999'],
             'volume'        => ['nullable', 'numeric', 'min:0', 'max:9999999999999'],
-            // No 'status' — setStatus() only, which refuses a shelf holding boxes.
         ];
     }
 
-    /**
-     * The fields the server decides, not the form.
-     *
-     * Level (QA CS-942 #12): the shelf code is the rack code plus the level
-     * (RC-004-SH-07), so the level IS the shelf's identity. A new shelf takes
-     * the next level; an existing one keeps its own — a level edited after
-     * the QR sticker was printed left the sticker pointing at another shelf.
-     *
-     * Flags (QA CS-942 #14): a shelf in a cold-chain or hazardous rack is
-     * cold-chain or hazardous too — the rack's flags are copied down.
-     */
     private function settle(array $data, Rack $rack, ?Shelf $editing): array
     {
         $data['level_no']   = $editing ? (int) $editing->level_no : $this->svc->nextShelfLevel($rack);
@@ -440,16 +339,12 @@ class ShelfController extends BaseInventoryController
         return $data;
     }
 
-    /** Everything that is a comparison against the parent rack. */
     private function guard(array $d, Rack $rack, ?Shelf $editing): void
     {
-        // A new shelf only. One already in a rack switched off later must still
-        // be editable — it was refused even a rename.
         if (!$editing && !$rack->isActive()) {
             $this->reject("{$rack->rack_name} is inactive.", 'rack_id');
         }
 
-        // A shelf can never be more permissive than the rack holding it.
         if (!empty($d['cold_chain']) && !$rack->cold_chain) {
             $this->reject("{$rack->rack_name} is not a cold-chain rack.", 'cold_chain');
         }
@@ -464,9 +359,6 @@ class ShelfController extends BaseInventoryController
         if ($levelTaken) {
             $this->reject("Level {$d['level_no']} already exists in this rack.", 'level_no');
         }
-        /* Unique across the whole warehouse, not just the rack (QA CS-942 #11):
-           put-away and pick lists name a shelf within the warehouse, and two
-           "Shelf - 1"s there cannot be told apart by name. */
         $clash = Shelf::with('rack:id,code')
             ->whereIn('rack_id', Rack::where('warehouse_id', $rack->warehouse_id)->select('id'))
             ->whereRaw('lower(trim(shelf_name)) = lower(trim(?))', [$d['shelf_name']])
@@ -476,8 +368,6 @@ class ShelfController extends BaseInventoryController
             $this->reject("This warehouse already has a shelf with this name ({$clash->shelf_code}).", 'shelf_name');
         }
 
-        /* Length, width and height are capped by the rack — all compared in
-           centimetres, because the two forms can be on different units. */
         $rackL = $this->svc->toCm((float) $rack->length, $rack->dim_unit);
         $rackW = $this->svc->toCm((float) $rack->width, $rack->dim_unit);
         $l     = $this->svc->toCm((float) $d['length'], $d['dim_unit']);
@@ -496,7 +386,6 @@ class ShelfController extends BaseInventoryController
             $this->reject('Only ' . number_format($free, 2) . ' cm of rack height is free.', 'height');
         }
 
-        // Lowering the limit under what is already stored would read as a loss.
         if ($editing && (float) $d['max_weight_kg'] < (float) $editing->used_weight_kg) {
             $this->reject('Cannot be below the ' . (float) $editing->used_weight_kg . ' kg already stored.', 'max_weight_kg');
         }
@@ -506,11 +395,6 @@ class ShelfController extends BaseInventoryController
         }
     }
 
-    /**
-     * What a shelf holding boxes may not change: the boxes were put there on
-     * its flags and its size, and they do not move because the form did.
-     * Growing is fine; taking away is not.
-     */
     private function guardOccupied(array $d, Shelf $shelf, float $l, float $w, float $h): void
     {
         $boxes = (int) $shelf->boxes_count . ' box(es)';
@@ -552,7 +436,6 @@ class ShelfController extends BaseInventoryController
             'occupancy'      => $s->occupancy,
             'cold_chain'     => (int) $s->cold_chain,
             'hazardous'      => (int) $s->hazardous,
-            // The range lives on the zone, two levels up.
             'temp_min_c'     => $s->cold_chain && $rack?->zone?->temp_min_c !== null ? (float) $rack->zone->temp_min_c : null,
             'temp_max_c'     => $s->cold_chain && $rack?->zone?->temp_max_c !== null ? (float) $rack->zone->temp_max_c : null,
             'dim_unit'       => $s->dim_unit,

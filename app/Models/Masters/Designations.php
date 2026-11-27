@@ -14,8 +14,6 @@ class Designations extends Model
 {
     protected $table = 'master_designations';
 
-    /** Employees holding this designation — drives the list's headcount column.
-     *  Employee uses SoftDeletes, so withCount already excludes deleted staff. */
     public function employees(): HasMany
     {
         return $this->hasMany(Employee::class, 'designation_id');
@@ -34,16 +32,11 @@ class Designations extends Model
         'created_by',
     ];
 
-    /**
-     * Auto-generate the designation code (DGN-001, DGN-002, …) on create
-     * if the caller didn't supply one.
-     */
     protected static function booted(): void
     {
         static::creating(function (self $row) {
             if (empty($row->code)) {
                 $next = (int) static::max('id') + 1;
-                // 2-digit padding (DGN-01) — auto-grows to 3+ digits past 99.
                 $row->code = 'DGN-' . str_pad((string) $next, 2, '0', STR_PAD_LEFT);
             }
         });

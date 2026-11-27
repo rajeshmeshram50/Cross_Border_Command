@@ -14,7 +14,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
 </head>
 <body style="margin:0; padding:0; background-color:#eef2f7; font-family:'Inter','Segoe UI',Arial,sans-serif; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; color:#0f172a;">
 
-<!-- Preheader -->
 <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; color:#eef2f7; line-height:1px;">
     Reminder · {{ $docKind }} {{ $docCode }} awaiting your review.
 </div>
@@ -23,10 +22,8 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
     <tr>
         <td align="center">
 
-            <!-- ═══════ MAIN CARD ═══════ -->
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="640" style="max-width:640px; width:100%; background:#ffffff; border-radius:20px; overflow:hidden; box-shadow:0 4px 14px rgba(15,23,42,0.04), 0 24px 56px rgba(15,23,42,0.12);">
 
-                <!-- ─── HEADER ROW — amber accent + branch identity + amber corner ribbon. -->
                 <tr>
                     <td style="padding:0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -43,17 +40,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                                     </table>
                                 </td>
                                 <td style="width:140px; padding:0; vertical-align:top; text-align:right;">
-                                    {{-- Two-stripe ribbon corner — mimics the Acme
-                                         Logistics reference. Three hard-stop bands:
-                                           0–32%   → darker cobalt (outer stripe,
-                                                     "back of the fold")
-                                           32–58%  → brighter cobalt (inner stripe,
-                                                     "front of the fold")
-                                           58–100% → white (fills out the rest of
-                                                     the corner square so the inner
-                                                     half blends with the card body)
-                                         Background-color is white so the transparent
-                                         third band reads as the card surface. --}}
                                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="140" align="right">
                                         <tr>
                                             <td height="140" style="background-color:#ffffff; background-image:linear-gradient(225deg, #1e40af 0%, #1e40af 28%, #4b95f8 28%, #4b95f8 52%, #ffffff 52%, #ffffff 100%); border-bottom-left-radius:70px; line-height:0; font-size:0;">&nbsp;</td>
@@ -65,7 +51,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ HERO HEADING ═══════ -->
                 <tr>
                     <td style="padding:40px 40px 8px;">
                         <h1 style="margin:0 0 14px; font-size:40px; line-height:1.05; font-weight:900; color:#0f172a; letter-spacing:-1.1px; font-family:'Inter','Segoe UI',Arial,sans-serif; text-transform:uppercase;">
@@ -76,7 +61,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ BODY MESSAGE ═══════ -->
                 <tr>
                     <td style="padding:26px 40px 0;">
                         <p style="margin:0 0 8px; font-size:15px; color:#0f172a; font-weight:700;">
@@ -88,7 +72,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ TOTAL AMOUNT CARD ═══════ -->
                 @if($grandTotal > 0)
                 <tr>
                     <td style="padding:30px 40px 0;">
@@ -120,10 +103,7 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                 </tr>
                 @endif
 
-                <!-- ═══════ INFO CARDS ═══════ -->
-
-                <!-- Card 1: Doc Number -->
-                <tr>
+<tr>
                     <td style="padding:14px 40px 0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f1f5f9; border-radius:14px;">
                             <tr>
@@ -145,7 +125,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- Card 2: Date -->
                 <tr>
                     <td style="padding:10px 40px 0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f1f5f9; border-radius:14px;">
@@ -168,7 +147,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- Card 3: Products -->
                 <tr>
                     <td style="padding:10px 40px 0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f1f5f9; border-radius:14px;">
@@ -191,9 +169,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ CTA — blue button matches the reminder accent
-                     (same palette as the hero ribbon + info-card icons,
-                     so the email reads as one cohesive design). ═══════ -->
                 @if(!empty($viewUrl))
                 <tr>
                     <td align="center" style="padding:34px 40px 8px;">
@@ -219,7 +194,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                 </tr>
                 @endif
 
-                <!-- ═══════ SIGN-OFF ═══════ -->
                 <tr>
                     <td style="padding:36px 40px 24px;">
                         <p style="margin:0 0 2px; font-size:13px; color:#475569;">Best regards,</p>
@@ -231,7 +205,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ FOOTER ═══════ -->
                 <tr>
                     <td style="padding:24px 40px 16px; text-align:center; border-top:1px solid #eef0f3;">
                         @if(!empty($logoPath))
@@ -257,9 +230,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ BOTTOM-LEFT WRAPPED RIBBON — mirrors the
-                     top-right ribbon (same hard-stop gradient, rotated
-                     so the "fold" sits on the opposite diagonal). ═══════ -->
                 <tr>
                     <td style="padding:0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -278,7 +248,6 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                 </tr>
 
             </table>
-            <!-- ═══════ /MAIN CARD ═══════ -->
 
             <p style="margin:18px 0 0; font-size:10px; color:#94a3b8; max-width:640px; line-height:14px;">
                 @if($reminderNumber > 1)

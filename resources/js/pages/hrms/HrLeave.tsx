@@ -7,6 +7,7 @@ import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/mast
 import { HolidayFilterModal, type HolidayFilterValues } from './HrHoliday';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -1071,6 +1072,11 @@ export default function HrLeave() {
                 <button type="button" className="rec-btn-ghost ms-auto" disabled={!!bulkBusy} onClick={clearSelection}>
                   <i className="ri-close-circle-line" />Clear
                 </button>
+                {bulkBusy && (
+                  <FullPageLoader
+                    label={`${bulkBusy === 'approve' ? 'Approving' : 'Rejecting'} ${selectedIds.size} request${selectedIds.size > 1 ? 's' : ''}…`}
+                  />
+                )}
               </div>
             )}
 
@@ -1367,13 +1373,13 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
   /* Group / year / type, read off the rows themselves: /holidays returns the
      whole calendar, so the options and their counts are exact and nothing
      has to be fetched a second time when a tile is pressed. */
-  const [facets, setFacets] = useState<HolidayFilterValues>({ group: [], year: '', type: '' });
+  const [facets, setFacets] = useState<HolidayFilterValues>({ group: [], year: [], type: [] });
   const [filterOpen, setFilterOpen] = useState(false);
-  /* An empty array is truthy, and re-clicking a single-select option leaves
-     'All' behind — neither counts as a filter. */
-  const unset = (v: string) => !v || v === 'All';
-  const activeFacetCount = (facets.group.length ? 1 : 0)
-    + [facets.year, facets.type].filter(v => !unset(v)).length;
+  /* All three facets are multi-select: an empty array means "All", so it is
+     NOT a filter. This counted year and type as strings, and an empty array is
+     truthy — so Reset All left the button reading "2" with nothing applied. */
+  const activeFacetCount = [facets.group, facets.year, facets.type]
+    .filter(v => v.length > 0).length;
   const yearOf = (raw: any) => { const d = new Date(String(raw)); return isNaN(d.getTime()) ? '' : String(d.getFullYear()); };
 
   const filterGroups = useMemo(() => {
@@ -1397,8 +1403,8 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   const sorted = rows
     .filter(r => (!facets.group.length || facets.group.includes(r.group?.name ?? ''))
-              && (unset(facets.year)  || yearOf(r.date) === facets.year)
-              && (unset(facets.type)  || (r.type ?? '') === facets.type))
+              && (!facets.year.length  || facets.year.includes(yearOf(r.date)))
+              && (!facets.type.length  || facets.type.includes(r.type ?? '')))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
   /* Columns for the shared <DataTable>. The group name rides under the
@@ -1958,6 +1964,8 @@ function ConfirmActionModal({
           </button>
         </div>
       </ModalBody>
+      {/* QA 248 — the house loader, not a per-popup one. */}
+      {submitting && <FullPageLoader label={isApprove ? 'Approving leave…' : 'Rejecting leave…'} />}
     </Modal>
   );
 }

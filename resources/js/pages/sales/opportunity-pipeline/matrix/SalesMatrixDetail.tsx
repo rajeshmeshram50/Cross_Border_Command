@@ -27,15 +27,6 @@ import RemindersListModal from './RemindersListModal';
 import MeetingsListModal from './MeetingsListModal';
 import LeadAgreementSendModal, { type ApplicablePayload as AgreementApplicablePayload } from './LeadAgreementSendModal';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Opportunity Detail
- *
- * Wrapper that renders the customer banner, 6-step tracker, action toolbar,
- * left CLM panel, and right Deal Execution panel. The middle column is
- * supplied by one of the six stage components depending on the URL param.
- *
- * Route shape: /sales/matrix/:oppId/stage-:n  (n = 1..6)
- * ──────────────────────────────────────────────────────────────────────── */
 
 export type StageNum = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -48,9 +39,6 @@ const STAGES: { n: StageNum; title: string; sub: string }[] = [
   { n: 6, title: 'Victory Stage',        sub: 'Deal successfully won' },
 ];
 
-/* Task-manager row shape mirrored from the server response. Kept here
- * (rather than imported from TaskManagerPanel) so the stage components
- * don't depend on the panel module. */
 export type StageTaskManager = {
   id?:                 number;
   order_value?:        string | number | null;
@@ -72,62 +60,31 @@ export type StageAcknowledgement = {
 };
 
 export type OppHeaderData = {
-  /* DB primary key of the lead row. Optional because the page can be
-   * deep-linked by oppCode alone — when missing the stage components
-   * gracefully degrade to read-only (no backend calls fire). */
   leadId?: number;
   oppId: string;
   customer: string;
   customerCode: string;
   oppDate: string;
   country: string;
-  /* Lead pipeline state — drives the QUALIFIED/DISQUALIFIED/PENDING
-   * badge in Stage 1's header. */
   qualified?:    boolean;
   disqualified?: boolean;
-  /** Mapped products / quotations / PIs already on the lead, as printable phrases. */
   downstreamWork?: string[];
-  /* Latest persisted Task Manager row, hydrated by the parent on
-   * fetch + after every save. Stage 1 reads this for its read-only
-   * display; the right-side TaskManagerPanel reads the same value
-   * to seed its form. */
   taskManager?: StageTaskManager | null;
-  /* Stage 2 activity log — latest first. Cached by the parent so the
-   * stage component can render immediately without an extra fetch. */
   acknowledgements?: StageAcknowledgement[];
-  /* Mapped customer / consignee — read by the toolbar to decide
-   * whether the Customer / Consignee buttons open Edit or Picker. */
   customerId?:        number | null;
   customerRow?:       Record<string, unknown> | null;
-  /* Currency the lead's already-mapped products share (single-currency-per-lead
-   * rule). Null until the first product is mapped. Filters the Customer picker:
-   * INR ⇒ Indian customers only, non-INR ⇒ foreign customers only. */
   lockedCurrency?:    string | null;
   consigneeId?:       number | null;
   consigneeRow?:      Record<string, unknown> | null;
-  /* Lead's furthest-reached pipeline stage (leads.lead_stage_id, 1..6).
-   * Stages read this to tell whether they're being revisited AFTER the
-   * lead already advanced past them — e.g. Stage 4 skips its "share a
-   * price first" gate when the deal is already at Stage 5+ (revisiting a
-   * completed stage must not re-run forward-advance validation). */
   leadStageId?:       number;
-  /* Owner + ad-hoc notes — drive the Change Owner / Remark modals. */
   salespersonId?:     number | null;
   salespersonName?:   string;
   remark?:            string | null;
-  /* WhatsApp panel state. */
   whatsappStatus?:     'connected' | 'pending' | 'not_connected' | 'opted_out' | null;
   whatsappReason?:     string | null;
   whatsappScreenshot?: string | null;
 };
 
-/* Last-resort header shape. The name / code / date started life as prototype
- * demo values and leaked into real pages: location.state is dropped on stage
- * navigation, so an unmapped lead rendered "GreenHarvest Global · C-001 ·
- * 10-Apr-2026" as if that were its data. They're placeholders now — a blank
- * dash reads as "not known yet" instead of quietly inventing a customer.
- * `country` stays 'IN' because it also feeds the domestic/export currency
- * gate; the server value overrides it as soon as the lead loads. */
 const DEFAULT_HEADER: OppHeaderData = {
   oppId:        'OPP-001',
   customer:     '—',
@@ -136,11 +93,8 @@ const DEFAULT_HEADER: OppHeaderData = {
   country:      '—',
 };
 
-/* DD-Mon-YYYY (e.g. 04-Jul-2026) — the app-wide display date format. */
 const DMY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** True for an Indian customer — accepts the country name or its ISO code.
- *  Mirrors ProductDirectoryModal's `isIndia` (the other half of the same gate). */
 const isIndiaCountry = (c?: string | null): boolean => {
   const v = (c ?? '').trim().toLowerCase();
   return v === 'india' || v === 'in' || v === 'ind';
@@ -152,9 +106,6 @@ const fmtDmy = (iso: string): string => {
     : `${String(d.getDate()).padStart(2, '0')}-${DMY_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 };
 
-/* Full-page loading shimmer for the Sales Matrix detail page — banner +
- * 6-step stepper + toolbar + the three panels (CLM / Stage / Deal Engine).
- * Self-contained (inline styles + one keyframe) so it needs no extra CSS. */
 function MatrixPageSkeleton() {
   return (
     <div className="smd-root" style={{ padding: 4 }}>
@@ -168,8 +119,6 @@ function MatrixPageSkeleton() {
         [data-layout-mode="dark"] .smdpgskel-card { background: rgba(28,20,50,0.55); border-color: rgba(167,139,250,.18); }
       `}</style>
       <div className="smdpgskel" style={{ height: 64, marginBottom: 14 }} />
-      {/* Stepper — one card per step mirroring the real layout:
-          small "Step 0N" label, big number, title line, sub line, badge. */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="smdpgskel-card" style={{ flex: 1, padding: 12, position: 'relative', minHeight: 86 }}>
@@ -204,46 +153,22 @@ export default function SalesMatrixDetail() {
   const { navigate } = useNavigateContext();
   const toast = useToast();
 
-  /* ─── Customer / Consignee picker + add-edit modal state ─── */
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [customerLoading, setCustomerLoading] = useState(false);
   const [customerRows, setCustomerRows] = useState<Record<string, EditCustomer>>({});
   const [customerEditing, setCustomerEditing] = useState<EditCustomer | null>(null);
   const [customerAddOpen, setCustomerAddOpen] = useState(false);
 
-  /* "Manage Consignees" popup — lists every consignee mapped to the
-   * lead's customer (same CustomerConsigneesModal used on the Sales
-   * Customers list). Opened from the Consignee toolbar button. */
   const [manageConsigneesTarget, setManageConsigneesTarget] = useState<CustomerLite | null>(null);
 
-  /* Evidence Vault popups — opened from the left CLM card's Customer /
-   * Consignee rows. Same standalone vault modal used on the Sales
-   * Customers / Consignee list pages: it fetches the live
-   * /segment-uploads/{party}/{id}/vault payload, shows DD / KYC / Trade
-   * License / Trade Documents in tabs, and lets the user send any
-   * missing / unsigned document for e-signature. */
   const [leadVaultTarget, setLeadVaultTarget] = useState<LeadVaultTarget | null>(null);
-  /* Every consignee mapped to the lead's customer — handed to the Lead
-   * Evidence Vault so it can render a consignee-wise tab strip when the
-   * customer has more than one. Null/single ⇒ the modal shows just the
-   * one `leadVaultTarget`. */
   const [leadVaultConsignees, setLeadVaultConsignees] = useState<LeadVaultTarget[] | null>(null);
-  /* The consignee the user was on when the Same-as-Customer note sent them to
-     the customer's vault. Held so the customer view can offer the way back —
-     the two parties are the same company there, so without a trail the user
-     cannot tell they moved, let alone how to return. Null on every other
-     route into the vault. */
   const [leadVaultBackTo, setLeadVaultBackTo] = useState<LeadVaultTarget | null>(null);
 
 
   const [productAddOpen, setProductAddOpen] = useState(false);
   const [productDirectoryOpen, setProductDirectoryOpen] = useState(false);
-  /* Bumped whenever the Product Directory popup maps/edits/removes a product,
-   * so the inline Stage 3 (and the Product Sourcing popup) re-fetch their
-   * product list + count badges live — no page refresh needed. */
   const [productsTick, setProductsTick]                 = useState(0);
-  // Bumped when a quoted price is shared (from either the inline Stage 4 or the
-  // Share Prices popup) so the OTHER Stage 4 instance re-fetches immediately.
   const [priceTick, setPriceTick]                       = useState(0);
   const [productSourcingOpen, setProductSourcingOpen]   = useState(false);
   const [priceSharedOpen, setPriceSharedOpen]           = useState(false);
@@ -255,64 +180,19 @@ export default function SalesMatrixDetail() {
   const [meetingsOpen, setMeetingsOpen] = useState(false);
   const [ownerOpts, setOwnerOpts] = useState<Array<{ value: string; label: string }>>([]);
 
-  /* Agreement send-for-signature popup. Powered by
-   * GET /api/clm/leads/{leadId}/agreement-applicable — fetched once
-   * per lead so the Segment Details card can show real counts and
-   * the popup opens instantly on row click. */
   const [agreementApplicable, setAgreementApplicable] = useState<AgreementApplicablePayload | null>(null);
   const [agreementModalOpen, setAgreementModalOpen] = useState(false);
-  /* Which document type the Segment Details popup opens on. The card now
-   * splits by document TYPE (Trade Documents vs Agreements) rather than by
-   * regulatory tier — both pull from the same PI-derived segment payload. */
   const [agreementModalView, setAgreementModalView] = useState<'trade' | 'agreements'>('agreements');
 
-  /* Side-rail collapsing — clicking the chevron in either side card collapses
-   * it to a thin vertical rail so the stage form gets more breathing room.
-   * Clicking the rail (or its expand chevron) restores the full card. */
   const [clmCollapsed, setClmCollapsed] = useState(false);
   const [dealCollapsed, setDealCollapsed] = useState(false);
 
-  /* CLM doc counts — pulled live from /customers/{id}/documents and
-   * /consignees/{id}/documents (sum of dd + tl rows). Falls back to 0
-   * when the row hasn't loaded yet so the progress bar starts empty
-   * instead of stale. Total is 14 = 6 DD + 8 TL per party — must match
-   * the DD_DOCS + TL_DOCS catalogs in AddCustomerModal / AddConsigneeModal. */
-  /* CLM doc tally — sourced from /segment-uploads/{customer|consignee}/{id}/vault
-   * which is the SAME endpoint Stage 3 Evidence Vault uses. It returns
-   * `total_documents` (the catalog: Company DD + Owner KYC + Trade Licence
-   * + Trade Documents, expanded from the party's segment rules) and
-   * `verified_signed` (how many of those have an actual upload on file).
-   * `error` distinguishes a failed fetch from a legitimate empty catalog —
-   * without it the UI conflates "server failed" with "no segments yet". */
-  // total/verified = MANDATORY core docs (drives % + the mandatory gate).
-  // catalog/catalogVerified = ALL core docs incl. optional (so an optional-only
-  // rule still shows a count instead of "No segment rules set").
   type ClmTally = { total: number; verified: number; catalog?: number; catalogVerified?: number; error?: boolean; loading?: boolean } | null;
   const [custTally, setCustTally] = useState<ClmTally>(null);
   const [consTally, setConsTally] = useState<ClmTally>(null);
-  /* Refetch triggers — bumped after a modal SAVE (not just close) so the
-   * tally effects re-run even though the customer/consignee FK hasn't
-   * changed. Without these the CLM panel would keep showing the pre-upload
-   * count until the user navigates away and back.
-   *
-   * Split per party (was a single shared tick): a consignee save must not
-   * re-fire the customer vault fetch — the customer record wasn't touched
-   * and the extra concurrent request races against the consignee vault +
-   * reloadLead. On slower servers the spurious customer fetch was timing
-   * out at 8s and flipping the Customer Details row into the red
-   * "Couldn't load — tap to retry" state right after a consignee save. */
   const [custRefreshTick, setCustRefreshTick] = useState(0);
   const [consRefreshTick, setConsRefreshTick] = useState(0);
-  /* Agreement-applicable card has its own tick so a Send/Recall inside
-   * the agreement modal refreshes the card without re-hitting the heavy
-   * customer + consignee vault endpoints. */
   const [agreementRefreshTick, setAgreementRefreshTick] = useState(0);
-  /* Click → open the existing Customer/Consignee modal pre-positioned at
-   * the requested stage (2 = KYC, 3 = Trade Docs / Evidence Vault). Stage
-   * selection comes from which CLM row the user clicked — both currently
-   * deep-link to Stage 2 since the panel labels them "KYC / DD / Trade". */
-  // Customer/Consignee modals are 2-stage now (Evidence Vault / Stage 3 was
-  // removed from the customer form), so this deep-link tops out at Stage 2.
   const [clmInitialStage, setClmInitialStage] = useState<1 | 2 | undefined>(undefined);
 
   useEffect(() => {
@@ -331,23 +211,13 @@ export default function SalesMatrixDetail() {
   }, [changeOwnerOpen]);
 
   const fetchCustomers = async () => {
-    // Always refetch (no length cache) so newly-added customers and any
-    // customers mapped elsewhere are always reflected.
     setCustomerLoading(true);
     try {
       type Row = EditCustomer & { db_id?: number };
-      // tab=all → every customer, INCLUDING those already attached to an
-      // opportunity: a single customer may be used across multiple
-      // opportunities, so the picker must not hide already-used customers.
       const res = await api.get<{ data?: Row[] } | Row[]>('/customers', { params: { tab: 'all' } });
       const rows = Array.isArray(res.data) ? res.data : ((res.data as { data?: Row[] })?.data ?? []);
       const cache: Record<string, EditCustomer> = {};
       rows.forEach(r => { if (r.id) cache[r.id] = r; });
-      /* Cache EVERY customer unfiltered — the currency gate is applied in the
-       * `customerOpts` memo below, not here. Filtering at fetch time would mean
-       * re-hitting /customers every time the lock changed (slow), and would pin
-       * the list to whatever lockedCurrency happened to be in scope when this
-       * ran (stale). Deriving it keeps the filter instant and always current. */
       setCustomerRows(cache);
     } catch {
       toast.error('Failed to load customers', 'Could not reach the Customer API');
@@ -356,22 +226,11 @@ export default function SalesMatrixDetail() {
     }
   };
 
-  // The URL carries an encrypted token; decode back to the plain OPP code so
-  // all internal logic (lead resolution, headers, navStage) works unchanged.
   const oppId = params.oppId ? decodeOppId(params.oppId) : DEFAULT_HEADER.oppId;
   const stage = Math.min(6, Math.max(1, decodeStage(params.stage || '1'))) as StageNum;
 
-  /* Header from router state — seed; the server fetch below hydrates the
-   * lead-pipeline fields (qualified/disqualified/taskManager). */
   const seedHeader: OppHeaderData = useMemo(() => {
     const fromState = (location.state as any)?.row;
-    // Only trust the router-state seed when it belongs to THIS opportunity.
-    // React Router keeps location.state across navigations, so opening a
-    // different opp (browser back/forward, or a link that didn't refresh state)
-    // can leave a STALE row from a previous opp. Using its leadId would fetch and
-    // display the WRONG opportunity's Customer / Country / Stage under the right
-    // Opportunity ID (QA: "same Opportunity ID opens with different details").
-    // On a mismatch we drop the seed and resolve the lead from the URL oppId.
     if (fromState && fromState.oppId === oppId) {
       return {
         leadId:       typeof fromState.id === 'number' ? fromState.id : undefined,
@@ -385,25 +244,10 @@ export default function SalesMatrixDetail() {
     return { ...DEFAULT_HEADER, oppId };
   }, [location.state, oppId]);
 
-  /* Server-side lead extras — qualified flag, salesperson, and the
-   * task-manager row that both Stage 1 (display) and TaskManagerPanel
-   * (form) read from. Fetched once per leadId; refreshed in-place after
-   * a task-manager save so the read-only display stays in sync without a
-   * full refetch. */
   const [serverHeader, setServerHeader] = useState<{
     qualified?:           boolean;
     disqualified?:        boolean;
-    /* What Stage 3 onwards is already holding (mapped products, quotations,
-       PIs), as phrases the UI can print. Empty while the lead is still clean.
-       Stage 2 reads it to refuse an un-qualifying verdict before it
-       optimistically renders the row as saved; the API enforces the same rule
-       on the write itself. */
     downstreamWork?:      string[];
-    /* The lead was reassigned AWAY from this user. They keep read access so
-     * they can follow its history, but every write is refused server-side.
-     * The API has always sent this; the page simply never read it, so the
-     * write actions stayed enabled and the refusal surfaced as a raw
-     * "No query results for model [App\Models\Lead] 40" toast. */
     readOnly?:            boolean;
     keyOpportunity?:      boolean;
     taskManager?:         StageTaskManager | null;
@@ -420,45 +264,24 @@ export default function SalesMatrixDetail() {
     whatsappReason?:      string | null;
     whatsappScreenshot?:  string | null;
     piSignedAt?:          string | null;
-    /** When the PI first went out for signature (QA #83). Earlier than
-     *  piSignedAt: from here the counterparty is dealing with this owner. */
     piSentForSignatureAt?: string | null;
     oppDateIso?:          string | null;
-    /* The lead's own enquiry identity — header fallback when no customer is
-     * mapped yet, so we never fall through to the prototype DEFAULT. */
     leadSenderName?:      string | null;
     leadSenderCompany?:   string | null;
     leadCountry?:         string | null;
-    /* Written at line ~507 from `d.locked_currency` and read by the customer
-       picker's currency filter. It was declared on the header type but never
-       on this state object, so every read of it was a type error even though
-       the value is set and used at runtime. */
     lockedCurrency?:      string | null;
   }>({});
 
-  /* Resolved leadId — initially the one passed via router state. If that's
-   * missing (e.g. the user reached this page via the stage tracker rather
-   * than from the worksheet, so `location.state` is empty), we resolve it
-   * by searching `/sales/leads` for the opp code. Once known we cache it
-   * here so all downstream calls (reload + Stage 1/2 saves) work. */
   const [resolvedLeadId, setResolvedLeadId] = useState<number | undefined>(seedHeader.leadId);
 
   useEffect(() => {
-    setResolvedLeadId(seedHeader.leadId);
+    if (seedHeader.leadId !== undefined) setResolvedLeadId(seedHeader.leadId);
   }, [seedHeader.leadId]);
 
-  /* True once we KNOW whether this opportunity maps to a lead id — either the
-   * router seed carried one, or the by-opp_code lookup below has finished (hit
-   * or miss). The page must stay on the skeleton until then: rendering while
-   * the id is still unknown is exactly what let the placeholder header flash on
-   * screen for a moment on every stage navigation. */
   const [leadIdResolved, setLeadIdResolved] = useState<boolean>(!!seedHeader.leadId);
 
   useEffect(() => {
     if (resolvedLeadId || !oppId) { setLeadIdResolved(true); return; }
-    // Best-effort lookup by opp_code (the existing /sales/leads search
-    // hits opp_code via LIKE). We pass status=all + with_counts=0 so the
-    // lookup is fast and bucket-agnostic.
     let cancelled = false;
     api.get<{ data: Array<{ id: number; opp_code: string }> }>('/sales/leads', {
       params: { search: oppId, status: 'all', per_page: 5, page: 1, with_counts: 0 },
@@ -467,15 +290,11 @@ export default function SalesMatrixDetail() {
         const exact = (data.data ?? []).find(r => r.opp_code === oppId);
         if (exact) setResolvedLeadId(exact.id);
       })
-      .catch(() => { /* silent — Stage components show their own degraded state */ })
-      // Flip even on failure, so an unresolvable opp code degrades to the
-      // read-only page instead of hanging on the skeleton forever.
+      .catch(() => {  })
       .finally(() => { if (!cancelled) setLeadIdResolved(true); });
     return () => { cancelled = true; };
   }, [resolvedLeadId, oppId]);
 
-  // Page-level loading flag — drives the full-page shimmer until the lead
-  // (serverHeader) has loaded, so the 7-stage page doesn't flash empty.
   const [headerLoaded, setHeaderLoaded] = useState(false);
 
   const reloadLead = useCallback(() => {
@@ -505,12 +324,7 @@ export default function SalesMatrixDetail() {
       pi_signed_at: string | null;
       pi_sent_for_signature_at: string | null;
       opportunity_date_iso: string | null;
-      /* Currency shared by the lead's mapped products; null until the first
-       * product is mapped. Gates which customers may be picked. */
       locked_currency: string | null;
-      /* The lead's OWN enquiry identity. Used as the header fallback while no
-       * customer is mapped — before this the header dropped straight to the
-       * prototype DEFAULT and invented a company name + country. */
       sender_name: string | null;
       sender_company: string | null;
       sender_country_iso: string | null;
@@ -536,8 +350,6 @@ export default function SalesMatrixDetail() {
           remark:              d.remark,
           whatsappStatus:      d.whatsapp_status,
           whatsappReason:      d.whatsapp_reason,
-          // Prefer the server-resolved URL (points at the real file host);
-          // fall back to the raw path for older API responses.
           whatsappScreenshot:  d.whatsapp_screenshot_url ?? d.whatsapp_screenshot,
           readOnly:            !!d.read_only,
 
@@ -551,32 +363,16 @@ export default function SalesMatrixDetail() {
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'))
       .finally(() => setHeaderLoaded(true));
-    /* productsTick: mapping / editing / removing a product is what sets (or
-     * clears) the lead's locked_currency, and that drives the Customer
-     * picker's country filter. Without re-reading the lead here the filter
-     * would keep using the currency from page load until a manual refresh. */
   }, [resolvedLeadId, toast, productsTick]);
 
   useEffect(() => { reloadLead(); }, [reloadLead]);
 
-  /* Vault-tally fetch — one call per party, hitting the same endpoint
-   * the Stage 3 Evidence Vault uses. `data.total_documents` is the
-   * catalog size (driven by the party's segment rules: DD + Owner KYC
-   * + TL + Trade Docs combined); `data.verified_signed` is how many of
-   * those have an actual upload. */
   type VaultResponse = {
     data?: {
       total_documents?: number;
       verified_signed?: number;
-      /* CORE tally = Company DD + Owner KYC + Trade Licences only (excludes
-       * Trade Documents, which were removed from the customer/consignee form).
-       * The CLM panel card uses these; falls back to the all-inclusive
-       * total_documents/verified_signed for older API responses. */
       core_total_documents?: number;
       core_verified_signed?: number;
-      /* Core catalog = all core docs incl. OPTIONAL (mandatory subset is
-       * core_total_documents). Lets the card show a count for an optional-only
-       * segment rule rather than "No segment rules set". */
       core_catalog_documents?: number;
       core_catalog_verified?: number;
     };
@@ -585,20 +381,8 @@ export default function SalesMatrixDetail() {
   useEffect(() => {
     const cid = serverHeader.customerId;
     if (!cid) { setCustTally(null); return; }
-    /* Reset to loading state on every effect-fire so a customer-switch
-     * (re-mapped in the toolbar) doesn't leave the previous customer's
-     * count visible while the new fetch is in flight. */
     setCustTally({ total: 0, verified: 0, loading: true });
     let cancelled = false;
-    /* No per-request timeout — a cold hard-refresh fires a big burst of API
-     * calls and the single-threaded dev server processes them serially, so this
-     * heavier vault query can sit queued for several seconds. A fixed timeout
-     * (8s) was cutting it off mid-flight (axios aborts → DevTools "(canceled)"),
-     * leaving the card in error state. We rely on the request completing; the
-     * catch still handles a genuine network/server failure. */
-    /* tally=1 — this card wants four numbers, not the whole vault. Without
-       the flag the server builds every deal's documents and agreements for a
-       caller that reads only the core counts. */
     api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`, { params: { tally: 1 } })
       .then(res => {
         if (cancelled) return;
@@ -615,22 +399,16 @@ export default function SalesMatrixDetail() {
   }, [serverHeader.customerId, custRefreshTick]);
 
   useEffect(() => {
-    const directId = serverHeader.consigneeId;   // consignee mapped to the lead
+    const directId = serverHeader.consigneeId;
     const custId   = serverHeader.customerId;
-    // Neither a mapped consignee nor a customer → nothing to tally.
     if (!directId && !custId) { setConsTally(null); return; }
     let cancelled = false;
     setConsTally({ total: 0, verified: 0, loading: true });
 
-    // Scope the consignee's checklist to the LEAD's customer segment (a
-    // consignee can be mapped to several customers with different segments;
-    // here we only want this lead's customer's segment). See the vault
-    // endpoint's scope_customer_id handling.
     type VaultTally = {
       total: number; verified: number; catalog: number; catalogVerified: number;
     };
     const fetchVault = (consigneeDbId: number): Promise<VaultTally> =>
-      // Same tally-only read as the customer card above.
       api.get<VaultResponse>(`/segment-uploads/consignee/${consigneeDbId}/vault`,
         { params: { tally: 1, ...(custId ? { scope_customer_id: custId } : {}) } })
         .then(res => {
@@ -644,34 +422,10 @@ export default function SalesMatrixDetail() {
         });
 
     if (directId) {
-      // The lead's consignee is FROZEN (a PI exists) — that one party is the
-      // whole story, so the card mirrors its vault exactly.
       fetchVault(directId)
         .then(t => { if (!cancelled) setConsTally({ total: t.total, verified: t.verified, catalog: t.catalog, catalogVerified: t.catalogVerified }); })
         .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
     } else {
-      /* No consignee frozen on the lead yet. Before a PI there ISN'T a single
-       * consignee — quotations may each name a different one — so this card
-       * has to speak for EVERY candidate under the customer, which is exactly
-       * the set the vault modal shows as its tab strip.
-       *
-       * It used to tally only rows[0]. When that happened to be the
-       * Same-as-Customer consignee (which mirrors the customer's already-
-       * complete docs) the card read "2 of 2 · 100%" while the customer's
-       * other consignees still had every mandatory KYC doc outstanding —
-       * reported as a false "completed". Now we sum all of them, so the card
-       * only reaches 100% once every candidate consignee is complete.
-       *
-       * EVERY consignee counts, Same-as-Customer ones included. The card reads
-       * as "N consignees × their mandatory docs" — one row per consignee the
-       * deal could ship to. A Same-as-Customer consignee contributes its
-       * mirrored (already-satisfied) customer docs, so it lands in the tally
-       * as complete rather than vanishing from the denominator. That keeps the
-       * count matching what the user sees in the vault's consignee tab strip.
-       *
-       * Note this DOES double-count the customer's docs against the Customer
-       * card — deliberately. The two cards answer different questions and the
-       * PI gate is enforced server-side per party, not from these numbers. */
       api.get('/consignees', { params: { customer_id: custId } })
         .then(async r => {
           if (cancelled) return;
@@ -681,8 +435,6 @@ export default function SalesMatrixDetail() {
             .filter((x): x is number => typeof x === 'number');
           if (ids.length === 0) { setConsTally({ total: 0, verified: 0 }); return; }
 
-          // One vault call per consignee. A single failure must not sink the
-          // whole card, so failures drop out and the rest still tally.
           const settled = await Promise.all(ids.map(id => fetchVault(id).catch(() => null)));
           if (cancelled) return;
           const loaded = settled.filter((t): t is VaultTally => t !== null);
@@ -700,22 +452,9 @@ export default function SalesMatrixDetail() {
     return () => { cancelled = true; };
   }, [serverHeader.consigneeId, serverHeader.customerId, consRefreshTick]);
 
-  /* Applicable agreements for this lead → drives the Segment Details
-   * card counts + powers LeadAgreementSendModal. Refetched whenever
-   * EITHER party's tally tick bumps so a successful Send / Recall or a
-   * customer/consignee KYC change ripples back into the card.
-   * `stage` is in the deps too: the Segment Details card gates on a PI
-   * existing, so navigating to / landing on Stage 5 must pull fresh PI
-   * state — otherwise a PI created in another tab (or before this view
-   * mounted) leaves the card showing its empty-state until a manual
-   * reload. */
   useEffect(() => {
     if (!resolvedLeadId) { setAgreementApplicable(null); return; }
     let cancelled = false;
-    /* light=1 — this panel draws two progress bars and never reads a document
-       body, but the full response carries every agreement's `content`:
-       measured at 364 KB for one lead, 359 KB of it bodies. The send modal
-       fetches the full payload itself when it opens, so nothing is lost. */
     api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`, { params: { light: 1 } })
       .then(res => {
         if (cancelled) return;
@@ -725,18 +464,9 @@ export default function SalesMatrixDetail() {
     return () => { cancelled = true; };
   }, [resolvedLeadId, custRefreshTick, consRefreshTick, agreementRefreshTick, stage]);
 
-  /* Segment Details card tallies — collapse the PI-derived segments into two
-   * document-type rollups (Trade Documents + Agreements) regardless of
-   * regulatory tier. "done" = the trade doc is uploaded/verified or the
-   * agreement signature request has completed; drives the row progress bar. */
   const segDocTallies = useMemo(() => {
     const segs = agreementApplicable?.segments ?? [];
     const buyerEqualsConsignee = !!agreementApplicable?.buyerEqualsConsignee;
-    /* Party bucket for an agreement's `party` CSV — mirrors the agreement
-     * popup's partyBucket(). When buyer == consignee the popup shows ONLY
-     * buyer-only agreements (a Buyer+Consignee or Consignee-only agreement is
-     * redundant with a single party), so the card count must exclude the same
-     * rows — otherwise the card said "0 of 2" while the popup listed 1. */
     const partyBucket = (party: string | null | undefined): 'buyer' | 'consignee' | 'both' => {
       const tokens = String(party ?? '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
       const b = tokens.includes('buyer'), c = tokens.includes('consignee');
@@ -745,75 +475,28 @@ export default function SalesMatrixDetail() {
       if (c) return 'consignee';
       return 'both';
     };
-    // ONE entry per unique document — a trade doc / agreement applicable to
-    // multiple segments is counted once (not once per segment), matching the
-    // de-duped Trade Documents / Agreements send popup. Each Map value is the
-    // "done" flag, unioned across segments (done in ANY segment ⇒ done).
     const agrSeen = new Map<string, boolean>();
     const tdSeen  = new Map<string, boolean>();
-    // Everything the segments offer, regardless of the deal's answer.
     const agrAny  = new Set<string>();
     const tdAny   = new Set<string>();
     for (const s of segs) {
       for (const a of s.agreements) {
-        // buyer == consignee → count ONLY pure buyer agreements (the Consignee
-        // and Buyer+Consignee categories are redundant for a single party).
-        // Must match activeAgreements in the send popup.
         if (buyerEqualsConsignee && partyBucket(a.party) !== 'buyer') continue;
-        /* Only what THIS deal marked Necessary. The card counted every
-           segment-applicable document, so it read "0 of 12" while the popup's
-           send gate would only ever act on the handful actually needed — the
-           progress bar was measuring work nobody had asked for. */
         const key  = a.id != null ? `id:${a.id}` : `code:${a.code ?? ''}|title:${a.title ?? ''}`;
         agrAny.add(key);
-        /* Necessary, OR already sent.
-           The Necessary flag lives in clm_lead_doc_needs and is set by hand in
-           the popup. Sending an agreement for signature does NOT set it — so an
-           agreement raised straight after the PI went out had a live signature
-           request and still did not exist as far as this card was concerned:
-           "No agreements", 0%, while the deal was waiting on a signature.
-           Sending a document IS the statement that it is needed; a card that
-           tracks outstanding work cannot leave out the work already in flight. */
         if (a.needed !== true && !a.signature_request) continue;
         const done = a.signature_request?.status === 'completed';
         agrSeen.set(key, (agrSeen.get(key) ?? false) || done);
       }
-      // A trade doc counts as "done" when it's uploaded/verified OR signed
-      // (its signature request reached completed) — same way agreements count
-      // a completed e-signature.
       for (const td of s.trade_documents) {
-        // When buyer == consignee the popup lists every trade doc that involves
-        // the buyer (buyer-only AND buyer+consignee "both" docs) — only pure
-        // consignee-only mirror copies are excluded (see tdBuckets.all in
-        // LeadAgreementSendModal). The card count must match: keep anything with
-        // for_buyer, drop pure consignee-only, so a "both" doc still counts once.
         if (buyerEqualsConsignee && !td.for_buyer) continue;
         const key  = td.db_id != null ? `id:${td.db_id}` : `code:${td.doc_code}|ref:${td.reference}|name:${td.name}`;
         tdAny.add(key);
-        /* Same rule as agreements above: Necessary, or already sent, or already
-           uploaded. A trade doc that has been verified is finished work — it
-           belongs in the total whether or not anyone ticked the box first. */
         if (td.needed !== true && !td.signature_request && td.status !== 'Verified') continue;
         const done = td.status === 'Verified' || td.signature_request?.status === 'completed';
         tdSeen.set(key, (tdSeen.get(key) ?? false) || done);
       }
     }
-    /* Two different questions, and conflating them locked the user out:
-       `agrTotal` is what this deal marked Necessary — the progress figure.
-       `agrAny` is what the segment offers at all — whether the popup has
-       anything to show. Marking the last document Not necessary drove the
-       first to 0, and the card then refused to open the very screen where the
-       decision could be undone. */
-    /* The Proforma Invoice counts as a trade document here, because that is
-       what the popup this card opens shows: the PI sits at the top of the
-       Trade Documents table, marked Mandatory, sendable like any other row.
-       It is not inside `segments` — it belongs to the deal, not to a segment
-       — so the loop above never saw it, and a deal whose only outstanding
-       item WAS the PI read "No trade documents" on a card sitting next to a
-       popup listing one. Always counted when a PI exists: the backend calls
-       it "always Necessary — the deal's own invoice", never an optional
-       catalogue entry. Done on a completed signature, the same test the
-       agreements and trade docs use. */
     const piDoc = agreementApplicable?.pi_document ?? null;
     if (piDoc) {
       const key = `pi:${piDoc.pi_id}`;
@@ -828,13 +511,7 @@ export default function SalesMatrixDetail() {
     return { agrTotal, agrDone, tdTotal, tdDone, agrAny: agrAny.size, tdAny: tdAny.size };
   }, [agreementApplicable]);
 
-  /* "Marked as key" is sourced live from the server (leads.key_opportunity)
-   * so it survives navigation / refresh. Toggling fires a PUT and the
-   * follow-up reloadLead() refreshes the toolbar from authoritative
-   * server state instead of optimistic-toggling. */
   const isKeyOpportunity = !!serverHeader.keyOpportunity;
-  /* Customer's segment name(s) (comma-joined `customers.segment`) → the list
-   * the Product Directory picker uses to grey out off-segment products. */
   const customerSegments = useMemo(() => {
     const raw = serverHeader.customerRow?.segment;
     return typeof raw === 'string'
@@ -845,16 +522,6 @@ export default function SalesMatrixDetail() {
     const ids = (serverHeader.customerRow as { segment_ids?: unknown } | null | undefined)?.segment_ids;
     return Array.isArray(ids) ? ids.map(Number).filter(Boolean) : [];
   }, [serverHeader.customerRow]);
-  /* Currency ⇄ country gate (the mirror of the Product Directory's rule).
-   * Once the lead's products have pinned a currency, only customers whose
-   * country agrees with it may be mapped:
-   *   INR      ⇒ Indian customers only  (domestic)
-   *   non-INR  ⇒ foreign customers only (export)
-   * No products mapped yet ⇒ no lock ⇒ every customer is selectable, and the
-   * customer chosen here drives the currency instead.
-   *
-   * Derived from the cached rows rather than filtered at fetch time, so
-   * flipping the lock re-filters instantly with no extra /customers round-trip. */
   const customerOpts = useMemo<PickerOption[]>(() => {
     const lc = (serverHeader.lockedCurrency ?? '').trim().toUpperCase();
     const wantDomestic = lc === 'INR';
@@ -863,8 +530,6 @@ export default function SalesMatrixDetail() {
       if (!r.id) continue;
       const domestic = isIndiaCountry((r as { country?: string | null }).country);
       if (lc && wantDomestic !== domestic) continue;
-      // Right-aligned pill shows the customer TYPE (Domestic / International) so
-      // an Indian customer is distinguished from an export one at a glance.
       out.push({
         value: r.id,
         label: `${r.id} — ${r.company}`,
@@ -874,29 +539,16 @@ export default function SalesMatrixDetail() {
     return out;
   }, [customerRows, serverHeader.lockedCurrency]);
 
-  /* The mapped customer's country (customer.primary_address.country) → drives
-   * the Product Directory's Domestic/Export currency gate: India ⇒ INR only,
-   * abroad ⇒ INR excluded. Null when no customer is mapped yet. */
   const customerCountry = useMemo<string | null>(() => {
     const pa = serverHeader.customerRow?.primary_address as Record<string, unknown> | null | undefined;
     const c = pa?.country;
     return typeof c === 'string' && c.trim() ? c.trim() : null;
   }, [serverHeader.customerRow]);
-  /* Deal lock — once the Proforma Invoice is e-signed, ONLY the centre stage
-   * column (2nd column / StageComponent) becomes read-only. The action toolbar
-   * and the right-hand Deal Execution panel (3rd column) stay fully usable, and
-   * the user can still navigate stages via the stepper / Save & Next. */
   const isSigned = !!serverHeader.piSignedAt;
-  /* Shown when the user clicks anywhere on the locked (signed-PI) stage area. */
   const onLockedClick = useCallback(() => {
     toast.warning('PI is signed', 'You cannot edit anything — this opportunity is read-only.');
   }, [toast]);
 
-  /* Reassigned away from this user — they may look, not touch.
-   * A DIFFERENT lock from the signed-PI one above: that one applies to
-   * everybody once the PI is signed, this one applies only to a former owner.
-   * Both end at the same place (writes refused), so the toolbar treats them as
-   * one flag and only the explanation differs. */
   const isReadOnlyLead = !!serverHeader.readOnly;
   const onReadOnlyClick = useCallback(() => {
     toast.warning(
@@ -905,21 +557,9 @@ export default function SalesMatrixDetail() {
     );
   }, [toast]);
 
-  /* One flag for every write action on this page. Read-only is checked FIRST
-   * so a former owner looking at a signed PI is told the reason that actually
-   * applies to them. */
   const writeLocked   = isSigned || isReadOnlyLead;
   const onWriteLocked = isReadOnlyLead ? onReadOnlyClick : onLockedClick;
 
-  /* Owner change closes EARLIER than the rest of the toolbar (QA #83).
-   *
-   * Everything else stays open until the PI is signed. Ownership cannot: from
-   * the moment the PI goes out for signature the counterparty is dealing with
-   * a named person, and moving the lead underneath them leaves the signature
-   * request pointing at one owner and the opportunity at another.
-   *
-   * A recalled or superseded send does not count — see the controller — so
-   * pulling the PI back hands the choice of owner back too. */
   const isPiSent     = !!serverHeader.piSentForSignatureAt;
   const ownerLocked  = writeLocked || isPiSent;
   const onOwnerLocked = useCallback(() => {
@@ -933,33 +573,13 @@ export default function SalesMatrixDetail() {
 
   const header: OppHeaderData = {
     ...seedHeader,
-    /* Opportunity date from the SERVER (the authoritative source, same as the
-     * lead worksheet: query_time ?? created_at). The router-state seed only
-     * survives the first hop from the worksheet — navigating between stages
-     * loses location.state, so seedHeader.oppDate fell back to the hardcoded
-     * DEFAULT (10/04/2026). Preferring the loaded server date fixes that. */
     oppDate:            serverHeader.oppDateIso
                           ? (fmtDmy(serverHeader.oppDateIso) || seedHeader.oppDate)
                           : seedHeader.oppDate,
-    /* Customer name from the SERVER (mapped customer's company_name) for the
-     * same reason — the seed is lost on stage navigation and fell back to the
-     * hardcoded DEFAULT ('GreenHarvest Global'). Stage 1's Opportunity Details
-     * reads header.customer, so override it centrally (the top banner already
-     * did this inline).
-     * When NO customer is mapped the chain used to jump straight to the seed —
-     * and on stage navigation the seed IS the prototype DEFAULT, so an unmapped
-     * lead displayed the demo company 'GreenHarvest Global' as if it were real.
-     * The lead's own enquiry identity now sits in between, so an unmapped lead
-     * shows who actually sent the enquiry. */
     customer:           (serverHeader.customerRow?.company_name as string | undefined)?.trim()
                           || serverHeader.leadSenderCompany?.trim()
                           || serverHeader.leadSenderName?.trim()
                           || seedHeader.customer,
-    /* Country from the SERVER too — the mapped customer's own address country
-     * (customerCountry). The seed only carried the lead default ('IN'), so the
-     * Opportunity Summary (and the Create Procurement modal) showed India for a
-     * customer that is actually abroad, e.g. Antarctica (QA #118). Fall back to
-     * the seed when no customer is mapped yet. */
     country:            customerCountry || serverHeader.leadCountry?.trim() || seedHeader.country,
     leadId:             resolvedLeadId,
     leadStageId:        serverHeader.leadStageId,
@@ -980,7 +600,6 @@ export default function SalesMatrixDetail() {
     whatsappScreenshot: serverHeader.whatsappScreenshot,
   };
 
-  // Inject Google Fonts once (matches the other sales pages).
   useEffect(() => {
     const id = 'sm-detail-fonts';
     if (document.getElementById(id)) return;
@@ -991,42 +610,36 @@ export default function SalesMatrixDetail() {
     document.head.appendChild(link);
   }, []);
 
-  // Furthest stage the user is allowed to jump to via the tracker: the
-  // lead's stored stage (lead_stage_id, 1..6) — but never less than the
-  // stage currently being viewed, so a deep-linked URL still works. Steps
-  // beyond this are LOCKED: you can step back to completed stages but can't
-  // skip ahead to a stage you haven't reached yet (the stage must be
-  // completed first — advance with the stage's own "Save & Next").
   const furthestStage = Math.max(stage, serverHeader.leadStageId ?? 0);
 
-  // Unlocked navigation primitive — used by the stage components' own
-  // "Save & Next" / "Previous" buttons, which gate forward movement
-  // themselves (e.g. Stage 4 requires a customer + consignee before
-  // advancing). These must always navigate.
+  const veilWheelRef = useCallback((veil: HTMLDivElement | null) => {
+    if (!veil) return;
+    const onWheel = (e: WheelEvent) => {
+      veil.style.pointerEvents = 'none';
+      let el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      veil.style.pointerEvents = '';
+      for (; el && el !== veil.parentElement; el = el.parentElement) {
+        const s = getComputedStyle(el);
+        const canY = /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight;
+        const canX = /(auto|scroll)/.test(s.overflowX) && el.scrollWidth > el.clientWidth;
+        if ((canY && e.deltaY) || (canX && e.deltaX)) {
+          e.preventDefault();
+          el.scrollBy(e.deltaX, e.deltaY);
+          return;
+        }
+      }
+    };
+    veil.addEventListener('wheel', onWheel, { passive: false });
+  }, []);
+
   const navStage = (n: StageNum) => navigate('sales.matrix_detail', { oppId, stage: n });
 
-  // Stage tracker click → navigate to the same opportunity at a new stage.
-  // No-op for locked (not-yet-reached) future steps: you can step back to
-  // completed stages but can't skip ahead to one you haven't reached.
-  /* Sales Person Name is MANDATORY before the lead reaches Stage 3 (Product
-   * Sourcing). Stages 1 & 2 are open — the user can sit on Inquiry Received /
-   * Lead Acknowledgement without it — but moving forward to Stage 3 requires a
-   * salesperson to be assigned (via Change Owner). */
   const requireSalespersonForSourcing = (): boolean => {
     if ((serverHeader.salespersonName ?? '').trim()) return true;
     toast.error('Sales Person Name required', 'Assign a salesperson (Change Owner) before moving to Product Sourcing.');
     return false;
   };
 
-  /* Point the Evidence Vault at the lead's CUSTOMER — DD / KYC / Trade Licence
-     in tabs, built from the eager-loaded customer row.
-   *
-     Two callers: the CLM panel's "Customer Details" row, and the
-     Same-as-Customer note inside the vault itself, whose button sends the user
-     here rather than leaving them to go and find that row. One definition so
-     the two cannot drift into opening slightly different targets.
-   *
-     Declared after `header` / `serverHeader`, which it reads. */
   const openCustomerVault = (backTo: LeadVaultTarget | null = null) => {
     const row = (serverHeader.customerRow ?? {}) as Record<string, unknown>;
     setLeadVaultBackTo(backTo);
@@ -1044,21 +657,6 @@ export default function SalesMatrixDetail() {
     });
   };
 
-  /* Stage 3 onwards belongs to a QUALIFIED lead (QA #31).
-   *
-   * Stage 2 is where the lead is judged. Everything after it — sourcing
-   * products, pricing them, raising a quotation — is work done on a lead
-   * worth pursuing, so none of it should be reachable while the latest
-   * acknowledgement says Disqualified or Clarity Pending. Without this the
-   * lead could be disqualified and its products still edited, which is the
-   * state the report describes.
-   *
-   * The same test the backend uses for its Qualified bucket: qualified AND
-   * NOT disqualified. Both flags are rewritten from the latest
-   * acknowledgement, so this follows a re-judgement in either direction.
-   *
-   * Stages 1 and 2 stay open either way — a disqualified lead must still be
-   * readable, and Stage 2 is where the decision can be revisited. */
   const requireQualifiedForSourcing = (): boolean => {
     if (serverHeader.qualified && !serverHeader.disqualified) return true;
     toast.error(
@@ -1075,42 +673,20 @@ export default function SalesMatrixDetail() {
     navStage(n);
   };
 
-  // Save & Next  /  Previous helpers (bypass the tracker lock).
   const goPrev = () => stage > 1 && navStage((stage - 1) as StageNum);
   const goNext = () => {
     if (stage >= 6) return;
-    // Same gate on the forward button, not just the tracker — Save & Next
-    // deliberately bypasses the furthestStage lock, so it has to carry the
-    // qualification rule itself.
     if (stage === 2 && !requireQualifiedForSourcing()) return;
     if (stage === 2 && !requireSalespersonForSourcing()) return;
-    // Crossing 5 → 6 via Save & Next is a "deal won" moment — drop a one-shot
-    // session flag so the Victory stage celebrates EVERY time it's reached this
-    // way (its localStorage gate otherwise only confetti's once per lead ever).
     if (stage === 5 && resolvedLeadId) {
-      try { sessionStorage.setItem('cbc_celebrate_victory', String(resolvedLeadId)); } catch { /* private mode → skip */ }
+      try { sessionStorage.setItem('cbc_celebrate_victory', String(resolvedLeadId)); } catch {  }
     }
     navStage((stage + 1) as StageNum);
   };
 
   const goBack = () => navigate('sales.lead_worksheet');
 
-  /* Toolbar handlers — Customer / Consignee route smart based on
-   * what's already mapped on the lead. Picker = unmapped, Edit form
-   * = already mapped. */
   const onCustomerClick = async () => {
-    /* A lead that already carries a customer never sees the picker.
-     *
-     * The test used to require the eager-loaded row as well as the id, and
-     * when that row was missing the handler fell through to the picker — which
-     * is a list of every customer, and choosing one REBINDS the opportunity.
-     * So an opportunity that already had its customer could be pointed at a
-     * different company in two clicks, after products, prices and quotations
-     * had been built on the first one. (QA #290)
-     *
-     * The id alone decides now. Where the row did not come back, the form is
-     * opened from what the header already shows, so the user still edits their
-     * customer rather than being offered a swap. */
     if (serverHeader.customerId && !serverHeader.customerRow) {
       setCustomerEditing({
         company: header.customer || '',
@@ -1121,17 +697,9 @@ export default function SalesMatrixDetail() {
       return;
     }
     if (serverHeader.customerId && serverHeader.customerRow) {
-      // Eager-loaded server row has `id` (the DB pk) but no `db_id`
-      // (the public-API field name). Shim it here so AddCustomerModal,
-      // which reads `db_id` for its detail fetch, finds it.
       const row = serverHeader.customerRow as unknown as Record<string, unknown>;
       setCustomerEditing({
         ...row,
-        // The eager-loaded server row uses `company_name` + a numeric pk `id`.
-        // Map them to the EditCustomer shape (display name + C-### code) so the
-        // popup title reads the company name / customer code — not the raw pk,
-        // which showed up as "Edit Customer — 160" (QA #47). Mirrors the
-        // consignee / CLM edit paths below.
         company: (row.company_name as string | undefined) || header.customer || '',
         id: (row.customer_code as string | undefined) || header.customerCode || `C-${String(serverHeader.customerId).padStart(3, '0')}`,
         db_id: typeof row.id === 'number' ? (row.id as number) : serverHeader.customerId,
@@ -1147,9 +715,6 @@ export default function SalesMatrixDetail() {
       toast.warning('Customer required first', 'Pick or add a customer before managing consignees');
       return;
     }
-    // Open the "Manage Consignees" popup — lists every consignee mapped
-    // to this lead's customer (and lets the user add / edit them). Same
-    // CustomerConsigneesModal used on the Sales Customers list.
     const row = (serverHeader.customerRow ?? {}) as Record<string, unknown>;
     setManageConsigneesTarget({
       id:      (row.customer_code as string | undefined)
@@ -1160,11 +725,6 @@ export default function SalesMatrixDetail() {
     });
   };
 
-  /* Open the Consignee Evidence Vault from the CLM card's Consignee Details
-   * row. Opens on the lead's mapped consignee when there is one (immediately,
-   * from the eager-loaded row); otherwise it lists the customer's consignees
-   * and opens on the first. A consignee-wise tab strip is shown when the
-   * customer has more than one. */
   const openConsigneeVault = () => {
     if (customerAddOpen || manageConsigneesTarget) return;
     const custId = serverHeader.customerId;
@@ -1182,7 +742,6 @@ export default function SalesMatrixDetail() {
       contactCity: (d.city as string | undefined) ?? undefined,
     });
 
-    // Lead already has a mapped consignee → open on it right away.
     const hasMapped = !!(serverHeader.consigneeId && serverHeader.consigneeRow);
     if (hasMapped) {
       const raw = serverHeader.consigneeRow as Record<string, unknown>;
@@ -1200,8 +759,6 @@ export default function SalesMatrixDetail() {
       });
     }
 
-    /* Fetch all consignees under the customer — for the tab strip, and (when
-     * none is mapped) to pick the first one to open the vault on. */
     setLeadVaultConsignees(null);
     api.get('/consignees', { params: { customer_id: custId } })
       .then(r => {
@@ -1212,15 +769,12 @@ export default function SalesMatrixDetail() {
           return;
         }
         const targets = rows.map(toTarget);
-        // No mapped consignee → open on the first one.
         if (!hasMapped) setLeadVaultTarget(targets[0]);
-        // Strip only when there's more than one to switch between.
         setLeadVaultConsignees(targets.length > 1 ? targets : null);
       })
       .catch(() => setLeadVaultConsignees(null));
   };
 
-  // Render the active stage in the middle column.
   const StageComponent = (
     stage === 1 ? Stage1InquiryReceived :
     stage === 2 ? Stage2LeadAcknowledgement :
@@ -1230,18 +784,12 @@ export default function SalesMatrixDetail() {
                   Stage6VictoryStage
   );
 
-  /* Full-page shimmer until the lead data arrives. Two gates, not one:
-   *  1. the lead id is still being resolved from the opp code (this is the
-   *     window that used to render placeholder header values), and
-   *  2. the id is known but its row hasn't loaded yet.
-   * Neither can hang: the lookup flips its flag in `finally`. */
   if (!leadIdResolved || (resolvedLeadId && !headerLoaded)) return <MatrixPageSkeleton />;
 
   return (
     <div className="smd-root">
       <style>{SALES_MATRIX_DETAIL_CSS}</style>
 
-      {/* ─── Customer Banner ─── */}
       <div className="smd-cust-banner">
         <span className="smd-cust-accent" />
         <span className="smd-cust-glow"  aria-hidden="true" />
@@ -1257,8 +805,6 @@ export default function SalesMatrixDetail() {
             <span className="smd-cust-avatar-dot" />
           </div>
           <div>
-            {/* Once a customer is mapped to the lead, show the mapped customer's
-                company name here; otherwise fall back to the lead/buyer name. */}
             <div className="smd-cust-name">{(serverHeader.customerRow?.company_name as string | undefined)?.trim() || header.customer}</div>
             <span className="smd-cust-tag">
               <span className="smd-cust-tag-dot" />
@@ -1297,13 +843,10 @@ export default function SalesMatrixDetail() {
 
       </div>
 
-      {/* ─── 6-step Tracker (own white card) ─── */}
       <div className="smd-stepper-card">
         <div className="smd-stepper">
           {STAGES.map(s => {
             const state = s.n < stage ? 'done' : s.n === stage ? 'active' : 'idle';
-            // A step is locked when it's beyond the furthest stage reached —
-            // clicking it must not navigate (the stage isn't completed yet).
             const locked = s.n > furthestStage;
             return (
               <div
@@ -1338,10 +881,8 @@ export default function SalesMatrixDetail() {
           })}
         </div>
 
-        {/* ─── Divider between stepper and action toolbar ─── */}
         <div className="smd-stepper-divider" aria-hidden="true" />
 
-        {/* ─── Action Toolbar — same container as the stepper ─── */}
         <div className="smd-toolbar">
         <ActionBtn icon={<IconUser />}     label="Customer" trailing="edit"          onClick={onCustomerClick} />
         <ActionBtn icon={<IconTruck />}    label="Consignees" trailing="edit"
@@ -1349,11 +890,6 @@ export default function SalesMatrixDetail() {
         <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconPlusSq />}   label="Add Product"
           locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setProductAddOpen(true)} />
-        {/* NOT locked for a read-only lead — the Product Directory is how a
-            former owner VIEWS the mapped products, which is exactly what they
-            are still allowed to do. The write actions inside it (Map Product,
-            row edit/delete) are gated by the readOnly prop instead. It stays
-            locked for a signed PI, where nobody edits anything. */}
         <ActionBtn icon={<IconBook />}     label="Product Directory"
           locked={isSigned} onLocked={onLockedClick}          onClick={() => setProductDirectoryOpen(true)} />
         <ActionBtn icon={<IconSourcing />} label="Product Sourcing"
@@ -1362,9 +898,6 @@ export default function SalesMatrixDetail() {
           locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setPriceSharedOpen(true)} />
         <ActionBtn icon={<IconUserCog />}  label="Change Owner"
           locked={ownerLocked} onLocked={onOwnerLocked}         onClick={() => setChangeOwnerOpen(true)} />
-        {/* Remark and Key Opportunity had no lock at all. They write to the
-            lead just like the rest, so on a read-only lead they produced the
-            same refused request — only with no explanation attached. */}
         <ActionBtn icon={<IconMsg />}      label="Remark"
           locked={isReadOnlyLead} onLocked={onReadOnlyClick}          onClick={() => setRemarksOpen(true)} />
         <ActionBtn icon={<IconStar />}     label="Key Opportunity"
@@ -1376,11 +909,9 @@ export default function SalesMatrixDetail() {
         </div>
       </div>
 
-      {/* ─── Three-column body ─── */}
       <div
         className={`smd-body${clmCollapsed ? ' smd-body-clm-collapsed' : ''}${dealCollapsed ? ' smd-body-deal-collapsed' : ''}`}
       >
-        {/* Left — CLM Details (or thin rail when collapsed) */}
         {clmCollapsed ? (
           <aside
             className="smd-rail smd-rail-left"
@@ -1426,7 +957,6 @@ export default function SalesMatrixDetail() {
             </button>
           </div>
 
-          {/* KYC group */}
           <div className="smd-clm-group">
             <div className="smd-clm-group-head">
               <div className="smd-clm-group-icon smd-clm-group-icon-violet">
@@ -1441,14 +971,6 @@ export default function SalesMatrixDetail() {
               </div>
             </div>
 
-            {/* Customer row — only renders when a customer is mapped
-             *  to this lead. Click opens AddCustomerModal at Stage 3
-             *  (Evidence Vault) — that's the stage whose uploads feed
-             *  the same `segment_doc_uploads` table the CLM count reads
-             *  from. Landing on Stage 2 instead would let users upload
-             *  via the "Add Document" button without ever moving the
-             *  count, since Stage 2's primary button writes to a
-             *  different table (`customer_documents`). */}
             {serverHeader.customerId && serverHeader.customerRow && (
               <ClmRow
                 icon={<IconUserSm />}
@@ -1465,14 +987,6 @@ export default function SalesMatrixDetail() {
                 }}
               />
             )}
-            {/* Consignee row — renders as soon as a CUSTOMER is mapped,
-             *  regardless of whether a consignee is mapped to the lead yet.
-             *  The count aggregates every consignee under the customer (see
-             *  consTally effect). Clicking opens the vault on the lead's
-             *  mapped consignee when there is one, else on the customer's
-             *  first consignee — with a tab strip when there's more than
-             *  one. consignee_code fallbacks use the REAL value from the
-             *  eager-loaded row only. */}
             {serverHeader.customerId && (
               <ClmRow
                 icon={<IconTruckSm />}
@@ -1486,9 +1000,6 @@ export default function SalesMatrixDetail() {
                 onClick={openConsigneeVault}
               />
             )}
-            {/* Empty-state hint — shown only when no customer is mapped yet,
-             *  so the user knows what unlocks this panel. Once a customer is
-             *  mapped, the Customer + Consignee rows replace it. */}
             {!serverHeader.customerId && (
               <div className="smd-clm-empty">
                 Map a customer from the toolbar above to track its KYC + Trade documents here.
@@ -1496,7 +1007,6 @@ export default function SalesMatrixDetail() {
             )}
           </div>
 
-          {/* Segment group */}
           <div className="smd-clm-group">
             <div className="smd-clm-group-head">
               <div className="smd-clm-group-icon smd-clm-group-icon-emerald">
@@ -1510,18 +1020,8 @@ export default function SalesMatrixDetail() {
               </div>
             </div>
 
-            {/* Agreement send is unlocked when a Proforma Invoice has
-                been mapped to the lead — without a PI we don't know
-                which products (and therefore which segments) apply, so
-                the segment rows would have nothing to filter on. While
-                no PI is mapped we show the same dashed empty-state
-                pattern the KYC/DD group uses above; once a PI exists
-                the two regulatory rows render with live counts and the
-                row click opens the agreement send modal. */}
             {agreementApplicable?.pi ? (
               <>
-                {/* Trade Documents — every segment-applicable trade doc for
-                    the PI's products, across both regulatory tiers. */}
                 <ClmRow
                   icon={<IconShieldSm />}
                   tone="emerald"
@@ -1540,8 +1040,6 @@ export default function SalesMatrixDetail() {
                     setAgreementModalView('trade'); setAgreementModalOpen(true);
                   }}
                 />
-                {/* Agreements — every segment-applicable agreement for the
-                    PI's products, across both regulatory tiers. */}
                 <ClmRow
                   icon={<IconShieldSm />}
                   tone="rose"
@@ -1570,23 +1068,12 @@ export default function SalesMatrixDetail() {
         </aside>
         )}
 
-        {/* Middle — stage-specific content. The inner .smd-stg-scroll wrapper
-            scrolls internally when a stage's content (e.g. Stage 6's shipment
-            summary) is taller than the column, so the centre matches the side
-            panels' height instead of stretching the whole row. */}
         <section className={`smd-stage-card${(isSigned && stage <= 2) ? ' smd-stage-card-locked' : ''}`}>
-          {/* Signed-PI lock tiers:
-              · Stages 1-2 → COMPLETELY OFF: a translucent veil covers the whole
-                stage and raises the "PI is signed" toaster on any click.
-              · Stages 3-4 → READ-ONLY: no veil, so the user can switch the
-                stage's inner tabs and view data, but every submit / action
-                control is disabled via the `locked` prop.
-              · Stage 5 → view-only (create/edit disabled via `locked`).
-              · Stage 6 → fully editable (work happens there after signing). */}
           {isSigned && stage <= 2 && (
             <div
               className="smd-stage-veil"
               onClick={onLockedClick}
+              ref={veilWheelRef}
               role="button"
               tabIndex={-1}
               aria-label="PI signed — read-only"
@@ -1603,72 +1090,26 @@ export default function SalesMatrixDetail() {
             stage={stage}
             onPrev={goPrev}
             onNext={goNext}
-            /* The entry rule for the NEXT stage, asked before that stage's own
-               Save & Next writes anything. Same guard goNext() runs, just
-               reachable early — see canEnterNextStage in stageTypes. */
             canEnterNextStage={() => (stage === 2 ? requireSalespersonForSourcing() : true)}
             reloadLead={reloadLead}
-            /* Stage 3 watches this to re-fetch its product list when the
-               toolbar Product Directory popup maps/removes a product. Other
-               stages ignore it. */
             refreshTick={productsTick}
-            /* Stage 3 emits this after its own in-table actions (set sourcing
-               status, mark sourced, create procurement) so the OTHER Stage 3
-               instance — the popup — re-syncs. Other stages ignore it. */
             onProductsChanged={() => setProductsTick(t => t + 1)}
-            /* Stage 4 watches this to re-fetch shared prices when the toolbar
-               Share Prices popup shares one; and emits onPricesChanged after
-               its own share so the popup re-syncs. Other stages ignore both. */
             priceRefreshTick={priceTick}
             onPricesChanged={() => setPriceTick(t => t + 1)}
-            /* Stage 5 keeps its in-stage create/edit lock; Stage 6 stays fully
-               editable so the user can work there after the PI is signed. */
             locked={isSigned && stage <= 5}
-            /* Create-PI gate for Stage 5, derived from the vault tally this
-               parent already fetches (custTally) — saves Stage 5 from
-               re-calling /segment-uploads/customer/{id}/vault. total>0 with
-               verified<total means Standard Documents are still pending, and
-               a tally that is loading or errored blocks too (see below).
-
-               CUSTOMER ONLY, deliberately. The consignee is no longer fixed
-               before the PI — quotations may each name a different one, and
-               the deal's consignee is only chosen (and frozen) on the PI form
-               itself. consTally here reflects the lead's frozen consignee, or
-               else an arbitrary first consignee of the customer, so gating the
-               button on it would block a user who is about to pick a DIFFERENT,
-               document-complete consignee. The consignee's documents are
-               instead verified inside the Create-PI wizard once it's picked
-               (Step 1 → Step 2 gate), and again by the server on save. */
             piDocGate={
-              /* No customer mapped → nothing of the customer's to check here;
-                 the PI wizard and the server still gate on whoever is picked. */
               !custTally          ? 'ok'
-              /* Fail CLOSED while the tally is unknown. Both of these used to
-                 evaluate to "not incomplete" and left Create PI fully live —
-                 the vault call is the heaviest on this page, so the loading
-                 window is seconds wide on a cold load and a click inside it
-                 opened the wizard for a customer with 0 of N documents. */
               : custTally.loading ? 'checking'
               : custTally.error   ? 'error'
-              /* total = MANDATORY core docs only (optional ones never gate). */
               : custTally.total > 0 && custTally.verified < custTally.total
                                   ? 'incomplete'
               :                     'ok'
             }
-            // Stage 5 calls this after a PI is created or edited so
-            // the Segment Details card unlocks immediately instead of
-            // waiting for the user to click Save & Next (the only
-            // other path that previously re-rendered with fresh
-            // server state). The tick triggers the
-            // /clm/leads/{id}/agreement-applicable refetch — when its
-            // `pi` field flips from null to populated, the card
-            // becomes enabled with live segment counts.
             onPiChange={() => setAgreementRefreshTick(t => t + 1)}
           />
           </div>
         </section>
 
-        {/* Right — Deal Execution & Decision Engine (or thin rail when collapsed) */}
         {dealCollapsed ? (
           <aside
             className="smd-rail smd-rail-right"
@@ -1718,9 +1159,6 @@ export default function SalesMatrixDetail() {
             salespersonName={serverHeader.salespersonName || ''}
             initial={serverHeader.taskManager ?? null}
             onSaved={(row: TaskManagerRow) => {
-              // Refresh in-place — Stage 1's read-only display reads from
-              // serverHeader.taskManager so this is all it takes to push
-              // the freshly saved row to the left card.
               setServerHeader(prev => ({ ...prev, taskManager: row }));
             }}
           />
@@ -1728,12 +1166,9 @@ export default function SalesMatrixDetail() {
         )}
       </div>
 
-      {/* ── Customer picker + edit/create modal ── */}
       <EntityPickerModal
         open={customerPickerOpen}
         title="Customer"
-        /* Spell out the currency gate — otherwise a filtered/empty list reads
-           as a bug rather than a rule. */
         subtitle={
           !serverHeader.lockedCurrency
             ? 'Pick an existing customer to edit, or click + to register a new one'
@@ -1760,15 +1195,7 @@ export default function SalesMatrixDetail() {
             toast.error('Customer missing', 'Could not load the picked customer');
             return;
           }
-          // Pick → bind the customer to this lead so subsequent visits
-          // open the Edit form directly. db_id is the row's primary key
-          // (set in fetchCustomers); the public_id stays for display.
           const dbId = (row as EditCustomer & { db_id?: number }).db_id;
-          /* Bind only while the opportunity is still unclaimed. The handler
-             above no longer opens this picker once a customer is mapped, and
-             this is the matching rule on the write: reaching the list by any
-             other route still cannot repoint a deal at a different company.
-             Picking the one already linked is harmless and just opens it. */
           const alreadyLinked = !!serverHeader.customerId && serverHeader.customerId !== dbId;
           if (alreadyLinked) {
             toast.error(
@@ -1783,12 +1210,7 @@ export default function SalesMatrixDetail() {
               toast.success('Customer mapped', `Linked to this opportunity`);
               await reloadLead();
             } catch (e: any) {
-              // Surface the backend's 422 message (e.g. the Customer ↔ Product
-              // segment-match guard) so the user sees WHY the mapping failed
-              // rather than a generic error.
               toast.error('Mapping failed', e?.response?.data?.message ?? 'Could not link this customer to the lead');
-              // Don't open the edit form when the bind was rejected — the
-              // customer isn't linked, so fall through with the picker closed.
               return;
             }
           }
@@ -1800,27 +1222,13 @@ export default function SalesMatrixDetail() {
         open={customerAddOpen}
         customer={customerEditing}
         initialStage={clmInitialStage}
-        /* Currency-locked opportunity → the new customer's country must match the
-         * trade type (INR ⇒ India, export ⇒ non-India), blocked at save time. */
         leadCurrency={serverHeader.lockedCurrency}
-        /* onClose intentionally does NOT bump the refresh tick — closing
-         * without saving can't have changed any uploads, so a refetch
-         * would just be a wasted round-trip. The tick only fires on
-         * onSaved below. */
         onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined); }}
         onSaved={(savedId) => {
-          // Clearing the cache is enough — customerOpts derives from it.
           setCustomerRows({});
           setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined);
-          /* Bump BOTH ticks: editing the customer's Stage-3 docs here must
-           * also move a "Same as Customer" consignee's bar (it mirrors the
-           * customer). Consignee-side refetch is harmless when not mirrored. */
           setCustRefreshTick(t => t + 1);
           setConsRefreshTick(t => t + 1);
-          // A "+ add new customer" from THIS lead must also MAP the new customer
-          // to the opportunity (parity with picking an existing one) — otherwise
-          // it only lands in the dropdown and the lead stays unassigned. Skip
-          // when it's the already-mapped customer (an in-place edit).
           void (async () => {
             if (savedId && resolvedLeadId && savedId !== serverHeader.customerId) {
               try {
@@ -1835,12 +1243,6 @@ export default function SalesMatrixDetail() {
         }}
       />
 
-      {/* ── Manage Consignees popup ──
-          Opened from the Consignee toolbar button. Lists every consignee
-          mapped to this lead's customer and lets the user add / edit them
-          (it embeds AddConsigneeModal internally, pre-locked to the
-          customer). On close we refresh the lead header + Consignee
-          Details tally in case the set changed. */}
       <CustomerConsigneesModal
         open={!!manageConsigneesTarget}
         customer={manageConsigneesTarget}
@@ -1852,12 +1254,6 @@ export default function SalesMatrixDetail() {
         }}
       />
 
-      {/* ── Add Product modal ──
-          Creates a brand-new product in the global Product master only.
-          It is NOT auto-mapped to this opportunity — the Product Directory
-          should list only products the user explicitly maps via
-          "Map Product". To attach this product, open the Product Directory
-          and map it there. */}
       {productAddOpen && (
         <AddProductModal
           productId={null}
@@ -1870,7 +1266,6 @@ export default function SalesMatrixDetail() {
         />
       )}
 
-      {/* ── Product Directory popup (mapped-products table) ── */}
       <ProductDirectoryModal
         open={productDirectoryOpen}
         leadId={resolvedLeadId ?? null}
@@ -1878,24 +1273,15 @@ export default function SalesMatrixDetail() {
         customerSegments={customerSegments}
         customerSegmentIds={customerSegmentIds}
         customerCountry={customerCountry}
-        /* Opens for viewing, but Map / Edit / Unmap are gone — every one of
-           them is refused by the server for a former owner. */
         readOnly={isReadOnlyLead}
         onClose={() => setProductDirectoryOpen(false)}
         onChanged={() => setProductsTick(t => t + 1)}
         onAddProduct={() => {
-          /* "+ New Master" inside the directory chains into the same
-             Add Product wizard the toolbar pill opens; once the new
-             master is saved, return to the directory so the user can
-             map it. */
           setProductDirectoryOpen(false);
           setProductAddOpen(true);
         }}
       />
 
-      {/* ── Product Sourcing (Stage 3) popup — embeds the REAL Stage 3 so
-              the toolbar action is identical to the inline pipeline view
-              (single source of truth; pipeline footer suppressed). ── */}
       <StageEmbedModal open={productSourcingOpen} onClose={() => setProductSourcingOpen(false)}>
         <Stage3ProductSourcing
           header={header}
@@ -1909,7 +1295,6 @@ export default function SalesMatrixDetail() {
         />
       </StageEmbedModal>
 
-      {/* ── Price Shared (Stage 4) popup — embeds the REAL Stage 4. ── */}
       <StageEmbedModal open={priceSharedOpen} onClose={() => setPriceSharedOpen(false)}>
         <Stage4PriceShared
           header={header}
@@ -1923,49 +1308,30 @@ export default function SalesMatrixDetail() {
         />
       </StageEmbedModal>
 
-      {/* ── Change Lead Owner popup ── */}
       <ChangeOwnerModal
         open={changeOwnerOpen}
         currentOwner={serverHeader.salespersonName || 'Unassigned'}
-        /* The current owner is filtered out: picking them is a no-op the
-           backend skips anyway, and listing the person already shown as
-           "Current owner" directly above reads as a mistake. */
         owners={ownerOpts.filter(o => Number(o.value) !== Number(serverHeader.salespersonId ?? -1))}
         onClose={() => setChangeOwnerOpen(false)}
         onUpdate={async (opt) => {
           if (!resolvedLeadId) return;
           try {
             await api.put(`/sales/leads/${resolvedLeadId}`, { salesperson_id: Number(opt.value) });
-            /* Re-read BEFORE the toast. The success message is the user's cue
-               that they can move on, so serverHeader.salespersonName has to be
-               populated by the time they see it — otherwise Save & Next reads
-               the pre-assignment header and refuses a lead that now has an
-               owner. The modal awaits this whole handler before closing. */
             await reloadLead();
             toast.success('Owner updated', `Reassigned to ${opt.label}`);
           } catch (e: any) {
-            /* The server says WHY it refused — the PI-sent guard, a salesperson
-               that has since been deactivated, a lead no longer writable by
-               this user. A flat "Could not reassign the lead" threw all of
-               that away and left the user with nothing to act on. */
             toast.error('Update failed', e?.response?.data?.message ?? 'Could not reassign the lead');
-            // Re-thrown so the modal stays open for a retry instead of
-            // closing on a write that never landed.
             throw e;
           }
         }}
       />
 
-      {/* ── Remarks popup ── */}
       <RemarksModal
         open={remarksOpen}
         currentRemark={serverHeader.remark ?? ''}
         onClose={() => setRemarksOpen(false)}
         onSave={async (text) => {
           if (!resolvedLeadId) return;
-          // Empty string is the explicit "Clear" path from the modal —
-          // server treats null as the wipe value so we pass null instead
-          // of "".
           const payload = { remark: text.length > 0 ? text : null };
           try {
             await api.put(`/sales/leads/${resolvedLeadId}`, payload);
@@ -1981,7 +1347,6 @@ export default function SalesMatrixDetail() {
         }}
       />
 
-      {/* ── WhatsApp Status popup ── */}
       <WhatsAppStatusModal
         open={whatsappOpen}
         leadId={resolvedLeadId ?? null}
@@ -1992,7 +1357,6 @@ export default function SalesMatrixDetail() {
         onSaved={() => { setWhatsappOpen(false); void reloadLead(); }}
       />
 
-      {/* ── Reminders directory (list + child Add form) ── */}
       <RemindersListModal
         open={remindersOpen}
         oppId={header.oppId}
@@ -2000,13 +1364,10 @@ export default function SalesMatrixDetail() {
         onClose={() => setRemindersOpen(false)}
       />
 
-      {/* ── Meetings directory (list + child Add form) ── */}
       <MeetingsListModal
         open={meetingsOpen}
         oppId={header.oppId}
         oppDate={header.oppDate}
-        /* Pre-fill the Add form with the lead's mapped customer + their
-         * primary email and primary contact so the user doesn't retype them. */
         defaultCustomer={
           (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.company_name as string | undefined
           ?? header.customer
@@ -2017,52 +1378,24 @@ export default function SalesMatrixDetail() {
         }
         defaultContact={(() => {
           const row = serverHeader.customerRow as Record<string, unknown> | null | undefined;
-          // Relation may serialize as primary_address (snake) or primaryAddress.
           const addr = (row?.primary_address ?? row?.primaryAddress) as Record<string, unknown> | null | undefined;
           return (addr?.cp_contact as string | undefined) ?? undefined;
         })()}
         onClose={() => setMeetingsOpen(false)}
       />
 
-      {/* ── Lead-scoped trade-document / agreement popup ──
-          Opened from the left CLM card's "Trade Documents" and
-          "Agreements" rows. `view` selects which document type the
-          popup lands on. Pre-loaded payload is passed through so the
-          modal renders instantly; the modal also re-fetches after
-          each Send so the row status badges stay live. */}
       <LeadAgreementSendModal
         open={agreementModalOpen}
         leadId={resolvedLeadId}
         view={agreementModalView}
-        /* Seeded from the panel's copy so the popup opens with rows already
-           in it.
-         *
-           Seeding was dropped when the modal needed document BODIES the
-           panel's `light` payload does not carry. It no longer does: the
-           modal loads light too and pulls the bodies only for the handful
-           actually being sent. So this is the same payload it was about to
-           request — and on the server that request costs about three seconds,
-           spent staring at a skeleton for data the page was already holding.
-         *
-           It still re-fetches behind the seed: statuses and Necessary marks
-           can have changed since the panel loaded, and the fresh read
-           replaces this copy when it lands. The skeleton is not wasted
-           either — it still covers the case where the panel has nothing yet. */
         data={agreementApplicable}
         onClose={() => {
           setAgreementModalOpen(false);
-          // Re-pull so the Segment Details card reflects any status that
-          // changed while the popup was open — e.g. a trade doc / agreement
-          // that got signed via the popup's live Zoho poll.
           setAgreementRefreshTick(t => t + 1);
         }}
         onSent={() => setAgreementRefreshTick(t => t + 1)}
       />
 
-      {/* ── Key Opportunity confirm popup ──
-          Persists to `leads.key_opportunity` via the existing PUT
-          endpoint. The toolbar pill's `smd-act-key` highlight is
-          driven by serverHeader, so the flag survives close+reopen. */}
       <KeyOpportunityModal
         open={keyOppOpen}
         isKey={isKeyOpportunity}
@@ -2086,22 +1419,12 @@ export default function SalesMatrixDetail() {
         }}
       />
 
-      {/* ── Lead Evidence Vault popup ──
-          Opened from the left CLM card's Customer Details / Consignee
-          Details rows. Dedicated lead-scoped vault: four document tabs
-          (Due Diligence / KYC / Trade License / Trade Documents) with
-          live data + per-document View / Download / Upload-replace /
-          Certificate actions. On close, refresh the matching party's
-          CLM tally so the panel progress bars reflect any upload. */}
       <LeadEvidenceVaultModal
         open={!!leadVaultTarget}
         target={leadVaultTarget}
         consignees={leadVaultConsignees}
         mappedConsigneeId={serverHeader.consigneeId}
         scopeCustomerId={serverHeader.customerId}
-        /* Offered only when there IS a customer to open — on a lead with none
-           mapped the note has nowhere to send anyone. The consignee currently
-           on screen rides along so the customer view can offer the way back. */
         onOpenCustomer={serverHeader.customerId
           ? () => openCustomerVault(leadVaultTarget)
           : undefined}
@@ -2112,13 +1435,6 @@ export default function SalesMatrixDetail() {
           ? `${leadVaultBackTo.id}${leadVaultBackTo.company ? ` ${leadVaultBackTo.company}` : ''}`
           : undefined}
         onClose={() => {
-          /* Refresh BOTH party tallies, not just the one whose vault was
-           * open. A "Same as Customer" consignee mirrors the customer's
-           * docs, so a customer-side upload must also move the consignee
-           * bar — bumping only the customer tick left the consignee bar
-           * stale (it showed the old %, while the customer bar updated).
-           * For a normal consignee this just re-fetches its own unchanged
-           * data, which is harmless. */
           setCustRefreshTick(t => t + 1);
           setConsRefreshTick(t => t + 1);
           setLeadVaultTarget(null);
@@ -2130,7 +1446,6 @@ export default function SalesMatrixDetail() {
   );
 }
 
-/* ─── Tiny presentational helpers ─── */
 
 function Meta({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
@@ -2149,9 +1464,6 @@ function ActionBtn({ icon, label, trailing, className, onClick, locked, onLocked
 }) {
   return (
     <button
-      /* When locked we DON'T disable the button — it stays clickable so a tap
-         raises the "deal locked" toast. The colour is unchanged; a translucent
-         veil (.smd-act-locked::after) signals the locked state. */
       className={`smd-act ${className || ''}${locked ? ' smd-act-locked' : ''}`}
       onClick={locked ? onLocked : onClick}
       title={locked ? 'Locked — the Proforma Invoice has been signed' : undefined}
@@ -2171,18 +1483,11 @@ function ActionBtn({ icon, label, trailing, className, onClick, locked, onLocked
   );
 }
 
-/* Helpers for the CLM row sub-text + progress — kept module-scope so
- * the JSX above stays readable. `tally === null` = no party mapped
- * (row shouldn't render at all); `error` = fetch failed; `loading` =
- * fetch in flight; otherwise the catalog tally. */
 type ClmTallyState = { total: number; verified: number; catalog?: number; catalogVerified?: number; error?: boolean; loading?: boolean } | null;
 function renderClmSub(t: ClmTallyState): string {
   if (t == null || t.loading) return 'Loading documents…';
   if (t.error)                return 'Couldn’t load — tap to retry';
-  // Mandatory docs → track their completion.
   if (t.total > 0)            return `${t.verified} of ${t.total} documents`;
-  // No mandatory, but the rule carries OPTIONAL core docs → still show a count
-  // instead of implying nothing is configured.
   if (t.catalog && t.catalog > 0) return `${t.catalogVerified ?? 0} of ${t.catalog} documents`;
   return 'No segment rules set';
 }
@@ -2231,7 +1536,6 @@ function ClmRow({ icon, tone, title, sub, progress, state, onClick, onRetry, dis
           onClick={clickable ? (e) => { e.stopPropagation(); handleClick?.(); } : undefined}
         >
           {state === 'error' ? (
-            // Retry / refresh icon
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
               <polyline points="23 4 23 10 17 10"/>
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -2251,7 +1555,6 @@ function ClmRow({ icon, tone, title, sub, progress, state, onClick, onRetry, dis
   );
 }
 
-/* ─── Inline icon set (keeps wrapper self-contained) ─── */
 
 const IconListLines = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>);
 const IconCalendar = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>);

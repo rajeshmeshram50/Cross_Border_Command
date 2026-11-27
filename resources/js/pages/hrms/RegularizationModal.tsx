@@ -3,6 +3,7 @@ import { Modal, ModalBody } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { regularizationApi, type ApiRegularization } from './regularizationApi';
 import { MasterTimePicker } from '../../components/ui/MasterTimePicker';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 // The keka modal styling (att-reg-keka-*) lives in recruitment.css. Import it
 // here so the modal is styled wherever it's used — notably inside the Employee
 // Profile overlay, which does NOT otherwise load recruitment.css.
@@ -571,6 +572,8 @@ export default function RegularizationModal({
           </div>
         </div>
       </ModalBody>
+      {/* QA 246 / 252 — the house loader while the request posts. */}
+      {submitting && <FullPageLoader label="Submitting regularization…" />}
     </Modal>
   );
 }

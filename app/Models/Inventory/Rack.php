@@ -10,20 +10,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * Inventory · a rack inside a racked zone.
- *
- * warehouse_id is stored beside zone_id although the zone knows it: the grid
- * and the put-away scan both filter racks by warehouse, and that saves a join
- * on every row.
- */
 class Rack extends Model
 {
     use BelongsToTenant;
 
     protected $table = 'inventory_racks';
 
-    /** Square feet per square metre, and square centimetres per square foot. */
     private const SQFT_PER_SQM  = 10.7639;
     private const SQCM_PER_SQFT = 929.0304;
 
@@ -34,15 +26,6 @@ class Rack extends Model
         'status', 'created_by', 'updated_by',
     ];
 
-    /**
-     * A new row is ACTIVE until somebody says otherwise.
-     *
-     * The column already defaults to 1 in the database, but Eloquent does not
-     * read a default back after an insert — so the model the create endpoint
-     * serialised still held null, `(int) null` made it 0, and the response said
-     * the row was inactive while the stored row was active. Invisible on screen
-     * only because every save reloads the list.
-     */
     protected $attributes = ['status' => 1];
 
     protected $casts = [
@@ -57,8 +40,6 @@ class Rack extends Model
 
     protected $appends = ['rack_code', 'height_cm'];
 
-    /** The stored code — RC-001, counted within this rack's own branch. See
-     *  Warehouse::getWhCodeAttribute() for why it is no longer the id. */
     public function getRackCodeAttribute(): string
     {
         return $this->attributes['code']
@@ -72,13 +53,11 @@ class Rack extends Model
         return (int) $m[1];
     }
 
-    /** Shelves are measured against the rack in centimetres whatever unit was typed. */
     public function getHeightCmAttribute(): float
     {
         return round((float) $this->height * ($this->dim_unit === 'm' ? 100 : 1), 2);
     }
 
-    /** Footprint in square feet from the dimensions as typed. */
     public static function areaSqft(?float $length, ?float $width, ?string $unit): ?float
     {
         if (!$length || !$width) return null;

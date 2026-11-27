@@ -18,19 +18,12 @@ use Illuminate\Validation\ValidationException;
 
 class CandidateController extends Controller
 {
-    /**
-     * Eager-loads used by every read endpoint so the SPA gets the parent
-     * recruitment's code/title alongside each candidate row, no extra
-     * round-trips required.
-     */
     private const WITH = [
         'recruitment:id,code,job_title',
-    ]; 
+    ];
 
-  
     private const MODULE_SLUG = 'hr.recruitment';
 
-    /** Whitelisted enums — keep in sync with the front-end form options. */
     private const STATUSES = [
         'Applied', 'Shortlisted', 'In Interview', 'Final Interview',
         'Selected', 'Offered', 'Rejected', 'On Hold',
@@ -46,21 +39,6 @@ class CandidateController extends Controller
         'Walk', 'Bicycle', 'Two-wheeler', 'Four-wheeler', 'Public Transport', 'Other',
     ];
 
-    /* Email format. `email` alone is RFC validation, which accepts `test@test`
-     * and `a@b.c` — a domain with no dot, and a one-letter TLD, are both legal
-     * RFC addresses but neither is a working contact (QA #60). The regex adds
-     * what a contact address actually needs: labels that start and end
-     * alphanumeric, and a TLD of two or more letters. Kept identical to
-     * EMAIL_RE / isValidEmail() in HrCandidates.tsx so the form and the API
-     * refuse the same strings. Applies to the import too — a spreadsheet was
-     * the easier way to get junk in.
-     *
-     * The local part is held to the same shape as the domain labels. It was
-     * `[A-Za-z0-9._%+-]+`, which allowed a leading or trailing dot, so
-     * `.test@gmail.com` cleared this regex and was caught only by `email:rfc`
-     * further along — the form's matching check let it through entirely and the
-     * address appeared to be accepted until save. Dots are separators now, so
-     * they cannot lead, trail, or double up. */
     private const EMAIL_RULES = [
         'nullable',
         'email:rfc',
@@ -69,9 +47,6 @@ class CandidateController extends Controller
         'not_regex:/\.\./',
     ];
 
-    /** Candidate-page tab → the statuses that tab shows. Mirrors the tab
-     *  definitions in HrCandidates.tsx; 'all' is the ACTIVE pipeline, i.e.
-     *  everyone who has not been closed out one way or the other. */
     private const STATUS_GROUPS = [
         'all'      => ['Applied', 'Shortlisted', 'In Interview', 'Final Interview', 'On Hold'],
         'final'    => ['Final Interview'],
@@ -79,13 +54,8 @@ class CandidateController extends Controller
         'rejected' => ['Rejected'],
     ];
 
-    /** Max CV upload size matches the front-end drop-zone (2 MB). */
     private const CV_MAX_KB     = 2048;
     private const CV_MIME_TYPES = 'pdf,doc,docx';
-
-    /* ─────────────────────────────────────────────────────────────────
-     *  LIST / SHOW
-     * ───────────────────────────────────────────────────────────────── */
 
     public function index(Request $request)
     {
@@ -94,15 +64,9 @@ class CandidateController extends Controller
         $q = Candidate::query()->with(self::WITH);
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
-        // The candidate list page always filters by a single recruitment —
-        // honour that early so the rest of the filters compose cleanly.
         if ($recId = $request->query('recruitment_id')) {
             $q->where('recruitment_id', $recId);
         }
-        // Validate enum filters against the whitelist. An unknown value
-        // silently returns nothing today (no rows match), which confuses
-        // the SPA into thinking the candidate list is empty — return 422
-        // so the caller sees the bad input.
         if ($status = $request->query('status')) {
             if (!in_array($status, self::STATUSES, true)) {
                 return response()->json(['message' => 'Invalid status filter.'], 422);
@@ -115,10 +79,6 @@ class CandidateController extends Controller
             }
             $q->where('source', $source);
         }
-        // The page's tabs are status GROUPS, not single statuses, and they have
-        // to be resolved here now that the browser only ever holds one page of
-        // rows — filtering a page of ten in the SPA would render three under a
-        // pager still claiming ten.
         if ($group = $request->query('status_group')) {
             $bucket = self::STATUS_GROUPS[$group] ?? null;
             if ($bucket === null) {
@@ -136,13 +96,8 @@ class CandidateController extends Controller
 
         $q->orderByDesc('id');
 
-        /* Paginate only for callers that ask (?per_page), the same bargain
-           /employees strikes: every caller that doesn't pass it keeps the
-           plain array this endpoint has always answered with. */
         if ($request->filled('per_page')) {
             $perPage = max(1, min(200, (int) $request->query('per_page')));
-            // Page number read off THIS request rather than resolved from the
-            // global one, so the method answers the caller that called it.
             $pageNo  = max(1, (int) $request->query('page', 1));
             $page    = $q->paginate($perPage, ['*'], 'page', $pageNo);
 
@@ -165,15 +120,6 @@ class CandidateController extends Controller
         return response()->json($this->serialize($row));
     }
 
-    /**
-     * Aggregate candidate counts for the Recruitment Management KPI strip.
-     * Honours the current user's tenant scope so each tenant sees only
-     * their own numbers, and lets the SPA filter further by recruitment_id
-     * (e.g. "stats for just REC-002") when needed.
-     *
-     * Single grouped query → one trip to the DB regardless of how many
-     * statuses we're slicing on.
-     */
     public function stats(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -184,8 +130,6 @@ class CandidateController extends Controller
             $q->where('recruitment_id', $recId);
         }
 
-        // Pull (status, count) pairs in a single GROUP BY — the controller
-        // doesn't need a separate query per status.
         $rows = (clone $q)
             ->selectRaw('status, COUNT(*) as c')
             ->groupBy('status')
@@ -197,9 +141,6 @@ class CandidateController extends Controller
             'total'           => (int) $rows->sum(),
             'applied'         => $get('Applied'),
             'shortlisted'     => $get('Shortlisted'),
-            // Split out so the SPA can show "Final Round Selected" (the
-            // recruitment-page KPI cares about *just* the Final Interview
-            // bucket) without losing the broader pipeline count.
             'in_interview'    => $get('In Interview'),
             'final_interview' => $get('Final Interview'),
             'selected'        => $get('Selected'),
@@ -209,11 +150,6 @@ class CandidateController extends Controller
         ]);
     }
 
-    /**
-     * Recruitment summary endpoint used by the candidate page to render
-     * the read-only context card above the list. Returns the recruitment
-     * shape the SPA's RecruitmentInfo expects (camelCase keys).
-     */
     public function recruitmentSummary(Request $request, $recruitmentId)
     {
         $this->authorize($request, 'can_view');
@@ -254,10 +190,6 @@ class CandidateController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  STORE / UPDATE / DESTROY
-     * ───────────────────────────────────────────────────────────────── */
-
     public function store(Request $request)
     {
         $this->authorize($request, 'can_add');
@@ -266,14 +198,9 @@ class CandidateController extends Controller
 
         return DB::transaction(function () use ($request, $data) {
             $auth = $request->user();
-            // Tenant is inherited from the parent recruitment so candidates
-            // never escape the recruitment's own scope.
             $parent = $this->loadParentRecruitment($request, (int) $data['recruitment_id']);
             $this->guardRecruitmentOpen($parent);
 
-            // Reject duplicates (same email under the same recruitment).
-            // Mirrors the recruitment / hiring-request guard pattern — surfaces
-            // inline on the `email` field with a friendly 422.
             $this->guardDuplicate($data, (int) $data['recruitment_id'], null);
 
             $payload = array_merge($data, [
@@ -282,9 +209,6 @@ class CandidateController extends Controller
                 'created_by' => $auth?->id,
             ]);
 
-            // Persist the CV file (if any) on the public disk under
-            // candidates/<client>/<recruitment>/<random>.<ext>. Saved before
-            // create() so we can roll the upload back if create() fails.
             if ($request->hasFile('cv')) {
                 [$path, $original] = $this->storeCv($request->file('cv'), $parent->client_id, $parent->id);
                 $payload['cv_path']          = $path;
@@ -307,8 +231,6 @@ class CandidateController extends Controller
         $this->normaliseReferral($data);
         $this->guardDuplicate($data, $row->recruitment_id, $row->id);
 
-        // Replace the CV if a new file came in. Old file is removed AFTER the
-        // update succeeds so a failed save doesn't orphan the new upload.
         $oldPath = $row->cv_path;
         if ($request->hasFile('cv')) {
             [$path, $original] = $this->storeCv($request->file('cv'), $row->client_id, $row->recruitment_id);
@@ -332,25 +254,12 @@ class CandidateController extends Controller
         $row = $this->resolveRow($request, (int) $id);
         $this->guardHierarchicalAction($request->user(), $row, 'delete');
 
-        // Soft-delete keeps the audit trail; the file stays on disk so a
-        // restore can recover it. Hard delete would need to clear cv_path.
         $row->delete();
         return response()->json(['message' => 'Candidate removed.']);
     }
 
-    /**
-     * Stream the CV file straight from the public disk through Laravel.
-     *
-     * We can't rely on the /storage symlink here because some environments
-     * (XAMPP / Apache where DocumentRoot ≠ public/) don't resolve it. The
-     * route lives OUTSIDE the sanctum middleware so a plain `<a href>`
-     * download works — auth is via a `?token=<sanctum>` query param,
-     * mirroring PaymentController::downloadInvoice.
-     */
     public function downloadCv(Request $request, $id)
     {
-        // Query-token auth: same pattern Payments uses for invoice downloads
-        // so plain anchor clicks work without sending an Authorization header.
         $this->authenticateFromQueryToken($request);
         $this->authorize($request, 'can_view');
 
@@ -364,33 +273,18 @@ class CandidateController extends Controller
             abort(404, 'CV file is missing on the server.');
         }
 
-        // Force a download so the browser saves it under the original
-        // filename rather than the random storage path.
         $filename = $row->cv_original_name ?: basename($row->cv_path);
         return $disk->download($row->cv_path, $filename);
     }
 
-    /**
-     * Resolve the request user from `?token=<sanctum>` so direct browser
-     * link-clicks work without sending an Authorization header. Mirrors
-     * PaymentController::authenticateFromQuery (kept private so it stays
-     * scoped to the candidate download flow).
-     */
     private function authenticateFromQueryToken(Request $request): void
     {
-        // Bearer header first — the SPA's CV download chip pulls the blob via
-        // axios so it can show a spinner, and axios attaches the sanctum
-        // token as `Authorization: Bearer …`. The route lives outside the
-        // sanctum middleware group (so plain <a href> downloads also work),
-        // which means nothing else will resolve the bearer for us here.
         if (!$request->user() && $request->bearerToken()) {
             $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
             if ($token) {
                 $request->setUserResolver(fn () => $token->tokenable);
             }
         }
-        // Fall back to ?token=<sanctum> for plain anchor-click downloads
-        // that can't set an Authorization header.
         if (!$request->user() && $request->query('token')) {
             $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->query('token'));
             if ($token) {
@@ -404,11 +298,6 @@ class CandidateController extends Controller
         }
     }
 
-    /**
-     * Pipeline status patch — used by the green ✓ / red ✗ row buttons and
-     * the CandidateConfirmModal. Captures the rejection reason / notes so
-     * the audit trail survives.
-     */
     public function updateStatus(Request $request, $id)
     {
         $this->authorize($request, 'can_edit');
@@ -420,13 +309,6 @@ class CandidateController extends Controller
             'status_notes'     => 'nullable|string',
         ]);
 
-        // Hard cap: can't fill more positions than the recruitment has
-        // openings. Both 'Selected' and 'Offered' occupy an opening (a Selected
-        // candidate who then gets an offer still holds the seat), so the guard
-        // counts BOTH — otherwise moving selections to Offered freed up the
-        // count and let more candidates be selected than openings (bug #31).
-        // Only fires when a candidate NEWLY enters an occupying status; a
-        // Selected→Offered move (already occupying) doesn't consume a new seat.
         $occupying = ['Selected', 'Offered'];
         if (in_array($data['status'], $occupying, true) && !in_array($row->status, $occupying, true)) {
             $rec = Recruitment::find($row->recruitment_id);
@@ -451,9 +333,6 @@ class CandidateController extends Controller
         $previousStatus = $row->status;
         $row->update($data);
 
-        // Fire the candidate-facing email on a real transition into a
-        // terminal decision state (HRMS-BUG-059 / 060). Best-effort: a
-        // missing email / SMTP failure must not fail the status update.
         if ($data['status'] === 'Selected' && $previousStatus !== 'Selected') {
             $this->notifyCandidateDecision($row->fresh(), 'selected', $data['status_notes'] ?? null);
         } elseif ($data['status'] === 'Rejected' && $previousStatus !== 'Rejected') {
@@ -464,12 +343,6 @@ class CandidateController extends Controller
         return response()->json($this->serialize($row));
     }
 
-    /**
-     * Email the candidate when they're Selected or Rejected. Silent no-op
-     * when the platform mail toggle is OFF or the candidate has no email.
-     * Failures are logged, never re-thrown — the status change already
-     * persisted before this is called.
-     */
     private function notifyCandidateDecision(Candidate $candidate, string $decision, ?string $notes = null, ?string $reason = null): void
     {
         if (!\App\Support\Settings::shouldSendMail()) return;
@@ -496,11 +369,6 @@ class CandidateController extends Controller
         }
     }
 
-    /**
-     * Strip the referral fields unless Source is explicitly "Referral" so a
-     * later source change (or a stray payload) can't leave a dangling
-     * referrer on the row. Only acts when `source` is part of the payload.
-     */
     private function normaliseReferral(array &$data): void
     {
         if (!array_key_exists('source', $data)) return;
@@ -510,39 +378,18 @@ class CandidateController extends Controller
         }
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  SAMPLE / IMPORT / EXPORT
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * Header order shared by sample download, export and import parser. Keep
-     * these labels in sync with the frontend's SampleImportFormatModal so a
-     * round-trip (download → fill → upload) always validates cleanly.
-     */
     private const CSV_COLUMNS = [
         'Name', 'Email', 'Mobile', 'Experience', 'Qualification',
         'Current Salary', 'Expected Salary',
         'Notice Period', 'Source', 'Status',
     ];
 
-    /**
-     * Statuses an imported candidate is allowed to land in. Imports only
-     * accept already-progressed candidates — "Final Round Selected" (stored
-     * as the 'Final Interview' enum) and "Selected". Any other status in the
-     * file is rejected per-row. Keys are accepted spreadsheet labels
-     * (case-insensitive), values are the stored enum.
-     */
     private const IMPORT_STATUS_MAP = [
         'final round selected' => 'Final Interview',
         'final interview'      => 'Final Interview',
         'selected'             => 'Selected',
     ];
 
-    /**
-     * Sample CSV download — header row + one populated dummy row so the
-     * user has a working template to fill in. The file opens fine in Excel
-     * (Excel auto-detects CSV) so we don't need a real .xlsx writer.
-     */
     public function sample(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -558,24 +405,12 @@ class CandidateController extends Controller
         ]);
     }
 
-    /**
-     * Bulk import — POST multipart with a CSV file + recruitment_id. Every
-     * row is validated independently; valid rows are created, invalid ones
-     * are skipped with a row-numbered error so the user can fix and retry.
-     * Duplicates (same email under the same recruitment) are skipped, not
-     * rejected — partial imports are explicitly fine here.
-     *
-     * Response: { created, skipped, errors: [{row, message}] }.
-     */
     public function import(Request $request)
     {
         $this->authorize($request, 'can_add');
 
         $request->validate([
             'recruitment_id' => 'required|integer|exists:recruitments,id',
-            // Accept the same extensions as the frontend drop-zone. Both CSV
-            // and .xlsx are parsed natively (see parseUpload); legacy binary
-            // .xls is rejected with a clear message.
             'file'           => 'required|file|mimes:csv,txt,xlsx,xls|max:10240',
         ]);
 
@@ -597,8 +432,6 @@ class CandidateController extends Controller
         $header = array_map(fn ($v) => $this->normaliseHeader($v), $rows[0]);
         $dataRows = array_slice($rows, 1);
 
-        // Map each expected column to its index in the uploaded header so
-        // re-ordered columns still work as long as the names match.
         $colIdx = [];
         foreach (self::CSV_COLUMNS as $expected) {
             $key = $this->normaliseHeader($expected);
@@ -616,62 +449,31 @@ class CandidateController extends Controller
         $errors  = [];
         $auth    = $request->user();
 
-        // Openings cap (bug #30) — the import must never create more SELECTED
-        // candidates than the recruitment has openings. Track the running count
-        // of Selected candidates (existing + created during this import); a
-        // final 'Selected' consumes an opening, 'Final Interview' does not,
-        // mirroring the manual status-change guard.
-        // 'Selected' and 'Offered' both occupy an opening (matches the manual
-        // status guard), so count both toward the filled total.
         $openings      = (int) $parent->openings;
         $selectedCount = Candidate::query()
             ->where('recruitment_id', $parent->id)
             ->whereIn('status', ['Selected', 'Offered'])
             ->count();
 
-        /* Every email already on this recruitment, fetched ONCE.
-           The duplicate check used to be a query per row:
-               where('recruitment_id', …)->whereRaw('LOWER(email) = ?')->exists()
-           — so a 500-row sheet asked the database 500 times, and none of those
-           asks could use an index. `candidates_email_index` is a plain btree on
-           `email`, and Postgres cannot answer a question about lower(email)
-           from it; EXPLAIN confirms a scan. One recruitment's candidate list is
-           small enough to hold in memory, and comparing there costs nothing.
-           Lower-cased on the way in so the comparison matches the old SQL. */
         $existingEmails = Candidate::query()
             ->where('recruitment_id', $parent->id)
             ->whereNotNull('email')
             ->pluck('email')
             ->map(fn ($e) => mb_strtolower(trim((string) $e)))
             ->filter()
-            ->flip();          // flip → O(1) isset() lookups instead of in_array()
+            ->flip();
 
-        /* One transaction for the whole sheet instead of one per row.
-           Every Candidate::create() was committing on its own — N commits, each
-           with its own write and flush. Wrapping the loop makes it one.
-           It also makes the import atomic: a failure part-way through no longer
-           leaves half a spreadsheet imported with no way to tell which half.
-           Rows REJECTED by validation are not failures — they are counted and
-           reported, and the transaction still commits the good ones. */
         DB::beginTransaction();
         try {
-
         foreach ($dataRows as $i => $row) {
-            $rowNum = $i + 2; // +1 for 0-index, +1 for header
-            // Drop completely-empty rows silently — Excel often leaves them
-            // at the bottom of the sheet.
+            $rowNum = $i + 2;
             $isEmpty = true;
             foreach ($row as $cell) { if (trim((string) $cell) !== '') { $isEmpty = false; break; } }
             if ($isEmpty) continue;
 
             $payload = $this->mapImportRow($row, $colIdx);
 
-            // Per-row validation — kept loose (only Name is hard-required)
-            // so a partially-filled spreadsheet still produces useful rows.
             $validator = \Illuminate\Support\Facades\Validator::make($payload, [
-                // Name must hold at least one letter and start with one, using
-                // only name-safe characters — rejects blank/whitespace-only and
-                // special-character junk like "@#$%" (bug #29).
                 'name'                => ['required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
                 'email'               => self::EMAIL_RULES,
                 'mobile'              => 'nullable|string|max:30',
@@ -691,10 +493,6 @@ class CandidateController extends Controller
                 continue;
             }
 
-            // Status gate — imports only accept already-progressed candidates.
-            // Anything other than "Final Round Selected" or "Selected" (incl.
-            // a blank Status cell) is rejected so Applied/Shortlisted/etc rows
-            // can't be bulk-loaded.
             $rawStatus = mb_strtolower(trim((string) ($payload['status'] ?? '')));
             $mappedStatus = self::IMPORT_STATUS_MAP[$rawStatus] ?? null;
             if ($mappedStatus === null) {
@@ -704,14 +502,7 @@ class CandidateController extends Controller
             }
             $payload['status'] = $mappedStatus;
 
-            // Skip duplicates — same email under the same recruitment. Don't
-            // count as an error; spreadsheets often contain re-imports of
-            // already-applied candidates.
             if (!empty($payload['email'])) {
-                /* In-memory against the set built before the loop. Also catches
-                   a duplicate WITHIN the same file — the old per-row query
-                   could not, because the earlier row had not been committed
-                   yet when the later one was checked. */
                 $emailKey = mb_strtolower(trim((string) $payload['email']));
                 $exists   = isset($existingEmails[$emailKey]);
                 if ($exists) {
@@ -721,8 +512,6 @@ class CandidateController extends Controller
                 }
             }
 
-            // Openings cap (bug #30) — refuse a Selected row once every opening
-            // is filled, so the import can't over-fill the recruitment.
             if ($mappedStatus === 'Selected' && $selectedCount >= $openings) {
                 $skipped++;
                 $errors[] = ['row' => $rowNum, 'message' => sprintf(
@@ -737,12 +526,8 @@ class CandidateController extends Controller
                 'branch_id'      => $parent->branch_id,
                 'created_by'     => $auth?->id,
                 'recruitment_id' => $parent->id,
-                // $payload['status'] is already the validated/mapped enum
-                // ('Final Interview' or 'Selected') from the status gate above.
             ]));
             $created++;
-            // Keep the set current so a later row carrying the same address is
-            // caught as a duplicate too.
             if (!empty($payload['email'])) {
                 $existingEmails[mb_strtolower(trim((string) $payload['email']))] = true;
             }
@@ -750,11 +535,7 @@ class CandidateController extends Controller
         }
 
         DB::commit();
-
         } catch (\Throwable $e) {
-            /* A manual beginTransaction has no safety net of its own — without
-               this, a database error mid-sheet would leave the transaction open
-               and the connection holding locks until the request ended. */
             DB::rollBack();
             throw $e;
         }
@@ -766,10 +547,6 @@ class CandidateController extends Controller
         ]);
     }
 
-    /**
-     * Export the candidate list as CSV. Honours the same filters as
-     * index() so "current view" exports match what the table is showing.
-     */
     public function export(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -780,9 +557,6 @@ class CandidateController extends Controller
         if ($recId = $request->query('recruitment_id'))    $q->where('recruitment_id', $recId);
         if ($status = $request->query('status'))           $q->where('status', $status);
         if ($source = $request->query('source'))           $q->where('source', $source);
-        // Same tab grouping the list uses. "Current View Only" now sends the
-        // filters rather than a list of ids, so it exports the whole filtered
-        // set instead of the ten rows the user happens to be looking at.
         if ($group = $request->query('status_group')) {
             $bucket = self::STATUS_GROUPS[$group] ?? null;
             if ($bucket === null) {
@@ -790,8 +564,6 @@ class CandidateController extends Controller
             }
             $q->whereIn('status', $bucket);
         }
-        // Optional id list — used by "Current View Only" so the export
-        // matches the SPA's filtered set exactly.
         if ($ids = $request->query('ids')) {
             $idList = array_filter(array_map('intval', explode(',', $ids)));
             if (!empty($idList)) $q->whereIn('id', $idList);
@@ -806,8 +578,6 @@ class CandidateController extends Controller
 
         $rows = $q->with('recruitment:id,code')->orderByDesc('id')->get();
 
-        // Export adds a few extra columns over the import format so the
-        // downloaded file is more useful as a standalone report.
         $exportHeader = [
             'Name', 'Email', 'Mobile', 'Experience', 'Qualification',
             'Current Salary', 'Expected Salary', 'Notice Period',
@@ -832,17 +602,10 @@ class CandidateController extends Controller
         return $this->csvResponse('candidates_export.csv', array_merge([$exportHeader], $data));
     }
 
-    /* ─── CSV plumbing ─────────────────────────────────────────────── */
-
-    /**
-     * Build a streamed CSV download response. Prepends a UTF-8 BOM so
-     * Excel renders accented characters correctly when opening the file.
-     */
     private function csvResponse(string $filename, array $rows): \Symfony\Component\HttpFoundation\StreamedResponse
     {
         return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            // BOM — Excel needs this to detect UTF-8 in CSVs.
             fwrite($out, "\xEF\xBB\xBF");
             foreach ($rows as $row) {
                 fputcsv($out, $row);
@@ -853,13 +616,6 @@ class CandidateController extends Controller
         ]);
     }
 
-    /**
-     * Dispatch an uploaded import file to the right parser based on its byte
-     * signature (not its extension, so a mislabelled file still routes
-     * correctly). CSV → parseCsv, .xlsx → parseXlsx. Legacy binary .xls can't
-     * be read without a spreadsheet library, so we surface a clear 422 telling
-     * the user to re-save as .xlsx or .csv. Returns null when unreadable.
-     */
     private function parseUpload($uploaded): ?array
     {
         $path = $uploaded?->getRealPath();
@@ -867,11 +623,9 @@ class CandidateController extends Controller
 
         $sig = (string) file_get_contents($path, false, null, 0, 8);
 
-        // .xlsx (Office Open XML) is a ZIP archive — magic "PK\x03\x04".
         if (str_starts_with($sig, "PK\x03\x04")) {
             return $this->parseXlsx($uploaded);
         }
-        // Legacy .xls (OLE2 compound document) — magic "\xD0\xCF\x11\xE0".
         if (str_starts_with($sig, "\xD0\xCF\x11\xE0")) {
             throw ValidationException::withMessages([
                 'file' => ['Legacy .xls files aren\'t supported — open the file and "Save As" .xlsx or .csv, then re-upload.'],
@@ -880,14 +634,6 @@ class CandidateController extends Controller
         return $this->parseCsv($uploaded);
     }
 
-    /**
-     * Read an uploaded .xlsx into the same row/array shape as parseCsv(), using
-     * ZipArchive + SimpleXML so no spreadsheet library is required. Reads the
-     * first worksheet only (the Sample template is single-sheet). Cell column
-     * positions are honoured via each cell's "r" reference so re-ordered or
-     * sparse columns stay aligned with the header row. Returns null if the
-     * archive can't be opened or has no worksheet.
-     */
     private function parseXlsx($uploaded): ?array
     {
         $path = $uploaded?->getRealPath();
@@ -897,14 +643,12 @@ class CandidateController extends Controller
         if ($zip->open($path) !== true) return null;
 
         try {
-            // Shared-strings table — cells of type "s" reference these by index.
             $shared = [];
             $ssXml = $zip->getFromName('xl/sharedStrings.xml');
             if ($ssXml !== false) {
                 $sst = $this->loadXlsxXml($ssXml);
                 if ($sst !== null) {
                     foreach ($sst->si as $si) {
-                        // Concatenate every <t> run so rich-text cells keep text.
                         $text = '';
                         foreach ($si->xpath('.//t') as $t) { $text .= (string) $t; }
                         $shared[] = $text;
@@ -912,8 +656,6 @@ class CandidateController extends Controller
                 }
             }
 
-            // First worksheet — sheet1.xml for files made from the Sample
-            // template; fall back to the lowest-numbered worksheet part.
             $sheetEntry = null;
             if ($zip->locateName('xl/worksheets/sheet1.xml') !== false) {
                 $sheetEntry = 'xl/worksheets/sheet1.xml';
@@ -947,7 +689,6 @@ class CandidateController extends Controller
                     } elseif ($type === 'b') {
                         $val = ((string) $c->v === '1') ? 'TRUE' : 'FALSE';
                     } else {
-                        // numeric / date-serial / formula-string result
                         $val = (string) $c->v;
                     }
                     $cells[$colIdx] = $val;
@@ -965,20 +706,15 @@ class CandidateController extends Controller
         }
     }
 
-    /**
-     * Parse an OOXML payload with the default namespace stripped, so elements
-     * (<row>/<c>/<si>) are reachable without SimpleXML namespace juggling.
-     */
     private function loadXlsxXml(string $xml): ?\SimpleXMLElement
     {
-        $xml = preg_replace('/\sxmlns="[^"]*"/', '', $xml, 1); // drop default ns only
+        $xml = preg_replace('/\sxmlns="[^"]*"/', '', $xml, 1);
         $prev = libxml_use_internal_errors(true);
         $node = simplexml_load_string($xml);
         libxml_use_internal_errors($prev);
         return $node === false ? null : $node;
     }
 
-    /** Convert a cell reference like "B7" to a 0-based column index (B → 1). */
     private function xlsxColumnIndex(string $ref): int
     {
         if (!preg_match('/^([A-Za-z]+)/', $ref, $m)) return 0;
@@ -990,10 +726,6 @@ class CandidateController extends Controller
         return $idx - 1;
     }
 
-    /**
-     * Read an uploaded file as CSV rows. Returns null if the file isn't
-     * parseable; the caller surfaces that as a 422.
-     */
     private function parseCsv($uploaded): ?array
     {
         $path = $uploaded->getRealPath();
@@ -1002,16 +734,10 @@ class CandidateController extends Controller
         $contents = file_get_contents($path);
         if ($contents === false) return null;
 
-        // Strip a UTF-8 BOM if present so the first header doesn't get a
-        // hidden 3-byte prefix that breaks header matching.
         if (str_starts_with($contents, "\xEF\xBB\xBF")) {
             $contents = substr($contents, 3);
         }
 
-        // Detect the delimiter from the first line. Excel saves CSVs with a
-        // semicolon (and sometimes a tab) in many non-US locales; defaulting
-        // to a comma turns the whole header into one cell and makes column
-        // matching fail with a misleading "column not found" (HRMS-BUG).
         $delimiter = $this->detectDelimiter($contents);
 
         $rows = [];
@@ -1026,11 +752,6 @@ class CandidateController extends Controller
         return $rows;
     }
 
-    /**
-     * Pick the delimiter that best splits the header line. Checks comma,
-     * semicolon and tab and returns whichever yields the most columns, so a
-     * file saved by a non-US Excel still parses. Falls back to comma.
-     */
     private function detectDelimiter(string $contents): string
     {
         $firstLine = strtok($contents, "\r\n");
@@ -1048,18 +769,13 @@ class CandidateController extends Controller
         return $best;
     }
 
-    /** Normalise a header name for case/whitespace-insensitive matching. */
     private function normaliseHeader($v): string
     {
-        // Lower-case, strip a stray BOM/quotes, then collapse all whitespace
-        // runs to a single space so "Current  Salary", quoted headers and a
-        // BOM-prefixed first cell all match their expected label.
         $v = strtolower(trim((string) $v));
         $v = trim($v, "\xEF\xBB\xBF\"' ");
         return preg_replace('/\s+/', ' ', $v);
     }
 
-    /** Map a CSV row to the controller's create payload shape. */
     private function mapImportRow(array $row, array $colIdx): array
     {
         $val = function (string $col) use ($row, $colIdx) {
@@ -1082,10 +798,6 @@ class CandidateController extends Controller
             'status'              => $val('Status'),
         ];
     }
-
-    /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS — same scoping/guard shape as RecruitmentController
-     * ───────────────────────────────────────────────────────────────── */
 
     private function authorize(Request $request, string $perm): void
     {
@@ -1126,7 +838,6 @@ class CandidateController extends Controller
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
-            // Every branch is an isolated peer — globals + client-level rows + own branch only.
             $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
                   ->orWhere(function ($ww) use ($clientId, $branchId) {
@@ -1141,7 +852,6 @@ class CandidateController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    /** BranchSwitcher narrowing — see RecruitmentController for full notes. */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -1152,10 +862,8 @@ class CandidateController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-    /** Mirrors applyScope but operates on a Recruitment query for the summary endpoint. */
     private function applyRecruitmentScope($q, $user, ?int $branchFilter = null): void
     {
-        // Recruitment uses the same column shape so we can reuse applyScope.
         $this->applyScope($q, $user, $branchFilter);
     }
 
@@ -1166,7 +874,6 @@ class CandidateController extends Controller
         return $q->findOrFail($id);
     }
 
-    /** Confirm the parent recruitment is visible to the current user. */
     private function loadParentRecruitment(Request $request, int $recruitmentId): Recruitment
     {
         $q = Recruitment::query();
@@ -1174,14 +881,6 @@ class CandidateController extends Controller
         return $q->findOrFail($recruitmentId);
     }
 
-    /**
-     * Freeze candidate intake once the recruitment is no longer open: an
-     * explicitly closed (Completed / Cancelled) recruitment, an already
-     * 'Expired' one, or an 'In Progress' one whose deadline has slipped by
-     * (mirrors RecruitmentController's lazy-expiry rule so a just-passed
-     * deadline freezes intake even before the recruitment row is re-read).
-     * Reopening (extending the deadline) lifts the freeze.
-     */
     private function guardRecruitmentOpen(Recruitment $parent): void
     {
         $overdue = $parent->deadline && $parent->deadline->lt(today());
@@ -1215,16 +914,8 @@ class CandidateController extends Controller
         }
     }
 
-    /**
-     * Reject duplicate applications within the same recruitment: a candidate
-     * is a duplicate if the SAME email OR the SAME mobile number already
-     * exists under that recruitment. Each check is skipped when its field is
-     * missing (anonymous walk-ins / email-less rows still happen), so the
-     * form's optional-contact paths stay usable.
-     */
     private function guardDuplicate(array $data, int $recruitmentId, ?int $excludeId): void
     {
-        // ── Email ──
         $email = trim((string) ($data['email'] ?? ''));
         if ($email !== '') {
             $q = Candidate::query()
@@ -1243,10 +934,6 @@ class CandidateController extends Controller
             }
         }
 
-        // ── Mobile ── compare on digits only so "+91 98765 43210",
-        // "9876543210" and "098765 43210"-style formatting variants still
-        // collide. Scoped to the same recruitment (HRMS bug — same mobile was
-        // allowed twice).
         $mobileDigits = preg_replace('/\D/', '', (string) ($data['mobile'] ?? ''));
         if ($mobileDigits !== '') {
             $q = Candidate::query()
@@ -1266,13 +953,6 @@ class CandidateController extends Controller
         }
     }
 
-    /**
-     * Validation rules.
-     *
-     * The frontend posts with multipart/form-data when a CV is attached, so
-     * this also has to accept text values that arrive as strings (they're
-     * cast back to numbers by the Eloquent decimal: cast).
-     */
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $isUpdate = $id !== null;
@@ -1280,14 +960,8 @@ class CandidateController extends Controller
         return $request->validate([
             'recruitment_id'      => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:recruitments,id'],
 
-            // Name must hold at least one letter and start with one, using only
-            // name-safe characters — rejects special-character / blank names,
-            // matching the import validator (bug #29).
             'name'                => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
             'email'               => self::EMAIL_RULES,
-            // Mobile: allow optional + / spaces / dashes; the digit count
-            // must land between 7 and 15. Matches the frontend validator
-            // so a payload that slips past the SPA still fails at the API.
             'mobile'              => ['nullable', 'string', 'max:20', 'regex:/^\+?[\d\s\-]*$/', function ($attr, $val, $fail) {
                 $digits = preg_replace('/\D/', '', (string) $val);
                 if ($digits === '') return;
@@ -1295,10 +969,6 @@ class CandidateController extends Controller
                 if ($len < 7 || $len > 15) $fail('Mobile must be 7–15 digits.');
             }],
             'current_address'     => 'nullable|string|max:500',
-            // Qualification: letters/digits/spaces plus the punctuation real
-            // qualifications use (e.g. "B.Sc (Hons)", "B.E. / M.E."). Must hold
-            // at least one letter so junk like "!@#$%^TGBFv67" is rejected even
-            // if it slips past the SPA validator (HRMS-BUG).
             'qualification'       => ['nullable', 'string', 'max:191', 'regex:/^[A-Za-z0-9 .,\/&()+\-]*$/', 'regex:/[A-Za-z]/'],
             'experience_years'    => 'nullable|numeric|min:0|max:99.99',
             'mode_of_transport'   => ['nullable', Rule::in(self::TRANSPORT_MODES)],
@@ -1309,14 +979,9 @@ class CandidateController extends Controller
             'notice_period'       => ['nullable', Rule::in(self::NOTICE_PERIODS)],
 
             'source'              => ['nullable', Rule::in(self::SOURCES)],
-            // Referral capture (HRMS-BUG-057). Kept nullable at the API level
-            // so CSV imports / non-referral sources stay valid; the SPA form
-            // requires it when Source = Referral.
             'referred_by_id'      => 'nullable|integer|exists:employees,id',
             'referred_by_name'    => 'nullable|string|max:150',
 
-            // CV: only validated when actually present so a partial PATCH
-            // that doesn't touch the file still passes.
             'cv'                  => 'nullable|file|mimes:' . self::CV_MIME_TYPES . '|max:' . self::CV_MAX_KB,
 
             'status'              => ['nullable', Rule::in(self::STATUSES)],
@@ -1325,12 +990,6 @@ class CandidateController extends Controller
         ]);
     }
 
-
-    /**
-     * Save the uploaded CV on the public disk and return [path, originalName].
-     * The path scheme is candidates/{client_id|public}/{recruitment_id}/{rand}.ext
-     * so files stay grouped by tenant + parent recruitment.
-     */
     private function storeCv($file, $clientId, $recruitmentId): array
     {
         $clientSlug = $clientId ? 'c' . $clientId : 'public';
@@ -1343,20 +1002,12 @@ class CandidateController extends Controller
         return [$path, $file->getClientOriginalName()];
     }
 
-    /**
-     * Flatten relationship names onto the row so the frontend's table can
-     * render `recruitment_code` / `recruitment_title` directly without
-     * drilling into nested objects.
-     */
     private function serialize(Candidate $row): array
     {
         $arr = $row->toArray();
         $arr['recruitment_code']  = $row->recruitment?->code;
         $arr['recruitment_title'] = $row->recruitment?->job_title;
-        // experience_years comes back as a string from the decimal cast —
-        // coerce so the FE can do `c.experience_years ?? 0` without surprises.
         $arr['experience_years'] = $row->experience_years !== null ? (float) $row->experience_years : 0;
         return $arr;
-    } 
-    
+    }
 }

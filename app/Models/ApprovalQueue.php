@@ -49,8 +49,6 @@ class ApprovalQueue extends Model
         ];
     }
 
-    // ── Relationships ──
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
@@ -75,8 +73,6 @@ class ApprovalQueue extends Model
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
-
-    // ── Helpers ──
 
     public function isPending(): bool
     {

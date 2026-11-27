@@ -3741,6 +3741,28 @@
   overflow-wrap: normal;
 }
 
+/* QA #7 / #16 - Generate Password (My Vault, Password Health): the box grew a line as the length
+   went up, so the whole centred popup jumped. It now keeps one height at every length: room for
+   two lines (a 64-character password fills exactly that), a short one sits centred in it, and
+   anything longer (a long passphrase) scrolls inside the box. */
+.cvx #crd-host .gp-box .gp-out {
+  box-sizing: border-box;
+  height: 84px;
+}
+.cvx #crd-host .gp-box .gp-out__v:not(.is-phrase) {
+  font-size: 16px;
+  /* Random characters: wrap at any character, so a line never ends early at a "-" and spills
+     a 64-character password onto a third line. (Passphrase words still wrap whole.) */
+  word-break: break-all;
+  line-break: anywhere;
+}
+.cvx #crd-host .gp-box .gp-out__v {
+  max-height: calc(2 * 1.35em + 4px);   /* +4px: the coloured digit / symbol spans make a line a hair taller */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 .cvx #crd-host .gp-box .gp-len {
   margin-top: 12px;
 }
@@ -4267,6 +4289,13 @@
 [data-bs-theme="dark"] .cvx #crd-host .sh-box .sh-date .master-datepicker-toggle:hover,
 [data-bs-theme="dark"] .cvx #crd-host .sh-box .sh-date .master-datepicker-toggle.open {
   border-color: rgba(34, 211, 238, .55) !important;
+}
+
+/* Individual / Team and duration toggles: the light theme's white wash read as a grey block on dark. */
+[data-bs-theme="dark"] .cvx #crd-host .sh-box .gp-seg button:hover:not(.is-on):not(:disabled) {
+  background: rgba(34, 211, 238, .12) !important;
+  color: #a5f3fc !important;
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .28);
 }
 
 .cvx #crd-host .sh-box .sh-exp {
@@ -5603,6 +5632,30 @@
 [data-bs-theme="dark"] .cvx .ir-cat-smp { color: #67e8f9; background: rgba(34, 211, 238, .06); border-color: var(--tvd-line, rgba(34, 211, 238, .16)); }
 [data-bs-theme="dark"] .cvx .ir-cat-smp .ix-smp button { color: #67e8f9; background: rgba(255, 255, 255, .04); border-color: rgba(34, 211, 238, .3); }
 
+/* Import data guide: the Excel / CSV sample buttons and step numbers were solid white in dark mode. */
+[data-bs-theme="dark"] .cvx .ix-guide .ix-smp button {
+  color: #e0fbff;
+  background: rgba(6, 38, 48, .55);
+  border: 1px solid rgba(165, 243, 252, .35);
+  box-shadow: 0 6px 14px -8px rgba(0, 0, 0, .6);
+}
+[data-bs-theme="dark"] .cvx .ix-guide .ix-smp button:hover {
+  background: rgba(6, 38, 48, .78);
+  border-color: rgba(165, 243, 252, .6);
+}
+[data-bs-theme="dark"] .cvx .ix-guide .ix-smp button svg:last-child { color: #67e8f9; }
+[data-bs-theme="dark"] .cvx .ix-guide .ix-g__n {
+  color: #a5f3fc;
+  background: rgba(6, 38, 48, .6);
+  border: 1px solid rgba(165, 243, 252, .35);
+}
+/* Required column chips (name, password) match the other chips in dark mode instead of light cyan. */
+[data-bs-theme="dark"] .cvx .ix-guide .ix-cols code.is-req {
+  color: #e0fbff;
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .22);
+}
+
 /* Review popup: Accepted / Discarded records tabs, then Save. */
 .cvx #crd-host .mapsup-box.crd-box.gp-box.ir-rev-box {
   width: min(1080px, calc(100vw - 32px)) !important;
@@ -6405,6 +6458,12 @@
   min-height: var(--tv-h, 620px);
   display: flex;
   flex-direction: column;
+}
+/* Team Vault: both panes are exactly the room down to the footer (not just at least it), and the
+   right pane's rows scroll inside (tv-pane--fit), so the page no longer scrolls. */
+.cvx.tvx-page .tv-pane {
+  height: var(--tv-h);
+  min-height: 0;
 }
 
 .cvx .tv-split > .tv-pane:not(.tv-pane--r) {
@@ -8618,6 +8677,20 @@
 [data-bs-theme="dark"] .cvx .rb-ret__note { color: #94a3b8; }
 [data-bs-theme="dark"] .cvx .rb-opt:hover { border-color: #22d3ee; }
 [data-bs-theme="dark"] .cvx .rb-opt:disabled:hover { border-color: rgba(148, 163, 184, .22); }
+/* Retention card's bin tile on the page: white-to-cyan gradient glared in dark mode. */
+[data-bs-theme="dark"] .cvx .rb-hero__ico {
+  color: #a5f3fc;
+  background: rgba(6, 38, 48, .55);
+  border: 1px solid rgba(165, 243, 252, .35);
+  box-shadow: 0 10px 20px -10px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+/* Retention period clock tile: the light cyan gradient glared on the dark popup. */
+[data-bs-theme="dark"] .cvx .rb-ret__ico {
+  color: #67e8f9 !important;
+  background: linear-gradient(135deg, rgba(34, 211, 238, .18), rgba(8, 145, 178, .10)) !important;
+  border: 1px solid rgba(34, 211, 238, .35);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+}
 [data-bs-theme="dark"] .cvx .rb-opt.is-on { background: linear-gradient(135deg, #0e7490, #22d3ee); border-color: transparent; }
 [data-bs-theme="dark"] .cvx .rb-opt.is-on b,
 [data-bs-theme="dark"] .cvx .rb-opt.is-on small { color: #fff; }
@@ -17187,6 +17260,15 @@
   height: 100%;
 }
 
+/* QA #41: the bar is 48px but its 1px border left the input itself at 46px. The input is now 48px
+   too, laid over the border (-1px top and bottom; it is transparent, so the border still shows) -
+   the bar, the input and the tabs beside it are all 48px. */
+.cvx .tvc-top .bst-search.whm-main-search > input {
+  box-sizing: border-box;
+  height: 48px;
+  margin-block: -1px;
+}
+
 /* Critical Vault only: Figma search bar up to 665px wide, pinned right; the gap to the tabs is the leftover
    space. flex-basis 0, not 665px — the row wraps, and a 665px basis dropped the search under the tabs. */
 .cvx.cv-page .tvc-top .bst-search.whm-main-search {
@@ -17451,6 +17533,36 @@
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-sechead,
 [data-bs-theme="dark"] .cvx .vd .vd-kv {
   border-bottom-color: rgba(34, 211, 238, .12);
+}
+
+/* View drawer download buttons: spinner while the file downloads; the others wait. */
+.cvx .vd .cp-spin.vd-dl-spin { width: 13px; height: 13px; border-width: 2px; border-color: #a5f3fc; border-top-color: #0891b2; }
+.cvx .vd .crd-att__b:disabled,
+.cvx .vd .vd-ic:disabled[aria-busy],
+.cvx .vd .crd-att__b[aria-busy] { cursor: progress; }
+.cvx .vd .crd-att__b:disabled:not([aria-busy]) { opacity: .55; cursor: not-allowed; }
+[data-bs-theme="dark"] .cvx .vd .cp-spin.vd-dl-spin { border-color: rgba(103, 232, 249, .3); border-top-color: #67e8f9; }
+
+/* View drawer attachments: the file card was solid white in dark mode (the form's dark
+   rules only reach #crd-host .crd-box). Same look as the form's attachment cards. */
+[data-bs-theme="dark"] .cvx .vd .crd-att__f {
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(34, 211, 238, .16);
+}
+[data-bs-theme="dark"] .cvx .vd .crd-att__f b { color: #e2f4f8; }
+[data-bs-theme="dark"] .cvx .vd .crd-att__f small { color: #8fb3c2; }
+[data-bs-theme="dark"] .cvx .vd .crd-att__fi {
+  color: color-mix(in srgb, var(--c) 60%, #fff);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  border-color: color-mix(in srgb, var(--c) 40%, transparent);
+}
+[data-bs-theme="dark"] .cvx .vd .crd-att__b {
+  color: #a8bfca;
+  background: rgba(148, 163, 184, .12);
+}
+[data-bs-theme="dark"] .cvx .vd .crd-att__b:hover {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .14);
 }
 
 [data-bs-theme="dark"] .cvx #crd-host .crd-box .mapsup-sechead__title,
@@ -18765,7 +18877,7 @@
   transform: none;
 }
 
-/* CS-1438 · My Vault form: the locked Auto fields (Credential ID, Category, Owner) are inert — no focus, border change or text cursor. */
+/* CS-1438 · My Vault + Critical Vault form: the locked Auto fields (Credential ID, Category, Owner) are inert — no focus, border change or text cursor. */
 .cvx .mapsup-inputwrap.is-frozen.is-inert {
   cursor: not-allowed;
 }
@@ -18862,6 +18974,64 @@
 }
 
 [data-bs-theme="dark"] .cvx .vd.vd--mv .vd-ft .mapsup-footer__btn--ghost.vd-fb:hover {
+  color: #ecfeff !important;
+  background: rgba(34, 211, 238, .14) !important;
+}
+
+/* Team Vault opens the same View drawer without `fieldLabels`, so it never gets `.vd--mv` and none
+   of the dark rules above reached it: Share, Delete, Close and the header icon stayed white blocks.
+   Critical Vault opens it the same way. The same values, scoped to the plain drawer AND to a page
+   where Team Vault or Critical Vault is open - My Vault
+   (vd--mv) and every other screen are untouched. */
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-hd__ico {
+  background: rgba(255, 255, 255, .08) !important;
+  color: #67e8f9 !important;
+  border: 1px solid rgba(103, 232, 249, .28);
+  box-shadow: none !important;
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn {
+  color: #a5f3fc;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(103, 232, 249, .3);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn:hover:not(:disabled) {
+  color: #ecfeff;
+  background: rgba(34, 211, 238, .16);
+  border-color: rgba(103, 232, 249, .5);
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn--p {
+  color: #ecfeff;
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  border-color: transparent;
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn--del {
+  color: #fda4af;
+  background: rgba(244, 63, 94, .1);
+  border-color: rgba(251, 113, 133, .35);
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-btn--del:hover {
+  color: #fff;
+  background: #e11d48;
+  border-color: #e11d48;
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-x {
+  color: #a5f3fc;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(103, 232, 249, .3);
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-ft .mapsup-footer__btn--ghost.vd-fb {
+  color: #67e8f9 !important;
+  background: rgba(34, 211, 238, .06) !important;
+  border: 1.5px solid rgba(34, 211, 238, .35) !important;
+  box-shadow: none !important;
+}
+[data-bs-theme="dark"] body:has(.cvx:is(.tvx-page, .cv-page)) .cvx .vd:not(.vd--mv) .vd-ft .mapsup-footer__btn--ghost.vd-fb:hover {
   color: #ecfeff !important;
   background: rgba(34, 211, 238, .14) !important;
 }
@@ -19164,6 +19334,26 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   .cvx .cv-lock__spin { animation: none; }
 }
 
+.cvx .vd-ov .cv-lock.vd-loading {
+  position: fixed;
+  border-radius: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.cvx .vd-ov .cv-lock.vd-loading .cv-lock__box {
+  padding: 20px 28px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 50px -18px rgba(8, 47, 73, .45);
+}
+
+[data-bs-theme="dark"] .cvx .vd-ov .cv-lock.vd-loading .cv-lock__box {
+  background: #0b1d26;
+  box-shadow: 0 20px 50px -18px rgba(0, 0, 0, .7), 0 0 0 1px rgba(34, 211, 238, .16);
+}
+
 /* ══ Recycle Bin · Retention period popup (CS-1493): shimmer while it opens, the save lock while it saves ══ */
 .cvx .dl-modal.rb-ret {
   position: relative;
@@ -19379,3 +19569,13 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
   border-color: #f43f5e !important;
   box-shadow: 0 0 0 3px rgba(244, 63, 94, .12) !important;
 }
+
+/* ══ My Vault · fits at 125% zoom (~1530px wide): tabs and search share one row, and the open
+   "What We Are Doing Here" brief has a slimmer header. ══ */
+.cvx.myv-page .tvc-top .smt-proctype-tabs { gap: 2px; flex-shrink: 0; }
+.cvx.myv-page .tvc-top .smt-proctype-tab { gap: 7px; padding-left: 6px; padding-right: 11px; font-size: 12px; }
+.cvx.myv-page .tvc-top .smt-proctype-tab .parch-main-c { margin-left: 0; }
+.cvx.myv-page .tvc-top .bst-search.whm-main-search { flex: 1 1 200px; min-width: 200px; }
+
+.cvx.myv-page .sup-fig .bref-box__header { padding: 5px 12px; min-height: 40px; gap: 10px; }
+.cvx.myv-page .sup-fig .bref-box__header-ico { width: 30px; height: 30px; border-radius: 9px; }

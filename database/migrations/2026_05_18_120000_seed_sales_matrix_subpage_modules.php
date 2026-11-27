@@ -3,26 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Adds 7 new Sales Matrix leaf modules to surface the centerpiece prototype
- * pages as their own sidebar entries:
- *
- *   Sales Insights & Productivity
- *     + Diagnosis
- *     + Resolution Center
- *     + Performance
- *
- *   Sales Matrix Operations
- *     + Lead Distribution
- *     + Lead Detail
- *     + Enquiries
- *     + Leads Details
- *
- * Mirrors the seeding pattern in 2026_05_16_000001_seed_sales_matrix_modules:
- * idempotent, no permission backfill (cascade super_admin → client_admin →
- * branch_user → employee stays explicit). sort_order continues after the
- * existing leaves in each category.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -32,8 +12,6 @@ return new class extends Migration
             'sales.operations' => DB::table('modules')->where('slug', 'sales.operations')->value('id'),
         ];
 
-        // Bail if the parent rows aren't present — the 05_16 migration must
-        // have run first.
         if (!$catIds['sales.insights'] || !$catIds['sales.operations']) {
             return;
         }
@@ -53,7 +31,6 @@ return new class extends Migration
         ];
 
         foreach ($leaves as $catSlug => $items) {
-            // sort_order continues after the existing leaves in the category.
             $existingCount = DB::table('modules')
                 ->where('parent_id', $catIds[$catSlug])
                 ->count();

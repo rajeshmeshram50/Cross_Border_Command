@@ -33,7 +33,6 @@ class ProcurementProduct extends Model
         return $this->belongsTo(Product::class);
     }
 
-    /** Recorded sourced supplier for this line (nullable). */
     public function vendor(): BelongsTo
     {
         return $this->belongsTo(Vendor::class);

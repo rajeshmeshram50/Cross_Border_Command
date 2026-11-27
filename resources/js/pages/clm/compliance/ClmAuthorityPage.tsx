@@ -10,6 +10,8 @@ import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShe
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import SearchClear from '../../../components/ui/SearchClear';
+import { useLocation } from 'react-router-dom';
+import { ClmBulkModal, CLM_IE_CSS } from '../shared/ClmDocImportExport';
 import {
   CLM_NAME_MAX,
   CLM_DESC_MAX,
@@ -40,6 +42,10 @@ export default function ClmAuthorityPage() {
   const [booted, setBooted] = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]   = useState('');
+  /* Opened from the Master Control Center (/master/...): one Bulk Data Import/Export
+     button with a guided popup. The CLM menu keeps the three toolbar buttons. */
+  const inMasterCenter = useLocation().pathname.startsWith('/master/');
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [page, setPage]       = useState(1);
   // Dynamic pagination: rows-per-page auto-fits the visible table height and
   // the Rows-per-page dropdown lets the user override it (matches the other
@@ -113,7 +119,7 @@ export default function ClmAuthorityPage() {
   const start    = (page - 1) * rpp;
   const safePage = page;
   const pageCount = Math.max(1, Math.ceil(count / rpp));
-  const isEmpty = !loading && slice.length === 0;
+  /* booted, not !loading: during a search reload the last answer stays on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty = booted && slice.length === 0;
 
   /* Dynamic rows-per-page — the shared hook the Clause Library and Trade
      Document masters use, so all three behave identically.
@@ -209,6 +215,7 @@ export default function ClmAuthorityPage() {
       if (!rows.length) { toast.warning('No data rows', 'No data rows found. Use the sample sheet: headers in row 1, data from row 2.'); return; }
       const { data } = await api.post<ImportResult>('/clm/authorities/import', { rows });
       setImportResult({ imported: data.imported ?? [], failed: data.failed ?? [] });
+      setBulkOpen(false);
       if ((data.imported ?? []).length) reload();
     } catch (e: any) {
       toast.error('Import failed', e?.response?.data?.message ?? 'Could not read or import the file');
@@ -237,6 +244,13 @@ export default function ClmAuthorityPage() {
           flex: 0 0 auto; width: 500px; max-width: 100%;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
+        /* 40px, the height of the Sample Sheet / Import / Export buttons beside
+           it. This toolbar has no tab rail, so the shared 48px CLM search (sized
+           to a rail) stood 8px taller than the buttons. The .clm-mc line beats
+           the shared 48px rules there, and pins the buttons to 40 as well. */
+        .clm-root .clm-tabs-bar .clm-search.auth-search,
+        .clm-mc .clm-root .clm-tabs-bar .clm-search.auth-search { height: 40px; }
+        .clm-mc .clm-root .clm-tabs-bar .auth-xl-btn { height: 40px; }
         /* Width stays fixed on focus — only the border/shadow change — so the
            search bar never shifts position when it gains or loses focus. */
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
@@ -246,11 +260,12 @@ export default function ClmAuthorityPage() {
         .clm-root .auth-xl-btn {
           display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px;
           border: 1px solid rgba(8,145,178,.35); border-radius: 8px; background: #fff;
-          color: #0e7490; font-size: 13px; font-weight: 600; cursor: pointer;
+          color: #0e7490; font-size: 12.5px; font-weight: 600; cursor: pointer;
         }
         .clm-root .auth-xl-btn:hover:not(:disabled) { background: #ecfeff; }
         .clm-root .auth-xl-btn:disabled { opacity: .6; cursor: progress; }
         [data-bs-theme="dark"] .clm-root .auth-xl-btn { background: #0f172a; color: #67e8f9; }
+        [data-bs-theme="dark"] .clm-root .auth-xl-btn:hover:not(:disabled) { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.55); color: #a5f3fc; }
       `}</style>
 
       <ClmPageHeader
@@ -291,6 +306,31 @@ export default function ClmAuthorityPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) void onImportFile(f); }} />
+          {inMasterCenter ? (
+            <>
+              <style>{CLM_IE_CSS}</style>
+              <button type="button" className="clm-ie-btn cie-bulk-btn" onClick={() => setBulkOpen(true)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Bulk Data Import/Export
+              </button>
+              {bulkOpen && (
+                <ClmBulkModal
+                  nameLabel="Authority Name"
+                  validityLabel=""
+                  cols={[['Authority Name', true], ['Description', true]]}
+                  sampleNote="Fill in one authority per row and keep the first row (the column names) as it is."
+                  importing={importing}
+                  exporting={exporting}
+                  onSample={downloadSample}
+                  onBrowse={() => fileRef.current?.click()}
+                  onDropFile={f => void onImportFile(f)}
+                  onExport={() => void onExport()}
+                  onClose={() => { if (!importing) setBulkOpen(false); }}
+                />
+              )}
+            </>
+          ) : (
+          <>
           <button type="button" className="auth-xl-btn" onClick={downloadSample}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             Sample Sheet
@@ -303,6 +343,8 @@ export default function ClmAuthorityPage() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             {exporting ? 'Exporting…' : 'Export'}
           </button>
+          </>
+          )}
           </div>
         </div>
 
@@ -318,9 +360,9 @@ export default function ClmAuthorityPage() {
             <div
               className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`}
               ref={scrollRef}
-              style={{ minHeight: fillH }}
+              style={{ minHeight: fillH, maxHeight: fillH }}
             >
-              <table className="clm-table">
+              <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>AUTHORITY ID</th>
@@ -329,8 +371,8 @@ export default function ClmAuthorityPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ClmSkeletonRows cols={5} />}
-                  {!loading && slice.map((r, i) => (
+                  {loading && !booted && <ClmSkeletonRows cols={5} />}
+                  {booted && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -362,7 +404,7 @@ export default function ClmAuthorityPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bShield}</div>
@@ -372,7 +414,7 @@ export default function ClmAuthorityPage() {
               )}
               {/* Outside the scroll box — the pager is how you leave a page, so
                   it must not scroll away with the rows it pages through. */}
-              {!loading && count > 0 && (
+              {booted && (
                 <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>

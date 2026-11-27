@@ -8,6 +8,8 @@ import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem, type P
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import SalaryHistoryModal from '../../components/SalaryHistoryModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
+import PayrollExecutionHistoryModal from './PayrollExecutionHistoryModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { useToast } from '../../contexts/ToastContext';
 import useModulePermission from '../../hooks/useModulePermission';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -90,6 +92,9 @@ interface PayrollRow {
   weekOffDays?: number | null;
   /** Paid holidays in the period — excluded from Absent. Null when not computed. */
   holidayDays?: number | null;
+  /** Of those holidays, how many the employee actually worked. Those are
+   *  already inside `present`, so only the rest come out of Absent. */
+  holidayDaysWorked?: number | null;
   pfStale?: boolean;
   pfNotice?: string | null;
   /* Full monthly salary from the structure, and whether this cycle pays less
@@ -324,7 +329,14 @@ export default function HrPayroll() {
   const [periodMeta, setPeriodMeta] = useState<{ attendance_finalized: boolean; status: string; run_status: string | null; working_days?: number; total_month_days?: number } | null>(null);
   const [runMeta, setRunMeta] = useState<{ id: number; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /* What the veil says while `busy` is up. Running payroll over a few hundred
+     employees takes seconds and the page gave no sign it had started. */
+  const [busyLabel, setBusyLabel] = useState('Working…');
   const [exportOpen, setExportOpen] = useState(false);
+  /* Payroll Execution History — who ran payroll each month and when.
+     Opened from the header, beside Run Payroll, because that is where the
+     question comes up: before running it again, who ran it last time. */
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
 
@@ -1076,6 +1088,7 @@ export default function HrPayroll() {
       return;
     }
 
+    setBusyLabel('Running payroll…');
     setBusy(true);
     try {
       // Catch an empty cycle before the automatic attendance-finalize step.
@@ -1131,6 +1144,7 @@ export default function HrPayroll() {
     if (busy) return;
     const month = cycle?.month, year = cycle?.year;
     if (!month || !year) return;
+    setBusyLabel('Reopening cycle…');
     setBusy(true);
     try {
       await api.post('/payroll/reopen', { month, year });
@@ -1150,6 +1164,7 @@ export default function HrPayroll() {
     if (!runMeta?.id) { setRunOpen(false); return; }
     if (proceeding) return;
     setProceeding(true);
+    setBusyLabel('Approving payroll…');
     setBusy(true);
     try {
       if (runMeta.status !== 'approved' && runMeta.status !== 'paid') {
@@ -1699,18 +1714,25 @@ status: facetParam(facets.status),
       meta: { width: '10%', align: 'center' },
       cell: info => {
         const r = info.row.original;
-        /* Say that holidays were taken out. The figure is derived, and a
-           reader counting days by hand has no way to see which credits went
-           into it — that invisibility is what got holidays reported as being
-           counted twice. (CBC #8) */
+        /* Say which credits went into the figure. It is derived, and a reader
+           counting days by hand has no way to see them — that invisibility is
+           what got holidays reported as being counted twice (CBC #8), and then
+           as being counted twice the OTHER way when a worked holiday was taken
+           out of Absent as well as being counted Present (QA #55). */
         const hol = r.holidayDays ?? 0;
+        const holWorked = r.holidayDaysWorked ?? 0;
+        const holUnworked = Math.max(0, hol - holWorked);
+        const title = hol > 0
+          ? `${holUnworked} paid holiday day(s) are excluded from Absent.`
+            + (holWorked > 0
+              ? ` ${holWorked} holiday day(s) were worked and are already counted under Present.`
+              : '')
+          : undefined;
         return (
           <span
             className="fs-13 fw-bold"
             style={{ color: r.absent ? '#b1401d' : 'var(--vz-secondary-color)' }}
-            title={hol > 0
-              ? `${hol} paid holiday day(s) in this period are excluded from Absent.`
-              : undefined}
+            title={title}
           >
             {r.absent}
           </span>
@@ -2107,6 +2129,11 @@ status: facetParam(facets.status),
   return (
     <>
       <MasterFormStyles />
+      {busy && <FullPageLoader label={busyLabel} />}
+      {/* Export / email run just as long and had only a button spinner. */}
+      {!busy && downloading && (
+        <FullPageLoader label={downloading === "email" ? "Emailing payslips…" : "Preparing the download…"} />
+      )}
       <div className="pay-page">
         {/* #22 — the page owns the viewport, so the table card below never
             scrolls out of reach. Everything down to the KPI strip lives in this
@@ -2148,6 +2175,24 @@ status: facetParam(facets.status),
               never receives hover and its own title can never appear — the
               button just greyed out with no explanation. The span is not
               disabled, so it does. */}
+          {/* Before Run Payroll on purpose: the question it answers —
+              who ran this last, and when — is one you ask before you run
+              it again, not after. */}
+          <Tooltip label="Who ran payroll, when it was executed, and how it ended.">
+            <Button
+              className="rounded-pill fw-semibold d-inline-flex align-items-center"
+              onClick={() => setHistoryOpen(true)}
+              style={{
+                padding: '10px 15px',
+                fontSize: 12,
+                border: '1px solid #705ad0',
+                background: 'var(--vz-card-bg)',
+                color: '#5a3fd1',
+              }}
+            >
+              <i className="ri-history-line me-2" style={{ fontSize: 15 }} /> History
+            </Button>
+          </Tooltip>
           <Tooltip label={loading
             ? 'Loading this cycle — the run button unlocks once its figures are on screen.'
             : canReopenCycle
@@ -2164,12 +2209,15 @@ status: facetParam(facets.status),
                a half-loaded cycle is the same mistake as running on one. */
             disabled={busy || loading || (cycleLocked && !canReopenCycle)}
             style={{
-              padding: '10px 18px',
-              fontSize: 13,
+              padding: '10px 15px',
+              fontSize: 12,
+              minWidth: 150,
+              justifyContent: 'center',
               color: '#fff',
               background: canReopenCycle
                 ? 'linear-gradient(135deg,#f7a325 0%,#d9820a 100%)'
                 : 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
+              border: 'none',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
               opacity: (busy || loading || (cycleLocked && !canReopenCycle)) ? 0.6 : 1,
             }}
@@ -2814,6 +2862,10 @@ status: facetParam(facets.status),
         </div>
       </div>
 
+      <PayrollExecutionHistoryModal
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
       <PaymentDisbursementModal
         open={paymentOpen}
         onClose={() => { setPaymentOpen(false); loadCycles(); }}

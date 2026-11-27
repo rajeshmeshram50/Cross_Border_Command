@@ -10,12 +10,6 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Delivers the final, fully-signed document to the subject employee once the
- * signing workflow completes. The DOCX is built on-the-fly from the
- * signature run's frozen `content_html` (which already has every signer's
- * typed signature stitched in) and attached.
- */
 class SignedDocumentMail extends Mailable
 {
     use Queueable, SerializesModels;

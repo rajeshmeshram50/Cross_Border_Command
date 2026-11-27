@@ -475,9 +475,14 @@ export default function HrCustomFields() {
             accent="violet"
             /* Stretches the card to the viewport so a short list doesn't
                collapse into a strip above an empty page — paired with
-               autoFitRows, which then fills that height with rows. */
+               autoFitRows, which then fills that height with rows.
+               fillToFooter pins the card to 8px above the footer (no leftover
+               gap below the rows); minAutoRows floors the fit at 10 on a short
+               window. */
             fitToViewport
             autoFitRows
+            fillToFooter
+            minAutoRows={10}
             minWidth={1100}
             loading={loading}
             searchValue={search}

@@ -6,11 +6,6 @@
     <title>DEBIT NOTE — {{ $dn->code ?? '' }}</title>
     <style>
         @page {
-            /* Clear the 40px fixed footer PLUS a full line of buffer. DomPDF can
-               let the last line dip a little below the margin line; with only a
-               few px gap that dip lands in the footer band and the clause is
-               hidden behind it. 40 (footer) + ~12 (one line) = 52px keeps every
-               line above the footer. (10-43px hid the last T&C clause.) */
             margin-bottom: 52px;
         }
 
@@ -162,10 +157,6 @@
             line-height: 12px;
             text-align: justify;
         }
-        /* Each T&C clause is its own block and is kept whole (never split across
-           a page). Clauses break BETWEEN each other, so the list fills from where
-           it starts, flows onto the next page as needed, and never drops a clause
-           (the DomPDF split-<ol> bug) or hides one behind the footer. */
         .dn-tnc-item {
             page-break-inside: avoid;
         }
@@ -182,7 +173,6 @@
             return trim((string) $s);
         };
 
-        // Footer compliance strip — only non-empty fields, joined by " | ".
         $__footerParts = [];
         if (trim((string) ($companyDetails->name ?? '')) !== '')
             $__footerParts[] = $companyDetails->name;
@@ -196,7 +186,6 @@
             $__footerParts[] = 'PAN: ' . $companyDetails->pan_no;
         $__footerStrip = implode('  |  ', $__footerParts);
 
-        // Amount in words (Indian English lakhs/crores).
         $__grandTotal = (float) ($totals->grand_total ?? 0);
         $__rupees = (int) floor($__grandTotal);
         $__paise = (int) round(($__grandTotal - $__rupees) * 100);
@@ -211,9 +200,6 @@
                 return trim($tens[intdiv($n, 10)] . ' ' . ($n % 10 ? $ones[$n % 10] : ''));
             };
             $threeDigit = function (int $n) use (&$threeDigit, $ones, $twoDigit): string {
-                // A crore count can itself run into thousands/lakhs, so recurse on
-                // thousands instead of assuming n < 1000 — otherwise
-                // $ones[intdiv($n,100)] hits an undefined key on huge amounts.
                 if ($n >= 1000) {
                     $th = intdiv($n, 1000); $r = $n % 1000;
                     return trim($threeDigit($th) . ' Thousand' . ($r ? ' ' . $threeDigit($r) : ''));
@@ -258,7 +244,6 @@
         $amountInWords = $__rupeeWords . ($__paiseWords !== '' ? ' and ' . $__paiseWords . ' Paise' : '');
         $__ccyCode = trim((string) ($dn->currency ?? 'INR')) ?: 'INR';
 
-        // Logo / monogram fallback.
         $logoData = $companyDetails->logo_data ?? null;
         $logoFallbackHtml = '';
         if (!$logoData) {
@@ -286,7 +271,6 @@
         $signatureData = $companyDetails->signature_data ?? null;
     @endphp
 
-    <!-- GLOBAL FOOTER -->
     <div class="pdf-footer">
         <table class="pf-row">
             <tr>
@@ -305,13 +289,10 @@
         </table>
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="content-wrapper">
 
-        <!-- HEADER -->
         <table class="full-w" style="width:100%; border-collapse:collapse;">
             <tr>
-                <!-- LEFT: LOGO + LETTERHEAD -->
                 <td style="width:50%; vertical-align:top; font-size:9px; padding:0; margin:0;">
                     <div style="height:80px;">
                         @if($logoData)
@@ -378,18 +359,12 @@
                 </td>
                 <td style="width:2.6%;"></td>
 
-                <!-- RIGHT: TITLE + DEBIT NOTE INFO GRID + SUPPLIER -->
                 <td style="width:47.5%; vertical-align:top;">
                     <div style="min-height:80px;">
-                        {{-- Row 1: title on its own line, full width. --}}
                         <h3
                             style="margin:0 0 6px 0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; letter-spacing:-0.3px; white-space:nowrap; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
                             {{ strtoupper($pdf_title ?? 'DEBIT NOTE') }}
                         </h3>
-                        {{-- Row 2: the two fields (No + Date) on the left, barcode on the right.
-                        The right cell uses the SAME 55%/45% split as the info grid below,
-                        and the barcode is LEFT-aligned so its left edge lines up exactly
-                        with the "Debit Note Date / SPI Date / …" fields underneath it. --}}
                         <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
                             <tr>
                                 <td style="width:55%; vertical-align:top; font-size:9px;">
@@ -415,7 +390,6 @@
                         </table>
                     </div>
 
-                    {{-- DEBIT NOTE INFO GRID — two sub-columns like the PO layout. --}}
                     <table
                         style="width:100%; border-collapse:collapse; margin-top:12px; font-size:9px; line-height:14px;">
                         <tr>
@@ -455,7 +429,6 @@
         <hr
             style="border: 0.1px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
-        <!-- DEBIT TO / BILL TO -->
         <table class="full-w" style="width:100%; border-collapse:collapse; margin-top:8px;">
             <tr>
                 <td style="width:50%; font-size:9px; line-height:14px; vertical-align: top; padding:6px 0;">
@@ -487,7 +460,6 @@
             </tr>
         </table>
 
-        <!-- PRODUCT TABLE -->
         <section style="margin-top:10px;">
             <table class="prod_table" style="table-layout: fixed; font-size:9px; width:100%;">
                 <thead>
@@ -522,7 +494,6 @@
             </table>
         </section>
 
-        <!-- BANK + CHARGES/TOTALS -->
         <div style="margin-top: 16px; page-break-inside: avoid;">
             <hr
                 style="border: 0.2px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
@@ -608,7 +579,6 @@
                 </tr>
             </table>
 
-            <!-- AMOUNT IN WORDS -->
             <div
                 style="width:100%; display:block; font-size:10px; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }}; margin-top:10px; margin-bottom:15px; text-align:left; padding:8px 14px; background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; box-sizing:border-box; line-height: 14px; font-weight:600;">
                 <strong
@@ -617,7 +587,6 @@
                 </strong>
             </div>
 
-            <!-- SIGNATURE -->
             @if ($signature == 'Yes')
                 <section>
                     <table style="width:100%;">
@@ -658,7 +627,6 @@
             @endif
         </div>
 
-        <!-- REASON -->
         @if(!empty(trim((string) ($dn->reason ?? ''))))
             <div style="margin-top: 14px;">
                 <div
@@ -671,16 +639,10 @@
             </div>
         @endif
 
-        <!-- TERMS & CONDITIONS -->
         @php
             $__masterTerms = $masterTerms ?? [];
             $__formTerms = trim((string) ($dn->terms ?? ''));
 
-            /* Split a master-T&C HTML row into its intro (anything before the
-               list) + the individual <li> clauses, so each clause renders as its
-               OWN block. DomPDF drops <li> items when one <ol> is split across a
-               page break; separate blocks break cleanly BETWEEN clauses instead,
-               so the T&C fills from the current page and never loses a clause. */
             $__splitTnc = function ($html) {
                 $html = (string) $html;
                 if (!preg_match('/<li[\s>]/i', $html)) {
@@ -698,9 +660,6 @@
                     style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
                     Terms And Conditions :
                 </div>
-                {{-- Each master-T&C clause is its own block (dn-tnc-item) so clauses
-                     break BETWEEN one another across pages — none dropped, none
-                     hidden — and the list fills from wherever it starts. --}}
                 @foreach($__masterTerms as $__t)
                     @php $__p = $__splitTnc($__t); @endphp
                     @if(trim(strip_tags((string) $__p['intro'])) !== '')
@@ -715,7 +674,6 @@
                         <div class="po-terms dn-tnc-item" style="margin-bottom:4px;">{!! \App\Support\PdfHighlight::fix($__t) !!}</div>
                     @endif
                 @endforeach
-                {{-- Free-text terms typed on the debit note form (splits line-by-line). --}}
                 @if($__formTerms !== '')
                     <div class="po-terms" style="margin-top:4px;">{!! nl2br(e($__formTerms)) !!}</div>
                 @endif

@@ -13,22 +13,6 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-/**
- * Payroll operations endpoint. Every action is tenant-scoped from the
- * authenticated user (Rule 20 — never trust a client_id from the body) and the
- * active branch is taken from the Axios-injected `branch_id` query param.
- *
- * Routes (see routes/api.php):
- *   GET    /payroll/cycles                  list periods for the strip
- *   GET    /payroll?month=&year=            full cycle view (period+run+rows)
- *   POST   /payroll/finalize-attendance     Rule 1 gate
- *   GET    /payroll/preflight?month=&year=  blocking/warning issues
- *   POST   /payroll/run                     generate/regenerate (Rule 1/13/14)
- *   POST   /payroll/approve                 lock the run (Rule 15)
- *   POST   /payroll/pay                     disburse (Rule 12 bank gate)
- *   GET    /payroll/payslip/{id}            single payslip detail (Rule 16)
- *   GET    /payroll/export?month=&year=     CSV (Rule 17 permission gate)
- */
 class PayrollController extends Controller
 {
     public function __construct(
@@ -36,44 +20,27 @@ class PayrollController extends Controller
         private \App\Services\PayslipPdfService $pdf,
     ) {}
 
-    /* ───────────────────────── context ───────────────────────── */
-
     private function ctx(Request $request): array
     {
         $user = $request->user();
         return [
             'user_id'   => $user?->id,
             'client_id' => $user?->client_id,
-            // Branch resolution (every branch is an equal, isolated peer):
-            //  - super_admin / client_admin / client_user: use the switcher's
-            //    branch_id, or null = the whole client.
-            //  - branch_user: PINNED to their own branch (the switcher cannot
-            //    widen their payroll scope — Rule 20).
             'branch_id' => $this->effectiveBranchId($request, $user),
         ];
     }
 
-    /** Resolve the branch a user may operate payroll in (see ctx() notes). */
     private function effectiveBranchId(Request $request, $user): ?int
     {
         if (!$user) return null;
         $requested = $request->integer('branch_id') ?: null;
 
-        // Branch users are confined to their own branch, full stop — every
-        // branch is an isolated peer.
         if ($user->user_type === 'branch_user' && $user->branch_id) {
             return (int) $user->branch_id;
         }
-        // Everyone else: honour the switcher, default to their own branch (if
-        // any), else the whole client (null).
         return $requested ?: ($user->branch_id ?: null);
     }
 
-    /**
-     * Server-side gate for state-changing payroll actions (finalize / run /
-     * approve / pay / reopen). Mirrors canExport but on the edit/approve grant.
-     * Plain employees can never manage payroll, even if the menu leaks through.
-     */
     private function canManage(Request $request): bool
     {
         $user = $request->user();
@@ -82,29 +49,9 @@ class PayrollController extends Controller
         if ($user->user_type === 'employee') return false;
         $perm = $user->permissions['hr.payroll'] ?? null;
         if (is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false))) return true;
-        // A branch_user (branch admin) manages their branch's payroll.
         return $user->user_type === 'branch_user';
     }
 
-    /**
-     * The employee this caller may see payroll for, or null when they may see
-     * the whole cycle. (#119)
-     *
-     * The payroll READ endpoints were gated on nothing but `auth:sanctum`, so
-     * an employee-tier login opening Payroll Processing received every
-     * colleague's row — gross, net pay, PF, PT, TDS and bank-verified status —
-     * and the Run Payroll warnings panel listed colleagues by name and
-     * department. Salary Setup, by contrast, refuses them outright (403), which
-     * is what made the two screens disagree and got raised as this ticket.
-     *
-     * Salary Setup has it right, so the fix runs that way: the employee tier
-     * keeps its own row and loses everyone else's, rather than Salary Setup
-     * being opened up to match. Their own payslip history already has its own
-     * self-guarded endpoint, so nothing they are entitled to is lost.
-     *
-     * Returns null for every managing tier, which leaves those callers exactly
-     * as they were.
-     */
     private function selfOnlyEmployeeId(Request $request): ?int
     {
         $user = $request->user();
@@ -112,14 +59,9 @@ class PayrollController extends Controller
             return null;
         }
 
-        // 0 when the login is not linked to an employee record — matches nothing,
-        // which is the correct answer for "show me my row" when there isn't one.
         return (int) ($user->employee_id ?? 0);
     }
 
-    /** Processing actions need a concrete tenant scope — a super-admin with no
-     *  client/branch selected would otherwise pool every tenant's employees
-     *  into one run. Returns an error response when scope is missing, else null. */
     private function requireScope(array $ctx)
     {
         if (empty($ctx['client_id']) && empty($ctx['branch_id'])) {
@@ -137,16 +79,6 @@ class PayrollController extends Controller
         return [$month, $year];
     }
 
-    /**
-     * Bug #22 guard — payroll for a period must not be generated/processed
-     * before that period has begun. A future cycle (e.g. July while it is still
-     * June) has no attendance to draw from, so generating it produces a bogus
-     * fully-LOP'd run. Viewing a future cycle is fine; only the mutating
-     * generate/finalize actions are blocked.
-     *
-     * Returns a 422 JsonResponse to short-circuit the caller, or null when the
-     * period is current/past and processing may proceed.
-     */
     private function guardPeriodStarted(PayrollPeriod $period): ?\Illuminate\Http\JsonResponse
     {
         $start = $period->period_start instanceof Carbon
@@ -159,21 +91,6 @@ class PayrollController extends Controller
             ], 422);
         }
 
-        /* A period that has started but NOT ENDED is equally unprocessable.
-         * (CBC #14)
-         *
-         * Only the future was guarded, so the month in progress ran like any
-         * other: on 11 Sep a Sep run priced the whole month off eleven days of
-         * attendance and produced payslips that looked final. Loss of pay is
-         * capped to the elapsed days, so nobody was over-docked — but every
-         * figure on the slip was provisional while nothing said so.
-         *
-         * The rule is now the plain one HR expects: a month is payable once it
-         * is over. Aug becomes runnable on 1 Sep. Enforced here rather than in
-         * the UI alone, since /payroll/run is reachable directly.
-         *
-         * Derived from period_end where it exists, falling back to the month of
-         * period_start, so a non-calendar cycle is judged on its own end date. */
         $end = $period->period_end
             ? ($period->period_end instanceof Carbon
                 ? $period->period_end->copy()
@@ -190,10 +107,6 @@ class PayrollController extends Controller
         return null;
     }
 
-
-    /* ───────────────────────── cycles ────────────────────────── */
-
-    /** Trailing 13-month strip (existing periods + synthesised placeholders). */
     public function cycles(Request $request)
     {
         $ctx = $this->ctx($request);
@@ -203,10 +116,6 @@ class PayrollController extends Controller
             ->get()
             ->keyBy(fn ($p) => $p->year . '-' . $p->month);
 
-        // Batch-load the latest run per period in ONE query instead of querying
-        // runs() per period inside the loop (N+1). cycleDisplayStatus only needs
-        // the most-recent run's status, so group by period and keep the top id.
-        // (Mirrors the pattern already used by history().)
         $latestRuns = $periods->isEmpty()
             ? collect()
             : PayrollRun::whereIn('payroll_period_id', $periods->pluck('id'))
@@ -214,12 +123,6 @@ class PayrollController extends Controller
                 ->groupBy('payroll_period_id')
                 ->map(fn ($g) => $g->sortByDesc('id')->first());
 
-        /* Which runs already have money out of the door. An approved run that
-           was never disbursed is reopenable; one that paid SOME employees (the
-           rest held for bank details) is not — reopening would wipe and re-pay
-           them, so PayrollController::reopen refuses it. Surfaced here so the
-           screen can hide the Reopen action instead of offering a button that
-           can only 422. One grouped query, not one per cycle. */
         $paidRunIds = $latestRuns->isEmpty()
             ? collect()
             : Payslip::whereIn('payroll_run_id', $latestRuns->pluck('id'))
@@ -228,10 +131,6 @@ class PayrollController extends Controller
                 ->pluck('payroll_run_id')
                 ->flip();
 
-        /* Cycles no longer have to run in calendar order — a month can be
-           processed whether or not the month before it was completed. The
-           `blocked_by` key stays in the payload (always null) so the existing
-           UI keeps working without a shape change. */
         $out = [];
         $cursor = now()->startOfMonth()->subMonths(11);
         for ($i = 0; $i < 13; $i++) {
@@ -241,9 +140,6 @@ class PayrollController extends Controller
 
             $isFuture = $cursor->copy()->startOfMonth()->isFuture();
 
-            // An approved/paid run cannot be regenerated (Rule 14). Surfaced so
-            // the Run button can be disabled with a reason instead of firing
-            // and coming back with "already approved/paid".
             $existingRun = $existing ? $latestRuns->get($existing->id) : null;
             $runLocked = $existingRun && in_array($existingRun->status, ['approved', 'paid'], true);
 
@@ -255,22 +151,14 @@ class PayrollController extends Controller
                 'year'   => $y,
                 'financial_year' => PayrollPeriod::financialYearFor($m, $y),
                 'status' => $this->cycleDisplayStatus($existing, $cursor, $existingRun),
-                // A future cycle is frozen outright — there is no attendance to
-                // draw from, so processing it would produce a fully-LOP'd run.
                 'is_future'   => $isFuture,
                 'blocked_by'  => null,
                 'run_status'  => $existingRun?->status,
                 'run_locked'  => (bool) $runLocked,
-                // Frozen but recoverable: approved, nothing disbursed yet, and
-                // the period itself not sealed by a full payment.
                 'can_reopen'  => (bool) $runLocked
                     && $existingRun->status !== 'paid'
                     && ($existing?->status !== 'locked')
                     && !$paidRunIds->has($existingRun->id),
-                // Some paid, some held: the run never reached 'paid' and the
-                // period never locked, so the cycle is neither finished nor
-                // reopenable. Without this the UI can only say "already paid",
-                // which contradicts the In Progress chip beside it.
                 'partially_paid' => (bool) $runLocked
                     && $existingRun->status !== 'paid'
                     && $paidRunIds->has($existingRun->id),
@@ -284,10 +172,6 @@ class PayrollController extends Controller
     private function cycleDisplayStatus(?PayrollPeriod $period, Carbon $cursor, ?PayrollRun $run = null): string
     {
         if ($period) {
-            // A finished cycle is COMPLETED. Full disbursement both flips the run
-            // to 'paid' AND locks the period — checking the locked period (not
-            // just the latest run) keeps a settled month showing Completed even
-            // if a later draft/empty run was created on top of the paid one.
             if ($period->status === 'locked' || ($run && $run->status === 'paid')) {
                 return 'Completed';
             }
@@ -296,20 +180,9 @@ class PayrollController extends Controller
         }
         if ($cursor->isFuture() && !$cursor->isSameMonth(now())) return 'Not Started';
 
-        /* A period ROW existing is not work started. resolveOrCreatePeriod()
-           creates one the moment anybody merely opens the cycle (or exports, or
-           loads the strip), so treating "row exists" as In Progress painted
-           months nobody had touched as active — and, now that cycles run in
-           order, made it look like they were holding up later months. Only a
-           draft run (someone reopened the cycle to correct it) counts. */
         return ($run && $run->status === 'draft') ? 'In Progress' : 'Not Started';
     }
 
-    /**
-     * Payroll history across cycles — per-cycle summaries + the full set of
-     * payslip rows (every column) for an "overall data" Excel export. Tenant
-     * scoped; an employee only ever sees their own rows.
-     */
     public function history(Request $request)
     {
         $ctx = $this->ctx($request);
@@ -357,15 +230,6 @@ class PayrollController extends Controller
             ->with('run')
             ->get();
 
-        /* PF applicability is LIVE master data; the PF column is a frozen
-         * snapshot of what the slip was generated with. Where a finalized cycle
-         * disagrees with the flag as it reads today, the Salary Report used to
-         * show a bare ₹0 (or a bare stale amount) with nothing to explain it —
-         * indistinguishable from "PF Applicable doesn't work". Only the payslip
-         * screen carried that explanation. (#90 reopen)
-         *
-         * Resolved in bulk rather than per row: the grid returns up to 8000
-         * slips and a per-row lookup would be 16k queries. */
         $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
         $pfEligible = \App\Models\Employee::whereIn('id', $empIds)
             ->pluck('pf_eligible', 'id');
@@ -378,11 +242,8 @@ class PayrollController extends Controller
 
         $rows = $slips
             ->map(function ($s) use ($labelMap, $pfEligible, $pfStructure, $periodStatus) {
-                // Same OR PayrollService::resolveCompensation() applies.
                 $pfAppliesNow = (bool) ($pfEligible[$s->employee_id] ?? false)
                     || isset($pfStructure[$s->employee_id]);
-                // Frozen exactly where recomputeEmployeePayslips() gives up, so
-                // the flag never fires on a cycle that will self-correct.
                 $frozen = !in_array($s->run?->status, ['draft', 'generated'], true)
                     || ($periodStatus[$s->payroll_period_id] ?? null) === 'locked';
                 $pfOnSlip = (float) $s->pf_employee > 0;
@@ -394,14 +255,6 @@ class PayrollController extends Controller
                 } elseif ($frozen && !$pfAppliesNow && $pfOnSlip) {
                     $pfNotice = 'PF has since been turned off — this finalized cycle keeps the PF it was paid with.';
                 } elseif (!$frozen && $pfAppliesNow && !$pfOnSlip) {
-                    /* PF ticked, cycle still open (so it was recomputed with the
-                     * flag ON), and PF is STILL zero. That is not the freeze
-                     * rule — the base came out zero, almost always a structure
-                     * with no Basic row or a zero one. The payslip screen said
-                     * so; this grid printed a bare ₹0, which reads as "PF
-                     * Applicable doesn't work" and is how #90 kept coming back.
-                     * Surface the slip's own PF exception verbatim so both
-                     * screens give the same answer. */
                     $pfReason = collect($s->exceptions ?? [])
                         ->pluck('reason')
                         ->first(fn ($r) => stripos((string) $r, 'PF') !== false);
@@ -438,7 +291,6 @@ class PayrollController extends Controller
                 'status'           => $s->status,
                 'bank_account'     => $s->bank_account_number,
                 'ifsc'             => $s->ifsc_code,
-                // Set only when the frozen PF figure contradicts the live flag.
                 'pf_stale'         => $pfNotice !== null,
                 'pf_notice'        => $pfNotice,
             ];
@@ -447,12 +299,6 @@ class PayrollController extends Controller
         return response()->json(['data' => ['cycles' => $cycles, 'rows' => $rows]]);
     }
 
-    /**
-     * Mirror of Employee::getEncryptedIdAttribute — produce the same URL-safe
-     * encrypted token from a bare employee id (the payroll rows come off
-     * Payslip, not Employee, so the accessor isn't available here). The
-     * resolver in resolveIdParam inverts this before Crypt::decryptString.
-     */
     private function encId($employeeId): ?string
     {
         if (!$employeeId) return null;
@@ -463,8 +309,6 @@ class PayrollController extends Controller
         }
     }
 
-    /* ───────────────────────── cycle view ────────────────────── */
-
     public function index(Request $request)
     {
         [$month, $year] = $this->resolveMonthYear($request);
@@ -472,7 +316,6 @@ class PayrollController extends Controller
 
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
-        // An employee tier sees their own row and nothing else (#119).
         $selfOnly = $this->selfOnlyEmployeeId($request);
         $slips = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
@@ -480,17 +323,6 @@ class PayrollController extends Controller
             ->orderBy('employee_name')
             ->get();
 
-        /* Employees with an OPEN exit case are out of regular payroll
-         * (PayrollService::eligibleEmployees). A regenerate drops them, but the
-         * rows this cycle already holds would keep them on screen until someone
-         * re-ran it — and these rows feed Payroll Processing, Biometric Input
-         * AND Salary Report alike, so a mid-exit employee stayed visible, and
-         * actionable, in all three tabs.
-         *
-         * An already-PAID payslip is kept. That money has left the building and
-         * the cycle is locked; erasing it from the salary report would hide a
-         * real disbursement, which is a worse fault than the one this fixes.
-         * Only unpaid, still-provisional rows are withheld. */
         $openExits = \App\Support\ExitInProgress::employeeIds(
             null,
             $slips->pluck('employee_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all(),
@@ -501,46 +333,21 @@ class PayrollController extends Controller
             )->values();
         }
 
-        // A cycle still in progress can only be judged on the days that have
-        // actually happened — see elapsedWorkingDaysMap().
-        $elapsed = $this->elapsedWorkingDaysMap($period, $slips);
         $pfNotices = $this->pfNoticeMap($slips, $run, $period);
-        // Structure gross per employee, so slips generated before the monthly
-        // line data still caption the contractual CTC correctly. (#134)
         $structureGross = $this->structureGrossMap($slips, $period);
-        // Weekly offs per employee for the Biometric Input column. (CBC #7)
         $weekOffs = $this->weekOffDaysMap($slips, $period);
-        // Holidays per employee, so Absent does not swallow them. (CBC #8)
-        $holidays = $this->holidayDaysMap($slips, $period);
+        $attDays = $this->attendanceDaysMap($slips, $period);
         $rows = $slips->map(fn ($p) => $this->serializePayslip(
             $p,
             false,
-            $elapsed[$p->employee_id] ?? null,
+            null,
             $pfNotices[$p->id] ?? null,
             $structureGross[$p->employee_id] ?? null,
             $weekOffs[$p->employee_id] ?? null,
-            $holidays[$p->employee_id] ?? null,
+            $attDays[$p->employee_id] ?? null,
         ));
 
-        /* Employees this cycle SHOULD pay who have no payslip in it yet. (#121)
-         *
-         * The run's payslips are a snapshot taken when Run Payroll was pressed.
-         * Anyone who joined — or finished onboarding — after that moment is
-         * eligible by every rule the engine applies, and yet appears nowhere on
-         * this screen: no row, no exclusion notice, nothing. An employee whose
-         * joining date is today simply is not there, which is indistinguishable
-         * from them having been dropped, and the only way to find out was to
-         * re-run the payroll and count.
-         *
-         * They are listed as real rows with a status of their own, so the
-         * screen shows who is waiting and the count matches the roster. Every
-         * money column is zero because nothing has been computed for them yet —
-         * the figures appear once payroll is re-run, which is exactly what the
-         * status tells HR to do. No payslip_id, so the row carries no payslip
-         * actions (the PDF handler already refuses a row without one). */
         $pending = collect();
-        // Never for the employee tier — this lists colleagues who are not in the
-        // run yet, which is precisely what they must not see. (#119)
         if ($run && $selfOnly === null) {
             $covered = $slips->pluck('employee_id')->filter()->map(fn ($i) => (int) $i)->all();
             $pending = $this->payroll->eligibleEmployees($period)
@@ -554,22 +361,8 @@ class PayrollController extends Controller
                 ->values();
         }
 
-        /* What this caller is allowed to DO, told to the screen. (CBC #16)
-         *
-         * Every write endpoint here is gated on canManage(), but the SPA was
-         * never told the verdict, so it drew Run Payroll fully enabled for
-         * everyone. A user without the permission clicked a live-looking green
-         * button and got a 403 the page swallowed — the button appeared frozen,
-         * with no disabled styling and nothing saying why.
-         *
-         * Sending the verdict lets the button disable itself and explain,
-         * instead of the user discovering the rule by clicking. The server
-         * checks are unchanged and remain the enforcement; this is only so the
-         * UI can stop lying about what is available. */
         return response()->json([
             'data' => [
-                // Joined/became eligible after the run was generated — shown as a notice,
-                // never as payroll rows, until payroll is re-run. (#30)
                 'pending_employees' => $pending,
                 'period'  => $this->serializePeriod($period, $run),
                 'run'     => $run ? $this->serializeRun($run) : null,
@@ -598,8 +391,6 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Period is locked.'], 422);
         }
 
-        // Surface attendance coverage so HR knows what they're locking in — an
-        // employee with zero attendance rows will be fully LOP'd.
         $coverage = $this->payroll->attendanceCoverage($period);
 
         $this->payroll->finalizeAttendance($period, $ctx['user_id']);
@@ -617,8 +408,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /** Rule 15 correction path — revert a non-paid run to draft so HR can fix
-     *  attendance/leave and re-run. Paid runs are immutable (adjust next cycle). */
     public function reopen(Request $request)
     {
         if (!$this->canManage($request)) {
@@ -633,14 +422,10 @@ class PayrollController extends Controller
         if ($run && $run->status === 'paid') {
             return response()->json(['message' => 'Paid payroll cannot be reopened — post an adjustment in the next cycle.'], 422);
         }
-        // Guard against double payment: if some employees were already paid in a
-        // partial disbursement, reopening would wipe + re-pay them.
         if ($run && Payslip::where('payroll_run_id', $run->id)->where('status', 'Paid')->exists()) {
             return response()->json(['message' => 'Some employees are already paid in this cycle — pay the remaining held employees instead of reopening.'], 422);
         }
 
-        // The service re-asserts the paid guard itself; surface it as a 422
-        // like every other payroll rule instead of letting it 500.
         try {
             $this->payroll->reopen($period);
         } catch (RuntimeException $e) {
@@ -654,22 +439,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /** Pre-flight: compute issues without persisting (drives the run modal). */
-    /**
-     * Leaves inside the selected cycle whose day count the branch's Sandwich
-     * Leave Policy has inflated — the review list the payroll screen shows so a
-     * genuine emergency can be excused before the run is finalised.
-     *
-     * The policy fires on the shape of the calendar and cannot tell a
-     * bereavement from a stretched long weekend. Payroll is the last point at
-     * which a human sees the consequence in money terms, so the exemption has
-     * to be reachable from here — not only from the leave approval screen the
-     * approver saw weeks earlier.
-     *
-     * Read-only. Toggling the waiver itself goes through
-     * LeaveRequestController::sandwichWaiver(), which also re-sizes the leave,
-     * so payroll never gets its own private idea of what a leave costs.
-     */
     public function sandwichReview(Request $request)
     {
         [$month, $year] = $this->resolveMonthYear($request);
@@ -680,20 +449,12 @@ class PayrollController extends Controller
         $end   = Carbon::parse($period->period_end)->endOfDay();
 
         $items = [];
-        /* Waiving a sandwich is a payroll decision, and the list carries
-           colleagues' names, departments and leave dates — not an employee-tier
-           read. They get their own rows or nothing. (#119) */
         $selfOnly = $this->selfOnlyEmployeeId($request);
-        // Only employees this cycle actually pays — a leave belonging to someone
-        // payroll skips (half-onboarded, exited) is not reviewable here.
         foreach ($this->payroll->eligibleEmployees($period) as $employee) {
             if ($selfOnly !== null && (int) $employee->id !== $selfOnly) continue;
             if (!\App\Support\SandwichPolicy::appliesTo($employee)) continue;
 
             $leaves = \App\Models\LeaveRequest::query()
-                // paid_unpaid decides whether the sandwich lands on the leave
-                // balance or straight on loss of pay, which the listing gate
-                // below turns on — eager-loaded so it is not one query per leave.
                 ->with('leaveType:id,paid_unpaid')
                 ->where('employee_id', $employee->id)
                 ->where('status', 'Approved')
@@ -703,40 +464,12 @@ class PayrollController extends Controller
                 ->get();
 
             foreach ($leaves as $leave) {
-                // How many days the policy contributed — the difference between
-                // sizing the leave with the rule and without it. Derived, never
-                // stored, so it stays true as neighbouring leaves change.
                 $bd    = $this->payroll->sandwichBreakdown($employee, $leave);
                 $extra = $bd['sandwich'];
 
-                /* Only list a leave the policy is ACTUALLY charging for.
-                 *
-                 * Turning the branch switch on does not retroactively re-price
-                 * leaves that were approved before it — leave_requests.days is
-                 * what both the balance and the payslip read, and it stays as
-                 * approved. Such a leave still LOOKS sandwiched (its dates
-                 * straddle an off-day), but nothing is being deducted for those
-                 * days, so offering "don't deduct them" was an action against a
-                 * charge that does not exist. Those rows are dropped; a waived
-                 * one is kept so the decision stays visible. */
                 $policyTotal = $bd['working'] + $extra;
                 $alreadyCharged = (float) $leave->days >= $policyTotal - 0.001;
 
-                /* …with one exception: an UNPAID leave.
-                 *
-                 * The "already charged" test reads leave_requests.days, which is
-                 * the right question for a PAID leave — there the sandwich is
-                 * charged to the leave balance, and a leave approved before the
-                 * branch switch was turned on never had it folded in, so nothing
-                 * is being deducted.
-                 *
-                 * An unpaid leave has no balance to burn, so PayrollService
-                 * charges its sandwiched off-days straight to loss of pay, and it
-                 * derives them live from the calendar rather than from `days`.
-                 * That charge exists whatever `days` happens to say — so the
-                 * exact rows this gate dropped as "a charge that does not exist"
-                 * were, for unpaid leave, real money coming off the payslip with
-                 * no way to see or waive it from the run screen. */
                 $unpaidLeave = in_array(
                     strtolower((string) ($leave->leaveType->paid_unpaid ?? 'paid')),
                     ['unpaid', 'lwp', 'loss of pay', 'loss_of_pay'],
@@ -754,32 +487,9 @@ class PayrollController extends Controller
                     'from_date'      => Carbon::parse($leave->from_date)->toDateString(),
                     'to_date'        => Carbon::parse($leave->to_date)->toDateString(),
                     'days'           => (float) $leave->days,
-                    /* Working days the leave actually covers, sandwich excluded.
-                     * On an LOP charge the screen shows this instead of `days`:
-                     * an unpaid leave raised while the policy was on has the
-                     * off-days folded into `days` AND docked again through loss
-                     * of pay (payroll derives that from the calendar, not from
-                     * `days`), so printing "3 days deducted + 1 off-day" over a
-                     * 2-working-day leave reads as four. */
                     'working_days'   => $bd['working'],
                     'sandwich_days'  => $extra,
-                    // What the leave costs with the policy fully applied. The
-                    // screen compares this against `days` to know whether the
-                    // off-days are ALREADY counted or still pending.
                     'days_with_policy' => $bd['working'] + $extra,
-                    /* WHERE the sandwich is charged, which is not the same
-                     * question as how much.
-                     *
-                     * 'balance' — folded into leave_requests.days: entitlement is
-                     *   burnt, and pay only follows once the balance runs out.
-                     * 'lop'     — an unpaid leave, so there is no balance to burn
-                     *   and PayrollService puts the off-days straight on loss of
-                     *   pay, on top of `days`.
-                     *
-                     * The screen needs it because the two read differently: the
-                     * first is "3 days deducted, 2 of them off-days", the second
-                     * is "1 day deducted PLUS 2 off-days docked". Printing the
-                     * balance wording over an LOP charge understates it. */
                     'charged_via'    => $unpaidLeave ? 'lop' : 'balance',
                     'waived'         => (bool) $leave->sandwich_waived,
                     'waiver_reason'  => $leave->sandwich_waiver_reason,
@@ -790,34 +500,10 @@ class PayrollController extends Controller
         return response()->json(['data' => $items]);
     }
 
-    /**
-     * A payslip's exceptions, minus the probation notes.
-     *
-     * PayrollService no longer raises them, but every payslip generated before
-     * that has them stored in its `exceptions` JSON — and an open cycle is not
-     * re-run just because the text changed. Without this the note would sit on
-     * the run screen for months, on exactly the cycles HR is working through
-     * now. Dropped on READ so nothing already generated has to be rewritten,
-     * and the filter simply stops matching once those cycles age out.
-     *
-     * Matched on the "probation" keyword rather than on an exact string: the
-     * wording went through several revisions and all of them are in the data.
-     */
     private function visibleExceptions($payslip): array
     {
         return collect((array) ($payslip->exceptions ?? []))
             ->reject(fn ($e) => stripos((string) ($e['reason'] ?? ''), 'probation') !== false)
-            /* Professional Tax notes, dropped for the same reason and in the
-             * same way as the probation ones (#123). PayrollService no longer
-             * raises them, but every payslip generated before that has one
-             * stored in its `exceptions` JSON, and an open cycle is not re-run
-             * just because a message was withdrawn — so without this the
-             * warning would sit on the run screen for months on exactly the
-             * cycles HR is working through now.
-             *
-             * Matched on the head name rather than an exact string: the note
-             * has three wordings (no work state, no slab for the state, no band
-             * covering the gross) and all three are in the data. */
             ->reject(fn ($e) => stripos((string) ($e['reason'] ?? ''), 'professional tax') !== false)
             ->values()
             ->all();
@@ -829,10 +515,7 @@ class PayrollController extends Controller
         $ctx = $this->ctx($request);
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
 
-        // Prefer the already-generated payslips' exceptions; otherwise dry-run.
         $run = $period->runs()->latest('id')->first();
-        // The issue list names employees and carries their pay — an employee
-        // tier gets only their own. (#119)
         $selfOnly = $this->selfOnlyEmployeeId($request);
         $eligibleEmployees = $this->payroll->eligibleEmployees($period);
         if ($selfOnly !== null) {
@@ -845,7 +528,6 @@ class PayrollController extends Controller
                 ->when($selfOnly !== null, fn ($q) => $q->where('employee_id', $selfOnly))
                 ->get();
         } elseif ($selfOnly !== null) {
-            // No run yet: dry-running the whole cycle would compute colleagues.
             $slips = collect();
         } else {
             $slips = $eligibleEmployees->map(function ($e) use ($period) {
@@ -859,7 +541,6 @@ class PayrollController extends Controller
         $atRiskAmount = 0;
         foreach ($slips as $s) {
             $ex = $this->visibleExceptions($s);
-            // Only blockers are issues; info notes never surface here.
             if (!collect($ex)->contains(fn ($e) => ($e['type'] ?? null) === 'blocking')) continue;
             $type = 'blocking';
             if ($type === 'blocking') $blockedAmount += (float) $s->net_pay;
@@ -921,24 +602,6 @@ class PayrollController extends Controller
         if ($run->isLocked()) return response()->json(['message' => 'Run is already approved/paid.'], 422);
         if ($run->total_employees === 0) return response()->json(['message' => 'Nothing to approve — generate payroll first.'], 422);
 
-        /* Rule 19 — unresolved slips must be dealt with BEFORE approval.
-         *
-         * "On Hold" means a blocking problem (no salary structure); "Pending
-         * Review" means payroll wants a human to check something it could not
-         * settle itself — a missing punch, an attendance/leave conflict, a
-         * month with no attendance at all. Both were already blocked from
-         * producing a payslip PDF, yet the RUN itself could be approved with
-         * any number of them outstanding: the flag was raised and then had no
-         * effect on the one decision it exists to gate.
-         *
-         * Not a hard block, deliberately. Some warnings cannot be "corrected"
-         * away — an employee who was genuinely late three times leaves a slip
-         * that will read Pending Review no matter how many times it is
-         * regenerated, and there is no endpoint to clear a slip's status by
-         * hand. A hard block would leave those runs unapprovable forever.
-         * Instead approval stops once, states exactly what is unresolved, and
-         * proceeds only when the caller acknowledges it explicitly — with who
-         * did so and what they waved through recorded in the audit log. */
         $unresolved = Payslip::where('payroll_run_id', $run->id)
             ->whereIn('status', ['On Hold'])
             ->get(['id', 'employee_name', 'status']);
@@ -958,8 +621,6 @@ class PayrollController extends Controller
                 'data'    => [
                     'on_hold'        => $onHold,
                     'pending_review' => $review,
-                    // Named so HR can go straight to them rather than hunting
-                    // through the payslip list for whatever tripped the flag.
                     'employees'      => $unresolved->take(25)->map(fn ($s) => [
                         'payslip_id' => $s->id,
                         'employee'   => $s->employee_name,
@@ -986,16 +647,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /**
-     * Disburse — Rule 12. Pays every clear payslip and HOLDS those still
-     * missing bank details / under a blocking issue. Bank details are
-     * re-checked against the live employee record at pay time, so an HR fix
-     * after generation is picked up here without a full regenerate.
-     *
-     * The period is locked ONLY when nothing remains held — otherwise the run
-     * stays 'approved' so HR can fix the held employees and call pay again.
-     * Already-paid slips are never re-paid (no double disbursement).
-     */
     public function pay(Request $request)
     {
         if (!$this->canManage($request)) {
@@ -1006,15 +657,11 @@ class PayrollController extends Controller
         if (!in_array($run->status, ['approved', 'paid'], true)) {
             return response()->json(['message' => 'Approve the payroll before paying.'], 422);
         }
-        // A 'paid' status is allowed back in ONLY to clear previously-held slips.
-        // If nothing is outstanding, refuse — don't let a settled run be re-run
-        // (which, after a recompute reset a slip, could re-pay without approval).
         if ($run->status === 'paid'
             && \App\Models\Payslip::where('payroll_run_id', $run->id)->where('status', '!=', 'Paid')->doesntExist()) {
             return response()->json(['message' => 'This payroll run is already fully paid.'], 422);
         }
 
-        // Shared disbursement logic (also used by the Proceed-to-Pay flow).
         $result = $this->payroll->disburseRun($run, $request->user()?->id);
         $paidCount = $result['paid'];
         $heldCount = $result['held'];
@@ -1035,15 +682,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /** Rule 21 — Full & Final Settlement preview for an exited employee.
-     *  Optional query params: leave_encashment_days, notice_recovery_amount,
-     *  other_dues, other_deductions.
-     *
-     *  Still computes LIVE — this is the working view HR adjusts before saving.
-     *  Any settlement already saved for the employee is returned alongside it as
-     *  `saved`, so the screen can show what was previously agreed (and, once it
-     *  is approved or paid, show those frozen figures instead of the live ones).
-     */
     public function fnf(Request $request, int $employeeId)
     {
         $employee = $this->fnfEmployee($request, $employeeId);
@@ -1051,8 +689,6 @@ class PayrollController extends Controller
             return $employee;
         }
 
-        // Validate the HR-decided numeric inputs (were taken raw from the query —
-        // negatives/garbage flowed straight into the calc). (P24)
         $request->validate([
             'leave_encashment_days'  => ['nullable', 'numeric', 'min:0', 'max:365'],
             'notice_recovery_amount' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
@@ -1061,8 +697,6 @@ class PayrollController extends Controller
         ]);
 
         $saved = $this->latestFnf($employee->id);
-        // Reopening a saved draft with no inputs in the URL must not silently
-        // reset the encashment days HR entered last time.
         $opts = $this->fnfOpts($request, $saved);
 
         return response()->json([
@@ -1071,14 +705,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /**
-     * Rule 21 — save (or update) the settlement.
-     *
-     * Writes the inputs AND the computed breakdown, so the settlement stops
-     * being a number that changes every time someone opens the screen. An
-     * approved or paid settlement is frozen: it must be reopened deliberately
-     * rather than silently overwritten by the next save.
-     */
     public function fnfSave(Request $request, int $employeeId)
     {
         $employee = $this->fnfEmployee($request, $employeeId);
@@ -1143,11 +769,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /**
-     * Rule 21 — move a saved settlement along: approve → pay, or reopen a
-     * non-paid one back to draft. Mirrors the payroll run's own lifecycle so
-     * the two behave the same way (Rule 14).
-     */
     public function fnfStatus(Request $request, int $employeeId)
     {
         $employee = $this->fnfEmployee($request, $employeeId);
@@ -1183,8 +804,6 @@ class PayrollController extends Controller
                 break;
 
             case 'reopen':
-                // A paid settlement is money out of the door — correcting it is
-                // a new transaction, not an edit to the record of the old one.
                 if ($from === 'paid') {
                     return response()->json(['message' => 'A paid settlement cannot be reopened.'], 422);
                 }
@@ -1203,20 +822,9 @@ class PayrollController extends Controller
         ]);
     }
 
-    /**
-     * Shared guard for every FnF endpoint: permission, tenant match, and the
-     * exit record the settlement depends on.
-     *
-     * Returns the Employee, or the JsonResponse to send back — the caller
-     * checks the type. Written this way so the three endpoints cannot drift
-     * apart on which checks they apply, which is exactly how the employee tier
-     * got read access to colleagues' settlements once before (P25).
-     */
     private function fnfEmployee(Request $request, int $employeeId)
     {
         $user = $request->user();
-        // FnF exposes full salary + settlement figures — manage-only, never the
-        // employee tier (which previously could read any colleague's FnF).
         if (!$this->canManage($request)) {
             return response()->json(['message' => 'You do not have permission to view full-and-final settlements.'], 403);
         }
@@ -1224,21 +832,14 @@ class PayrollController extends Controller
         if (!$employee) {
             return response()->json(['message' => 'Employee not found.'], 404);
         }
-        // Strict tenant match (a null client_id must not pass as "same tenant").
         if ($user && $user->user_type !== 'super_admin' && (int) $employee->client_id !== (int) $user->client_id) {
             return response()->json(['message' => 'Employee belongs to another tenant.'], 403);
         }
-        /* …and the right BRANCH. A settlement exposes full salary and payout
-           figures, so a branch-pinned user must not reach another branch's
-           employee — same rule ownsRow() and employeePayslips() apply. (#119) */
         if ($user && $user->user_type === 'branch_user' && $user->branch_id
             && $employee->branch_id && (int) $employee->branch_id !== (int) $user->branch_id) {
             return response()->json(['message' => 'Employee belongs to another branch.'], 403);
         }
 
-        // FnF is only meaningful for an exiting employee — without an exit record
-        // the engine silently used "today" as the last working day and produced a
-        // bogus settlement for an active employee. (P25)
         $hasExit = \Illuminate\Support\Facades\Schema::hasTable('employee_exits')
             && \Illuminate\Support\Facades\DB::table('employee_exits')->where('employee_id', $employee->id)->exists();
         if (!$hasExit) {
@@ -1248,17 +849,11 @@ class PayrollController extends Controller
         return $employee;
     }
 
-    /** The employee's current settlement, if one has been saved. */
     private function latestFnf(int $employeeId): ?\App\Models\FnfSettlement
     {
         return \App\Models\FnfSettlement::where('employee_id', $employeeId)->latest('id')->first();
     }
 
-    /**
-     * The HR-decided inputs for a computation. Falls back to a saved draft's
-     * stored inputs when the request omits them, so reopening the screen does
-     * not quietly zero the encashment days someone entered earlier.
-     */
     private function fnfOpts(Request $request, ?\App\Models\FnfSettlement $saved): array
     {
         $stored = $saved?->inputs ?? [];
@@ -1275,7 +870,6 @@ class PayrollController extends Controller
         ];
     }
 
-    /** API shape for a saved settlement. */
     private function serializeFnf(\App\Models\FnfSettlement $r): array
     {
         return [
@@ -1299,7 +893,6 @@ class PayrollController extends Controller
         ];
     }
 
-    /** Rule 16 — single payslip (full component breakdown + finalization flag). */
     public function payslip(Request $request, int $id)
     {
         $slip = Payslip::with('run:id,status')->find($id);
@@ -1307,73 +900,29 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Payslip not found.'], 404);
         }
         $data = $this->serializePayslip($slip, true);
-        // Real (branch-resolved) company letterhead for the on-screen viewer.
         $data['company'] = $this->pdf->letterhead($slip);
         $data['period_label'] = $this->periodLabelFor($slip);
         $data['notices'] = $this->slipNotices($slip, $data['deductionsBreakup'] ?? []);
-        /* The workings behind the component amounts, shown under EARNINGS —
-         * the table the reader is questioning. Separate from `notices`, which
-         * explains the Deductions side. (#141) */
         $data['payBasis'] = $this->payBasisNotices($slip);
-        // Which salary version priced this cycle — see salaryVersionFor().
         $data += $this->salaryVersionFor($slip);
         return response()->json(['data' => $data]);
     }
 
-    /**
-     * Notes the payslip itself must carry to be readable. (#130)
-     *
-     * A payslip is a SNAPSHOT taken when the run was generated, and
-     * PayrollService::recomputeEmployeePayslips() deliberately refuses to
-     * rewrite one whose run is approved/paid or whose period is locked — that
-     * money is out of the door and re-deriving it later would silently restate
-     * a figure someone has already been paid.
-     *
-     * That freeze is right, but it was invisible. Tick PF in Salary Setup after
-     * a run is approved and the Salary Setup screen says PF applies while the
-     * slip carries no Provident Fund line and no explanation — indistinguishable
-     * from payroll having dropped the deduction, which is exactly how it was
-     * reported. A missing deduction has nothing to render, so there was no line
-     * to question.
-     *
-     * So the slip says so itself: PF is currently applicable, this slip is
-     * frozen, and it predates the change. Nothing is recomputed and no figure
-     * moves — the reader is simply told which of the two screens is the older
-     * truth, and what to do about it.
-     */
     private function slipNotices(Payslip $slip, array $deductionLines): array
     {
         $notices = [];
 
-        /* The slip's components come from the salary STRUCTURE
-         * (PayrollService::resolveCompensation) — employees.annual_salary is
-         * only a no-structure fallback. The two are separate columns written
-         * by separate screens, and where they had drifted apart the payslip
-         * quietly paid one figure while Stage 4 – Compensation displayed the
-         * other, with nothing on either screen admitting the disagreement.
-         * That is what "the payslip doesn't match the salary structure" turned
-         * out to mean. New saves can no longer drift (see HrEmployees
-         * persistBreakup), but slips already generated against the old data
-         * still show it, so the slip names the gap and which figure it used
-         * rather than leaving the reader to spot it. (#133) */
         $emp = $slip->relationLoaded('employee') ? $slip->employee : $slip->employee()->first();
         $activeStructure = $emp
             ? \App\Models\SalaryStructure::where('employee_id', $emp->id)
                 ->where('status', 'active')
-                // Duplicate version=1 rows exist from an old seeder, so tie-break
-                // on id exactly as PayrollService::activeStructure() does.
                 ->orderByDesc('version')->orderByDesc('id')
                 ->first()
             : null;
 
-        /* Compared against the STRUCTURE's monthly gross, not the slip's.
-         * gross_earnings carries overtime and bonus and is prorated for a
-         * mid-month joiner, so ×12 is not this employee's CTC and would report
-         * a disagreement on perfectly consistent data. */
         $recordedAnnual  = round((float) ($emp->annual_salary ?? 0), 2);
         $structureAnnual = round((float) ($activeStructure->monthly_gross ?? 0) * 12, 2);
         if ($recordedAnnual > 0 && $structureAnnual > 0
-            // A rupee or two is rounding, not a disagreement.
             && abs($recordedAnnual - $structureAnnual) > 12
         ) {
             $notices[] = 'This payslip is calculated from the saved salary structure (₹'
@@ -1386,20 +935,10 @@ class PayrollController extends Controller
         $pfOnSlip = $hasPfLine || (float) $slip->pf_employee > 0;
 
         $employee = $slip->relationLoaded('employee') ? $slip->employee : $slip->employee()->first();
-        // Reuse the structure resolved above — same employee, same tie-break.
-        // This lookup previously omitted orderByDesc(version)->orderByDesc(id)
-        // and could read the wrong row out of the duplicate version=1 rows the
-        // old seeder left behind, silently suppressing the notice.
         $pfStructure = $activeStructure;
 
-        /* The STRUCTURE decides, as PayrollService::resolveCompensation() now
-           does. This was the same OR, and it has to move with it: left as an
-           OR this notice would tell HR "PF is applicable but was not deducted"
-           for an employee whose structure says PF does not apply — i.e. the
-           engine behaving correctly, reported as a fault. */
         $pfAppliesNow = $employee && (bool) ($pfStructure->pf_applicable ?? false);
 
-        // Frozen exactly where recomputeEmployeePayslips() gives up.
         $frozen = !in_array($slip->run?->status, ['draft', 'generated'], true)
             || ($slip->period?->status ?? null) === 'locked';
 
@@ -1408,8 +947,6 @@ class PayrollController extends Controller
                 . 'this payslip was finalized before PF was enabled, and a finalized slip is never recomputed. '
                 . 'PF will appear from the next payroll run.';
         } elseif ($frozen && !$pfAppliesNow && $pfOnSlip) {
-            // The mirror image, which had no notice at all: PF switched off
-            // after the cycle was finalized still shows a PF deduction here.
             $notices[] = 'Provident Fund is no longer applicable for this employee, but this cycle was already '
                 . 'finalized and keeps the PF it was paid with. No PF is deducted from the next payroll run.';
         }
@@ -1417,24 +954,6 @@ class PayrollController extends Controller
         return $notices;
     }
 
-
-    /**
-     * The workings behind each component's amount. (#141)
-     *
-     * Two parts, in the order a reader needs them:
-     *   1. The rule — components carry the pay window's rate; attendance is
-     *      NOT applied to the component lines, it is charged once as the Loss
-     *      of Pay deduction. Without this the reader assumes every line is
-     *      pro-rated by paid days and then cannot make the numbers agree.
-     *   2. The case-specific factors already recorded on the slip at
-     *      generation time — a mid-cycle salary revision blended across rates,
-     *      a mid-month join/exit pro-ration, holidays credited as paid, and
-     *      late-mark LOP. These explain any line that differs from the monthly
-     *      figure, which is exactly what the ticket could not validate.
-     *
-     * Read-only: every figure quoted is taken from the stored payslip. Nothing
-     * is recomputed and no amount changes.
-     */
     private function payBasisNotices(Payslip $slip): array
     {
         $out = [];
@@ -1460,33 +979,7 @@ class PayrollController extends Controller
             . ' = ₹' . number_format((float) $slip->net_pay, 2) . '.';
         $out[] = $basis;
 
-        /* The DAY arithmetic, stated as a sum. (CBC #4)
-         *
-         * The header tiles show Days in Month, Payable Days, Days Present, LOP
-         * and Paid Days as five separate numbers with no stated relationship,
-         * so there was no way to see that they are one equation — or which
-         * denominator the component rates are actually divided by. Working days
-         * already exclude weekly offs, which is why a low Paid Days figure does
-         * not mean the week-offs were docked. */
         if ($working > 0) {
-            /* State the sum ONLY when it actually holds — and know what "holds"
-             * means here, because paid + lop == working is NOT the invariant.
-             *
-             * PayrollService keeps two different "paid days" on purpose (#114):
-             * paid_days is what ATTENDANCE credits, and it deliberately does
-             * NOT subtract the late-mark penalty, so someone with perfect
-             * attendance still reads 27 / 27 while carrying 0.5 LOP for late
-             * marks. Against that slip a naive check reports the days as
-             * broken. The late penalty is therefore taken out of the LOP side
-             * before the two are compared, and called out separately.
-             *
-             * Two further cases legitimately do not balance and must not be
-             * accused of anything: a cycle still running charges LOP only up to
-             * today (the elapsed-days cap), and a held slip carries working
-             * days with nothing computed against them. In both the figures are
-             * simply stated. Printing "these do not add up, check attendance"
-             * across a correct slip would send HR hunting a bug that is not
-             * there — the opposite of what this note is for. */
             $lateLop    = $slip->late_lop_days === null ? null : (float) $slip->late_lop_days;
             $absenceLop = $lateLop === null ? $lopDays : max(0, round($lopDays - $lateLop, 2));
 
@@ -1498,17 +991,6 @@ class PayrollController extends Controller
                         . ' — Paid Days still shows what attendance credited, which is why the two do not net off.';
                 }
             } else {
-                /* Name the RIGHT reason, or none.
-                 *
-                 * Three different situations land here and they are not
-                 * interchangeable. A pro-rated slip (mid-cycle join or exit)
-                 * counts working days across the whole month while paying only
-                 * the days employed — that is settled and final, so telling its
-                 * reader the cycle is "still open" is simply false. An open run
-                 * caps loss of pay at today and really does settle later. And a
-                 * slip that is neither gets the figures with no explanation
-                 * attached, which is honest: an invented cause is worse than an
-                 * absent one on the note whose whole purpose is auditability. */
                 $proRated = false;
                 foreach ((array) ($slip->exceptions ?? []) as $e) {
                     $reason = is_array($e) ? (string) ($e['reason'] ?? '') : '';
@@ -1529,15 +1011,6 @@ class PayrollController extends Controller
                         . ' when the run is finalized.';
                 }
             }
-            /* Which SIDE of the weekly-off change this slip was computed on.
-             *
-             * The payable-day basis moved to calendar days (CBC #11): a weekly
-             * off is now inside the denominator AND credited as a paid day.
-             * Slips generated before that carry the old working-day basis, and
-             * telling their reader the opposite would make a correct historical
-             * figure look wrong. The slip says which model it used — a
-             * denominator equal to the month's calendar days can only be the
-             * new one — so the sentence follows the slip rather than the code. */
             $calendarDays = $slip->period
                 ? (int) Carbon::create((int) $slip->period->year, (int) $slip->period->month, 1)->daysInMonth
                 : 0;
@@ -1547,14 +1020,6 @@ class PayrollController extends Controller
             $out[] = $days;
         }
 
-        /* Why a component line differs from its Monthly figure. (CBC #4)
-         *
-         * The reader's actual question is "Basic says ₹12,500 a month but
-         * ₹15,080.65 this cycle — where did that come from?". The blended /
-         * pro-rated exceptions below explain the CAUSE, but only when the run
-         * recorded one, and neither says which lines moved. This names them, so
-         * the two columns can be reconciled line by line without knowing the
-         * internals. */
         $moved = [];
         foreach ((array) ($slip->earnings ?? []) as $c) {
             if (!is_array($c)) {
@@ -1565,23 +1030,12 @@ class PayrollController extends Controller
             if ($monthly === null || $amount === null) {
                 continue;
             }
-            /* ROUND the difference before comparing it to a paisa.
-             * abs(1000.01 - 1000.00) is 0.00999999999999091 in binary floating
-             * point, so `>= 0.01` was false and a component that really had
-             * moved by exactly one paisa was silently left out of the
-             * reconciliation — the two columns then disagreed with nothing
-             * explaining why, which is the whole complaint this note answers.
-             * Rounding to paisa first makes the boundary behave as written. */
             if (round(abs((float) $monthly - (float) $amount), 2) >= 0.01) {
                 $moved[] = ($c['label'] ?? 'Component') . ' ₹' . number_format((float) $monthly, 2)
                     . ' → ₹' . number_format((float) $amount, 2);
             }
         }
         if ($moved) {
-            /* Cap the list. A structure with thirty components produced a
-             * 1,200-character run-on sentence that nobody reads — and the note
-             * exists to be read. The first few name the pattern; the count
-             * carries the rest, and the table above is the full record. */
             $shown = array_slice($moved, 0, 6);
             $more  = count($moved) - count($shown);
             $out[] = 'These components are paid at something other than the salary structure rate '
@@ -1591,25 +1045,6 @@ class PayrollController extends Controller
                 . 'in force, and a join or exit inside the window is pro-rated to the days employed.';
         }
 
-        /* Why PAID DAYS can exceed DAYS PRESENT. (CBC #149)
-         *
-         * A cycle generated while its month is still running charges loss of
-         * pay only up to today (the elapsed-days cap, #134) — so a September
-         * slip generated on the 4th reads "Days Present 0" beside "Paid Days
-         * 27", because the 27 unelapsed days have not been worked yet and are
-         * not docked. The two numbers are computed on different bases and the
-         * slip stated neither, so the pairing reads as the slip having drawn
-         * its days from somewhere else entirely — reported as September
-         * showing the previous month's attendance. It does not: Days Present
-         * counts only attendance dated inside this period, and was 0 because
-         * nothing had been recorded yet.
-         *
-         * Only stated when the gap is real (present < paid) and attendance is
-         * actually the reason — a pro-rated or held slip has its own note and
-         * must not collect a second, competing explanation.
-         *
-         * present_days is nullable on slips generated before the column
-         * existed; those get no note rather than a note built on a guess. */
         $present = $slip->present_days === null ? null : (float) $slip->present_days;
         if ($present !== null && $working > 0 && $paid > $present + 0.005) {
             $inProgress = false;
@@ -1632,14 +1067,6 @@ class PayrollController extends Controller
                     . ' punch, which is why the two differ.';
         }
 
-        /* The factors recorded when the run was generated. Matched on the
-         * phrases PayrollService writes, so a note it stops emitting simply
-         * stops appearing here rather than showing a stale explanation.
-         *
-         * 'still in progress' and 'No attendance recorded' were both missing:
-         * the engine wrote them onto the slip and nothing ever displayed them,
-         * so the two cases most likely to make a reader doubt the figures were
-         * the two the slip explained least. (CBC #149) */
         $wanted = ['blended', 'pro-rated', 'prorated', 'Priced on the salary structure',
                    'holiday', 'late mark', 'late marks',
                    'still in progress', 'No attendance recorded'];
@@ -1659,16 +1086,162 @@ class PayrollController extends Controller
         return array_values(array_unique($out));
     }
 
-    /** Salary-slip history for one employee across cycles (Rule 16). Only
-     *  finalized (approved/paid) payslips are official; drafts are flagged
-     *  provisional so the UI can mark them. Tenant-gated. */
+    public function executionHistory(Request $request)
+    {
+        if (!$this->canManage($request) && !$this->canExport($request)) {
+            return response()->json(['message' => 'You are not allowed to view payroll execution history.'], 403);
+        }
+
+        $ctx = $this->ctx($request);
+        $q = \App\Models\PayrollExecutionLog::query()
+            ->when($ctx['client_id'], fn ($x) => $x->where('client_id', $ctx['client_id']))
+            ->when($ctx['branch_id'], fn ($x) => $x->where('branch_id', $ctx['branch_id']));
+
+        if ($m = $request->integer('month')) $q->where('month', $m);
+        if ($y = $request->integer('year'))  $q->where('year', $y);
+        $status = trim((string) $request->input('status', ''));
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $q->where(fn ($w) => $w
+                ->where('run_by_name', 'ilike', $like)
+                ->orWhere('run_by_employee_code', 'ilike', $like)
+                ->orWhere('batch_ref', 'ilike', $like));
+        }
+
+        $qNoStatus = clone $q;
+        if ($status !== '' && strcasecmp($status, 'All') !== 0) {
+            $q->where('status', $status);
+        }
+
+        $summary = (clone $q)->reorder()
+            ->selectRaw('year, month, period_label, run_by_name, run_by_employee_code, count(*) as runs, max(executed_at) as last_run')
+            ->groupBy('year', 'month', 'period_label', 'run_by_name', 'run_by_employee_code')
+            ->orderByDesc('year')->orderByDesc('month')
+            ->limit(200)
+            ->get()
+            ->map(fn ($r) => [
+                'year'        => (int) $r->year,
+                'month'       => (int) $r->month,
+                'label'       => $r->period_label ?: trim(($r->month ? date('M', mktime(0, 0, 0, (int) $r->month, 1)) : '') . ' ' . $r->year),
+                'run_by'      => $r->run_by_name ?: '—',
+                'employee_id' => $r->run_by_employee_code ?: '—',
+                'runs'        => (int) $r->runs,
+                'last_run'    => $r->last_run,
+            ])->values();
+
+        $byStatus = (clone $qNoStatus)->reorder()
+            ->select('status', DB::raw('count(*) as n'))
+            ->groupBy('status')->pluck('n', 'status');
+        $counts = [
+            'All'         => (int) $byStatus->sum(),
+            'Completed'   => (int) ($byStatus['Completed'] ?? 0),
+            'In Progress' => (int) ($byStatus['In Progress'] ?? 0),
+            'Failed'      => (int) ($byStatus['Failed'] ?? 0),
+        ];
+
+        $perPage = min(200, max(1, (int) $request->input('per_page', 10)));
+        $page    = max(1, (int) $request->input('page', 1));
+        $total   = (clone $q)->count();
+
+        $rows = $q->orderByDesc('executed_at')->orderByDesc('id')
+            ->forPage($page, $perPage)->get()
+            ->map(fn ($r) => [
+                'id'            => $r->id,
+                'run_by'        => $r->run_by_name ?: '—',
+                'employee_id'   => $r->run_by_employee_code ?: '—',
+                'executed_at'   => optional($r->executed_at)->toIso8601String(),
+                'period_label'  => $r->period_label ?: '—',
+                'month'         => $r->month,
+                'year'          => $r->year,
+                'status'        => $r->status,
+                'failure_reason' => $r->failure_reason,
+                'batch_ref'     => $r->batch_ref,
+                'employees_paid' => $r->employees_paid,
+                'employees_held' => $r->employees_held,
+                'total_amount'  => $r->total_amount !== null ? (float) $r->total_amount : null,
+                'executed_by'   => $r->executed_by_user_name,
+            ])->values();
+
+        return response()->json([
+            'data'    => $rows,
+            'total'   => $total,
+            'counts'  => $counts,
+            'summary' => $summary,
+        ]);
+    }
+
+    public function employeeCurrentCycle(Request $request, int $employeeId)
+    {
+        $user = $request->user();
+        if ($user && $user->user_type === 'employee'
+            && (int) $employeeId !== (int) ($user->employee_id ?? 0)) {
+            return response()->json(['message' => 'You can only view your own payroll summary.'], 403);
+        }
+
+        $ctx   = $this->ctx($request);
+        $today = Carbon::now();
+        $start = $today->copy()->startOfMonth();
+        $end   = $today->copy()->endOfMonth();
+
+        $period = PayrollPeriod::query()
+            ->when($ctx['client_id'], fn ($q) => $q->where('client_id', $ctx['client_id']))
+            ->when($ctx['branch_id'], fn ($q) => $q->where('branch_id', $ctx['branch_id']))
+            ->where('month', (int) $today->month)
+            ->where('year', (int) $today->year)
+            ->first();
+
+        $run = $period
+            ? PayrollRun::where('payroll_period_id', $period->id)->orderByDesc('id')->first()
+            : null;
+
+        $slip = $period
+            ? Payslip::where('payroll_period_id', $period->id)
+                ->where('employee_id', $employeeId)
+                ->orderByDesc('id')
+                ->first()
+            : null;
+
+        $lastDone = PayrollPeriod::query()
+            ->when($ctx['client_id'], fn ($q) => $q->where('client_id', $ctx['client_id']))
+            ->when($ctx['branch_id'], fn ($q) => $q->where('branch_id', $ctx['branch_id']))
+            ->where(fn ($w) => $w
+                ->where('status', 'locked')
+                ->orWhereHas('runs', fn ($r) => $r->where('status', 'paid')))
+            ->where(fn ($w) => $w
+                ->where('year', '<', (int) $today->year)
+                ->orWhere(fn ($x) => $x->where('year', (int) $today->year)->where('month', '<=', (int) $today->month)))
+            ->orderByDesc('year')->orderByDesc('month')
+            ->first();
+
+        $next = $today->copy()->startOfMonth()->addMonth();
+
+        return response()->json(['data' => [
+            'month'         => (int) $today->month,
+            'year'          => (int) $today->year,
+            'label'         => $period?->label ?: $start->format('M Y'),
+            'period_start'  => optional($period?->period_start)->toDateString() ?: $start->toDateString(),
+            'period_end'    => optional($period?->period_end)->toDateString() ?: $end->toDateString(),
+            'range'         => $start->format('d M') . ' – ' . $end->format('d M'),
+            'working_days'  => (float) ($period?->working_days ?? $this->payroll->defaultWorkingDays($start, $end)),
+            'lop_days'      => (float) ($slip?->lop_days ?? 0),
+            'paid_days'     => $slip ? (float) $slip->paid_days : null,
+            'has_payslip'   => (bool) $slip,
+            'payslip_id'    => $slip?->id,
+            'payslip_status' => $slip?->status,
+            'status'        => $this->cycleDisplayStatus($period, $start->copy(), $run),
+            'run_status'    => $run?->status,
+            'next_label'    => $next->format('M Y'),
+            'last_processed' => $lastDone ? [
+                'label' => $lastDone->label ?: Carbon::create($lastDone->year, $lastDone->month, 1)->format('M Y'),
+                'range' => Carbon::create($lastDone->year, $lastDone->month, 1)->format('d M')
+                    . ' – ' . Carbon::create($lastDone->year, $lastDone->month, 1)->endOfMonth()->format('d M'),
+            ] : null,
+        ]]);
+    }
+
     public function employeePayslips(Request $request, int $employeeId)
     {
         $user = $request->user();
-        /* PAY-45 — same self-guard as ownsRow(). This endpoint was tenant-gated
-           only, so any employee could read a colleague's whole salary history
-           (net pay per cycle) by changing the id in the URL. HR/admin tiers are
-           unaffected; the employee tier gets its own history and nothing else. */
         if ($user && $user->user_type === 'employee'
             && (int) $employeeId !== (int) ($user->employee_id ?? 0)) {
             return response()->json(['message' => 'You can only view your own salary history.'], 403);
@@ -1676,10 +1249,6 @@ class PayrollController extends Controller
         $slips = Payslip::with(['run:id,status', 'period:id,label,month,year'])
             ->where('employee_id', $employeeId)
             ->when($user && $user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
-            /* Branch-pinned users get their own branch only — the same rule
-               ownsRow() applies to a single payslip. Without it a branch user
-               could read any other branch's employee salary history (net pay
-               per cycle) by changing the id in the URL. (#119) */
             ->when(
                 $user && $user->user_type === 'branch_user' && $user->branch_id,
                 fn ($q) => $q->where(fn ($w) => $w
@@ -1704,8 +1273,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /** Single payslip PDF (matches the house letterhead, branch-branded).
-     *  ?download=1 forces attachment; default is inline preview. */
     public function payslipPdf(Request $request, int $id)
     {
         $slip = Payslip::with('run:id,status')->find($id);
@@ -1726,8 +1293,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /** Bulk download — every payslip in the cycle zipped into one archive.
-     *  Permission-gated (Rule 17) and filter-aware (department/status). */
     public function payslipsBulk(Request $request)
     {
         if (!$this->canExport($request)) {
@@ -1744,27 +1309,15 @@ class PayrollController extends Controller
 
         $matched = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
-            /* A comma list, because the filter panel allows more than one
-               department or status (QA 49). explode() on a single value gives
-               a one-element array, so an older caller still works. */
             ->when($request->query('department'), fn ($q, $d) => $q->whereIn('department', array_filter(explode(',', (string) $d))))
             ->when($request->query('status'), fn ($q, $s) => $q->whereIn('status', array_filter(explode(',', (string) $s))))
             ->with('run:id,status')
             ->orderBy('employee_name')
             ->get();
 
-        /* Same rule as the single download — pdfBlockReason(), so the two
-           cannot drift apart. Unresolved slips are skipped only while the run
-           is still provisional; once it is approved or paid they print,
-           because approval already required acknowledging them. (#110) */
         $slips = $matched->reject(fn ($s) => $this->pdfBlockReason($s) !== null)->values();
 
         if ($slips->isEmpty()) {
-            /* "Generate payroll first" is only true when the cycle really is
-               empty. When payroll HAS been generated and every slip was held
-               back as unresolved, that message sends HR to re-run a cycle that
-               already ran, and says nothing about the thing they actually have
-               to deal with. The two cases are now told apart. */
             if ($matched->isNotEmpty()) {
                 $held = $matched->count();
                 return response()->json([
@@ -1777,10 +1330,6 @@ class PayrollController extends Controller
             return response()->json(['message' => 'No payslips to download — generate payroll first.'], 422);
         }
 
-        /* Headroom for the batch. A payslip renders in well under a second now
-           that the branch logo is downscaled before it is embedded (#110) — it
-           used to take 30–50s each, which no timeout on this endpoint could
-           have covered. 3s/slip leaves a wide margin over the measured rate. */
         @set_time_limit(max(120, $slips->count() * 3));
 
         $tmp = tempnam(sys_get_temp_dir(), 'pslip');
@@ -1803,7 +1352,6 @@ class PayrollController extends Controller
         return response()->download($tmp, $zipName, ['Content-Type' => 'application/zip'])->deleteFileAfterSend(true);
     }
 
-    /** Email one employee their payslip PDF (Rule 16 — final payslips only). */
     public function emailPayslip(Request $request, int $id)
     {
         if (!$this->canManage($request)) {
@@ -1816,11 +1364,6 @@ class PayrollController extends Controller
         if (!$this->isFinalSlip($slip)) {
             return response()->json(['message' => 'Approve the payroll before emailing payslips.'], 422);
         }
-        /* isFinalSlip() above already established the run is approved/paid, so
-           this only ever fired for a slip whose figures ARE final — refusing to
-           email a payslip for money that had already been disbursed. Kept as a
-           call to the shared helper so the email, single-download and bulk
-           paths state one rule between them. (#110) */
         if ($msg = $this->pdfBlockReason($slip)) {
             return response()->json(['message' => $msg], 422);
         }
@@ -1834,8 +1377,6 @@ class PayrollController extends Controller
         return response()->json(['message' => "Payslip emailed to {$slip->employee_name} ({$result['to']})."]);
     }
 
-    /** Email every (final) payslip in the cycle to each employee. Returns a
-     *  per-recipient summary so HR sees who was skipped (no email on file). */
     public function emailPayslipsBulk(Request $request)
     {
         if (!$this->canManage($request) && !$this->canExport($request)) {
@@ -1847,17 +1388,12 @@ class PayrollController extends Controller
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
 
-        // P28: explicit "finalized" check instead of the fragile
-        // `!isLocked() && status!=='approved'` precedence soup.
         $finalized = $run && ($run->isLocked() || in_array($run->status, ['approved', 'paid'], true));
         if (!$finalized) {
             return response()->json(['message' => 'Approve the payroll before emailing payslips.'], 422);
         }
 
         $slips = Payslip::where('payroll_run_id', $run->id)
-            /* A comma list, because the filter panel allows more than one
-               department or status (QA 49). explode() on a single value gives
-               a one-element array, so an older caller still works. */
             ->when($request->query('department'), fn ($q, $d) => $q->whereIn('department', array_filter(explode(',', (string) $d))))
             ->when($request->query('status'), fn ($q, $s) => $q->whereIn('status', array_filter(explode(',', (string) $s))))
             ->with('run:id,status')
@@ -1889,7 +1425,6 @@ class PayrollController extends Controller
         ]);
     }
 
-    /** Resolve recipient + render PDF + send. Returns ['ok'=>bool,...]. */
     private function sendPayslipMail(Payslip $slip): array
     {
         $employee = \App\Models\Employee::find($slip->employee_id);
@@ -1920,27 +1455,6 @@ class PayrollController extends Controller
         return in_array(optional($slip->run)->status, ['approved', 'paid'], true) || $slip->status === 'Paid';
     }
 
-    /**
-     * Why this payslip cannot be turned into a PDF, or null when it can.
-     *
-     * The rule used to be "On Hold / Pending Review → refuse", full stop. The
-     * intent was right — those are not final figures and handing one to an
-     * employee gives them a wrong slip — but applying it regardless of the RUN
-     * left a dead end (#110):
-     *
-     *   · Approval already has its own gate. PayrollController::approve stops
-     *     on unresolved slips and only proceeds when the caller explicitly
-     *     acknowledges them, which is recorded in the audit log. Once that has
-     *     happened the figures ARE the approved figures.
-     *   · A paid run is locked and cannot be reopened. So a slip that was
-     *     acknowledged, approved and DISBURSED still refused to print, and the
-     *     message told HR to "set the payroll to Ready first" — an instruction
-     *     that is impossible to carry out on a locked run. The employee had
-     *     been paid and could not be given a payslip for it.
-     *
-     * So the block now follows the run, not the row: provisional while the run
-     * is still draft/generated, printable once it is approved or paid.
-     */
     private function pdfBlockReason(Payslip $slip): ?string
     {
         if (!in_array($slip->status, ['On Hold'], true)) {
@@ -1959,25 +1473,16 @@ class PayrollController extends Controller
         return DB::table('payroll_periods')->where('id', $slip->payroll_period_id)->value('label') ?: now()->format('M Y');
     }
 
-    /** Rule 17 — filtered CSV export, permission-gated. */
     public function export(Request $request): StreamedResponse
     {
         abort_unless($this->canExport($request), 403, 'You are not allowed to export payroll.');
 
         [$month, $year] = $this->resolveMonthYear($request);
         $ctx = $this->ctx($request);
-        // P29: require a concrete tenant scope — without this a super-admin with
-        // no client/branch selected would pool every tenant's payslips into one
-        // export. (abort_if, since this method must return a StreamedResponse.)
         abort_if(empty($ctx['client_id']) && empty($ctx['branch_id']), 422, 'Select a client or branch before exporting payroll.');
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
 
-        /* Rule 17 — branch filter. Only meaningful for a caller who can see more
-         * than one branch: $ctx already pins a branch_user to their own, and
-         * narrowing further is fine, but a requested branch OUTSIDE the caller's
-         * scope must not widen it. Cross-checking against $ctx['branch_id']
-         * keeps the filter from becoming a tenant-isolation hole (Rule 20). */
         $branchFilter = (int) $request->query('branch_id') ?: null;
         if ($branchFilter && $ctx['branch_id'] && $branchFilter !== (int) $ctx['branch_id']) {
             abort(403, 'You are not allowed to export payroll for that branch.');
@@ -1985,19 +1490,12 @@ class PayrollController extends Controller
 
         $q = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
-            /* A comma list, because the filter panel allows more than one
-               department or status (QA 49). explode() on a single value gives
-               a one-element array, so an older caller still works. */
             ->when($request->query('department'), fn ($q, $d) => $q->whereIn('department', array_filter(explode(',', (string) $d))))
             ->when($request->query('status'), fn ($q, $s) => $q->whereIn('status', array_filter(explode(',', (string) $s))))
             ->when($branchFilter, fn ($q, $b) => $q->where('branch_id', $b))
-            // Employment type reads the payslip's own snapshot, so an old export
-            // stays reproducible after the employee's type changes.
             ->when($request->query('employee_type'), fn ($q, $t) => $q->where('employee_type', $t))
             ->orderBy('employee_name');
 
-        // Filename carries the cycle AND its financial year so a Jan-2027 export
-        // can't be mistaken for FY 2027-28 once it's off the screen. (PAY-49)
         $filename = 'payroll_' . $period->label . '_FY' . $period->financial_year . '.csv';
         $headers = [
             'Content-Type'        => 'text/csv',
@@ -2028,16 +1526,12 @@ class PayrollController extends Controller
         }, 200, $headers);
     }
 
-    /* ───────────────────────── helpers ───────────────────────── */
-
     private function findRun(Request $request): ?PayrollRun
     {
         $ctx = $this->ctx($request);
         $id = (int) $request->input('run_id', $request->query('run_id'));
         $run = PayrollRun::with('period')->find($id);
         if (!$run) return null;
-        // Tenant gate — client + (for branch-pinned users) branch. A null
-        // client_id on the run must NOT bypass the gate for a scoped caller.
         if ($ctx['client_id'] && (int) $run->client_id !== (int) $ctx['client_id']) {
             return null;
         }
@@ -2052,30 +1546,10 @@ class PayrollController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if ($user->user_type === 'super_admin') return true;
-        // Strict match — a null client_id on the slip must NOT pass for a scoped
-        // user (that previously let any tenant read client-less payslips).
         if ((int) $slip->client_id !== (int) $user->client_id) return false;
-        /* PAY-45 — the employee tier sees ONLY its own slip. Tenant match alone
-           let any logged-in employee read a colleague's payslip (and its PDF, and
-           email it to themselves) just by walking the id. A user with no linked
-           employee record has no own slip to read, so 0 matches nothing. */
         if ($user->user_type === 'employee') {
             return (int) $slip->employee_id === (int) ($user->employee_id ?? 0);
         }
-        /* A branch-pinned user only ever reads their OWN branch's payslips.
-         *
-         * This gate stopped at the client, so a branch_user could open any
-         * other branch's payslip — its full breakdown, its PDF, and email it to
-         * the employee — just by walking the id. Every branch is an equal,
-         * isolated peer, and the switcher cannot widen a branch user's scope
-         * (see effectiveBranchId), so the row gate has to say the same thing:
-         * findRun() and PayrollPaymentController::findScoped() already branch-
-         * check for exactly this tier, and this was the one payroll gate that
-         * did not. Found by cross-tier testing on #119: a branch-3 user reading
-         * a branch-2 payslip.
-         *
-         * A slip with no branch_id is left to the client check above — that is
-         * a client-wide run, not another branch's data. */
         if ($user->user_type === 'branch_user' && $user->branch_id
             && $slip->branch_id && (int) $slip->branch_id !== (int) $user->branch_id) {
             return false;
@@ -2088,7 +1562,6 @@ class PayrollController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin'], true)) return true;
-        // A branch admin who can run payroll can also export/download/email it.
         if ($user->user_type === 'branch_user') return true;
         $perm = $user->permissions['hr.payroll'] ?? null;
         return is_array($perm) ? (bool) (($perm['can_export'] ?? false) || ($perm['can_edit'] ?? false)) : false;
@@ -2103,7 +1576,6 @@ class PayrollController extends Controller
             'processed'      => $rows->whereIn('status', ['Processed', 'Paid'])->count(),
             'pendingReview'  => $rows->where('status', 'Pending Review')->count(),
             'onHold'         => $rows->where('status', 'On Hold')->count(),
-            // Eligible employees the current run has not computed yet (#121).
             'notInRun'       => $rows->where('status', 'Not in Run')->count(),
             'totalPayroll'   => round($rows->sum('netPay'), 2),
             'totalGross'     => round($rows->sum('earnings'), 2),
@@ -2123,8 +1595,6 @@ class PayrollController extends Controller
             'label'                => $p->label,
             'financial_year'       => $p->financial_year,
             'working_days'         => $p->working_days,
-            // Total calendar days of the month — the basis salary & loss-of-pay
-            // are computed on (÷30/31), so the payslip shows it as the day count.
             'total_month_days'     => Carbon::create((int) $p->year, (int) $p->month, 1)->daysInMonth,
             'attendance_finalized' => (bool) $p->attendance_finalized,
             'status'               => $p->status,
@@ -2146,142 +1616,102 @@ class PayrollController extends Controller
         ];
     }
 
-    /**
-     * Working days that have actually ELAPSED, per employee, for a cycle whose
-     * month has not finished yet. Empty for a completed month.
-     *
-     * The Absent figure is derived as working_days − present − paid leave, and
-     * working_days is the whole month. On a cycle in progress that counted
-     * every day still to come as an absence: on 20 August, an employee with no
-     * punches yet read "Present 0 / Absent 26" — twenty-six absences in a month
-     * that had only seen seventeen working days. Clipping the denominator to
-     * the elapsed part of the month is what makes the column mean anything
-     * before month end.
-     *
-     * Weekly offs come from each employee's own pattern (the same
-     * App\Support\WeekOff the engine uses), so a Saturday-and-Sunday employee
-     * is not charged for a Saturday. Holidays are deliberately NOT removed —
-     * payroll's working_days does not remove them either, and the two figures
-     * have to be built the same way or the subtraction goes wrong.
-     *
-     * One query for the whole page, not one per row.
-     */
-    private function elapsedWorkingDaysMap(PayrollPeriod $period, $slips): array
-    {
-        if ($slips->isEmpty()) {
-            return [];
-        }
-        $today = Carbon::today();
-        $start = Carbon::parse($period->period_start)->startOfDay();
-        $end   = Carbon::parse($period->period_end)->startOfDay();
-
-        // Month already over: working_days is entirely in the past, nothing to clip.
-        if ($end->lt($today)) {
-            return [];
-        }
-        // Cycle hasn't started at all — no day can be an absence yet.
-        $cut = $today->lt($start) ? null : $today->copy()->min($end);
-
-        $offs = \App\Models\Employee::whereIn('id', $slips->pluck('employee_id')->unique()->all())
-            ->pluck('weekly_off', 'id');
-
-        $map = [];
-        foreach ($offs as $id => $label) {
-            if ($cut === null) { $map[$id] = 0.0; continue; }
-            $n = 0;
-            for ($d = $start->copy(); $d->lte($cut); $d->addDay()) {
-                if (!\App\Support\WeekOff::isOff((string) $label, $d)) $n++;
-            }
-            $map[$id] = (float) $n;
-        }
-        return $map;
-    }
-
-    /**
-     * Per-payslip explanation for a PF figure that no longer matches the live
-     * "PF Applicable" flag, keyed by payslip id. Empty for an open cycle, which
-     * recomputeEmployeePayslips() keeps in step on its own.
-     *
-     * Salary Report reads the frozen payslip snapshot, Salary Setup reads the
-     * live employee master. When a cycle is finalized the two legitimately
-     * disagree, and the report used to show only a bare ₹0 — reported twice as
-     * "PF Applicable No→Yes does nothing". (#90 reopen)
-     */
-    /**
-     * Weekly offs falling in the period, per employee. (CBC #7)
-     *
-     * Biometric Input showed Present / Absent / Late / Missing Punch with no
-     * mention of weekly offs, so a month where someone worked every scheduled
-     * day still read as short — the off days were simply invisible, and there
-     * was no way to tell them apart from absence.
-     *
-     * Built as ONE map rather than per row: the grid serializes every employee
-     * in the run, and resolving the relation inside the serializer would be a
-     * query each. Counted from the employee's own weekly_off pattern, not
-     * derived from working_days, which is pro-rated for a mid-period joiner and
-     * would not give the real number back.
-     */
-    /**
-     * Paid holidays in the period, per employee. (CBC #8)
-     *
-     * Absent is DERIVED on the row as working − present − paid leave, and that
-     * subtraction never knew about holidays: a public holiday nobody punched on
-     * is not present, not leave, and still inside working_days, so every
-     * employee picked up an extra Absent day for it. Payroll itself was right —
-     * it credits the holiday as paid — only the reader disagreed.
-     *
-     * The count cannot be read off the payslip: the engine computes
-     * `holiday_days` and then loses it on save (no such column, so mass
-     * assignment drops it), which is why this recomputes rather than reads. Via
-     * PayrollService so the exclusion of holidays landing on a weekly off is
-     * the engine's own rule and not a second copy of it.
-     *
-     * Memoized per holiday group: employees overwhelmingly share one, and the
-     * date set costs a query each.
-     */
-    private function holidayDaysMap($slips, $period): array
+    private function attendanceDaysMap($slips, $period): array
     {
         if (!$period || $slips->isEmpty()) {
             return [];
         }
-        $svc   = app(\App\Services\PayrollService::class);
-        $start = Carbon::create((int) $period->year, (int) $period->month, 1)->startOfDay();
-        $end   = (clone $start)->endOfMonth()->startOfDay();
+
+        $start = Carbon::parse($period->period_start)->startOfDay();
+        $end   = Carbon::parse($period->period_end)->startOfDay();
+        $today = Carbon::today();
+        if ($end->gt($today)) $end = $today->copy();
+        if ($end->lt($start)) return [];
+
+        $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
 
         $employees = \App\Models\Employee::withTrashed()
-            ->whereIn('id', $slips->pluck('employee_id')->filter()->unique()->values())
-            ->get(['id', 'weekly_off', 'holiday_group_id', 'client_id']);
+            ->with('branch')
+            ->whereIn('id', $empIds)
+            ->get(['id', 'weekly_off', 'holiday_group_id', 'client_id', 'branch_id', 'shift', 'date_of_joining']);
 
-        $memo = [];
-        $out  = [];
-        foreach ($employees as $e) {
-            // Weekly off is part of the key: the same group yields a different
-            // count for someone whose Saturday is off.
-            $key = ($e->holiday_group_id ?? 'none') . '|' . ($e->weekly_off ?? '');
-            $out[$e->id] = $memo[$key] ??= $svc->holidayDaysFor($e, $start->copy(), $end->copy());
+        $rowsByEmp = [];
+        foreach (\App\Models\Attendance::query()
+            ->whereIn('employee_id', $empIds)
+            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->get(['id', 'employee_id', 'attendance_date', 'status', 'check_in_at', 'check_out_at', 'shift_start', 'shift_end', 'shift_name']) as $r) {
+            $rowsByEmp[(int) $r->employee_id][Carbon::parse($r->attendance_date)->toDateString()] = $r;
         }
+
+        $svc = app(\App\Services\PayrollService::class);
+        $holidayMemo = [];
+        $out = [];
+
+        foreach ($employees as $e) {
+            $key = ($e->holiday_group_id ?? 'none') . '|' . ($e->weekly_off ?? '');
+            $holidays = $holidayMemo[$key] ??= array_flip(
+                $svc->holidayDatesFor($e, $start->copy(), $end->copy()),
+            );
+
+            $weeklyOffLabel = (string) ($e->weekly_off ?? '');
+            $shiftStart     = $e->resolveShiftWindow()[0];
+            $rows           = $rowsByEmp[(int) $e->id] ?? [];
+            $joined = $e->date_of_joining
+                ? Carbon::parse($e->date_of_joining)->startOfDay()->toDateString()
+                : null;
+
+            $absent = 0;
+            $holidayWorked = 0;
+            for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+                $ds  = $d->toDateString();
+                $row = $rows[$ds] ?? null;
+                if (!$row && $joined !== null && $ds < $joined) continue;
+
+                $isHoliday = isset($holidays[$ds]);
+                $status = \App\Support\AttendanceDayStatus::resolve(
+                    $row,
+                    \App\Support\WeekOff::isOff($weeklyOffLabel, $d),
+                    $shiftStart,
+                    $ds,
+                    $isHoliday,
+                );
+                if ($status === 'Absent') $absent++;
+                if ($isHoliday && $status !== 'Holiday') $holidayWorked++;
+            }
+            $out[$e->id] = [
+                'absent'        => (float) $absent,
+                'holidayTotal'  => (float) count($holidays),
+                'holidayWorked' => (float) $holidayWorked,
+            ];
+        }
+
         return $out;
     }
-
     private function weekOffDaysMap($slips, $period): array
     {
         if (!$period || $slips->isEmpty()) {
             return [];
         }
-        $patterns = \App\Models\Employee::withTrashed()
+        $employees = \App\Models\Employee::withTrashed()
             ->whereIn('id', $slips->pluck('employee_id')->filter()->unique()->values())
-            ->pluck('weekly_off', 'id');
+            ->get(['id', 'weekly_off', 'date_of_joining']);
 
         $start = Carbon::create((int) $period->year, (int) $period->month, 1)->startOfDay();
         $end   = (clone $start)->endOfMonth()->startOfDay();
 
         $out = [];
-        foreach ($patterns as $empId => $label) {
+        foreach ($employees as $e) {
+            $joined = $e->date_of_joining
+                ? Carbon::parse($e->date_of_joining)->startOfDay()->toDateString()
+                : null;
+
             $n = 0;
             for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
-                if (\App\Support\WeekOff::isOff((string) ($label ?? ''), $d)) $n++;
+                $ds = $d->toDateString();
+                if ($joined !== null && $ds < $joined) continue;
+                if (\App\Support\WeekOff::isOff((string) ($e->weekly_off ?? ''), $d)) $n++;
             }
-            $out[$empId] = $n;
+            $out[$e->id] = $n;
         }
         return $out;
     }
@@ -2290,19 +1720,11 @@ class PayrollController extends Controller
     {
         $frozen = !in_array($run?->status, ['draft', 'generated'], true)
             || ($period?->status ?? null) === 'locked';
-        /* An OPEN cycle used to return early here. That was right for the
-         * freeze mismatch — recomputeEmployeePayslips() keeps an open cycle in
-         * step — but it also silenced the other way PF lands on ₹0 with the
-         * flag ON: a zero PF base (no Basic row on the structure, or a zero
-         * one). The payslip screen explained it, this grid printed a bare ₹0,
-         * and that is how #90 kept coming back. Both cases are handled below.
-         */
         if ($slips->isEmpty()) {
             return [];
         }
 
         $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
-        // Resolved in bulk — a per-row lookup would be two queries per employee.
         $pfEligible = \App\Models\Employee::whereIn('id', $empIds)->pluck('pf_eligible', 'id');
         $pfStructure = \App\Models\SalaryStructure::whereIn('employee_id', $empIds)
             ->where('status', 'active')
@@ -2312,7 +1734,6 @@ class PayrollController extends Controller
 
         $out = [];
         foreach ($slips as $s) {
-            // Same OR PayrollService::resolveCompensation() applies.
             $applies = (bool) ($pfEligible[$s->employee_id] ?? false)
                 || isset($pfStructure[$s->employee_id]);
             $onSlip = (float) $s->pf_employee > 0;
@@ -2323,9 +1744,6 @@ class PayrollController extends Controller
             } elseif ($frozen && !$applies && $onSlip) {
                 $out[$s->id] = 'PF has since been turned off — this finalized cycle keeps the PF it was paid with.';
             } elseif (!$frozen && $applies && !$onSlip) {
-                // Open cycle, PF ticked, PF still zero — the base came out
-                // zero. Reuse the payslip's own exception so the grid and the
-                // payslip screen give the same answer.
                 $reason = collect($s->exceptions ?? [])
                     ->pluck('reason')
                     ->first(fn ($r) => stripos((string) $r, 'PF') !== false);
@@ -2338,39 +1756,6 @@ class PayrollController extends Controller
         return $out;
     }
 
-    /**
-     * Contractual monthly gross per employee, from the active salary structure,
-     * keyed by employee id. One query for the whole grid.
-     *
-     * Only used as a fallback for payslips generated before the components
-     * carried their own monthly figure — see serializePayslip(). (#134)
-     */
-    /**
-     * Which salary structure version priced this payslip.
-     *
-     * A payslip is priced on the version that was IN FORCE during its pay
-     * window, not the one that is current today — PayrollService::activeStructure()
-     * resolves that at run time, and Rule 19 keeps the old row rather than
-     * overwriting it. So "July says ₹68,412 but Salary Setup says ₹75,000"
-     * has an answer, and until now the slip did not carry it: the reader had
-     * to open the revision history in another screen and match dates by eye.
-     *
-     * Resolution deliberately mirrors structureGrossMap() — superseded rows
-     * count (the version that priced an old cycle is superseded by definition),
-     * drafts and not-yet-effective revisions do not, and ties break on
-     * effective_from, then version, then active-over-superseded, then id.
-     *
-     * A revision dated INSIDE the window means TWO versions priced the month —
-     * blendCompensation() pays a day-weighted average of both. Naming only one
-     * of them would be a worse answer than naming none, so `salaryVersions`
-     * lists every version in force during the window and the viewer shows the
-     * range.
-     *
-     * Derived on read rather than stored. The alternative is a
-     * payslips.salary_structure_id column, which would be the stronger record
-     * for an audit; this returns the same answer for every slip already in the
-     * database instead of only ones generated from now on.
-     */
     private function salaryVersionFor(Payslip $slip): array
     {
         $period = $slip->period ?: PayrollPeriod::find($slip->payroll_period_id);
@@ -2383,7 +1768,6 @@ class PayrollController extends Controller
         $winEnd   = Carbon::parse($period->period_end
             ?? Carbon::create((int) $period->year, (int) $period->month, 1)->endOfMonth())->endOfDay();
 
-        // Same rule the exit F&F uses — see SalaryStructure::versionsInForce().
         $v = \App\Models\SalaryStructure::versionsInForce((int) $slip->employee_id, $winStart, $winEnd);
 
         return [
@@ -2399,26 +1783,6 @@ class PayrollController extends Controller
             return [];
         }
 
-        /* The structure in force DURING THIS PERIOD, not the one in force today.
-         * (CBC #15)
-         *
-         * This used to take `status = 'active'` with no date filter at all, so
-         * it always returned the employee's CURRENT salary. Raise someone's CTC
-         * in September and every earlier month's Payroll Processing row
-         * re-captioned itself with the new figure — a previous month's payroll
-         * appearing to have been calculated on a salary that did not exist yet.
-         *
-         * Only legacy slips (generated before payslip lines carried their own
-         * `monthly` figure) read this map, which is why the stored money never
-         * moved and only the CTC caption was wrong. That still made the screen
-         * state something untrue about a closed month.
-         *
-         * Resolution mirrors PayrollService::activeStructure(): superseded rows
-         * count, because the version that priced an old cycle is superseded by
-         * definition; drafts and not-yet-effective revisions do not. Ordered so
-         * the winning row is written LAST into the map — effective_from, then
-         * version, then 'active' ahead of 'superseded' on a tie, then id — the
-         * same precedence activeStructure() applies in reverse. */
         $asOf = $period
             ? Carbon::parse($period->period_end ?? Carbon::create((int) $period->year, (int) $period->month, 1)->endOfMonth())
             : Carbon::now();
@@ -2439,51 +1803,20 @@ class PayrollController extends Controller
         return $out;
     }
 
-    /** Maps a Payslip into the shape the SPA's PayrollRow already consumes. */
-    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null, ?string $pfNotice = null, ?float $structureGross = null, ?int $weekOffDays = null, ?float $holidayDays = null): array
+    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null, ?string $pfNotice = null, ?float $structureGross = null, ?int $weekOffDays = null, ?array $attDays = null): array
     {
         $name = $p->employee_name ?: 'Employee';
         $parts = preg_split('/\s+/', trim($name));
         $initials = strtoupper(substr($parts[0] ?? '', 0, 1) . substr(end($parts) ?: '', 0, 1));
 
-        /* The structure's full monthly gross, and whether this cycle was
-         * pro-rated down from it.
-         *
-         * Payroll Processing shows the EARNED figure, so a mid-month joiner on
-         * ₹10,000 reads ₹6,774.20 in a column the reader takes to be their
-         * salary — reported as the salary being calculated wrong when it is the
-         * correct 21/31 of the month. The full figure and the reason travel
-         * with the row so the screen can say which is which. (#134)
-         *
-         * Summed only over lines that CARRY a monthly figure: overtime and
-         * bonus lines have none (they are not part of the monthly structure)
-         * and must not inflate it. Null on slips generated before this existed,
-         * which the grid reads as "nothing to show". */
         $monthlyLines = collect((array) ($p->earnings ?? []))
             ->filter(fn ($l) => isset($l['monthly']));
-        /* Falls back to the employee's salary structure when the slip predates
-         * the monthly line data.
-         *
-         * Without this the fix would only take effect on payslips generated
-         * AFTER it shipped: every slip already in the system would keep showing
-         * the pro-rated figure as the CTC, and a retest on the very cycle the
-         * bug was raised against would still fail. The caller resolves the
-         * structure gross in one batched query. (#134) */
         $monthlyGross = $monthlyLines->isEmpty()
             ? ($structureGross !== null && $structureGross > 0 ? round($structureGross, 2) : null)
             : round($monthlyLines->sum(fn ($l) => (float) $l['monthly']), 2);
-        /* `structure_gross` is the pro-rated structure pay the slip was built
-           with — the right counterpart on a legacy slip, since it excludes the
-           overtime and bonus that gross_earnings carries. */
         $earnedStructure = $monthlyLines->isEmpty()
             ? round((float) ($p->structure_gross ?: $p->gross_earnings), 2)
             : round($monthlyLines->sum(fn ($l) => (float) ($l['amount'] ?? 0)), 2);
-        /* gross_earnings is a safe last resort for the legacy case: loss of pay
-           does NOT reduce it (LOP is a deduction, so a fully-absent month still
-           reads the full gross), which is exactly the confusion this marker must
-           not add to. Overtime and bonus push it UP, so at worst the marker is
-           withheld on a pro-rated slip carrying OT — silent, never wrong. */
-        // A rupee of tolerance absorbs rounding on the pro-ration multiply.
         $prorated = $monthlyGross !== null
             && $earnedStructure !== null
             && ($monthlyGross - $earnedStructure) > 1;
@@ -2493,27 +1826,14 @@ class PayrollController extends Controller
             'payslip_id'  => $p->id,
             'empId'       => $p->employee_code ?: ('EMP-' . $p->employee_id),
             'employee_id' => $p->employee_id,
-            // URL-safe encrypted id so the SPA opens the profile via an opaque
-            // token (like the employee list), not the readable EMP-### code.
             'encryptedId' => $this->encId($p->employee_id),
             'name'        => $name,
             'initials'    => $initials ?: 'NA',
             'accent'      => $this->accentFor($p->employee_id),
             'department'  => $p->department ?: '—',
             'designation' => $p->designation ?: '—',
-            /* CTC is the CONTRACTUAL monthly figure, so it must be the salary
-             * structure's gross — never this cycle's earnings.
-             *
-             * It was gross_earnings, which is pro-rated for a mid-cycle join or
-             * exit. The two are identical on a full month, which hid it; on a
-             * part month the Payroll Processing list captioned a ₹10,000/mo
-             * employee "CTC ₹6,774/mo" — the screen stating the wrong salary
-             * for the employee, directly under their name. That caption is what
-             * this ticket is reporting. Falls back to the earned figure only on
-             * slips that predate the monthly line data. (#134) */
             'ctc'         => $monthlyGross ?? (float) $p->gross_earnings,
             'earnings'    => (float) $p->gross_earnings,
-            // Full monthly salary + why this cycle pays less than it (#134).
             'monthlyGross' => $monthlyGross,
             'prorated'     => $prorated,
             'prorationNote' => $prorated
@@ -2529,69 +1849,19 @@ class PayrollController extends Controller
             'lop_days'    => (float) $p->lop_days,
             'status'      => $p->status,
             'present'     => (float) $p->present_days,
-            /* Absent is derived, not stored. For a cycle still running, the
-               denominator is the elapsed part of the month rather than the
-               whole of it, so days that have not happened yet are not counted
-               as absences. Null (a finished month) keeps the full figure. */
-            /* Holidays come out too. (CBC #8) A public holiday is inside
-               working_days and is neither present nor leave, so without this
-               term every employee collected an extra Absent day for it — while
-               payroll had already paid it as a credited day. */
-            /* Absent is measured in SCHEDULED days — the days the employee was
-             * actually due to work. (CBC #8, corrected for CBC #11)
-             *
-             * working_days is the CALENDAR window now (weekly offs live inside
-             * it and are credited as paid), so subtracting only present + leave
-             * + holidays counted every Sunday as an absence: a 31-day August
-             * reported 30 absent for someone with 25 unworked days.
-             * elapsedWorkingDays, by contrast, has always counted scheduled
-             * days — so the two have to be brought into the same unit before
-             * they are compared.
-             *
-             * A slip generated BEFORE that change already excludes weekly offs
-             * from working_days, and subtracting them again would under-count.
-             * The slip says which basis it used: a denominator equal to the
-             * month's calendar days can only be the new one. */
-            'absent'      => (function () use ($p, $elapsedWorkingDays, $weekOffDays, $holidayDays) {
-                $working  = (float) $p->working_days;
-                $calendar = $p->period
-                    ? (float) Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->daysInMonth
-                    : 0.0;
-                $calendarBasis = $calendar > 0 && abs($working - $calendar) < 0.005;
-                $scheduled = $calendarBasis ? max(0, $working - (float) ($weekOffDays ?? 0)) : $working;
-                $base = $elapsedWorkingDays !== null ? min($scheduled, $elapsedWorkingDays) : $scheduled;
-
-                /* "Absent" on the Biometric Input table is PURE attendance — a
-                 * scheduled working day on which the employee did NOT physically
-                 * attend: no biometric punch and no approved regularization
-                 * (which stamps the day Present, so it lands in present_days).
-                 *
-                 * LEAVE IS NOT SUBTRACTED. An approved leave still means the
-                 * person was not in the office, so biometrically the day is
-                 * absent; whether it is PAID or UNPAID is decided in the payroll
-                 * run (lop_days / lop_amount), not here. Weekly offs are already
-                 * out of $base and holidays are non-working days, so only those
-                 * two are excluded. */
-                return (float) max(0, $base
-                    - (float) $p->present_days
-                    - (float) ($holidayDays ?? 0));
-            })(),
-            'holidayDays' => $holidayDays,
+            'absent'      => $attDays === null ? null : (float) $attDays['absent'],
+            'holidayDays'        => $attDays === null ? null : (float) $attDays['holidayTotal'],
+            'holidayDaysWorked'  => $attDays === null ? null : (float) $attDays['holidayWorked'],
             'lateMarks'   => (int) $p->late_marks,
             'missingPunch'=> (int) $p->missing_punches,
             'unpaidLeave' => (float) $p->unpaid_leave_days,
             'paidLeave'   => (float) $p->paid_leave_days,
             'attSource'   => $p->att_source,
-            // Mismatch label mirrors WHY the row is flagged for review: a
-            // missing-punch day, or (when punches are complete) late marks that
-            // tripped the Review threshold. Previously only missing punches set
-            // this, so late-only Review rows showed a blank Mismatch cell.
             'mismatch'    => $p->missing_punches > 0
                 ? 'Missing punches'
                 : ($p->att_source === 'Review' ? 'Late marks' : null),
             'attMismatch' => $p->att_source === 'Review',
             'pfEmp'       => (float) $p->pf_employee,
-            // Set only when the frozen PF figure contradicts the live flag.
             'pfStale'     => $pfNotice !== null,
             'pfNotice'    => $pfNotice,
             'esi'         => (float) $p->esi,
@@ -2600,48 +1870,18 @@ class PayrollController extends Controller
             'lopDeducted' => (float) $p->lop_amount,
             'advanceRec'  => (float) $p->advance_recovery,
             'holdReason'  => $p->hold_reason,
-            // Real server-computed reasons (blocking + warning) so the Run
-            // modal shows the actual issues instead of guessing.
             'reasons'     => collect($this->visibleExceptions($p))->pluck('reason')->filter()->values()->all(),
             'bankVerified' => (bool) $p->bank_verified,
-            /* On the LIST row now, not just the payslip: the Biometric Input
-               table needs it per employee. Null when the caller did not resolve
-               the map, which the grid renders as a dash rather than a 0 it
-               cannot vouch for. (CBC #7) */
             'weekOffDays' => $weekOffDays,
         ];
 
         if ($full) {
-            /* Drop earning lines the structure never funded. (#147)
-             *
-             * PayrollService stops writing these, but slips generated before
-             * that already carry a stored "Special Allowance ₹0.00" row, and a
-             * finalized cycle is not regenerated to tidy up its presentation.
-             * Filtering on read means the fix shows on history too, without
-             * touching a single stored figure.
-             *
-             * Both the paid amount and the structure's monthly figure must be
-             * zero, matching the rule in PayrollService: a funded component
-             * whose pro-rated amount rounds to nothing on a late joiner's slip
-             * is still a component they are paid, and stays on the slip.
-             * Deductions are deliberately NOT filtered — a statutory head at
-             * ₹0 is a substantive statement (PF out of scope, ESI above the
-             * ceiling) and #130's notices explain those. */
-            /* Zeros out first, THEN the rounding residue — reconciling before
-               the filter could park the paisa on a line about to be dropped,
-               which would take the residue with it. (#147 then #10) */
             $row['earningsBreakup'] = \App\Support\PayslipLines::reconciledTo(
                 \App\Support\PayslipLines::withoutUnfunded($p->earnings ?: []),
                 (float) $p->gross_earnings,
             );
             $row['deductionsBreakup'] = $p->deductions ?: [];
 
-            /* Overtime — surfaced only for employees the employee master marks
-               overtime-applicable, so the payslip doesn't grow an OT card and
-               an OT allowance line for staff the policy doesn't cover.
-               The rate here is the DERIVED per-hour figure
-               (gross ÷ working days ÷ shift hours × multiplier), which is what
-               the amount was actually priced at — see PayrollService::overtimeRate(). */
             $emp = $p->relationLoaded('employee') ? $p->employee : $p->employee()->first();
             $otApplicable = (bool) $emp?->overtimeApplicable();
             $row['overtimeApplicable'] = $otApplicable;
@@ -2650,14 +1890,6 @@ class PayrollController extends Controller
             if ($otApplicable) {
                 $svc = app(\App\Services\PayrollService::class);
 
-                /* Prefer the pricing inputs STORED on the overtime earning line
-                   when the run was generated. Recomputing them here was wrong
-                   twice over: the gross passed was `gross_earnings`, which is
-                   `prorated gross + overtime + bonus` — it contains the very OT
-                   amount being explained, so the rate was circular and drifted
-                   with any OT / bonus / proration — and the employee's shift,
-                   OT rate or salary may have changed since the run anyway. A
-                   payslip has to explain the money that was actually paid. */
                 $otLine = collect(is_array($p->earnings) ? $p->earnings : [])
                     ->first(fn ($l) => ($l['code'] ?? null) === 'overtime' && isset($l['rate']));
 
@@ -2668,13 +1900,6 @@ class PayrollController extends Controller
                     $row['overtimeRate']       = (float) $otLine['rate'];
                     $row['overtimePricedHours'] = isset($otLine['hours']) ? (float) $otLine['hours'] : null;
                 } else {
-                    /* Slips generated before the breakdown was stored. Derive
-                       the effective rate from the amount and hours that were
-                       actually paid — that reproduces the figure exactly by
-                       construction, where any re-derivation from today's inputs
-                       would not. The hourly/multiplier split is left off rather
-                       than guessed: the multiplier on file now may not be the
-                       one the run used. */
                     $paidHours  = (float) ($p->overtime_hours ?? 0);
                     $paidAmount = (float) ($p->overtime_amount ?? 0);
                     $row['overtimeRateName']   = null;
@@ -2684,15 +1909,6 @@ class PayrollController extends Controller
                     $row['overtimePricedHours'] = $paidHours > 0 ? $paidHours : null;
                 }
 
-                /* Hours the ATTENDANCE shows past the shift end, recomputed
-                   LIVE — deliberately separate from the paid hours above, which
-                   were frozen when the run was generated. Overtime is no longer
-                   approval-gated, so the two normally agree; they diverge when
-                   an HR adjustment overrode the detected figure, or when the
-                   attendance itself changed after the run (a regularization
-                   approval rewrites a whole day's punches). Both are surfaced so
-                   the payslip can SAY so — what it must never do is print this
-                   number next to an amount priced on the other one. */
                 if ($p->period) {
                     $winStart = Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->startOfDay();
                     $winEnd   = (clone $winStart)->endOfMonth()->startOfDay();
@@ -2703,61 +1919,23 @@ class PayrollController extends Controller
             }
             $row['exceptions']        = $this->visibleExceptions($p);
             $row['paidDays']          = (float) $p->paid_days;
-            /* Weekly offs in the period. Not part of paid_days and not meant to
-             * be — working_days already excludes them, so the salary is built
-             * from a denominator they were never in. The slip simply never said
-             * so, which made a low Paid Days figure look like the week-offs had
-             * been docked. Recomputed here from the employee's own pattern
-             * rather than derived from working_days, which is prorated for a
-             * mid-period joiner and would not give this back. */
-            /* Same count the list rows carry — one implementation, so the
-               payslip and the Biometric Input column cannot disagree. */
             $row['weekOffDays'] = $weekOffDays
                 ?? ($this->weekOffDaysMap(collect([$p]), $p->period)[$p->employee_id] ?? 0);
             $row['lopDays']           = (float) $p->lop_days;
-            /* What ONE day of loss of pay cost. (#156)
-             *
-             * Derived from the slip's own figures rather than re-deriving the
-             * branch policy here: lop_amount ÷ lop_days IS the rate that
-             * priced this slip, whatever basis and divisor produced it, and it
-             * stays correct for historic slips run under an older rule.
-             *
-             * Null when nothing was docked — there is no rate to quote, and a
-             * ₹0 would read as "a day here is worth nothing". */
             $row['perDayRate']        = (float) $p->lop_days > 0
                 ? round((float) $p->lop_amount / (float) $p->lop_days, 2)
                 : null;
-            /* PER-DAY SALARY — what one payable day of this slip is worth.
-             *
-             * The salary portion only: overtime and bonus are paid for work
-             * done, not for being employed a day, and leaving them in would
-             * quote a daily rate the employee does not actually accrue.
-             *
-             * Divided by the slip's own payable days, which makes the figure
-             * self-checking: the two numbers it is derived from are both
-             * printed on the slip, so the reader can redo the division.
-             * Equivalent to monthly ÷ days in month, since that is exactly how
-             * the earnings were pro-rated in the first place. */
             $salaryOnly = (float) $p->gross_earnings
                 - (float) ($p->overtime_amount ?? 0)
                 - (float) ($p->bonus_amount ?? 0);
             $row['perDaySalary']      = (float) $p->working_days > 0
                 ? round(max(0, $salaryOnly) / (float) $p->working_days, 2)
                 : null;
-            /* How much of Loss of Pay is the late-mark penalty rather than days
-             * missed. Null on slips generated before the column existed — the
-             * viewer prints the note only when it has a real figure, rather
-             * than asserting "0 of which late" about a cycle that never
-             * recorded the split. (#114) */
             $row['lateLopDays']       = $p->late_lop_days === null ? null : (float) $p->late_lop_days;
-            // Total calendar days of the month — salary & LOP are computed on
-            // this basis (÷30/31), so the payslip shows it as the day count.
             $row['totalMonthDays']    = $p->period
                 ? Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->daysInMonth
                 : null;
             $row['bank_verified']     = (bool) $p->bank_verified;
-            // Rule 16 — a payslip is "final" (officially downloadable) only
-            // once its run is approved/paid; otherwise it's provisional.
             $row['is_final']          = $p->relationLoaded('run')
                 ? in_array($p->run?->status, ['approved', 'paid'], true)
                 : in_array($p->status, ['Paid'], true);
@@ -2766,73 +1944,12 @@ class PayrollController extends Controller
         return $row;
     }
 
-    /**
-     * A roster row for an employee the run has not computed yet (#121).
-     *
-     * Deliberately the SAME shape serializePayslip() returns, so the grid, the
-     * filters and the export all treat it as an ordinary row — the only
-     * differences are a status of its own and a null payslip_id, which is what
-     * stops the payslip actions offering anything for a slip that does not
-     * exist. Money columns are zero rather than null: every consumer sums them.
-     */
-    private function serializePendingEmployee(\App\Models\Employee $e): array
-    {
-        $name = trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: ($e->display_name ?: 'Employee');
-        $parts = preg_split('/\s+/', trim($name));
-        $initials = strtoupper(substr($parts[0] ?? '', 0, 1) . substr(end($parts) ?: '', 0, 1));
-
-        return [
-            'id'          => 'pending-' . $e->id,
-            'payslip_id'  => null,
-            'empId'       => $e->emp_code ?: ('EMP-' . $e->id),
-            'employee_id' => $e->id,
-            'encryptedId' => $this->encId($e->id),
-            'name'        => $name,
-            'initials'    => $initials ?: 'NA',
-            'accent'      => $this->accentFor($e->id),
-            'department'  => $e->department?->name ?? '—',
-            'designation' => $e->designation?->name ?? '—',
-            'ctc'         => 0.0,
-            'earnings'    => 0.0,
-            'deductions'  => 0.0,
-            'netPay'      => 0.0,
-            'attendance'  => 0.0,
-            'workingDays' => 0.0,
-            'lop_days'    => 0.0,
-            'status'      => 'Not in Run',
-            'present'     => 0.0,
-            'absent'      => 0.0,
-            'lateMarks'   => 0,
-            'missingPunch'=> 0,
-            'unpaidLeave' => 0.0,
-            'paidLeave'   => 0.0,
-            // Null, not 0: this employee has no slip in the run, so we are not
-            // asserting they had no weekly offs. (CBC #7)
-            'weekOffDays' => null,
-            'holidayDays' => null,
-            'attSource'   => 'Manual',
-            'mismatch'    => null,
-            'attMismatch' => false,
-            'pfEmp'       => 0.0,
-            'esi'         => 0.0,
-            'pt'          => 0.0,
-            'tds'         => 0.0,
-            'lopDeducted' => 0.0,
-            'advanceRec'  => 0.0,
-            'holdReason'  => 'Joined after this payroll was generated — re-run payroll to include them.',
-            'reasons'     => ['Not included in the current run — re-run payroll to compute their salary.'],
-            'bankVerified'=> (bool) ($e->bank_account_number && $e->ifsc_code),
-        ];
-    }
-
     private function accentFor(int $id): string
     {
         $palette = ['#7c5cfc', '#0ab39c', '#3b82f6', '#f59e0b', '#e83e8c', '#0c63b0', '#108548', '#a06f00'];
         return $palette[$id % count($palette)];
     }
 
-    /** Rule 18 — audit trail. $old/$new capture the before/after state for
-     *  transitions (e.g. run status generated→approved). Best-effort. */
     private function audit(Request $request, string $action, $target, string $description, array $old = [], array $new = []): void
     {
         if (!class_exists(\App\Models\ActivityLog::class)) return;
@@ -2854,7 +1971,6 @@ class PayrollController extends Controller
                 'method'      => $request->method(),
             ]);
         } catch (\Throwable $e) {
-            // Audit logging is best-effort — never block a payroll action on it.
         }
     }
 }

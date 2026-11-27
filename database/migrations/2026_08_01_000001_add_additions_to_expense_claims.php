@@ -4,12 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Settlement now supports ADDITIONS as well as deductions. An addition is an
- * itemised { amount, reason } that INCREASES the payable (e.g. reimbursable
- * extras approved on top of the claim). Net payable = claim − Σ deductions + Σ additions.
- * Stored as a JSON list plus a running total, mirroring the deductions columns.
- */
 return new class extends Migration {
     public function up(): void
     {

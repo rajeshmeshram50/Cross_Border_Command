@@ -42,8 +42,6 @@ class Recruitment extends Model
         'enable_referral_bonus' => 'boolean',
     ];
 
-    // ── Tenant / ownership ──────────────────────────────────────────────
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
@@ -58,8 +56,6 @@ class Recruitment extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
-
-    // ── Master refs ─────────────────────────────────────────────────────
 
     public function department(): BelongsTo
     {
@@ -76,10 +72,6 @@ class Recruitment extends Model
         return $this->belongsTo(Roles::class, 'primary_role_id');
     }
 
-    // withTrashed(): a recruitment keeps pointing at the person it was opened
-    // with even after they resign or are removed (soft-deleted). Without this
-    // the relation resolves to null and the UI shows "—" / a raw id for the
-    // hiring manager / assigned HR on historical (e.g. expired) recruitments.
     public function hiringManager(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'hiring_manager_id')->withTrashed();

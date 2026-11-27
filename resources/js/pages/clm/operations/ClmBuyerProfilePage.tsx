@@ -10,6 +10,7 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { PER_PAGE } from '../shared/clmShared';
+import { PopName } from '../shared/clmCommon';
 import useDismissPopover from '../shared/useDismissPopover';
 import SearchClear from '../../../components/ui/SearchClear';
 
@@ -70,7 +71,11 @@ function useDynamicPerPage(
       const sampleRow = el.querySelector('tbody tr') as HTMLElement | null;
       const rowH = Math.max(rowHeight, sampleRow?.getBoundingClientRect().height || 0);
 
-      const avail = window.innerHeight - top - footerH - gap;
+      /* Less the table's own pager too: it sits under the table inside the
+         card, and leaving it out fitted a row or two more than the card holds. */
+      const pagerEl = el.parentElement?.querySelector('.wl-pager') as HTMLElement | null;
+      const pagerH = pagerEl ? pagerEl.offsetHeight : 58;
+      const avail = window.innerHeight - top - footerH - gap - pagerH;
       const rows = Math.floor(avail / rowH);
       const next = Number.isFinite(rows) ? Math.max(min, rows) : BP_PER_PAGE;
       setPerPage((prev) => (prev === next ? prev : next));
@@ -98,7 +103,7 @@ function settle(calc: () => void): () => void {
 
 function useFillHeight(
   ref: React.RefObject<HTMLElement | null>,
-  { gap = 14, min = 240, deps = [] as unknown[] } = {},
+  { gap = 8, min = 240, deps = [] as unknown[] } = {},
 ): number | undefined {
   const [h, setH] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -106,7 +111,14 @@ function useFillHeight(
       const el = ref.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const next = Math.max(min, Math.round(window.innerHeight - top - gap));
+      /* To the bottom of the scroll area (.main-content), as useExactFitRows
+         does for the Customer / Consignee cards, then the 8px gap. It measured
+         to the bottom of the WINDOW less 14, which put the Transaction wise card
+         behind the app footer - its pager half-hidden and the page scrolling
+         42px (QA #41). */
+      const scroller = el.closest('.main-content') as HTMLElement | null;
+      const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+      const next = Math.max(min, Math.round(bottom - top - gap));
       setH((prev) => (prev === next ? prev : next));
     };
     return settle(calc);
@@ -317,7 +329,10 @@ const BP_CSS = `
    inside it (app.css). Adding 8 here doubled it to 16, so the cards sat
    twice as far from the edge as the design asks. Vertical padding stays
    — that is what margin-top:-8px is paired with. */
-.seg-page { background: #F4F6FB; min-height: 100%; padding: 8px 0; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+/* No bottom padding: the cards are sized to end 8px above the app footer, and
+   .page-content already supplies that 8px. A second 8px here made the page
+   scroll by 8 under every list (QA #41). */
+.seg-page { background: #F4F6FB; min-height: 100%; padding: 8px 0 0; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -400,7 +415,15 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bref-box__header-sub   { color: #7dd3fc !important; }
 [data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
 [data-bs-theme="dark"] .bpa-seg { background: rgba(6,182,212,.10) !important; border-color: rgba(6,182,212,.22) !important; }
-[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: linear-gradient(135deg,rgba(6,182,212,.16),rgba(6,182,212,.10)) !important; border-color: rgba(6,182,212,.3) !important; }
+/* Dark unselected tabs are transparent, no fill and no border, same as light -
+   only the selected tab is an object (QA #40/#42). .bpx-tab is the
+   International/Domestic pair, which the light-fill catch-all above was
+   turning into a navy chip. */
+[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; }
+[data-bs-theme="dark"] .seg-page .bpx-tab:not(:hover),
+[data-bs-theme="dark"] .bcm-overlay .bpx-tab:not(:hover) { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
+[data-bs-theme="dark"] .seg-page .bpx-tab:hover,
+[data-bs-theme="dark"] .bcm-overlay .bpx-tab:hover { color: #a5f3fc !important; background: rgba(255,255,255,.08) !important; border-color: transparent !important; box-shadow: 0 2px 6px rgba(0,0,0,.35) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(224, 249, 253)"],
 [data-bs-theme="dark"] .seg-page .bpx-9,
 [data-bs-theme="dark"] .seg-page [style*="rgb(206, 248, 255)"],
@@ -439,6 +462,10 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(245, 246, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(238, 242, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(245, 243, 255)"] { background: rgba(99, 102, 241, .18) !important; border-color: rgba(129, 140, 248, .35) !important; }
+/* The indigo chips' ink. The rule above darkens their fill but left the
+   light-mode #4338CA text, so the Opportunity ID (OPP-0027) was dark indigo on
+   dark navy - all but invisible in Transaction wise CLM. */
+[data-bs-theme="dark"] .seg-page [style*="color: rgb(67, 56, 202)"] { color: #c7d2fe !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(79, 70, 229)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(67, 57, 202)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(124, 58, 237)"] { color: #c7d2fe !important; }
@@ -460,6 +487,18 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page .bpx-94 ,
 [data-bs-theme="dark"] .seg-page .bpx-100 ,
 [data-bs-theme="dark"] .seg-page .bpx-101 { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+/* The search's light-mode lit top edge (inset 0 1px 0 white .95) survived the
+   dark fill above and drew a white line along the top (QA #39). Dark gets the
+   .clm-search treatment instead: a .06 sheen, and the teal ring on focus. */
+[data-bs-theme="dark"] .seg-page .bpx-62,
+[data-bs-theme="dark"] .bcm-overlay .bpx-62 { box-shadow: inset 0 1px 0 rgba(255,255,255,.06) !important; }
+/* The search clear (x) on hover: a stronger wash of its own colour with a light
+   x, not the shared solid #cbd5e1 square (app.css .ui-search-clear) that read
+   as a white block in the dark field. Same rule as the CLM masters. */
+[data-bs-theme="dark"] .seg-page .ui-search-clear:hover,
+[data-bs-theme="dark"] .bcm-overlay .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent) !important; color: #f8fafc !important; }
+[data-bs-theme="dark"] .seg-page .bpx-62:focus-within,
+[data-bs-theme="dark"] .bcm-overlay .bpx-62:focus-within { border-color: #22d3ee !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 3px rgba(6,182,212,.20) !important; }
 /* The two scope toggles' rails — International/Domestic Customers and the
    same pair for Transactions. Both carry a near-white gradient with
    !important, and the only dark rule that named them set border-color, so the
@@ -495,6 +534,16 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(148, 163, 184)"] ,
 [data-bs-theme="dark"] .seg-page .bpx-1 ,
 [data-bs-theme="dark"] .seg-page .bpx-5 { color: #94c9dd !important; }
+/* The list's scroll box was transparent, so an EMPTY list showed the card's
+   lighter slate (#1e293b) through it - with the rows gone the table read as a
+   washed-out, faded panel (QA #61). The box takes the rows' navy instead, so a
+   list with no entries looks like the same table, just empty. */
+[data-bs-theme="dark"] .seg-page .bpx-65,
+[data-bs-theme="dark"] .seg-page .bpx-48 { background: #0f172a !important; }
+/* And no 12px gap above the pager in dark: it showed the same slate as a strip
+   between the list and its footer. The list box is flex:1, so it simply takes
+   the 12px. (Invisible in light, where card and table are both white.) */
+[data-bs-theme="dark"] .seg-page .wl-pager.bp-wl { margin-top: 0 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(100, 116, 139)"] ,
 [data-bs-theme="dark"] .seg-page .bpx-95 ,
 [data-bs-theme="dark"] .seg-page .bpx-103 { color: #94c9dd !important; }
@@ -511,8 +560,10 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(127, 29, 29)"] { color: #fca5a5 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(241, 245, 249)"] { background: rgba(148,163,184,.18) !important; border-color: rgba(148,163,184,.3) !important; }
 [data-bs-theme="dark"] .seg-page-card table { background: transparent !important; }
-[data-bs-theme="dark"] .seg-page-card thead tr { background: #16263a !important; }
-[data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .seg-page-card thead { background: #0f222c !important; box-shadow: 0 1px 0 rgba(34,211,238,.2) !important; }
+[data-bs-theme="dark"] .seg-page-card thead tr { background: linear-gradient(180deg, #102a34, #0f222c) !important; }
+[data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; background: transparent !important; border-color: rgba(34,211,238,.2) !important; }
+[data-bs-theme="dark"] .seg-page-card thead th span { color: #67e8f9 !important; opacity: 1 !important; }
 [data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(165, 243, 252)"] ,
@@ -595,11 +646,14 @@ const BP_CSS = `
 }
 `;
 
+/* 9.5px/800 at .07em - the house table header (DataTable.css .dt-table thead
+   th, the Customers table). 7px read as a third of the size of the same
+   header in every other module. */
 const thStyle: CSSProperties = {
-  padding: '9px 10px', fontSize: '7px', fontWeight: 800, letterSpacing: '.09em',
+  padding: '9px 10px', fontSize: '9.5px', fontWeight: 800, letterSpacing: '.07em',
   textTransform: 'uppercase', color: '#0891b2', opacity: .85, whiteSpace: 'nowrap',
 };
-const thTxt: CSSProperties = { fontSize: '7px', fontWeight: 800, letterSpacing: '.09em', textTransform: 'uppercase', color: '#0891b2', opacity: .85 };
+const thTxt: CSSProperties = { fontSize: '9.5px', fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: '#0891b2', opacity: .85 };
 
 /* The KPI tile, as the employee list builds it (HrEmployees.tsx, KPI_CARDS) and
    as Agreements We Sent and Agreements To Approve now do: a 3px accent rule
@@ -734,13 +788,14 @@ function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box';
         <button
           onClick={onClick}
           disabled={disabled}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.3)', background: 'linear-gradient(135deg,#f0fdff,#e8fbfd)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, fontFamily: 'inherit', fontSize: '10px', fontWeight: 700, color: '#0891b2', transition: 'all .15s', whiteSpace: 'nowrap' }}
+          /* 40px at 12.5px - the house button (it was ~24px with 10px text). */
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: 40, boxSizing: 'border-box', padding: '0 14px', borderRadius: '8px', border: '1.5px solid rgba(6,182,212,.3)', background: 'linear-gradient(135deg,#f0fdff,#e8fbfd)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, fontFamily: 'inherit', fontSize: '12.5px', fontWeight: 700, color: '#0891b2', transition: 'all .15s', whiteSpace: 'nowrap' }}
           onMouseEnter={(e) => { if (disabled) return; e.currentTarget.style.background = 'linear-gradient(135deg,#06b6d4,#0891b2)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#0891b2'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg,#f0fdff,#e8fbfd)'; e.currentTarget.style.color = '#0891b2'; e.currentTarget.style.borderColor = 'rgba(6,182,212,.3)'; }}
         >
           {icon === 'shield'
-            ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" strokeWidth="2.5" /></svg>
-            : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="1" /></svg>}
+            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" strokeWidth="2.5" /></svg>
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="1" /></svg>}
           Evidence Vault
         </button>
       </Tooltip>
@@ -774,8 +829,11 @@ export default function ClmBuyerProfilePage() {
   const [buyerScope, setBuyerScope] = useState<'international' | 'domestic'>('international');
   const [consScope, setConsScope] = useState<'international' | 'domestic'>('international');
   type CardFilter = 'all' | 'compliant' | 'kyc' | 'dd' | 'tl' | 'td' | 'agr';
+  /* The KPI cards no longer filter the list - they are read-only figures, and a
+     click that quietly narrowed the Customer / Consignee list (one row left,
+     nothing saying why) read as data going missing. The filter stays at 'all';
+     the switch below is kept so the list query is unchanged. */
   const [cardFilter, setCardFilter] = useState<CardFilter>('all');
-  const CARD_KEYS: CardFilter[] = ['all', 'compliant', 'kyc', 'dd', 'tl', 'td', 'agr'];
   const matchCard = (r: { kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog }): boolean => {
     switch (cardFilter) {
       case 'compliant': return r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t;
@@ -1180,7 +1238,7 @@ export default function ClmBuyerProfilePage() {
             </div>
           </div>
 
-          <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
+          <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: txnCardFill, maxHeight: txnCardFill }}>
             <div className="bpx-39">
               <div className="bpx-26">
                 <div className="bpx-27">
@@ -1432,7 +1490,7 @@ export default function ClmBuyerProfilePage() {
                       { num: pad(buyerTd), label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
                       { num: pad(buyerAgr), label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
                     ].map((c, idx) => (
-                      <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
+                      <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
                         <div className="bpx-38">
                           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1456,7 +1514,7 @@ export default function ClmBuyerProfilePage() {
                       { num: pad(consTd), label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
                       { num: pad(consAgr), label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
                     ].map((c, idx) => (
-                      <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
+                      <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
                         <div className="bpx-38">
                           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1713,11 +1771,11 @@ export default function ClmBuyerProfilePage() {
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} className="bpx-78" />
-          <div className="seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: 'var(--font-sans)' }}>
+          <div className="seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', overflowX: 'hidden', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: 'var(--font-sans)' }}>
             <div className="bpx-79">Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 8, background: i % 2 ? 'rgba(6,182,212,.05)' : 'transparent' }}>
-                <span className="bpx-80">{name}</span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                <span className="bpx-80"><PopName text={name} /></span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
               </div>
             ))}
           </div>
@@ -1748,10 +1806,10 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
     {open && createPortal(
       <>
         <div onMouseDown={() => setOpen(null)} className="bpx-78" />
-        <div className="seg-pop" style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: 'var(--font-sans)' }}>
+        <div className="seg-pop" style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', overflowX: 'hidden', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: 'var(--font-sans)' }}>
           <div className="bpx-79">Segments ({segs.length})</div>
           {segs.map((name, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}><span className="bpx-82">{name}</span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} /></div>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}><span className="bpx-82"><PopName text={name} /></span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} /></div>
           ))}
         </div>
       </>,

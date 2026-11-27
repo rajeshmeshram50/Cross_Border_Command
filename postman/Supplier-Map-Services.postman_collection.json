@@ -1,0 +1,2040 @@
+{
+  "info": {
+    "name": "Supplier Master · Map Services (/api/vendors/{id})",
+    "_postman_id": "5c1d2e3f-supplier-map-services-0001",
+    "description": "Supplier Master · Map Services — the supplier side of p2p_service_suppliers (same rows the Service screen's Map Supplier popup uses).\n\nHOW TO RUN\n1. Set collection variables: base_url (e.g. http://127.0.0.1:8000/api), email, password.\n2. 0. Auth › Login → stores {{token}} (Bearer auth for every request).\n3. 1. Setup → fills soft_service_id, trackable_service_id, map_vendor_id, map_vendor_id_intl, material_vendor_id, currency from your data.\n4. 2. Map Services → 3. Validation → 4. Cleanup. Or Run collection (Runner) top to bottom; every request has tests.\n\nDATA NEEDED\n• A Soft / Digital service with a GST % (Stage 1).\n• A Trackable service.\n• A supplier in India and one outside India whose Supplier Type is Soft Service Provider.\n• A Material / Goods supplier.\n\nENDPOINTS\nGET    /vendors/{id}/service-mappings        list (inactive included) + summary + meta\nPOST   /vendors/{id}/step/services           save the step — REPLACE-ALL (other active mappings of the supplier → inactive)\nPATCH  /vendors/{id}/service-mappings/{map}  edit price / currency / exchange_rate / remarks\nDELETE /vendors/{id}/service-mappings/{map}  soft unmap (status = inactive, row kept; mapping again revives the same row)\n\nRULES (server-side)\n• Supplier visible (404) and editable (403); service visible (422) and editable (403).\n• Supplier type must serve the service type + classification (422). Material / Goods and FFD / Transporter serve no service.\n• origin must match the supplier's country (422).\n• Domestic: ₹ + the service's GST %; the service needs a GST % (422). International: currency × exchange_rate, no GST, inr_amount stored.\n• Same service twice in one save (422).\n\nEvery request has a saved example response (Examples), captured from the real API. Full doc: docs/supplier/SUPPLIER_MAP_SERVICES_API.md",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0. Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "description": "Sets {{token}} for every other request. Fill email / password in the collection variables first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('token returned', () => pm.expect(j.token).to.be.a('string'));",
+                  "if (j.token) pm.collectionVariables.set('token', j.token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Setup · fills every id automatically",
+      "description": "Run these once after Login. Each request picks an id from your data and stores it in a collection variable. If one is missing, the test fails and says what to create — or set the variable by hand.",
+      "item": [
+        {
+          "name": "Soft / Digital service with a GST %",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/services?service_type=soft_digital&per_page=100",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "services"
+              ],
+              "query": [
+                {
+                  "key": "service_type",
+                  "value": "soft_digital"
+                },
+                {
+                  "key": "per_page",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Picks the first Soft / Digital service that has a GST % (Domestic mappings need it) → {{soft_service_id}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data || [];",
+                  "const s = rows.find(r => r.gst_id) || null;",
+                  "pm.test('a Soft / Digital service with a GST % exists (set GST in Stage 1)', () => pm.expect(s).to.be.an('object'));",
+                  "if (s) { pm.collectionVariables.set('soft_service_id', s.id); console.log('soft_service_id =', s.id, s.code); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trackable service (for the type-mismatch check)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/services?service_type=self_consumable&classification=trackable&per_page=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "services"
+              ],
+              "query": [
+                {
+                  "key": "service_type",
+                  "value": "self_consumable"
+                },
+                {
+                  "key": "classification",
+                  "value": "trackable"
+                },
+                {
+                  "key": "per_page",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Any Self-Consumable · Trackable service → {{trackable_service_id}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const s = (pm.response.json().data || [])[0];",
+                  "pm.test('a Trackable service exists', () => pm.expect(s).to.be.an('object'));",
+                  "if (s) pm.collectionVariables.set('trackable_service_id', s.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Domestic supplier that serves Soft / Digital",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/services/supplier-pool?service_type=soft_digital&origin=domestic&per_page=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "services",
+                "supplier-pool"
+              ],
+              "query": [
+                {
+                  "key": "service_type",
+                  "value": "soft_digital"
+                },
+                {
+                  "key": "origin",
+                  "value": "domestic"
+                },
+                {
+                  "key": "per_page",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "A supplier in India whose Supplier Type serves Soft / Digital (e.g. Soft Service Provider) → {{map_vendor_id}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const v = (pm.response.json().data || [])[0];",
+                  "pm.test('a Domestic Soft Service Provider supplier exists', () => pm.expect(v).to.be.an('object'));",
+                  "if (v) { pm.collectionVariables.set('map_vendor_id', v.id); console.log('map_vendor_id =', v.id, v.vendor_code, v.supplier_type); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "International supplier that serves Soft / Digital",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/services/supplier-pool?service_type=soft_digital&origin=international&per_page=1",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "services",
+                "supplier-pool"
+              ],
+              "query": [
+                {
+                  "key": "service_type",
+                  "value": "soft_digital"
+                },
+                {
+                  "key": "origin",
+                  "value": "international"
+                },
+                {
+                  "key": "per_page",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "A supplier outside India of the same type → {{map_vendor_id_intl}} and its currency → {{currency}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const v = (pm.response.json().data || [])[0];",
+                  "pm.test('an International Soft Service Provider supplier exists', () => pm.expect(v).to.be.an('object'));",
+                  "if (v) { pm.collectionVariables.set('map_vendor_id_intl', v.id); if (v.currency) pm.collectionVariables.set('currency', v.currency); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Material / Goods supplier (for the 422 check)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/services/supplier-pool?per_page=100",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "services",
+                "supplier-pool"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Any supplier whose type is Material / Goods (or another non-service type) → {{material_vendor_id}}."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().data || [];",
+                  "const v = rows.find(r => /material|goods/i.test(r.supplier_type || '')) || rows.find(r => !r.supplier_service_type);",
+                  "pm.test('a non-service supplier exists', () => pm.expect(v).to.be.an('object'));",
+                  "if (v) pm.collectionVariables.set('material_vendor_id', v.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Map Services (happy path)",
+      "description": "Run top to bottom. POST step/services is REPLACE-ALL: it maps the listed services and sets this supplier's OTHER active mappings inactive (never deleted). Use test suppliers, not live ones.",
+      "item": [
+        {
+          "name": "List mapped services",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "service-mappings"
+              ]
+            },
+            "description": "Every mapping of the supplier, inactive included. gst_type / cgst / sgst / igst are worked out on read, not stored. meta.supplier_service_type / supplier_classification = the services this supplier may serve."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "service-mappings"
+                  ]
+                },
+                "description": "Every mapping of the supplier, inactive included. gst_type / cgst / sgst / igst are worked out on read, not stored. meta.supplier_service_type / supplier_classification = the services this supplier may serve."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1000,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 30,\n      \"total_amount\": 1030,\n      \"inr_amount\": 1030,\n      \"remarks\": \"Annual plan\",\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 30\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 1,\n    \"international_count\": 0,\n    \"inactive_count\": 0,\n    \"total_amount\": 1030\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const ROW_KEYS = ['id','service_id','service_code','service_name','service_type','classification','origin','currency','price',",
+                  "  'exchange_rate','gst_id','gst_percentage','gst_amount','total_amount','inr_amount','gst_type','cgst_amount','sgst_amount',",
+                  "  'igst_amount','remarks','status'];",
+                  "const checkRow = r => ROW_KEYS.forEach(k => pm.expect(r, 'row.' + k).to.have.property(k));",
+                  "pm.test('data[] + summary + meta', () => {",
+                  "  pm.expect(j.data).to.be.an('array');",
+                  "  ['count','domestic_count','international_count','inactive_count','total_amount'].forEach(k => pm.expect(j.summary).to.have.property(k));",
+                  "  pm.expect(j.meta).to.have.property('supplier_service_type');",
+                  "  j.data.forEach(checkRow);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save · map a Domestic service (₹ + GST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "Domestic: price in ₹, GST = the service's gst_id. A DRAFT service becomes active (Stage 2).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000,\n      \"remarks\": \"Annual plan\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "Domestic: price in ₹, GST = the service's gst_id. A DRAFT service becomes active (Stage 2).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000,\n      \"remarks\": \"Annual plan\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1000,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 30,\n      \"total_amount\": 1030,\n      \"inr_amount\": 1030,\n      \"remarks\": \"Annual plan\",\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 30\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 1,\n    \"international_count\": 0,\n    \"inactive_count\": 0,\n    \"total_amount\": 1030\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id','soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const ROW_KEYS = ['id','service_id','service_code','service_name','service_type','classification','origin','currency','price',",
+                  "  'exchange_rate','gst_id','gst_percentage','gst_amount','total_amount','inr_amount','gst_type','cgst_amount','sgst_amount',",
+                  "  'igst_amount','remarks','status'];",
+                  "const checkRow = r => ROW_KEYS.forEach(k => pm.expect(r, 'row.' + k).to.have.property(k));",
+                  "const row = j.data.find(r => String(r.service_id) === String(pm.collectionVariables.get('soft_service_id')) && r.status === 'active');",
+                  "pm.test('the service is mapped and active', () => pm.expect(row).to.be.an('object'));",
+                  "if (row) {",
+                  "  checkRow(row);",
+                  "  pm.collectionVariables.set('svc_map_id', row.id);",
+                  "  pm.test('origin = domestic', () => pm.expect(row.origin).to.eql('domestic'));",
+                  "  pm.test('Domestic: total = price + GST, inr = total', () => { pm.expect(row.total_amount).to.be.closeTo(row.price + row.gst_amount, 0.01); pm.expect(row.inr_amount).to.be.closeTo(row.total_amount, 0.01); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit price",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "service-mappings",
+                "{{svc_map_id}}"
+              ]
+            },
+            "description": "price, gst_id, currency, exchange_rate, remarks — all optional; origin stays. Amounts recomputed server-side.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 1200,\n  \"remarks\": \"Revised quote\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "service-mappings",
+                    "{{svc_map_id}}"
+                  ]
+                },
+                "description": "price, gst_id, currency, exchange_rate, remarks — all optional; origin stays. Amounts recomputed server-side.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"price\": 1200,\n  \"remarks\": \"Revised quote\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 228,\n  \"service_id\": 10,\n  \"service_code\": \"SVC-001\",\n  \"service_name\": \"Microsoft 365 Business Premium\",\n  \"service_type\": \"soft_digital\",\n  \"service_type_label\": \"Soft / Digital Services\",\n  \"classification\": null,\n  \"classification_label\": null,\n  \"category\": \"Software Licence\",\n  \"service_status\": \"active\",\n  \"vendor_id\": 8,\n  \"origin\": \"domestic\",\n  \"currency\": \"INR\",\n  \"price\": 1200,\n  \"exchange_rate\": null,\n  \"gst_id\": 4,\n  \"gst_percentage\": 3,\n  \"gst_amount\": 36,\n  \"total_amount\": 1236,\n  \"inr_amount\": 1236,\n  \"remarks\": \"Revised quote\",\n  \"status\": \"active\",\n  \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n  \"gst_type\": \"inter\",\n  \"cgst_amount\": 0,\n  \"sgst_amount\": 0,\n  \"igst_amount\": 36\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['svc_map_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('price updated, total recomputed', () => { pm.expect(r.price).to.eql(1200); pm.expect(r.total_amount).to.be.closeTo(1200 + r.gst_amount, 0.01); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unmap (soft · status = inactive)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "service-mappings",
+                "{{svc_map_id}}"
+              ]
+            },
+            "description": "status = inactive, row kept. Repeat = no-op."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "service-mappings",
+                    "{{svc_map_id}}"
+                  ]
+                },
+                "description": "status = inactive, row kept. Repeat = no-op."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 228,\n  \"service_id\": 10,\n  \"service_code\": \"SVC-001\",\n  \"service_name\": \"Microsoft 365 Business Premium\",\n  \"service_type\": \"soft_digital\",\n  \"service_type_label\": \"Soft / Digital Services\",\n  \"classification\": null,\n  \"classification_label\": null,\n  \"category\": \"Software Licence\",\n  \"service_status\": \"active\",\n  \"vendor_id\": 8,\n  \"origin\": \"domestic\",\n  \"currency\": \"INR\",\n  \"price\": 1200,\n  \"exchange_rate\": null,\n  \"gst_id\": 4,\n  \"gst_percentage\": 3,\n  \"gst_amount\": 36,\n  \"total_amount\": 1236,\n  \"inr_amount\": 1236,\n  \"remarks\": \"Revised quote\",\n  \"status\": \"inactive\",\n  \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n  \"gst_type\": \"inter\",\n  \"cgst_amount\": 0,\n  \"sgst_amount\": 0,\n  \"igst_amount\": 36,\n  \"service_suppliers_count\": 0\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['svc_map_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('inactive, row kept', () => { pm.expect(r.status).to.eql('inactive'); pm.expect(r.id).to.eql(Number(pm.collectionVariables.get('svc_map_id'))); });",
+                  "pm.collectionVariables.set('svc_map_id_before', r.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Map again · revives the same row",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "One row per (service, supplier): mapping again brings the SAME id back as active with the new price.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1100\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "One row per (service, supplier): mapping again brings the SAME id back as active with the new price.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1100\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 33,\n      \"total_amount\": 1133,\n      \"inr_amount\": 1133,\n      \"remarks\": null,\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 33\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 1,\n    \"international_count\": 0,\n    \"inactive_count\": 0,\n    \"total_amount\": 1133\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id','soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const ROW_KEYS = ['id','service_id','service_code','service_name','service_type','classification','origin','currency','price',",
+                  "  'exchange_rate','gst_id','gst_percentage','gst_amount','total_amount','inr_amount','gst_type','cgst_amount','sgst_amount',",
+                  "  'igst_amount','remarks','status'];",
+                  "const checkRow = r => ROW_KEYS.forEach(k => pm.expect(r, 'row.' + k).to.have.property(k));",
+                  "const row = j.data.find(r => String(r.service_id) === String(pm.collectionVariables.get('soft_service_id')) && r.status === 'active');",
+                  "pm.test('the service is mapped and active', () => pm.expect(row).to.be.an('object'));",
+                  "if (row) {",
+                  "  checkRow(row);",
+                  "  pm.collectionVariables.set('svc_map_id', row.id);",
+                  "  pm.test('origin = domestic', () => pm.expect(row.origin).to.eql('domestic'));",
+                  "  pm.test('Domestic: total = price + GST, inr = total', () => { pm.expect(row.total_amount).to.be.closeTo(row.price + row.gst_amount, 0.01); pm.expect(row.inr_amount).to.be.closeTo(row.total_amount, 0.01); });",
+                  "}",
+                  "pm.test('same row id as before the unmap', () => pm.expect(String(pm.collectionVariables.get('svc_map_id'))).to.eql(String(pm.collectionVariables.get('svc_map_id_before'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save · map an International service (currency, no GST)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id_intl}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "International: price in the supplier's currency × exchange_rate → inr_amount; no GST. Leave currency / exchange_rate out to use the supplier's currency and the Currency master rate.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"currency\": \"{{currency}}\",\n      \"exchange_rate\": 85,\n      \"price\": 10,\n      \"remarks\": \"Per month\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id_intl}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "International: price in the supplier's currency × exchange_rate → inr_amount; no GST. Leave currency / exchange_rate out to use the supplier's currency and the Currency master rate.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"currency\": \"{{currency}}\",\n      \"exchange_rate\": 85,\n      \"price\": 10,\n      \"remarks\": \"Per month\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 229,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 7,\n      \"origin\": \"international\",\n      \"currency\": \"USD\",\n      \"price\": 10,\n      \"exchange_rate\": 85,\n      \"gst_id\": null,\n      \"gst_percentage\": 0,\n      \"gst_amount\": 0,\n      \"total_amount\": 10,\n      \"inr_amount\": 850,\n      \"remarks\": \"Per month\",\n      \"status\": \"active\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"none\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 0\n    }\n  ],\n  \"summary\": {\n    \"count\": 1,\n    \"domestic_count\": 0,\n    \"international_count\": 1,\n    \"inactive_count\": 0,\n    \"total_amount\": 850\n  },\n  \"meta\": {\n    \"vendor_id\": 7,\n    \"vendor_code\": \"S-007\",\n    \"vendor_name\": \"arfgdhgsfadgf\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"international\",\n    \"country\": \"United States\",\n    \"currency\": \"USD\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id_intl','soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const ROW_KEYS = ['id','service_id','service_code','service_name','service_type','classification','origin','currency','price',",
+                  "  'exchange_rate','gst_id','gst_percentage','gst_amount','total_amount','inr_amount','gst_type','cgst_amount','sgst_amount',",
+                  "  'igst_amount','remarks','status'];",
+                  "const checkRow = r => ROW_KEYS.forEach(k => pm.expect(r, 'row.' + k).to.have.property(k));",
+                  "const row = j.data.find(r => String(r.service_id) === String(pm.collectionVariables.get('soft_service_id')) && r.status === 'active');",
+                  "pm.test('the service is mapped and active', () => pm.expect(row).to.be.an('object'));",
+                  "if (row) {",
+                  "  checkRow(row);",
+                  "  pm.collectionVariables.set('svc_map_id_intl', row.id);",
+                  "  pm.test('origin = international', () => pm.expect(row.origin).to.eql('international'));",
+                  "  pm.test('International: no GST, inr = price x rate', () => { pm.expect(row.gst_amount).to.eql(0); pm.expect(row.gst_type).to.eql('none'); pm.expect(row.inr_amount).to.be.closeTo(row.price * row.exchange_rate, 0.01); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit exchange rate (International)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/service-mappings/{{svc_map_id_intl}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id_intl}}",
+                "service-mappings",
+                "{{svc_map_id_intl}}"
+              ]
+            },
+            "description": "New rate → inr_amount = price × new rate (stored on the row).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exchange_rate\": 86.25\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/service-mappings/{{svc_map_id_intl}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id_intl}}",
+                    "service-mappings",
+                    "{{svc_map_id_intl}}"
+                  ]
+                },
+                "description": "New rate → inr_amount = price × new rate (stored on the row).",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"exchange_rate\": 86.25\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 229,\n  \"service_id\": 10,\n  \"service_code\": \"SVC-001\",\n  \"service_name\": \"Microsoft 365 Business Premium\",\n  \"service_type\": \"soft_digital\",\n  \"service_type_label\": \"Soft / Digital Services\",\n  \"classification\": null,\n  \"classification_label\": null,\n  \"category\": \"Software Licence\",\n  \"service_status\": \"active\",\n  \"vendor_id\": 7,\n  \"origin\": \"international\",\n  \"currency\": \"USD\",\n  \"price\": 10,\n  \"exchange_rate\": 86.25,\n  \"gst_id\": null,\n  \"gst_percentage\": 0,\n  \"gst_amount\": 0,\n  \"total_amount\": 10,\n  \"inr_amount\": 862.5,\n  \"remarks\": \"Per month\",\n  \"status\": \"active\",\n  \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n  \"gst_type\": \"none\",\n  \"cgst_amount\": 0,\n  \"sgst_amount\": 0,\n  \"igst_amount\": 0\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['svc_map_id_intl'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('inr = price x new rate', () => { pm.expect(r.exchange_rate).to.eql(86.25); pm.expect(r.inr_amount).to.be.closeTo(r.price * 86.25, 0.01); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Service screen sees the same rows",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/p2p/services/{{soft_service_id}}/suppliers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "p2p",
+                "services",
+                "{{soft_service_id}}",
+                "suppliers"
+              ]
+            },
+            "description": "The existing Service-side list: the rows mapped above appear here with the same ids."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const ids = (pm.response.json().data || []).map(r => String(r.id));",
+                  "pm.test('domestic mapping visible on the service', () => pm.expect(ids).to.include(String(pm.collectionVariables.get('svc_map_id'))));",
+                  "if (pm.collectionVariables.get('svc_map_id_intl')) pm.test('international mapping visible on the service', () => pm.expect(ids).to.include(String(pm.collectionVariables.get('svc_map_id_intl'))));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Validation (expect 422)",
+      "item": [
+        {
+          "name": "Material / Goods supplier cannot supply a service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{material_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{material_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "The supplier type must serve the service type + classification.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{material_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{material_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "The supplier type must serve the service type + classification.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"A Material/ Goods supplier cannot supply a service. Only a supplier whose type serves Soft / Digital Services can be mapped to SVC-001.\",\n  \"errors\": {\n    \"mappings.0.service_id\": [\n      \"A Material/ Goods supplier cannot supply a service. Only a supplier whose type serves Soft / Digital Services can be mapped to SVC-001.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['material_vendor_id','soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "const j = pm.response.json();",
+                  "pm.test('error on service_id', () => pm.expect(Object.keys(j.errors || {}).some(k => k.endsWith('service_id'))).to.be.true);",
+                  "console.log(JSON.stringify(j.errors));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Supplier type does not serve this service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "A Soft Service Provider cannot be mapped to a Trackable service.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{trackable_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "A Soft Service Provider cannot be mapped to a Trackable service.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{trackable_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 1000\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"This supplier's type (Soft Service Provider) does not serve Trackable — SVC-002 needs a Trackable supplier.\",\n  \"errors\": {\n    \"mappings.0.service_id\": [\n      \"This supplier's type (Soft Service Provider) does not serve Trackable — SVC-002 needs a Trackable supplier.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id','trackable_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "const j = pm.response.json();",
+                  "pm.test('error on service_id', () => pm.expect(Object.keys(j.errors || {}).some(k => k.endsWith('service_id'))).to.be.true);",
+                  "console.log(JSON.stringify(j.errors));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Origin does not match the supplier's country",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "An Indian supplier sent as International is refused with the origin to use.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"price\": 1000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "An Indian supplier sent as International is refused with the origin to use.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"international\",\n      \"price\": 1000\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"This supplier is based in India — map it as a Domestic supplier.\",\n  \"errors\": {\n    \"mappings.0.origin\": [\n      \"This supplier is based in India — map it as a Domestic supplier.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id','soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "const j = pm.response.json();",
+                  "pm.test('error on origin', () => pm.expect(Object.keys(j.errors || {}).some(k => k.endsWith('origin'))).to.be.true);",
+                  "console.log(JSON.stringify(j.errors));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same service twice in one save",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "A service can only be mapped once per supplier.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1000\n    },\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1200\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "422 Unprocessable Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "A service can only be mapped once per supplier.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1000\n    },\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"price\": 1200\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"message\": \"A service can only be mapped once per supplier. (and 1 more error)\",\n  \"errors\": {\n    \"mappings.0.service_id\": [\n      \"A service can only be mapped once per supplier.\"\n    ],\n    \"mappings.1.service_id\": [\n      \"A service can only be mapped once per supplier.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id','soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "const j = pm.response.json();",
+                  "pm.test('error on service_id', () => pm.expect(Object.keys(j.errors || {}).some(k => k.endsWith('service_id'))).to.be.true);",
+                  "console.log(JSON.stringify(j.errors));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Price missing / zero",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "price is required and must be more than 0.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"service_id\": \"{{soft_service_id}}\",\n      \"origin\": \"domestic\",\n      \"price\": 0\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id','soft_service_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "const j = pm.response.json();",
+                  "pm.test('error on price', () => pm.expect(Object.keys(j.errors || {}).some(k => k.endsWith('price'))).to.be.true);",
+                  "console.log(JSON.stringify(j.errors));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Cleanup (optional)",
+      "description": "Turns the test mappings off again (rows kept as inactive).",
+      "item": [
+        {
+          "name": "Unmap the International test mapping",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id_intl}}/service-mappings/{{svc_map_id_intl}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id_intl}}",
+                "service-mappings",
+                "{{svc_map_id_intl}}"
+              ]
+            },
+            "description": "Soft unmap."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['svc_map_id_intl'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unmap the Domestic test mapping",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "service-mappings",
+                "{{svc_map_id}}"
+              ]
+            },
+            "description": "Soft unmap."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/service-mappings/{{svc_map_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "service-mappings",
+                    "{{svc_map_id}}"
+                  ]
+                },
+                "description": "Soft unmap."
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 228,\n  \"service_id\": 10,\n  \"service_code\": \"SVC-001\",\n  \"service_name\": \"Microsoft 365 Business Premium\",\n  \"service_type\": \"soft_digital\",\n  \"service_type_label\": \"Soft / Digital Services\",\n  \"classification\": null,\n  \"classification_label\": null,\n  \"category\": \"Software Licence\",\n  \"service_status\": \"active\",\n  \"vendor_id\": 8,\n  \"origin\": \"domestic\",\n  \"currency\": \"INR\",\n  \"price\": 1200,\n  \"exchange_rate\": null,\n  \"gst_id\": 4,\n  \"gst_percentage\": 3,\n  \"gst_amount\": 36,\n  \"total_amount\": 1236,\n  \"inr_amount\": 1236,\n  \"remarks\": \"Revised quote\",\n  \"status\": \"inactive\",\n  \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n  \"gst_type\": \"inter\",\n  \"cgst_amount\": 0,\n  \"sgst_amount\": 0,\n  \"igst_amount\": 36,\n  \"service_suppliers_count\": 0\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['svc_map_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save step with an empty list (turns every mapping of the supplier off)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vendors",
+                "{{map_vendor_id}}",
+                "step",
+                "services"
+              ]
+            },
+            "description": "mappings: [] sets ALL active mappings of this supplier inactive. Only for a test supplier.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/vendors/{{map_vendor_id}}/step/services",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "vendors",
+                    "{{map_vendor_id}}",
+                    "step",
+                    "services"
+                  ]
+                },
+                "description": "mappings: [] sets ALL active mappings of this supplier inactive. Only for a test supplier.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mappings\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 228,\n      \"service_id\": 10,\n      \"service_code\": \"SVC-001\",\n      \"service_name\": \"Microsoft 365 Business Premium\",\n      \"service_type\": \"soft_digital\",\n      \"service_type_label\": \"Soft / Digital Services\",\n      \"classification\": null,\n      \"classification_label\": null,\n      \"category\": \"Software Licence\",\n      \"service_status\": \"active\",\n      \"vendor_id\": 8,\n      \"origin\": \"domestic\",\n      \"currency\": \"INR\",\n      \"price\": 1100,\n      \"exchange_rate\": null,\n      \"gst_id\": 4,\n      \"gst_percentage\": 3,\n      \"gst_amount\": 33,\n      \"total_amount\": 1133,\n      \"inr_amount\": 1133,\n      \"remarks\": null,\n      \"status\": \"inactive\",\n      \"mapped_at\": \"2026-11-20T06:49:35.000000Z\",\n      \"gst_type\": \"inter\",\n      \"cgst_amount\": 0,\n      \"sgst_amount\": 0,\n      \"igst_amount\": 33\n    }\n  ],\n  \"summary\": {\n    \"count\": 0,\n    \"domestic_count\": 0,\n    \"international_count\": 0,\n    \"inactive_count\": 1,\n    \"total_amount\": 0\n  },\n  \"meta\": {\n    \"vendor_id\": 8,\n    \"vendor_code\": \"S-008\",\n    \"vendor_name\": \"Test Kaveri Agro Traders A2F7\",\n    \"supplier_type\": \"Soft Service Provider\",\n    \"supplier_service_type\": \"soft_digital\",\n    \"supplier_classification\": null,\n    \"origin\": \"domestic\",\n    \"country\": \"India\",\n    \"currency\": \"INR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const missing = ['map_vendor_id'].filter(v => !pm.collectionVariables.get(v));",
+                  "if (missing.length) { console.warn('Run 1. Setup first — missing: ' + missing.join(', ')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "CHANGE_ME",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "soft_service_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "trackable_service_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "map_vendor_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "map_vendor_id_intl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "material_vendor_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "currency",
+      "value": "USD",
+      "type": "string"
+    },
+    {
+      "key": "svc_map_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "svc_map_id_before",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "svc_map_id_intl",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

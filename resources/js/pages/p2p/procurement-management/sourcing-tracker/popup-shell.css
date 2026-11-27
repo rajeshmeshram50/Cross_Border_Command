@@ -1,0 +1,245 @@
+/* Popup shell shared by the Assign / Edit popup and the Sourcing Target Report: the overlay, the
+   .sta-modal box with its colour variables (light + dark), the open animation, the × button, the
+   title block and the buttons. Each popup's own layout lives in its own stylesheet. */
+
+.sta-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(8, 25, 38, .55);
+    backdrop-filter: blur(6px);
+}
+
+.sta-modal,
+.sta-modal *,
+.sta-modal *::before,
+.sta-modal *::after {
+    box-sizing: border-box;
+}
+
+.sta-modal button,
+.sta-modal input,
+.sta-modal select,
+.sta-modal textarea {
+    font-family: inherit;
+    margin: 0;
+}
+
+.sta-modal {
+    /* light */
+    --c-grad: linear-gradient(105deg, #0a7c9c 0%, #0f9ab8 38%, #2fc3dc 78%, #55d8ec 100%);
+    /* header gradient — shared by both popups */
+    --c-bg: #fff;
+    --c-body: #fff;
+    --c-card: #fff;
+    --c-card-bd: #d6edf4;
+    --c-head1: #e4fafe;
+    --c-head2: #f4fdff;
+    --c-text: #0f172a;
+    --c-strong: #0c4a6e;
+    --c-muted: #6b8594;
+    --c-label: #44606f;
+    --c-input: #fff;
+    --c-input-bd: #d3e5ec;
+    --c-frozen: #eceff3;
+    --c-soft: #f6fafc;
+    --c-soft-bd: #e0edf2;
+    --c-brand: #0891b2;
+    --c-brand-ink: #0e7490;
+    --c-chip: #def6fa;
+    --c-hover: #ecfeff;
+    --c-ghost-bd: #bfe6ef;
+    --c-line: #e6f0f4;
+    --c-th: #f3fafc;
+    --c-err: #e11d48;
+    --c-err-bg: #fff1f2;
+    --c-ph: #9bb1bd;
+    --c-foot: #fff;
+    --c-foot-bd: #e3eef2;
+    /* section heads + radio cards (Figma values) */
+    --c-head: linear-gradient(120deg, #eef4ff, #ecfeff 60%, #f0fdff);
+    --c-head-teal: linear-gradient(120deg, #ecfeff, #e0fbff 60%, #effdff);
+    --c-head-glow: rgba(99, 102, 241, .1);
+    --c-head-glow-teal: rgba(6, 182, 212, .12);
+    --c-tag-ind: #4f46e5;
+    --c-tag-ind-bd: #ddd9fb;
+    --c-tag-teal: #0891b2;
+    --c-tag-teal-bd: #a5e8f2;
+    --c-radio: #f7fafc;
+    --c-radio-bd: #e6edf2;
+    --c-radio-hover: #f0fdff;
+    --c-radio-sel: linear-gradient(135deg, #ecfeff, #e0fbff);
+    --c-radio-txt: #334155;
+    --c-radio-sub: #94a3b8;
+    --c-radio-dot-bd: #cbd5e1;
+    --c-pick1: #f7fafc;
+    --c-pick2: #f4fbfd;
+
+    width: 100%;
+    max-width: 1180px;
+    max-height: 94vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--c-bg);
+    color: var(--c-text);
+    border-radius: 20px;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 40px 90px -20px rgba(8, 40, 60, .55), 0 0 0 1px rgba(8, 40, 60, .06);
+    animation: sta-in .32s cubic-bezier(.22, 1, .36, 1);
+}
+
+[data-bs-theme="dark"] .sta-modal {
+    --c-bg: #0b1922;
+    --c-body: #0b1922;
+    --c-card: #0e202a;
+    --c-card-bd: rgba(34, 211, 238, .2);
+    --c-head1: rgba(6, 182, 212, .18);
+    --c-head2: rgba(6, 182, 212, .06);
+    --c-text: #e2e8f0;
+    --c-strong: #e0f7fb;
+    --c-muted: #8fb1bf;
+    --c-label: #9ec3d0;
+    --c-input: #0b1a22;
+    --c-input-bd: rgba(34, 211, 238, .26);
+    --c-frozen: #13252e;
+    --c-soft: #0c1c24;
+    --c-soft-bd: rgba(34, 211, 238, .16);
+    --c-brand: #22d3ee;
+    --c-brand-ink: #67e8f9;
+    --c-chip: rgba(34, 211, 238, .16);
+    --c-hover: rgba(34, 211, 238, .1);
+    --c-ghost-bd: rgba(34, 211, 238, .32);
+    --c-line: rgba(255, 255, 255, .07);
+    --c-th: #0c1c24;
+    --c-err: #fb7185;
+    --c-err-bg: rgba(244, 63, 94, .14);
+    --c-ph: #5f7d8b;
+    --c-foot: #0b1922;
+    --c-foot-bd: rgba(34, 211, 238, .16);
+    --c-head: linear-gradient(120deg, rgba(99, 102, 241, .16), rgba(6, 182, 212, .06));
+    --c-head-teal: linear-gradient(120deg, rgba(6, 182, 212, .18), rgba(6, 182, 212, .06));
+    --c-head-glow: rgba(129, 140, 248, .14);
+    --c-head-glow-teal: rgba(34, 211, 238, .14);
+    --c-tag-ind: #a5b4fc;
+    --c-tag-ind-bd: rgba(129, 140, 248, .35);
+    --c-tag-teal: #67e8f9;
+    --c-tag-teal-bd: rgba(34, 211, 238, .35);
+    --c-radio: #0c1c24;
+    --c-radio-bd: rgba(34, 211, 238, .16);
+    --c-radio-hover: rgba(34, 211, 238, .06);
+    --c-radio-sel: linear-gradient(135deg, rgba(34, 211, 238, .14), rgba(34, 211, 238, .06));
+    --c-radio-txt: #cbd5e1;
+    --c-radio-sub: #8fb1bf;
+    --c-radio-dot-bd: rgba(148, 163, 184, .5);
+    --c-pick1: #0c1c24;
+    --c-pick2: #0d212a;
+    color-scheme: dark;
+}
+
+@keyframes sta-in {
+    0% {
+        opacity: 0;
+        transform: translateY(18px) scale(.985);
+    }
+
+    100% {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.sta-head-ico,
+.sta-close {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    cursor: pointer;
+    background: rgba(255, 255, 255, .2);
+    border: 1px solid rgba(255, 255, 255, .38);
+    border-radius: 12px;
+}
+
+.sta-close:hover:not(:disabled) {
+    background: rgba(255, 255, 255, .32);
+}
+
+.sta-head-txt {
+    flex: 1;
+    min-width: 0;
+}
+
+.sta-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 40px; /* every text button in the module is 40px */
+    padding: 0 20px;
+    font-size: 12.5px; /* every text button in the module: 12.5px */
+    font-weight: 800;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform .12s, box-shadow .12s;
+    white-space: nowrap;
+}
+
+.sta-btn-primary {
+    color: #fff;
+    border: 0;
+    background: linear-gradient(135deg, #22d3ee 0%, #0891b2 60%, #0e7490 100%);
+    box-shadow: 0 6px 16px rgba(8, 145, 178, .32);
+}
+
+.sta-btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(8, 145, 178, .4);
+}
+
+.sta-btn-primary:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.sta-btn-ghost {
+    color: var(--c-text);
+    background: var(--c-card);
+    border: 1.5px solid var(--c-input-bd);
+}
+
+/* Close / secondary buttons are disabled while a save runs: no hover, a not-allowed cursor. */
+.sta-close:disabled,
+.sta-btn-ghost:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.sta-btn-ghost:hover:not(:disabled) {
+    background: var(--c-hover);
+}
+
+
+/* Phones: every popup on this shell becomes a bottom sheet. Lives here (not in a popup's own file)
+   so the Report gets it even when Assign Target has never been opened. */
+@media (max-width: 700px) {
+    .sta-overlay {
+        padding: 0;
+        align-items: flex-end;
+    }
+
+    .sta-modal {
+        max-height: 96vh;
+        border-radius: 20px 20px 0 0;
+    }
+}

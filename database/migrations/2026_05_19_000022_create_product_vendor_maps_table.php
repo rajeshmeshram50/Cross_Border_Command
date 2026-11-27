@@ -12,8 +12,6 @@ return new class extends Migration
             $table->id();
             $table->foreignId('product_id')->constrained('products')->cascadeOnDelete();
 
-            // Vendor master doesn't exist yet, so we store vendor identity inline.
-            // Once a vendors master ships, swap this for a `vendor_id` FK.
             $table->string('vendor_code', 50)->nullable();
             $table->string('vendor_name', 255);
             $table->string('vendor_website', 255)->nullable();

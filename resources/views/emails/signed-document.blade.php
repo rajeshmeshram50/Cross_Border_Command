@@ -17,19 +17,15 @@
 </head>
 <body style="margin:0;padding:0;background-color:#f3f4f6;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;color:#111827;">
 
-{{-- Preheader --}}
 <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f3f4f6;">
   Your signed document {{ $documentTitle }} is attached.
 </div>
 
-{{-- ============ WRAPPER ============ --}}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;padding:40px 16px;">
 <tr><td align="center">
 
-{{-- ============ CONTAINER ============ --}}
 <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="max-width:620px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(17,24,39,0.06);">
 
-  {{-- ============ HEADER (stacked wordmark of CUSTOMER org) ============ --}}
   @php($_parts = explode(' ', $orgName, 2))
   @php($brandMain = strtoupper($_parts[0] ?? $orgName))
   @php($brandSub = strtoupper(trim($_parts[1] ?? '')))
@@ -46,13 +42,11 @@
     @endif
   </td></tr>
 
-  {{-- ============ HERO ICON (document + pen illustration) ============ --}}
   <tr><td style="padding:18px 32px 0;text-align:center;">
     <img src="{{ asset('images/email-icons/signed-document-icon.png') }}" alt="" width="160" height="auto"
          style="display:inline-block;border:0;outline:none;max-width:160px;height:auto;" />
   </td></tr>
 
-  {{-- ============ HEADLINE ============ --}}
   <tr><td style="padding:14px 32px 4px;text-align:center;">
     <h1 style="margin:0;font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-0.4px;line-height:1.2;">Your Signed Document</h1>
   </td></tr>
@@ -62,7 +56,6 @@
     </p>
   </td></tr>
 
-  {{-- ============ GREETING (letter-style) ============ --}}
   <tr><td style="padding:0 40px 4px;">
     <p style="margin:0;font-size:15px;font-weight:700;color:#111827;">Hi {{ $recipientName }},</p>
     <p style="margin:10px 0 0;font-size:14px;color:#374151;line-height:1.7;">
@@ -75,7 +68,6 @@
     </p>
   </td></tr>
 
-  {{-- ============ SIGNERS LIST ============ --}}
   @php($signers = is_array($run->signers ?? null) ? $run->signers : [])
   @if(!empty($signers))
   <tr><td style="padding:18px 40px 4px;">
@@ -128,7 +120,6 @@
   </td></tr>
   @endif
 
-  {{-- ============ ATTACHMENT NOTICE ============ --}}
   <tr><td style="padding:18px 40px 8px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;">
     <tr><td style="padding:12px 16px;">
@@ -145,7 +136,6 @@
     </table>
   </td></tr>
 
-  {{-- ============ SIGN-OFF + FOOTER ============ --}}
   <tr><td style="padding:14px 40px 0;">
     <p style="margin:0;font-size:13.5px;color:#374151;line-height:1.6;">
       Please retain this copy for your records. If you have any questions, reply to this email and our team will be happy to help.
@@ -163,11 +153,9 @@
   </td></tr>
 
 </table>
-{{-- /Container --}}
 
 </td></tr>
 </table>
-{{-- /Wrapper --}}
 
 </body>
 </html>

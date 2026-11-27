@@ -29,6 +29,13 @@ interface ManagedUser {
 // Slugs hidden from grant UI (admin-only or not permissionable per-user)
 const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
+// Temporarily hidden from this page — the modules still exist and keep any permissions already
+// granted (they are carried through every save unchanged). To show one again, comment out its line.
+const TEMP_HIDDEN_SLUGS = new Set<string>([
+  'inventory',   // Inventory Management System
+  'dev-tools',   // Dev Tools
+]);
+
 export default function Permissions() {
   const { user: authUser } = useAuth();
   const toast = useToast();
@@ -42,6 +49,10 @@ export default function Permissions() {
   const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string>('');
   const [matrix, setMatrix] = useState<Record<number, PermRow>>({});
+  // TEMP_HIDDEN_SLUGS modules: not rendered or counted, but their loaded values are re-sent on save
+  // (a user save replaces all of that user's rows, so leaving them out would revoke them).
+  const [hiddenModules, setHiddenModules] = useState<PermModule[]>([]);
+  const [hiddenMatrix, setHiddenMatrix] = useState<Record<number, PermRow>>({});
   const [myPerms, setMyPerms] = useState<Record<string, Record<PermKey, boolean>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -70,7 +81,9 @@ export default function Permissions() {
       api.get('/modules'),
       api.get('/permissions/users'),
     ]).then(([modRes, usersRes]) => {
-      const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+      const all: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+      const mods = all.filter(m => !TEMP_HIDDEN_SLUGS.has(m.slug));
+      setHiddenModules(all.filter(m => TEMP_HIDDEN_SLUGS.has(m.slug)));
       setModules(mods);
       setUsers(usersRes.data);
       const pre = searchParams.get('user');
@@ -103,15 +116,18 @@ export default function Permissions() {
   }, []);
 
   const loadUserPermissions = (userId: string) => {
-    if (!userId || modules.length === 0) { setMatrix({}); return; }
+    if (!userId || modules.length === 0) { setMatrix({}); setHiddenMatrix({}); return; }
     setLoadingPerms(true);
     const freshMatrix: Record<number, PermRow> = {};
     modules.forEach(mod => { freshMatrix[mod.id] = emptyPerms(); });
+    const freshHidden: Record<number, PermRow> = {};
+    hiddenModules.forEach(mod => { freshHidden[mod.id] = emptyPerms(); });
 
     api.get(`/permissions/user/${userId}`).then(res => {
       (res.data.permissions || []).forEach((p: any) => {
-        if (freshMatrix[p.module_id]) {
-          freshMatrix[p.module_id] = {
+        const target = freshMatrix[p.module_id] ? freshMatrix : freshHidden[p.module_id] ? freshHidden : null;
+        if (target) {
+          target[p.module_id] = {
             can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
             can_delete: !!p.can_delete, can_export: !!p.can_export,
             can_import: !!p.can_import, can_approve: !!p.can_approve,
@@ -120,7 +136,8 @@ export default function Permissions() {
         }
       });
       setMatrix({ ...freshMatrix });
-    }).catch(() => setMatrix({ ...freshMatrix }))
+      setHiddenMatrix({ ...freshHidden });
+    }).catch(() => { setMatrix({ ...freshMatrix }); setHiddenMatrix({}); })
       .finally(() => setLoadingPerms(false));
   };
 
@@ -167,8 +184,11 @@ export default function Permissions() {
       // 422 even though their checkboxes are disabled in the UI. For client_admin
       // we mask each flag against `myPerms`; super_admin (myPerms === null)
       // sends the matrix as-is.
-      const raw = extractLeafPermissions(modules, matrix);
-      const moduleSlugById = new Map(modules.map(m => [m.id, m.slug]));
+      // A user save replaces all of the user's rows, so the temporarily hidden modules ride along
+      // with the values that were loaded (department saves only touch the modules sent — left as is).
+      const saveModules = isDept ? modules : [...modules, ...hiddenModules];
+      const raw = extractLeafPermissions(saveModules, isDept ? matrix : { ...hiddenMatrix, ...matrix });
+      const moduleSlugById = new Map(saveModules.map(m => [m.id, m.slug]));
       const permissions = myPerms === null
         ? raw
         : raw.map(p => {
@@ -283,8 +303,8 @@ export default function Permissions() {
            plain white surface. Back pill on the right (sub-page). */
         .pm-cstrip {
           position: relative; overflow: hidden;
-          display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-          min-height: 70px; padding: 12px 18px;
+          display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+          min-height: 58px; padding: 0 10px;
           background: #ffffff;
           /* 1px violet border on all sides (the left accent strip stays). */
           border: 1px solid #c4b5fd;
@@ -293,26 +313,26 @@ export default function Permissions() {
           font-family: var(--font-sans);
         }
         .pm-cstrip-accent {
-          position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+          position: absolute; left: 0; top: 0; bottom: 0; width: 5px; z-index: 2;
           background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
           border-radius: 16px 0 0 16px;
         }
-        .pm-cstrip-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; min-width: 0; flex: 1; }
+        .pm-cstrip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; position: relative; z-index: 1; min-width: 0; flex: 1; }
         .pm-cstrip-icon {
-          position: relative; width: 46px; height: 46px; border-radius: 12px;
+          position: relative; width: 38px; height: 38px; border-radius: 12px;
           background: linear-gradient(135deg, #7c3aed, #5b21b6);
           display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-size: 22px; flex-shrink: 0;
+          color: #fff; font-size: 19px; flex-shrink: 0;
           box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10);
         }
-        .pm-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
-        .pm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; max-width: 760px; }
+        .pm-cstrip-title { font-size: 14.5px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
+        .pm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; max-width: 760px; }
         .pm-cstrip-back {
           display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-          padding: 0 18px; height: 44px; border-radius: 14px;
+          padding: 0 18px; height: 40px; border-radius: 999px;
           border: 1px solid color-mix(in srgb, #7c3aed 30%, var(--vz-border-color));
           background: #fff; color: #6d28d9;
-          font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+          font-family: inherit; font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer; flex-shrink: 0;
           transition: background .15s, border-color .15s, transform .15s;
         }
         .pm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
@@ -615,7 +635,7 @@ export default function Permissions() {
                   )}
                   <Button
                     color="primary"
-                    className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+                    className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
                     disabled={saving || !activeId}
                     onClick={handleSave}
                     style={{
@@ -634,7 +654,7 @@ export default function Permissions() {
                       </>
                     ) : (
                       <>
-                        <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                        <i className="ri-shield-check-line align-middle fs-16"></i>
                         Save Permissions
                       </>
                     )}
@@ -833,7 +853,7 @@ export default function Permissions() {
                   </span>
                   <Button
                     color="primary"
-                    className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+                    className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
                     disabled={saving || !activeId}
                     onClick={handleSave}
                     style={{
@@ -851,7 +871,7 @@ export default function Permissions() {
                       </>
                     ) : (
                       <>
-                        <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                        <i className="ri-shield-check-line align-middle fs-16"></i>
                         Save Permissions
                       </>
                     )}

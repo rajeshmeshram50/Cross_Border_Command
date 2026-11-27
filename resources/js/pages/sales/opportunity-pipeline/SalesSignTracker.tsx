@@ -474,6 +474,12 @@ const SDT_CSS = `
 [data-bs-theme="dark"] .sdt-table tbody tr:hover { background: rgba(16,185,129,.07); }
 [data-bs-theme="dark"] .sdt-name { color: #f1f5f9; }
 [data-bs-theme="dark"] .sdt-foot { background: rgba(148,163,184,.05); border-color: rgba(148,163,184,.12); }
-[data-bs-theme="dark"] .sdt-search, [data-bs-theme="dark"] .sdt-pill { background: #0b1220; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .sdt-search { background: #0b1220; border-color: rgba(16,185,129,.25); }
+/* Unselected pills: a faint green fill and no outline in dark - the .25 green
+   border drew a box round every tab (QA #42). The selected pill keeps its
+   gradient. */
+[data-bs-theme="dark"] .sdt-pill:not(.is-on) { background: rgba(16,185,129,.08); border-color: transparent; color: #6ee7b7; }
+[data-bs-theme="dark"] .sdt-pill:not(.is-on):hover { background: rgba(16,185,129,.16); }
+[data-bs-theme="dark"] .sdt-pill:not(.is-on) .sdt-pill-cnt { background: rgba(16,185,129,.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .sdt-search input { color: #e2e8f0; }
 `;

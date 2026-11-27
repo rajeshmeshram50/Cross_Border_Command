@@ -21,12 +21,23 @@ interface Props {
 // Slugs hidden from the permission matrix (admin-only features)
 const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
+// Temporarily hidden from this page — the modules still exist and keep any permissions already
+// granted (they are carried through every save unchanged). To show one again, comment out its line.
+const TEMP_HIDDEN_SLUGS = new Set<string>([
+  'inventory',   // Inventory Management System
+  'dev-tools',   // Dev Tools
+]);
+
 export default function ClientPermissions({ clientId, clientName, onBack }: Props) {
   const navigate = useNavigate();
   const toast = useToast();
   const [adminUser, setAdminUser] = useState<any>(null);
   const [modules, setModules] = useState<PermModule[]>([]);
   const [matrix, setMatrix] = useState<Record<number, PermRow>>({});
+  // TEMP_HIDDEN_SLUGS modules: not rendered or counted, but their loaded values are re-sent on save
+  // (a user save replaces all of that user's rows, so leaving them out would revoke them).
+  const [hiddenModules, setHiddenModules] = useState<PermModule[]>([]);
+  const [hiddenMatrix, setHiddenMatrix] = useState<Record<number, PermRow>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   // Fallback display name so the breadcrumb is meaningful when the parent
@@ -53,19 +64,25 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
       setFetchedClientName(clientData.org_name || '');
       const admin = clientRes.data.admin_user;
       setAdminUser(admin);
-      const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+      const all: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
+      const mods = all.filter(mod => !TEMP_HIDDEN_SLUGS.has(mod.slug));
+      const hidMods = all.filter(mod => TEMP_HIDDEN_SLUGS.has(mod.slug));
       setModules(mods);
+      setHiddenModules(hidMods);
 
       const m: Record<number, PermRow> = {};
       mods.forEach(mod => { m[mod.id] = emptyPerms(); });
+      const hm: Record<number, PermRow> = {};
+      hidMods.forEach(mod => { hm[mod.id] = emptyPerms(); });
 
       // admin_permissions arrives inline now — no extra fetch needed.
       const perms = Array.isArray(clientRes.data?.admin_permissions)
         ? clientRes.data.admin_permissions
         : [];
       perms.forEach((p: any) => {
-        if (m[p.module_id]) {
-          m[p.module_id] = {
+        const target = m[p.module_id] ? m : hm[p.module_id] ? hm : null;
+        if (target) {
+          target[p.module_id] = {
             can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
             can_delete: !!p.can_delete, can_export: !!p.can_export,
             can_import: !!p.can_import, can_approve: !!p.can_approve,
@@ -74,6 +91,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
         }
       });
       setMatrix(m);
+      setHiddenMatrix(hm);
     }).finally(() => setLoading(false));
   }, [clientId]);
 
@@ -81,7 +99,8 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
     if (!adminUser) return;
     setSaving(true);
     try {
-      const permissions = extractLeafPermissions(modules, matrix);
+      // A user save replaces all of the admin's rows: the temporarily hidden modules ride along unchanged.
+      const permissions = extractLeafPermissions([...modules, ...hiddenModules], { ...hiddenMatrix, ...matrix });
       const res = await api.post(`/permissions/user/${adminUser.id}`, { permissions });
       toast.success('Saved', `${res.data.saved_count || 0} permissions updated successfully`);
     } catch (err: any) {
@@ -151,7 +170,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
               <Col className="text-end">
                 <Button
                   color="primary"
-                  className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+                  className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
                   onClick={handleSave}
                   disabled={saving}
                   style={{ minWidth: 180, justifyContent: 'center' }}
@@ -163,7 +182,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
                     </>
                   ) : (
                     <>
-                      <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      <i className="ri-shield-check-line align-middle fs-16"></i>
                       Save Permissions
                     </>
                   )}
@@ -186,7 +205,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
             </span>
             <Button
               color="primary"
-              className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+              className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
               onClick={handleSave}
               disabled={saving}
               style={{ minWidth: 180, justifyContent: 'center' }}
@@ -198,7 +217,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
                 </>
               ) : (
                 <>
-                  <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                  <i className="ri-shield-check-line align-middle fs-16"></i>
                   Save Permissions
                 </>
               )}

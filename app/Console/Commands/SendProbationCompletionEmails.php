@@ -10,18 +10,6 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
-/**
- * Daily job — sends the "Probation Successfully Completed" email to every
- * employee whose probation period has just ended.
- *
- * Probation end date = date_of_joining + probation_months (there's no stored
- * end column). When that date has passed (e.g. it ended YESTERDAY), the next
- * morning's run mails the employee on BOTH their work + personal address, then
- * stamps `probation_completion_emailed_at` so it never sends twice.
- *
- * A short catch-up window (default 7 days) covers any morning the scheduler
- * didn't run, without spamming long-confirmed staff on first deployment.
- */
 class SendProbationCompletionEmails extends Command
 {
     protected $signature = 'hr:send-probation-emails
@@ -41,16 +29,7 @@ class SendProbationCompletionEmails extends Command
         $q = Employee::query()
             ->with(['designation:id,name', 'department:id,name'])
             ->whereNull('probation_completion_emailed_at')
-            // probation_end_date is stored on the employee (computed on the
-            // frontend from joining date + probation policy); it's NULL unless
-            // there's a real probation, so this one check replaces the old
-            // joining-date / probation_months guards and the per-row date maths.
             ->whereNotNull('probation_end_date')
-            // Active employees only — never mail someone who has been disabled
-            // (Inactive/Resigned/Terminated) or exited (the exit flow stamps
-            // status Resigned/Terminated). Mirrors Employee::isDisabled(). A
-            // NULL/blank status still counts as active. Soft-deleted (Removed)
-            // rows are already excluded by the default SoftDeletes scope.
             ->where(function ($w) {
                 $w->whereNull('status')
                   ->orWhereNotIn(
@@ -60,9 +39,6 @@ class SendProbationCompletionEmails extends Command
             });
 
         if ($only) {
-            // Match on emp_code, or on numeric id only — comparing the bigint
-            // id column against a non-numeric code (e.g. "EMP-004") trips a
-            // Postgres cast error.
             $q->where(function ($w) use ($only) {
                 $w->where('emp_code', $only);
                 if (ctype_digit((string) $only)) {
@@ -70,8 +46,6 @@ class SendProbationCompletionEmails extends Command
                 }
             });
         } else {
-            // Catch-up window done in SQL against the indexed generated column:
-            // ended yesterday or earlier, but not older than N days.
             $q->whereDate('probation_end_date', '<', $today)
               ->whereDate('probation_end_date', '>=', $today->copy()->subDays($window));
         }

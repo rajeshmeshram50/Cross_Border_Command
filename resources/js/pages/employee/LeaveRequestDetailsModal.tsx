@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } from '../hrms/leavePlansApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -396,6 +397,8 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
             ))}
           </div>
         )}
+        {/* QA #164 — the house veil while the waiver posts. */}
+        {waiving && <FullPageLoader label={detail?.sandwich_waived ? 'Re-applying policy…' : 'Waiving policy…'} />}
       </ModalBody>
     </Modal>
   );

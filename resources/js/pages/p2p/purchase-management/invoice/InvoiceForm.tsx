@@ -13,6 +13,7 @@ import {
   IcoPencil, IcoShield, IcoUser, IcoVan, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
+import { usePoSupplierTheme } from '../order/create-po/usePoSupplierTheme';
 import Step2InvoiceProducts, { type Stage2Issues } from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
@@ -26,7 +27,7 @@ import SupplierDocsNoticeModal, { type SupplierDocsNotice } from '../order/creat
 const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
-import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail, type WarehouseEligibility } from './spi-api';
+import { putId, spiApi, type ProductFlagOption, type PutawayBoard, type SpiBox, type SpiBoxBody, type WarehouseDetail, type WarehouseEligibility } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, formatProductCode, itemsPayload, linesFromPo, taxModeFor, withoutCodePrefix,
@@ -119,6 +120,8 @@ export default function InvoiceForm({
     shipmentId: input.direct?.shipmentId, procurementCode: input.direct?.procurementCode,
     piNumber: input.direct?.shipmentPi,
   });
+  // Supplier popups opened from the invoice take the PO's teal theme.
+  usePoSupplierTheme();
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -215,7 +218,6 @@ export default function InvoiceForm({
         if (existing) {
           setSpiId(existing.id);
           setSpiCode(existing.code);
-          if (!existing.purchase_order_id) latestSpiApproval(existing.id);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
@@ -248,14 +250,33 @@ export default function InvoiceForm({
               ewayBillFile: existing.eway_file_name ?? '',
             });
             setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
-            if (!input.direct && existing.vendor_id) {
-              const vid = existing.vendor_id;
-              const [sup, scrutiny] = await spiApi.vendorDetail(vid)
-                .then(r => [r.detail, r.scrutiny] as const)
-                .catch(e => {
-                  toast.error('Could not load the supplier', e instanceof PoApiError ? e.firstError : 'Reopen the invoice to try again.');
-                  return [null, null] as const;
-                });
+
+            /* Supplier, vault and PI lines each need only an id that `existing`
+               already carries, and none reads another's result — awaited one by
+               one they were three round trips deep. Started here they are one. */
+            const vid = !input.direct && existing.vendor_id ? existing.vendor_id : null;
+            const supP = vid
+              ? spiApi.vendorDetail(vid)
+                  .then(r => [r.detail, r.scrutiny] as const)
+                  .catch(e => {
+                    toast.error('Could not load the supplier', e instanceof PoApiError ? e.firstError : 'Reopen the invoice to try again.');
+                    return [null, null] as const;
+                  })
+              : null;
+            const vaultP = vid
+              ? poLookupApi.supplierVault(vid).catch(() => null)
+              : null;
+            const piP = existing.shipment_order_id
+              /* Primed when the shipment was chosen in the Direct setup, so this
+                 is usually already resolved rather than a cold call here. */
+              ? (spiPrefetch.takePi(existing.shipment_order_id) ?? poApi.piLines(existing.shipment_order_id))
+                  .then(r => { set({ piDate: r?.pi_date ?? '' }); return r?.lines ?? []; })
+                  .catch(() => [])
+              : null;
+            vaultP?.then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); });
+
+            if (vid && supP) {
+              const [sup, scrutiny] = await supP;
               if (!live) return;
               if (sup) {
                 const gst = newestScrutiny(scrutiny);
@@ -267,14 +288,9 @@ export default function InvoiceForm({
                 });
                 mappedSupplier.current = sup.code;
               }
-              poLookupApi.supplierVault(vid)
-                .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); })
-                .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
             }
             if (existing.items.length) {
-              const pi = existing.shipment_order_id
-                ? await poApi.piLines(existing.shipment_order_id).then(r => { set({ piDate: r.pi_date ?? '' }); return r.lines; }).catch(() => [])
-                : [];
+              const pi = piP ? await piP : [];
               if (!live) return;
               const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
               const byProduct = new Map(pi.map(l => [l.product_id, l]));
@@ -304,8 +320,8 @@ export default function InvoiceForm({
                 ((it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id))?.pi_item_id));
               const fromPi = rowsFromPi(pi);
               setRemovedLines(fromPi.flatMap((line, at) => (billed.has(line.piItemId!) ? [] : [{ at, line }])));
-            } else if (existing.shipment_order_id) {
-              const pi = await poApi.piLines(existing.shipment_order_id).then(r => { set({ piDate: r.pi_date ?? '' }); return r.lines; }).catch(() => []);
+            } else if (piP) {
+              const pi = await piP;
               if (!live) return;
               setLines(rowsFromPi(pi));
               setRemovedLines([]);
@@ -788,6 +804,7 @@ export default function InvoiceForm({
   }, [spiId, fetchBoxCodes]);
 
   const [placedBoxIds, setPlacedBoxIds] = useState<number[]>([]);
+  const [putawayBoard, setPutawayBoard] = useState<PutawayBoard | null>(null);
   const reloadBoxes = useCallback(async (id: number) => {
     const [list, , board] = await Promise.all([
       spiApi.boxes(id),
@@ -795,6 +812,7 @@ export default function InvoiceForm({
       spiApi.putawayBoard(id).catch(() => null),
     ]);
     setBoxes(list);
+    setPutawayBoard(board);
     setPlacedBoxIds((board?.boxes ?? []).filter(r => r.status === 'placed' || r.status === 'awaiting_scan').map(r => r.box_id));
     if (board) setPutaway({ placed: board.counts.placed, total: board.counts.total });
     return list;
@@ -1036,6 +1054,19 @@ export default function InvoiceForm({
     }
   };
 
+  /* Only Stage 01 reads this: the chip, the gate that holds Next, and the poll
+     below. Fetched on open it cost a round trip at Stage 04, where none of them
+     render. isDirect settles after the SPI detail, which is also what tells a
+     direct invoice from a PO-backed one — the latter is approved on its ORDER
+     and reloadApproval reads it from there. Missing data blocks Next rather
+     than passing it, so arriving late is safe. */
+  const approvalAsked = useRef(false);
+  useEffect(() => {
+    if (stage !== 0 || !isDirect || !spiId || approvalAsked.current) return;
+    approvalAsked.current = true;
+    latestSpiApproval(spiId);
+  }, [stage, isDirect, spiId, latestSpiApproval]);
+
   const approvalPending = isDirect && !!spiId && gstApproval?.status === 'pending';
   const savingRef = useRef(saving);
   savingRef.current = saving;
@@ -1231,7 +1262,10 @@ export default function InvoiceForm({
         </div>
 
         <div className="spi-dt-body" inert={saving}>
-          {poLoading || (stage === 2 && boxesLoading) ? (
+          {/* Stage 04 works on the boxes too, and poLoading clears before they
+              land — without this it rendered an empty allocation table, then
+              popped the boxes in. */}
+          {poLoading || (stage >= 2 && boxesLoading) ? (
             <StageSkeleton stage={stage} />
           ) : (
             <>
@@ -1292,7 +1326,7 @@ export default function InvoiceForm({
                 )}
                 {stage === 3 && (
                   <Suspense fallback={<StageSkeleton stage={3} />}>
-                  <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
+                  <Step4PutawayAllocation draft={draft} boxes={boxes} board={putawayBoard} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId} direct={isDirect}
                     warehouse={savedWarehouse ?? warehouseLabel(storage)}
                     spiCode={spiCode}

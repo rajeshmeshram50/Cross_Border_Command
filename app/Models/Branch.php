@@ -20,8 +20,6 @@ class Branch extends Model
         'website',
         'contact_person',
         'branch_type',
-        // Sandwich Leave Policy master switch. Branch-level on purpose: it
-        // governs every employee posted here, including future joiners.
         'sandwich_policy',
         'industry',
         'description',
@@ -53,11 +51,8 @@ class Branch extends Model
         'status',
         'notes',
         'shifts',
-        // Late-mark deduction rule for this office (see lateMarkPolicy()).
         'late_mark_policy',
-        // Loss-of-pay rule for this office (see lopPolicy()).
         'lop_policy',
-        // Short-hours → half day / absent rule (see shortHoursPolicy()).
         'short_hours_policy',
         'bank_accounts',
         'created_by',
@@ -69,9 +64,6 @@ class Branch extends Model
     {
         return [
             'max_users' => 'integer',
-            // Cast so the API always emits a real JSON true/false. Without it
-            // Postgres hands back "t"/"f" and the form's Yes/No select would
-            // silently fall through to "not chosen" on edit.
             'sandwich_policy' => 'boolean',
             'established_at' => 'date',
             'shifts' => 'array',
@@ -82,36 +74,18 @@ class Branch extends Model
         ];
     }
 
-    /* ── Late-mark policy ────────────────────────────────────────────────
-     *
-     * How many late marks cost how much pay, per branch. Shape:
-     *   ['enabled' => bool, 'count' => int, 'deduction' => 'half_day'|'full_day']
-     *
-     * Only half day and full day are offered on purpose — payroll rounds to
-     * 0.5-day steps, so anything finer would not survive the paid-days math.
-     *
-     * A branch that was never configured (NULL column) keeps the legacy
-     * hardcoded rule — 3 late marks → half a day — so nothing changes for
-     * existing payroll runs until an admin edits the branch.
-     */
     public const LATE_MARK_DEFAULTS = [
         'enabled'     => true,
         'count'       => 3,
         'deduction'   => 'half_day',
-        // false = any N late marks in the period; true = only N in a row. (#53)
         'consecutive' => false,
     ];
 
-    /** Days of LOP charged per completed block, keyed by deduction option. */
     public const LATE_MARK_DEDUCTIONS = [
         'half_day' => 0.5,
         'full_day' => 1.0,
     ];
 
-    /**
-     * Normalise any stored / submitted policy value into the canonical shape.
-     * Accepts a JSON string (multipart transport), an array, or null.
-     */
     public static function normalizeLateMarkPolicy($value): array
     {
         if (is_string($value)) {
@@ -123,13 +97,6 @@ class Branch extends Model
         }
 
         $count = (int) ($value['count'] ?? self::LATE_MARK_DEFAULTS['count']);
-        /* A zero or negative block size cannot be charged — it would divide the
-         * month into infinite deductions. It used to be clamped up to 1, which
-         * quietly turned the least plausible setting into the HARSHEST one:
-         * a branch saved with count 0 charged on every single late mark. Nobody
-         * types 0 meaning "deduct constantly"; they mean "don't deduct". So an
-         * unusable count now switches the rule OFF instead, which is both the
-         * safer failure and the obvious reading. The upper clamp stays. */
         $countUnusable = $count < 1;
         $count = max(1, min(31, $count));
 
@@ -147,46 +114,6 @@ class Branch extends Model
         ];
     }
 
-    /* ── Loss-of-pay policy ──────────────────────────────────────────────
-     *
-     * What one absent day actually costs, per branch. Shape:
-     *   ['basis' => 'basic'|'gross', 'divisor' => 'calendar'|'working']
-     *
-     *   per-day = (basis amount) ÷ (divisor day count)
-     *
-     * The two axes are independent and both matter. On a ₹1,00,416.67 gross /
-     * ₹50,208.34 basic salary in a 31-day month with 26 working days, the four
-     * combinations charge very different amounts for the same absence:
-     *
-     *   basic  ÷ calendar  = ₹1,619.62   ← legacy default, unchanged
-     *   basic  ÷ working   = ₹1,931.09
-     *   gross  ÷ calendar  = ₹3,239.25
-     *   gross  ÷ working   = ₹3,862.18   ← what a worked day actually earns
-     *
-     * Charging on BASIC means allowances are never clawed back, so an employee
-     * absent the whole month still takes home the entire allowance half of
-     * their salary. That is a legitimate policy — plenty of employers run it —
-     * but it has to be a decision somebody made, not an accident of the code.
-     * Hence this switch.
-     *
-     * DEFAULT CHANGED to gross ÷ working (#135).
-     *
-     * It was basic ÷ calendar, chosen so that no existing payslip moved when
-     * the switch was introduced. No branch has ever stored a policy, so every
-     * tenant was silently running the legacy rule, and its arithmetic reads as
-     * broken payroll: an employee present 0 of 26 working days still took home
-     * 56% of gross (₹28,133 of ₹50,000), because absence only ever came off
-     * the basic and the allowances were paid in full. Reported as earnings,
-     * deductions and net pay all being calculated incorrectly — every figure
-     * was internally consistent, it was the RULE producing them that nobody
-     * had chosen.
-     *
-     * gross ÷ working charges an absent day what a worked day actually earns,
-     * so a fully-absent month nets ₹0 and a part-absent month loses exactly
-     * the days missed. A branch that wants the old behaviour still selects it
-     * on Branch → LOP Policy; this only changes what applies when nothing has
-     * been chosen.
-     */
     public const LOP_DEFAULTS = [
         'basis'   => 'gross',
         'divisor' => 'working',
@@ -195,10 +122,6 @@ class Branch extends Model
     public const LOP_BASES    = ['basic', 'gross'];
     public const LOP_DIVISORS = ['calendar', 'working'];
 
-    /**
-     * Normalise any stored / submitted policy value into the canonical shape.
-     * Accepts a JSON string (multipart transport), an array, or null.
-     */
     public static function normalizeLopPolicy($value): array
     {
         if (is_string($value)) {
@@ -222,19 +145,11 @@ class Branch extends Model
         return ['basis' => $basis, 'divisor' => $divisor];
     }
 
-    /** This branch's effective loss-of-pay policy, defaults applied. */
     public function lopPolicy(): array
     {
         return self::normalizeLopPolicy($this->lop_policy);
     }
 
-    /**
-     * The per-day loss-of-pay rate a policy charges.
-     *
-     * Static and policy-first for the same reason as lateMarkLopFor(): payroll
-     * must be able to price an absence for an employee with no branch at all
-     * without a second copy of this arithmetic drifting out of step.
-     */
     public static function lopPerDayFor(
         array $policy,
         float $basic,
@@ -251,40 +166,12 @@ class Branch extends Model
         return round($amount / $days, 4);
     }
 
-    /* ── Short-hours policy ──────────────────────────────────────────────
-     *
-     * How few hours a WORKED day must fall under before it stops counting as a
-     * full day. Shape:
-     *   ['enabled' => bool, 'half_day_below' => float, 'absent_below' => float]
-     *
-     * Both thresholds are in hours, measured on the time actually worked:
-     *
-     *   worked < absent_below     → 0    (day not credited at all)
-     *   worked < half_day_below   → 0.5  (half day)
-     *   otherwise                 → full credit, as today
-     *
-     * `absent_below = 0` disables the absent tier, which is the default — the
-     * gentler half-day tier alone is what most offices want, and jumping
-     * straight to a full day's LOP for a short attendance is the kind of rule
-     * that should have to be typed in deliberately.
-     *
-     * DISABLED by default. Until an admin switches it on, a day's credit comes
-     * purely from attendances.status exactly as it always has, so no existing
-     * payslip moves. This exists because payroll previously had no concept of
-     * short hours at all: a two-hour day stored as 'Present' was paid in full,
-     * and nothing in the production punch flow ever writes 'Half Day' — only a
-     * manual status edit could produce one.
-     */
     public const SHORT_HOURS_DEFAULTS = [
         'enabled'        => false,
         'half_day_below' => 4.0,
         'absent_below'   => 0.0,
     ];
 
-    /**
-     * Normalise any stored / submitted policy value into the canonical shape.
-     * Accepts a JSON string (multipart transport), an array, or null.
-     */
     public static function normalizeShortHoursPolicy($value): array
     {
         if (is_string($value)) {
@@ -295,17 +182,12 @@ class Branch extends Model
             return self::SHORT_HOURS_DEFAULTS;
         }
 
-        // Clamp to a sane 0..24 h. A threshold at or above 24 would demote
-        // every single day; a negative one would never fire.
         $half = (float) ($value['half_day_below'] ?? self::SHORT_HOURS_DEFAULTS['half_day_below']);
         $half = max(0.0, min(24.0, $half));
 
         $absent = (float) ($value['absent_below'] ?? self::SHORT_HOURS_DEFAULTS['absent_below']);
         $absent = max(0.0, min(24.0, $absent));
 
-        // An absent threshold above the half-day one would swallow the half-day
-        // tier entirely and read as a config typo. Cap it at the half-day mark
-        // so the two tiers always stack in the order they are described.
         if ($absent > $half) {
             $absent = $half;
         }
@@ -317,24 +199,11 @@ class Branch extends Model
         ];
     }
 
-    /** This branch's effective short-hours policy, defaults applied. */
     public function shortHoursPolicy(): array
     {
         return self::normalizeShortHoursPolicy($this->short_hours_policy);
     }
 
-    /**
-     * The day credit a policy allows for a worked day, given the minutes
-     * actually worked and the credit the day would otherwise earn.
-     *
-     * Returns $baseCredit untouched when the policy is off, when the day was
-     * not a full-credit day to begin with (an explicit Half Day is already
-     * 0.5 and must not be halved again), or when $workedMinutes is null —
-     * which means the hours could not be measured, typically a day missing one
-     * side of its punch pair. Guessing on unmeasurable data would silently dock
-     * pay for what is really a data-quality problem; those days already raise a
-     * missing-punch warning of their own.
-     */
     public static function shortHoursCreditFor(array $policy, ?int $workedMinutes, float $baseCredit): float
     {
         $policy = self::normalizeShortHoursPolicy($policy);
@@ -353,21 +222,11 @@ class Branch extends Model
         return $baseCredit;
     }
 
-    /** This branch's effective policy, defaults applied. */
     public function lateMarkPolicy(): array
     {
         return self::normalizeLateMarkPolicy($this->late_mark_policy);
     }
 
-    /**
-     * Days of loss-of-pay a policy charges for a given number of late marks.
-     * Deducts once per COMPLETED block: with count=3 / half_day, 2 lates cost
-     * nothing, 3 cost 0.5, 6 cost 1.0.
-     *
-     * Static and policy-first so payroll can call it for an employee with no
-     * branch at all (falls back to the defaults) without a second copy of the
-     * arithmetic drifting out of step with this one.
-     */
     public static function lateMarkLopFor(array $policy, int $lateMarks): float
     {
         $policy = self::normalizeLateMarkPolicy($policy);
@@ -379,7 +238,6 @@ class Branch extends Model
             * self::LATE_MARK_DEDUCTIONS[$policy['deduction']];
     }
 
-    /** This branch's LOP days for a given number of late marks. */
     public function lateMarkLopDays(int $lateMarks): float
     {
         return self::lateMarkLopFor($this->lateMarkPolicy(), $lateMarks);
@@ -395,13 +253,10 @@ class Branch extends Model
         return file_url($this->profile_photo);
     }
 
-    /** Authorised-signatory image rendered on "with signature" Quotation/PI PDFs. */
     public function getSignatureUrlAttribute(): ?string
     {
         return file_url($this->signature_path);
     }
-
-    // ── Relationships ──
 
     public function client(): BelongsTo
     {
@@ -442,8 +297,6 @@ class Branch extends Model
     {
         return $this->hasMany(ActivityLog::class);
     }
-
-    // ── Helpers ──
 
     public function isActive(): bool
     {

@@ -2320,10 +2320,7 @@ export default function SalesCustomerSendForSignatureModal({
                       {Array.from({ length: roleBoxCount }).map((_, i) => (
                         <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                           <button type="button" onClick={() => { setActiveRoleBoxIdx(i); const b = roleBoxList(activeDocId!, activeSignerRole!)[i]; if (b) setViewPage(b.page ?? 0); }}
-                            style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                              border: i === activeRoleBoxIdx ? '1.5px solid #7c3aed' : '1.5px solid #e2e8f0',
-                              background: i === activeRoleBoxIdx ? 'linear-gradient(135deg,#ede9fe,#ddd6fe)' : '#fff',
-                              color: i === activeRoleBoxIdx ? '#5b21b6' : '#475569' }}>
+                            className={`ssf-box-chip${i === activeRoleBoxIdx ? ' is-on' : ''}`}>
                             Sign {i + 1}
                           </button>
                           {/* Box 1 gets an x too, but only once a second box
@@ -2337,7 +2334,7 @@ export default function SalesCustomerSendForSignatureModal({
                       ))}
                       {(
                         <button type="button" onClick={addRoleBox}
-                          style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1.5px dashed #a78bfa', background: '#faf5ff', color: '#7c3aed' }}>
+                          className="ssf-box-chip ssf-box-add">
                           + Add box
                         </button>
                       )}
@@ -2353,10 +2350,7 @@ export default function SalesCustomerSendForSignatureModal({
                       {Array.from({ length: boxCount }).map((_, i) => (
                         <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                           <button type="button" onClick={() => { setActiveBoxIdx(i); const b = (multiBoxes[activeDocId!] ?? [])[i]; if (b) setViewPage(b.page ?? 0); }}
-                            style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                              border: i === activeBoxIdx ? '1.5px solid #7c3aed' : '1.5px solid #e2e8f0',
-                              background: i === activeBoxIdx ? 'linear-gradient(135deg,#ede9fe,#ddd6fe)' : '#fff',
-                              color: i === activeBoxIdx ? '#5b21b6' : '#475569' }}>
+                            className={`ssf-box-chip${i === activeBoxIdx ? ' is-on' : ''}`}>
                             Sign {i + 1}
                           </button>
                           {boxCount > 1 && (
@@ -2367,7 +2361,7 @@ export default function SalesCustomerSendForSignatureModal({
                       ))}
                       {(
                         <button type="button" onClick={addBox}
-                          style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1.5px dashed #a78bfa', background: '#faf5ff', color: '#7c3aed' }}>
+                          className="ssf-box-chip ssf-box-add">
                           + Add box
                         </button>
                       )}
@@ -3340,6 +3334,14 @@ export const SSF_CSS = `
   padding: 6px 8px; background: #f8fafc; border-radius: 6px;
   border: 1px dashed #e2e8f0;
 }
+/* Sign 1 / Sign 2 … and + Add box chips. Classes, not inline styles, so the
+   dark-mode rules below can re-tint them. */
+.ssf-box-chip {
+  padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer;
+  border: 1.5px solid #e2e8f0; background: #fff; color: #475569;
+}
+.ssf-box-chip.is-on { border-color: #7c3aed; background: linear-gradient(135deg,#ede9fe,#ddd6fe); color: #5b21b6; }
+.ssf-box-add { border: 1.5px dashed #a78bfa; background: #faf5ff; color: #7c3aed; }
 /* Focus ring on the signature overlay — only when the user has clicked
    it, so the arrow-key nudge handler activates without the ring being
    constantly visible. */
@@ -3404,6 +3406,12 @@ export const SSF_CSS = `
 [data-bs-theme="dark"] .ssf-recipient-h     { color: #94a3b8; }
 [data-bs-theme="dark"] .ssf-recipient-email { color: #94a3b8; }
 [data-bs-theme="dark"] .ssf-coord-hint      { color: #94a3b8; }
+[data-bs-theme="dark"] .ssf-coord-hint      { background: #0f172a; border-color: #334155; }
+[data-bs-theme="dark"] .ssf-box-chip        { background: #0f172a; border-color: #334155; color: #cbd5e1; }
+[data-bs-theme="dark"] .ssf-box-chip:hover  { border-color: #475569; color: #f1f5f9; }
+[data-bs-theme="dark"] .ssf-box-chip.is-on  { background: rgba(139,92,246,.22); border-color: #8b5cf6; color: #ddd6fe; }
+[data-bs-theme="dark"] .ssf-box-add         { background: rgba(139,92,246,.08); border-color: rgba(167,139,250,.55); color: #c4b5fd; }
+[data-bs-theme="dark"] .ssf-box-add:hover   { background: rgba(139,92,246,.16); color: #ddd6fe; }
 /* The row carries its OWN text too, not just inputs: the X / Y / Page labels
    and the "… signs in · N places on this doc" line all inherit from here, and
    #334155 on a #0f172a panel is unreadable. */

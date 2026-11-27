@@ -6,13 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Rule 21 — a saved Full & Final settlement.
- *
- * Like Payslip, this is a snapshot: `breakdown` holds the figures as computed
- * at save time and is never recomputed on read, so a settlement that has been
- * approved or paid stays exactly as it was agreed.
- */
 class FnfSettlement extends Model
 {
     use SoftDeletes;
@@ -37,7 +30,6 @@ class FnfSettlement extends Model
         'paid_at'          => 'datetime',
     ];
 
-    /** Only a draft may be recomputed or edited. */
     public function isEditable(): bool
     {
         return $this->status === 'draft';

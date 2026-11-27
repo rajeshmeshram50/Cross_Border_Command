@@ -5,6 +5,7 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useNavigateContext } from '../../../components/App';
 import SearchClear from '../../../components/ui/SearchClear';
+import { RowsPerPageSelect } from '../../../components/ui/TablePager';
 import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 
 type ServerLead = {
@@ -39,9 +40,6 @@ type Lead = {
 
 const ROWS_PER_PAGE = 15;
 
-/* "N/A" sentinel — used as a fallback whenever a server field is null,
- * empty, or the legacy "—" placeholder. The check is intentionally narrow
- * so legitimate values like "0" don't get masked. */
 const nullable = (v: string | null | undefined): string => {
   const s = (v ?? '').toString().trim();
   if (!s || s === '—') return 'N/A';
@@ -84,9 +82,6 @@ export default function SalesLeadsDetails() {
   const { navigate } = useNavigateContext();
   const location = useLocation();
 
-  /* Salesperson context comes through the URL — `?sp=12&sp_name=Sakshi%20Kale`.
-   * `sp_emp` and `sp_mgr` are passed by the Lead Distribution roster when
-   * available so the header chips render without an extra round-trip. */
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const spId   = params.get('sp');
   const spName = params.get('sp_name') ?? 'Sales Person';
@@ -100,9 +95,6 @@ export default function SalesLeadsDetails() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
-  /* Debounce search input so each keystroke doesn't fire a request. 220ms
-   * is the same window used by the worksheet page; matches what users have
-   * come to expect across the Sales section. */
   const [debouncedQ, setDebouncedQ] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(search.trim()), 220);
@@ -148,7 +140,6 @@ export default function SalesLeadsDetails() {
     <div className="ldd-page">
       <style>{LDD_CSS}</style>
 
-      {/* ── Header ───────────────────────────────────────────────── */}
       <div className="ldd-header">
         <div className="ldd-header-left">
           <div className="ldd-header-icon">
@@ -167,20 +158,18 @@ export default function SalesLeadsDetails() {
           </div>
         </div>
 
-        {/* Search, then the reference pills, then Back */}
         <div className="ldd-header-right">
           <div className="ldd-search ui-search-abs">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input
               type="text"
               autoComplete="off"
-              placeholder="Search lead..."
+              placeholder="Search Opp ID, customer, PI, shipment, country, date…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
           </div>
-          {/* Meta chips */}
           <div className="ldd-meta">
             {spEmp && (
               <>
@@ -221,7 +210,6 @@ export default function SalesLeadsDetails() {
         </div>
       </div>
 
-      {/* ── Table card ───────────────────────────────────────────── */}
       <div className="ldd-table-card">
         <div className="ldd-table-wrap">
           <table className="ldd-table">
@@ -254,11 +242,7 @@ export default function SalesLeadsDetails() {
               </tr>
             </thead>
             <tbody>
-              {/* Shimmer rows while the salesperson's leads load (not a bare "Loading…" line). */}
               {loading && <ShimmerTableRows rows={pageSize} cols={11} height={12} cellClassName="" keyPrefix="ldd-shim" />}
-              {!loading && leads.length === 0 && (
-                <tr><td colSpan={11} className="ldd-status">No leads found</td></tr>
-              )}
               {!loading && leads.map((r, i) => (
                 <tr key={r.id}>
                   <td>
@@ -286,9 +270,17 @@ export default function SalesLeadsDetails() {
               ))}
             </tbody>
           </table>
+          {!loading && leads.length === 0 && (
+            <div className="ldd-empty" role="status">
+              <i className="ri-inbox-2-line ldd-empty-ico" />
+              <div className="ldd-empty-title">No data found</div>
+              <div className="ldd-empty-sub">
+                {debouncedQ.trim() ? <>No leads match “{debouncedQ.trim()}”</> : 'This salesperson has no leads yet'}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* ── Pagination ──────────────────────────────────────────── */}
         <div className="ldd-pag">
           <span className="ldd-pag-info">
             {total === 0
@@ -296,15 +288,10 @@ export default function SalesLeadsDetails() {
               : <>Showing <strong>{startIdx + 1}–{endIdx}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="ldd-pag-ctrl">
-            <label className="ldd-rows-per-page">
+            <span className="ldd-rows-per-page">
               <span>Rows per page:</span>
-              <select
-                value={pageSize}
-                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-              >
-                {[10, 15, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
+              <RowsPerPageSelect pageSize={pageSize} options={[10, 15, 25, 50]} onChange={n => { setPageSize(n); setPage(1); }} />
+            </span>
             <span className="ldd-pag-range">{safePage}/{pages}</span>
             <button
               className="ldd-pag-btn"
@@ -327,10 +314,7 @@ export default function SalesLeadsDetails() {
   );
 }
 
-/* ─── Styles — the cyan palette of Lead Distribution / My Workplace. ──── */
 const LDD_CSS = `
-/* Leads Details — the My Workplace / Lead Distribution cyan (banner, toolbar
-   button, table header, row tint, pager). Layout is unchanged. */
 .ldd-page {
   box-sizing: border-box;
   margin: -1rem -0.75rem;
@@ -344,7 +328,6 @@ const LDD_CSS = `
 }
 @keyframes ldd-fade { from { opacity: 0; } to { opacity: 1; } }
 
-/* Header — the My Workplace banner */
 .ldd-header {
   position: relative; overflow: hidden;
   background: linear-gradient(110deg, #f0fdff 0%, #e6fafe 25%, #d0f5fb 55%, #bef0f8 85%, #a8eaf5 100%);
@@ -375,9 +358,8 @@ const LDD_CSS = `
 .ldd-header-sub  { font-size: 10px; color: #0e7490; margin-top: 2px; font-weight: 500; opacity: .85; }
 
 .ldd-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
-/* Header reference pills = the Create PO header (.spi-dt-pill): icon tile,
-   small-caps label over a mono value, dotted separators. */
-.ldd-hp { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 12px; min-width: 0;
+.ldd-hp { display: flex; align-items: center; gap: 9px; padding: 0 14px; border-radius: 12px; min-width: 0;
+  box-sizing: border-box; height: 40px; min-height: 40px; max-height: 40px; flex-shrink: 0;
   background: rgba(255,255,255,.65); border: 1.5px solid rgba(8,145,178,.3);
   box-shadow: 0 2px 8px rgba(6,182,212,.12), inset 0 1px 0 rgba(255,255,255,.95);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
@@ -397,8 +379,8 @@ const LDD_CSS = `
 .ldd-header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
 .ldd-search {
   display: flex; align-items: center; gap: 7px;
-  background: #fff; border: 1.5px solid #a5f3fc; border-radius: 10px;
-  padding: 0 12px; height: 40px;
+  background: #fff; border: 1.5px solid #a5f3fc; border-radius: 12px;
+  padding: 0 12px; height: 40px; box-sizing: border-box;
   transition: border-color .15s, box-shadow .15s;
 }
 .ldd-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
@@ -407,10 +389,9 @@ const LDD_CSS = `
   font-family: inherit; font-size: 12px; color: #0c4a6e; width: 260px;
 }
 .ldd-search input::placeholder { color: #94a3b8; }
-/* Back = the My Workplace toolbar button (.lwp-bact): cyan gradient, 40px, 11.5 / 700. */
 .ldd-back-btn {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 40px; padding: 0 18px;
+  height: 40px; padding: 0 18px; box-sizing: border-box; flex-shrink: 0;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); color: #fff;
   border: none; border-radius: 12px;
   font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
@@ -425,7 +406,6 @@ const LDD_CSS = `
   box-shadow: 0 8px 24px rgba(6,182,212,.55), 0 3px 8px rgba(8,145,178,.3), 0 1px 0 rgba(255,255,255,.22) inset;
 }
 
-/* Table card — the My Workplace table card */
 .ldd-table-card {
   background: #fff;
   border: 1.5px solid #a5f3fc;
@@ -436,6 +416,16 @@ const LDD_CSS = `
   flex: 1; min-height: 0;
 }
 .ldd-table-wrap { position: relative; flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
+.ldd-empty {
+  position: absolute; inset: 36px 0 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px; pointer-events: none; text-align: center; padding: 0 16px;
+}
+.ldd-empty-ico { font-size: 34px; color: #67e8f9; opacity: .8; }
+.ldd-empty-title { font-size: 13.5px; font-weight: 700; color: #0e7490; }
+.ldd-empty-sub { font-size: 11.5px; font-weight: 500; color: #64748b; max-width: 420px; overflow-wrap: anywhere; }
+[data-bs-theme="dark"] .ldd-empty-ico { color: #22d3ee; opacity: .6; }
+[data-bs-theme="dark"] .ldd-empty-title { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldd-empty-sub { color: #94a3b8; }
 .ldd-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
 .ldd-table thead { position: sticky; top: 0; z-index: 2; }
 .ldd-table thead tr {
@@ -463,8 +453,6 @@ const LDD_CSS = `
 }
 .ldd-table tbody td:first-child { padding-left: 14px; }
 
-/* Sr No = the Customers list badge (.dt-serial): filled rounded square, white
-   number — in this page's cyan. */
 .ldd-sr {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 7px;
@@ -480,7 +468,6 @@ const LDD_CSS = `
   background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;
   white-space: nowrap;
 }
-/* Opp. ID as a chip — the Customers list ID chip (.dt-id-chip) shape, in cyan. */
 .ldd-opp {
   display: inline-flex; align-items: center;
   padding: 2px 8px; border-radius: 6px;
@@ -492,8 +479,6 @@ const LDD_CSS = `
 .ldd-muted  { color: #64748b; font-size: 11px; }
 .ldd-strong { font-weight: 600; color: #0f172a; }
 .ldd-na     { color: #cbd5e1; font-style: italic; font-size: 11px; }
-/* Cell type = the Customers list (.smc-table-wrap): 11.5 / 500 for every data cell;
-   the badges / ID / status pill keep their own sizes. */
 .ldd-table tbody td,
 .ldd-table tbody td *:not(i):not(svg):not(svg *) { font-size: 11.5px !important; font-weight: 500 !important; }
 .ldd-table tbody td .ldd-sr.ldd-sr { font-size: 11px !important; font-weight: 800 !important; }
@@ -514,14 +499,6 @@ const LDD_CSS = `
 .ldd-status-d .ldd-status-dot { background: #ef4444; }
 .ldd-status-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 
-/* Empty state centred in the whole table body, not pinned under the header. */
-.ldd-table tbody td.ldd-status {
-  position: absolute; inset: 0; height: auto; display: flex; align-items: center; justify-content: center;
-  padding: 0 14px; border: none; background: transparent;
-  color: #94a3b8; font-style: italic; font-size: 12px;
-}
-
-/* Pagination — the My Workplace pager */
 .ldd-pag {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px;
@@ -549,6 +526,13 @@ const LDD_CSS = `
   border: none; background: transparent; font-family: inherit;
   font-size: 11.5px; color: #0891b2; font-weight: 700; cursor: pointer; outline: none;
 }
+.ldd-rows-per-page { --tcwl-accent: #0891b2; --tcwl-text: #0e7490; --tcwl-border: #a5f3fc; --tcwl-band: #ecfeff; }
+.ldd-rows-per-page .tc-wl-rows-btn { color: #0891b2; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-btn { color: #67e8f9; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu { background: #0c1f2e; border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu button { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu button:hover { background: rgba(34, 211, 238, .16); color: #fff; }
+[data-bs-theme="dark"] .ldd-rows-per-page .tc-wl-rows-menu button.is-on { background: #0891b2; color: #fff; }
 .ldd-pag-range {
   font-size: 11.5px; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
@@ -566,7 +550,6 @@ const LDD_CSS = `
 .ldd-pag-btn:hover:not(:disabled) { background: #fff; border-color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.25); }
 .ldd-pag-btn:disabled              { cursor: not-allowed; opacity: .4; }
 
-/* Dark mode — the My Workplace dark cyan */
 [data-bs-theme="dark"] .ldd-page         { background: transparent; }
 [data-bs-theme="dark"] .ldd-header {
   background:
@@ -591,7 +574,6 @@ const LDD_CSS = `
 [data-bs-theme="dark"] .ldd-type-badge   { background: rgba(3,105,161,.25); color: #7dd3fc; border-color: rgba(125,211,252,.35); }
 [data-bs-theme="dark"] .ldd-opp          { color: #67e8f9; background: rgba(8,145,178,.16); border-color: rgba(103,232,249,.35); }
 [data-bs-theme="dark"] .ldd-na           { color: #475569; }
-[data-bs-theme="dark"] .ldd-status       { color: #94a3b8; }
 [data-bs-theme="dark"] .ldd-status-q     { background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(34,197,94,.40); }
 [data-bs-theme="dark"] .ldd-status-d     { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(239,68,68,.40); }
 [data-bs-theme="dark"] .ldd-pag          { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
@@ -601,7 +583,6 @@ const LDD_CSS = `
 [data-bs-theme="dark"] .ldd-rows-per-page select { color: #a5f3fc; }
 [data-bs-theme="dark"] .ldd-pag-btn      { background: rgba(15,34,51,.8); border-color: rgba(103,232,249,.30); color: #67e8f9; }
 
-/* Responsive */
 @media (max-width: 1100px) {
   .ldd-header { flex-wrap: wrap; }
   .ldd-header-right { width: 100%; flex-wrap: wrap; justify-content: flex-end; }

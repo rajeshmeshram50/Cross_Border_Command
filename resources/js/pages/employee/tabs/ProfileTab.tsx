@@ -8,8 +8,8 @@ import { useEmployeeProfile } from '../EmployeeProfileContext';
 export default function ProfileTab() {
   const {
     empDetail, empDetailLoading, employee, fmtDate, profilePct,
-    profilePhotoSrc, profilePhotoFile, setProfilePhotoFile, savingPhoto,
-    handleProfilePhotoChange, handleSaveProfilePhoto, restoreSavedProfilePhoto,
+    profilePhotoSrc, savingPhoto,
+    handleProfilePhotoChange,
     profilePhotoInputRef, setFaceRegOpen, setPwOpen, resetPwForm,
     isOwnProfile,
   } = useEmployeeProfile();
@@ -73,38 +73,30 @@ export default function ProfileTab() {
           )}
           <div className="min-w-0 flex-grow-1">
             <div className="fw-semibold ep-fs-12">Profile Photo</div>
-            <input
-              ref={profilePhotoInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
-              className="form-control form-control-sm pft-file-input"
-            />
+            <small className="text-muted pft-tile-caption">JPG, PNG or WebP.</small>
           </div>
-          {profilePhotoFile && (
-            <div className="d-flex gap-1 flex-shrink-0">
-              <button
-                type="button"
-                className="btn btn-sm btn-success pft-btn-icon-sm"
-                onClick={handleSaveProfilePhoto}
-                disabled={savingPhoto}
-                title="Save photo"
-              >
-                {savingPhoto ? <span className="spinner-border spinner-border-sm pft-spinner-sm" /> : <i className="ri-save-line" />}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-secondary pft-btn-icon-sm"
-                onClick={() => {
-                  setProfilePhotoFile(null);
-                  restoreSavedProfilePhoto();
-                }}
-                title="Cancel"
-              >
-                <i className="ri-close-line" />
-              </button>
-            </div>
-          )}
+          {/* Native input is hidden; the button / Replace chip drives it. Saving
+              the crop uploads directly, so there's no separate Save step. */}
+          <input
+            ref={profilePhotoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
+            className="d-none"
+          />
+          <Button
+            color="primary"
+            size="sm"
+            className="d-inline-flex align-items-center gap-1 flex-shrink-0 pft-btn-action"
+            onClick={() => profilePhotoInputRef.current?.click()}
+            disabled={savingPhoto}
+          >
+            {savingPhoto
+              ? <><span className="spinner-border spinner-border-sm pft-spinner-sm" /> Uploading</>
+              : profilePhotoSrc
+                ? <><i className="ri-refresh-line" /> Re-upload</>
+                : <><i className="ri-upload-2-line" /> Upload</>}
+          </Button>
         </div>
       </Col>
 

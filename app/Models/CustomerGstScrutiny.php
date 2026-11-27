@@ -6,10 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Customer GST Scrutiny entry — mirrors {@see VendorGstScrutiny}.
- * One row per GST number a domestic customer is registered under.
- */
 class CustomerGstScrutiny extends Model
 {
     use SoftDeletes;

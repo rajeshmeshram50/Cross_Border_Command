@@ -263,8 +263,11 @@
   background: rgba(54, 192, 227, 0.12);
   border: 1px solid rgba(100, 187, 206, 0.3);
 }
+/* The shine needs a brighter middle stop and the 200% size: the old shorthand reset the size and
+   all three stops were the same tint, so the dark shimmer stood still. */
 [data-bs-theme="dark"] .cvx.al-page .cva-shim__row i {
-  background: linear-gradient(90deg,rgba(69, 183, 211, 0.12) 25%,rgba(61, 189, 219, 0.12) 50%,rgba(69, 183, 211, 0.12) 75%);
+  background: linear-gradient(90deg, rgba(69, 183, 211, .12) 25%, rgba(125, 217, 242, .28) 50%, rgba(69, 183, 211, .12) 75%);
+  background-size: 200% 100%;
 }
 
 /* Dark mode · polish (hand-tuned, wins over the generated rules above). Same crisp recipe as the
@@ -297,8 +300,11 @@
 [data-bs-theme="dark"] .cvx.al-page .al-range button:not(.is-on):hover { color: #fff; background: rgba(255, 255, 255, .06); }
 
 /* day header */
+/* The day header is sticky: it stays at the top of the timeline while that day's events scroll
+   under it. A 6% teal wash alone was see-through, so the cards scrolling underneath showed through
+   the header. Same teal tint, laid over the card's own solid navy so nothing bleeds through. */
 [data-bs-theme="dark"] .cvx.al-page .alh-day__hd {
-  background: rgba(34, 211, 238, .06) !important;
+  background: linear-gradient(rgba(34, 211, 238, .06), rgba(34, 211, 238, .06)), #121f2b !important;
   border: 1px solid rgba(34, 211, 238, .16) !important;
 }
 [data-bs-theme="dark"] .cvx.al-page .alh-day__hd b { color: var(--al-t1); }
@@ -403,3 +409,14 @@
   padding: 0 12px;
   border-radius: 11px;
 }
+
+/* Fit mode (CvCard fit): the card is a column of exactly the space down to the footer - tabs,
+   optional filter chip, the timeline, then the pager. Only the timeline scrolls, so the page itself
+   never does (a whole-page scroll here lagged). */
+.cvx.al-page .bst-card{display:flex;flex-direction:column;}
+.cvx.al-page .bst-card > *{flex-shrink:0;}
+.cvx.al-page .bst-card > :is(.alh,.alh-empty){flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;}
+/* The timeline has 14px of top padding and a sticky header stops inside that padding, so the first
+   event of the stuck day showed through the 14px gap above its own header. -14px pins the header flush
+   with the top edge of the scrolling timeline. */
+.cvx.al-page .bst-card > .alh .alh-day__hd{top:-14px;}

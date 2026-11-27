@@ -387,7 +387,6 @@ function MoreOptionsMenu(props: {
             className="qpi-moremenu-item"
             disabled={busy !== null}
             onClick={() => {
-              if (kind === 'quotation') { pick('view', true); return; }
               onError(`Not signed yet — sign this ${docLabel} via Zoho to view the signed PDF.`); onClose();
             }}
           >
@@ -411,7 +410,6 @@ function MoreOptionsMenu(props: {
             className="qpi-moremenu-item"
             disabled={busy !== null}
             onClick={() => {
-              if (kind === 'quotation') { pick('download', true); return; }
               onError(`Not signed yet — sign this ${docLabel} via Zoho to download the signed PDF.`); onClose();
             }}
           >
@@ -620,17 +618,18 @@ export default function SalesQPI() {
     if (!host) return;
     const fit = () => {
       const cardEl = cardRef.current;
+      const scrollEl = (cardEl?.closest('.main-content') as HTMLElement | null) ?? null;
+      const footEl = document.querySelector('footer.footer') as HTMLElement | null;
+      const footIn = footEl && scrollEl?.contains(footEl) ? footEl.offsetHeight : 0;
+      const limit = scrollEl
+        ? scrollEl.getBoundingClientRect().bottom - footIn - 8
+        : window.innerHeight - 16;
       if (cardEl) {
         const cardTop = cardEl.getBoundingClientRect().top;
-        const cardH = Math.max(0, window.innerHeight - cardTop - 16);
+        const cardH = Math.max(0, Math.floor(limit - cardTop));
         setFillH(prev => (prev === cardH ? prev : cardH));
       }
       if (rppManualRef.current) return;
-      /* Measured, not estimated (same fix as the Customers / Consignee lists): the
-         rows get the space from the bottom of the header row to the card's bottom
-         edge (window − 16px, see fillH), less the real pager, the real horizontal
-         scrollbar, and the card border + host's 1px bottom padding. The old fixed
-         allowances (56 + 15 + 16) could round a fitting last row away. */
       const top      = host.getBoundingClientRect().top;
       const theadEl  = host.querySelector('thead') as HTMLElement | null;
       const theadBot = theadEl ? theadEl.getBoundingClientRect().bottom : top + 14 + 44;
@@ -638,8 +637,7 @@ export default function SalesQPI() {
       const pagerH   = (cardEl?.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight ?? 56;
       const scroller = host.querySelector('.table-responsive') as HTMLElement | null;
       const sbH      = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
-      const avail    = (window.innerHeight - 16) - theadBot - pagerH - sbH - 2;
-      // +2: sub-pixel row heights must not cost a whole row.
+      const avail    = limit - theadBot - pagerH - sbH - 2;
       const rowsFit  = Math.max(4, Math.floor((avail + 2) / rowH));
       setRpp(prev => (prev === rowsFit ? prev : rowsFit));
     };
@@ -750,11 +748,12 @@ export default function SalesQPI() {
 
   const [emailingKeys, setEmailingKeys] = useState<Set<string>>(new Set());
   const emailingRef = useRef<Set<string>>(new Set());
-  const isEmailing = (kind: 'quotation' | 'pi', id: number) => emailingKeys.has(`${kind}:${id}`);
+  const isEmailing = (kind: 'quotation' | 'pi', id: number | undefined) => id != null && emailingKeys.has(`${kind}:${id}`);
 
   const [emailCooldowns, setEmailCooldowns] = useState<Record<string, number>>({});
   const cdKey = (kind: 'quotation' | 'pi', id: number) => `${kind}:${id}`;
-  const cooldownLeft = (kind: 'quotation' | 'pi', id: number): number => {
+  const cooldownLeft = (kind: 'quotation' | 'pi', id: number | undefined): number => {
+    if (id == null) return 0;
     const end = emailCooldowns[cdKey(kind, id)];
     return end ? Math.max(0, Math.ceil((end - Date.now()) / 1000)) : 0;
   };
@@ -810,34 +809,6 @@ export default function SalesQPI() {
     }
   };
 
-  const sendReminder = async (kind: 'quotation' | 'pi', id: number, code: string) => {
-    if (!id) { toast.error('Cannot remind', 'This record has no server id yet.'); return; }
-    const key = `${kind}:${id}`;
-    if (emailingRef.current.has(key)) return;
-    emailingRef.current.add(key);
-    setEmailingKeys(s => new Set(s).add(key));
-    const url = kind === 'quotation'
-      ? `/sales/quotations/${id}/remind`
-      : `/sales/proforma-invoices/${id}/remind`;
-    try {
-      const { data } = await api.post(url, { signature: true });
-      const n = Number(data?.reminder_count ?? 0);
-      toast.success('Reminder sent', `${code} → ${data?.to ?? 'customer'} (#${n})`);
-      const patch = (r: any) => r.id === id ? { ...r, reminderCount: n } : r;
-      if (kind === 'quotation') setQuotations(rows => rows.map(patch));
-      else                       setPis(rows => rows.map(patch));
-    } catch (e: any) {
-      if (e?.response?.status === 429) {
-        toast.warning('Please wait', e?.response?.data?.message ?? 'Too many attempts — try again in a minute.');
-      } else {
-        const msg = e?.response?.data?.message ?? 'Could not send reminder.';
-        toast.error('Reminder failed', String(msg));
-      }
-    } finally {
-      emailingRef.current.delete(key);
-      setEmailingKeys(s => { const n = new Set(s); n.delete(key); return n; });
-    }
-  };
 
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'quotation' | 'pi'; id: number; code: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -1152,24 +1123,6 @@ export default function SalesQPI() {
               cooling={!!r.id && cooldownLeft('quotation', r.id) > 0}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
-            {false && (
-            <ActionBtn
-              title={
-                readOnly
-                  ? readOnlyHint
-                  : isEmailing('quotation', r.id)
-                    ? 'Sending…'
-                    : r.emailedAt
-                      ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                      : 'Send initial email first to enable reminders'
-              }
-              icon={<IconBellSm />}
-              color="#f59e0b"
-              disabled={readOnly || !r.emailedAt || (isEmailing('quotation', r.id))}
-              badge={r.reminderCount ?? 0}
-              onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
-            />
-            )}
             {(() => {
               const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
               const qConverted = r.status === 'converted_to_pi';
@@ -1323,24 +1276,6 @@ export default function SalesQPI() {
               cooling={!!r.id && cooldownLeft('pi', r.id) > 0}
               onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
             />
-            {false && (
-              <ActionBtn
-                title={
-                  readOnly
-                    ? readOnlyHint
-                    : isEmailing('pi', r.id)
-                      ? 'Sending…'
-                      : r.emailedAt
-                        ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                        : 'Send initial email first to enable reminders'
-                }
-                icon={<IconBellSm />}
-                color="#f59e0b"
-                disabled={readOnly || !r.emailedAt || (isEmailing('pi', r.id))}
-                badge={r.reminderCount ?? 0}
-                onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
-              />
-            )}
             {(() => {
               const pStatus = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
               const pSent   = pStatus === 'inprogress';
@@ -1386,15 +1321,6 @@ export default function SalesQPI() {
                 <IconKebab />
               </button>
             </Tooltip>
-            {false && (
-              <ActionBtn
-                title={readOnly ? readOnlyHint : 'Delete PI'}
-                icon={<IconTrash />}
-                color="#dc2626"
-                disabled={readOnly}
-                onClick={() => r.id && setDeleteTarget({ kind: 'pi', id: r.id, code: r.piNo })}
-              />
-            )}
           </div>
         );
       },
@@ -1407,9 +1333,6 @@ export default function SalesQPI() {
     <div className="qpi-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Header strip + "What We Are Doing Here" — the Supplier list's header
-          (.sup-fig .cstrip) and step-card banner, in one .sup-fig as on that page.
-          The Quotation / Proforma Invoice rail sits where Supplier has its button. */}
       <div className="sup-fig">
         <div className="cstrip">
           <span className="cstrip__accent" />
@@ -2993,15 +2916,21 @@ export function CreatePIModal(props: {
 
 function StepBadge(props: { n: number; title: string; subtitle: string; state: 'idle' | 'active' | 'done'; theme: 'teal' | 'purple' }) {
   const { n, title, subtitle, state, theme } = props;
+  const icon = n === 1
+    ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
   return (
     <div className={`qpi-step-badge qpi-step-${state} qpi-step-${theme}`}>
-      <div className="qpi-step-badge-num">
-        {state === 'done' ? <IconCheck /> : n}
+      <div className="qpi-step-ico-wrap">
+        <div className="qpi-step-ico">{state === 'done' ? <IconCheck /> : icon}</div>
+        <div className="qpi-step-badge-num">{state === 'done' ? <IconCheck /> : n}</div>
       </div>
-      <div>
+      <div className="qpi-step-text">
         <div className="qpi-step-badge-title">{title}</div>
         <div className="qpi-step-badge-sub">{subtitle}</div>
       </div>
+      {state === 'active' && <span className="qpi-step-pill qpi-step-pill-active">In Progress</span>}
+      {state === 'done' && <span className="qpi-step-pill qpi-step-pill-done">Completed</span>}
     </div>
   );
 }
@@ -3443,7 +3372,7 @@ function BasicForm(props: {
               value={form.opportunity}
               customerId={form.customerId}
               excludeWithPi
-              docType={form.docType}
+              docType={form.docType === 'International' || form.docType === 'Domestic' ? form.docType : undefined}
               onPick={(val, row) => onOpportunityChange(val, row)}
             />
           )}
@@ -3640,9 +3569,11 @@ function BasicForm(props: {
       </div>
 
       <div className={`qpi-note qpi-note-${theme}`}>
-        <span className="qpi-note-icon"><IconWarn /></span>
+        <div className="qpi-note-head">
+          <span className="qpi-note-icon"><IconWarn /></span>
+          <span className="qpi-note-title">Note</span>
+        </div>
         <div className="qpi-note-body">
-          <div className="qpi-note-line"><strong>Note</strong></div>
           <div className="qpi-note-line">
             <strong>Without Opportunity:</strong> You can create a general {partyKind === 'PI' ? 'PI' : 'quotation'} by directly selecting the customer; ensure the customer is fully created in the system. You do not need to select an Opportunity.
           </div>
@@ -3867,6 +3798,7 @@ function ProductsStep(props: {
         <SummaryItem label="Opportunity Date"  value={form.opportunityDate} />
         <SummaryItem label="Customer ID"       value={form.customer.split(' – ')[0] || ''} />
         <SummaryItem label="Customer Name"     value={form.customer.split(' – ')[1] || form.customer} />
+        {form.docType !== 'International' && <SummaryItem label="Customer GST No" value={form.customerGstNo} />}
         <SummaryItem label="Consignee ID"      value={form.consignee.split(' – ')[0] || ''} />
         <SummaryItem label="Consignee Name"    value={form.consignee.split(' – ')[1] || form.consignee} />
         <SummaryItem label="Document Type"     value={form.docType} />
@@ -3884,7 +3816,6 @@ function ProductsStep(props: {
         ) : (
           <>
             <SummaryItem label="State Code"      value={form.stateCode} />
-            <SummaryItem label="Customer GST No" value={form.customerGstNo} />
             <SummaryItem label="Dispatch From"   value={form.dispatchFrom} />
             <SummaryItem label="Deliver To"      value={form.deliverTo} />
             <SummaryItem
@@ -4104,12 +4035,6 @@ function SummaryItem(props: { label: string; value: string }) {
 }
 
 
-const IconBellSm = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-  </svg>
-);
 const IconFile = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
@@ -4187,20 +4112,14 @@ const SCOPED_CSS = `
   padding: 0;
   margin: 0;
   color: var(--vz-body-color);
-  /* 8px between the header block and the table: the header is the Supplier
-     list's (.sup-fig .cstrip), so app.css's HRMS-strip margins don't apply. */
   display: flex; flex-direction: column; gap: 8px;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
-/* Tabs 40px / 12.5px; search, document-type filter and the table-bar button stand the same 40px. */
 .qpi-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
 .qpi-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
-/* Left edges: header icon, banner icon and first tab start 19px in; right edges end 15px in. */
 .qpi-root .sup-fig .cstrip { padding-left: 18px; padding-right: 14px; }
 .qpi-root .sup-fig .cstrip__left { padding-left: 0; }
 .master-select-menu.qpi-doctype-menu { width: 186px !important; min-width: 186px !important; max-width: 186px !important; }
-/* Search, Doc Type filter and Create Quotation stretch to the tab rail's full height (40px tabs + the rail's padding and
-   border) so every control in the row is the same height; 40px floor for a wrapped row. */
 .qpi-root .qpi-tablebar { align-items: stretch; }
 .qpi-root .qpi-tablebar .dt-search,
 .qpi-root .qpi-tablebar .qpi-doctype-filter { height: auto; min-height: 40px; }
@@ -4261,13 +4180,17 @@ const SCOPED_CSS = `
 .qpi-doctype-filter {
   display: flex; align-items: center;
   position: relative;
-  height: 42px;
+  height: 48px; align-self: center;
   flex: 0 0 186px;
   width: 186px; min-width: 186px; max-width: 186px;
 }
 .qpi-doctype-filter > div { flex: 1 1 auto; width: 100%; min-width: 0; }
 .qpi-doctype-filter .master-select-wrap { width: 100% !important; }
-.qpi-doctype-filter .master-select-toggle { height: 42px; width: 100% !important; padding-left: 34px !important; }
+.qpi-doctype-filter .master-select-toggle { height: 48px; width: 100% !important; padding-left: 34px !important; }
+.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle {
+  box-sizing: border-box; height: 48px; min-height: 48px; border-radius: 11px;
+  display: flex; align-items: center;
+}
 .qpi-doctype-ico { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #7c3aed; pointer-events: none; z-index: 2; }
 [data-bs-theme="dark"] .qpi-doctype-ico { color: #c4b5fd; }
 .qpi-doctype-filter .master-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4745,7 +4668,6 @@ const SCOPED_CSS = `
 .qpi-modal-pill {
   background: rgba(255,255,255,.08);
   border: 1.5px solid rgba(255,255,255,.2);
-  /* Same height and corner as the ✕ beside it. */
   box-sizing: border-box; height: 40px;
   border-radius: 10px;
   padding: 0 12px;
@@ -4764,46 +4686,75 @@ const SCOPED_CSS = `
 .qpi-modal-close svg { width: 13px; height: 13px; }
 
 .qpi-modal-stepper {
-  display: flex; align-items: center; gap: 0;
-  padding: 10px 16px 8px;
+  display: flex; align-items: stretch; gap: 0;
+  padding: 12px 18px 10px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
 }
 .qpi-modal-step-divider {
-  flex: 0 0 56px;
-  height: 2px;
-  background: #e2e8f0;
-  margin: 0 0;
+  flex: 0 0 34px; display: flex; align-items: center; justify-content: center;
+  background: none; height: auto;
 }
+.qpi-modal-step-divider::before { content: '›'; font-size: 22px; line-height: 1; font-weight: 700; color: #94a3b8; }
 .qpi-step-badge {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 16px; border-radius: 10px;
-  border: 1.5px solid transparent;
+  --st-1: #0891b2; --st-2: #0e7490; --st-3: #155e75; --st-soft: #ecfeff; --st-soft2: #cffafe; --st-bd: #67e8f9; --st-rgb: 8,145,178; --st-ink: #164e63; --st-sub: #0e7490;
+  position: relative; flex: 1 1 0; min-width: 0;
+  display: flex; align-items: center; gap: 13px;
+  padding: 11px 16px; border-radius: 15px;
+  border: 1.5px solid #e2e8f0;
   background: #fff;
-  flex: 0 1 auto; min-width: 210px;
-  transition: all .15s;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.qpi-step-purple { --st-1: #8b5cf6; --st-2: #7c3aed; --st-3: #5b21b6; --st-soft: #f6f2ff; --st-soft2: #ece4fb; --st-bd: #a78bfa; --st-rgb: 124,58,237; --st-ink: #1e1b4b; --st-sub: #7c3aed; }
+.qpi-step-ico-wrap { position: relative; flex-shrink: 0; }
+.qpi-step-ico {
+  width: 38px; height: 38px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+  transition: all .25s;
 }
 .qpi-step-badge-num {
-  width: 26px; height: 26px; border-radius: 50%;
+  position: absolute; right: -4px; bottom: -4px;
+  width: 17px; height: 17px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 800;
-  flex-shrink: 0;
+  background: #fff; color: #64748b; border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px #cbd5e1;
+  font-size: 9.5px; font-weight: 800; line-height: 1;
 }
-.qpi-step-badge-title { font-size: 12px; font-weight: 800; line-height: 1.2; }
-.qpi-step-badge-sub   { font-size: 10px; color: #94a3b8; margin-top: 1px; line-height: 1.2; }
-.qpi-step-idle { background: #fff; border-color: #e2e8f0; }
-.qpi-step-idle .qpi-step-badge-num { background: #f1f5f9; color: #94a3b8; }
-.qpi-step-idle .qpi-step-badge-title { color: #94a3b8; }
-.qpi-step-active.qpi-step-teal   { background: #ecfeff; border-color: #67e8f9; box-shadow: 0 4px 12px rgba(8, 145, 178, .15); }
-.qpi-step-active.qpi-step-teal   .qpi-step-badge-num { background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff; }
-.qpi-step-active.qpi-step-teal   .qpi-step-badge-title { color: #0e7490; }
-.qpi-step-active.qpi-step-purple { background: #f5f3ff; border-color: #c4b5fd; box-shadow: 0 4px 12px rgba(124,58,237,.15); }
-.qpi-step-active.qpi-step-purple .qpi-step-badge-num { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
-.qpi-step-active.qpi-step-purple .qpi-step-badge-title { color: #6d28d9; }
-.qpi-step-done .qpi-step-badge-num { background: linear-gradient(135deg, #4ade80, #22c55e); color: #fff; }
+.qpi-step-badge-num svg { width: 9px; height: 9px; }
+.qpi-step-text { min-width: 0; flex: 1; }
+.qpi-step-badge-title { font-size: 13.5px; font-weight: 600; color: #475569; letter-spacing: -0.01em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qpi-step-badge-sub { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qpi-step-pill { flex-shrink: 0; padding: 4px 11px; border-radius: 99px; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; }
+.qpi-step-pill-active { background: linear-gradient(135deg, var(--st-1), var(--st-2)); box-shadow: 0 3px 8px rgba(var(--st-rgb), .4); }
+.qpi-step-pill-done { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 3px 8px rgba(22,163,74,.35); }
+.qpi-step-active {
+  border-color: var(--st-bd);
+  background: linear-gradient(135deg, var(--st-soft), var(--st-soft2));
+  box-shadow: 0 10px 26px rgba(var(--st-rgb), .2), 0 0 0 1px rgba(var(--st-rgb), .15), 0 1px 0 rgba(255,255,255,.8) inset;
+}
+.qpi-step-active .qpi-step-ico { background: linear-gradient(135deg, var(--st-1), var(--st-2), var(--st-3)); box-shadow: 0 6px 16px rgba(var(--st-rgb), .5), 0 1px 0 rgba(255,255,255,.4) inset; }
+.qpi-step-active .qpi-step-badge-num { color: var(--st-2); box-shadow: 0 0 0 1px rgba(var(--st-rgb), .55), 0 1px 3px rgba(var(--st-rgb), .28); }
+.qpi-step-active .qpi-step-badge-title { color: var(--st-ink); }
+.qpi-step-active .qpi-step-badge-sub { color: var(--st-sub); }
+.qpi-step-done { border-color: #86efac; background: linear-gradient(135deg, #f0fdf4, #d6fadf); box-shadow: 0 8px 22px rgba(34,197,94,.18), 0 1px 0 rgba(255,255,255,.7) inset; }
+.qpi-step-done .qpi-step-ico { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
+.qpi-step-done .qpi-step-badge-num { background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; box-shadow: 0 1px 3px rgba(22,163,74,.3); }
 .qpi-step-done .qpi-step-badge-title { color: #15803d; }
-.qpi-step-done.qpi-step-teal   { background: #f0fdfa; border-color: #99f6e4; }
-.qpi-step-done.qpi-step-purple { background: #f0fdf4; border-color: #bbf7d0; }
+.qpi-step-done .qpi-step-badge-sub { color: #4d9e6a; }
+[data-bs-theme="dark"] .qpi-modal-step-divider::before { color: #64748b; }
+[data-bs-theme="dark"] .qpi-step-idle { background: rgba(40,52,70,0.75); border-color: rgba(148,163,184,0.22); }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-ico { background: #232c44; color: #94a3b8; }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-num { background: #232c44; color: #cbd5e1; border-color: #11182a; box-shadow: none; }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-title { color: #cbd5e1; }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-sub { color: #94a3b8; }
+[data-bs-theme="dark"] .qpi-step-active { background: linear-gradient(135deg, rgba(var(--st-rgb), .32), rgba(var(--st-rgb), .16)); border-color: var(--st-bd); box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(var(--st-rgb), .15) inset; }
+[data-bs-theme="dark"] .qpi-step-active .qpi-step-badge-num { background: #0f172a; border-color: #0f172a; }
+[data-bs-theme="dark"] .qpi-step-active .qpi-step-badge-title { color: #f1f5f9; }
+[data-bs-theme="dark"] .qpi-step-active .qpi-step-badge-sub { color: var(--st-bd); }
+[data-bs-theme="dark"] .qpi-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.45) 0%, rgba(16,185,129,0.20) 100%); border-color: #34d399; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .qpi-step-done .qpi-step-badge-title { color: #d1fae5; }
+[data-bs-theme="dark"] .qpi-step-done .qpi-step-badge-sub { color: #6ee7b7; }
 
 .qpi-modal-body {
   padding: 12px 18px;
@@ -4927,16 +4878,21 @@ const SCOPED_CSS = `
 
 .qpi-note {
   margin-top: 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: linear-gradient(110deg, #fffbeb 0%, #fef3c7 100%);
   border: 1px solid #fde68a; border-radius: 8px;
-  display: flex; gap: 10px; align-items: flex-start;
 }
-.qpi-note-icon { color: #d97706; flex-shrink: 0; margin-top: 1px; }
-.qpi-note-icon svg { width: 14px; height: 14px; }
-.qpi-note-body { flex: 1; }
+/* Icon and title share one centred row; the lines below are indented by the
+   icon's width + gap so every line starts under the title text. */
+.qpi-note-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.qpi-note-icon { color: #d97706; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
+.qpi-note-icon svg { width: 15px; height: 15px; display: block; }
+.qpi-note-title { font-size: 11.5px; font-weight: 800; color: #92400e; line-height: 16px; letter-spacing: .02em; }
+.qpi-note-body { padding-left: 24px; }
 .qpi-note-line { font-size: 11px; color: #78350f; line-height: 1.45; }
-.qpi-note-line + .qpi-note-line { margin-top: 2px; }
+.qpi-note-line + .qpi-note-line { margin-top: 4px; }
+.qpi-note-teal .qpi-note-title { color: #0c4a6e; }
+.qpi-note-purple .qpi-note-title { color: #4c1d95; }
 .qpi-note-line strong { color: #92400e; font-weight: 800; }
 .qpi-note-teal { background: linear-gradient(110deg, #ecfeff 0%, #cffafe 100%); border-color: #a5f3fc; }
 .qpi-note-teal .qpi-note-icon { color: #0e7490; }
@@ -4948,7 +4904,7 @@ const SCOPED_CSS = `
 .qpi-note-purple .qpi-note-line strong { color: #4c1d95; }
 
 .qpi-order-summary {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 14px;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 14px;
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid;
@@ -4981,7 +4937,19 @@ const SCOPED_CSS = `
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
+  border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;
+  box-shadow: 0 1px 3px rgba(15,23,42,.05);
 }
+.qpi-products-table tbody tr:nth-child(even):not(.qpi-products-input-row) td { background: #fafbff; }
+.qpi-products-table tbody tr:not(.qpi-products-input-row):hover td { background: #f3f6fd; }
+[data-bs-theme="dark"] .qpi-products-wrap {
+  border-color: rgba(34,211,238,.28); background: rgba(255,255,255,.03);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .qpi-products-table tbody tr:nth-child(even):not(.qpi-products-input-row) td { background: rgba(255,255,255,.025); }
+[data-bs-theme="dark"] .qpi-products-table tbody tr:not(.qpi-products-input-row):hover td { background: rgba(34,211,238,.06); }
+[data-bs-theme="dark"] .qpi-products-wrap:has(.qpi-pt-purple) { border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .qpi-products-wrap:has(.qpi-pt-purple) .qpi-products-table tbody tr:not(.qpi-products-input-row):hover td { background: rgba(167,139,250,.08); }
 .qpi-products-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
 .qpi-products-wrap::-webkit-scrollbar-track { background: transparent; }
 .qpi-products-wrap::-webkit-scrollbar-thumb {
@@ -5265,57 +5233,36 @@ const SCOPED_CSS = `
 }
 
 [data-bs-theme="dark"] .qpi-modal {
-  background: #1a1530;
+  background: #0b1220;
   box-shadow: 0 25px 60px rgba(0,0,0,.65);
 }
 [data-bs-theme="dark"] .qpi-modal-stepper {
-  background: #14101d;
-  border-bottom-color: rgba(167,139,250,.20);
+  background: #0c1322;
+  border-bottom-color: rgba(148,163,184,.16);
 }
-[data-bs-theme="dark"] .qpi-step-idle {
-  background: rgba(255,255,255,.04);
-  border-color: rgba(167,139,250,.20);
-}
-[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-num { background: #2a2342; color: #7a6b9a; }
-[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-title { color: #9aa0b4; }
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-teal,
-[data-bs-theme="dark"] .qpi-step-done.qpi-step-teal {
-  background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.45);
-}
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-purple,
-[data-bs-theme="dark"] .qpi-step-done.qpi-step-purple {
-  background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.45);
-}
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-teal .qpi-step-badge-title   { color: #67e8f9; }
-[data-bs-theme="dark"] .qpi-step-active.qpi-step-purple .qpi-step-badge-title { color: #c4b5fd; }
-[data-bs-theme="dark"] .qpi-step-done .qpi-step-badge-title                   { color: #86efac; }
-[data-bs-theme="dark"] .qpi-step-badge-sub { color: #7a6b9a; }
-[data-bs-theme="dark"] .qpi-modal-step-divider { background: rgba(167,139,250,.20); }
-
-[data-bs-theme="dark"] .qpi-modal-body { background: #221a3a; color: #e9d5ff; }
-[data-bs-theme="dark"] .qpi-field-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-modal-body { background: #0c1322; color: #e2e8f0; }
 [data-bs-theme="dark"] .qpi-input,
 [data-bs-theme="dark"] .qpi-textarea {
-  background: #0f0c19;
-  border-color: rgba(167,139,250,.25);
-  color: #e9d5ff;
+  background: #0f172a;
+  border-color: rgba(148,163,184,.22);
+  color: #e2e8f0;
 }
 [data-bs-theme="dark"] .qpi-input::placeholder,
-[data-bs-theme="dark"] .qpi-textarea::placeholder { color: #7a6b9a; }
+[data-bs-theme="dark"] .qpi-textarea::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .qpi-input:focus,
 [data-bs-theme="dark"] .qpi-textarea:focus {
   border-color: #a78bfa;
   box-shadow: 0 0 0 3px rgba(167,139,250,.20);
 }
 [data-bs-theme="dark"] .qpi-input-readonly {
-  background: #0f0c19; color: #9aa0b4; cursor: not-allowed;
+  background: #0f172a; color: #9aa0b4; cursor: not-allowed;
 }
 [data-bs-theme="dark"] .qpi-field-label { color: #cbd5e1; }
 [data-bs-theme="dark"] .qpi-modal-body .master-select-toggle {
-  background-color: #0f0c19; border-color: rgba(167,139,250,.25); color: #e9d5ff;
+  background-color: #0f172a; border-color: rgba(148,163,184,.22); color: #e2e8f0;
 }
 [data-bs-theme="dark"] .qpi-modal-body .master-select-toggle:hover:not(:disabled) {
-  border-color: rgba(167,139,250,.45);
+  border-color: rgba(148,163,184,.40);
 }
 [data-bs-theme="dark"] .qpi-modal-body .master-select-wrap.show .master-select-toggle {
   border-color: #a78bfa !important;
@@ -5330,6 +5277,8 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .qpi-note-line   { color: #fde68a; }
 [data-bs-theme="dark"] .qpi-note-line strong { color: #fcd34d; }
+[data-bs-theme="dark"] .qpi-note-title { color: #fcd34d; }
+[data-bs-theme="dark"] .qpi-note-icon  { color: #fbbf24; }
 
 [data-bs-theme="dark"] .qpi-order-summary-purple { background: rgba(124,58,237,.15); border-color: rgba(167,139,250,.35); }
 [data-bs-theme="dark"] .qpi-order-summary-teal   { background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.35); }
@@ -5344,7 +5293,7 @@ const SCOPED_CSS = `
   border-bottom-color: rgba(167,139,250,.15); color: #d4d1de;
 }
 [data-bs-theme="dark"] .qpi-products-input-row td {
-  background: #1c1538;
+  background: #111a2e;
   box-shadow: inset 0 1px 0 0 rgba(167,139,250,.25);
 }
 [data-bs-theme="dark"] .qpi-products-wrap { scrollbar-color: rgba(255,255,255,.18) transparent; }
@@ -5373,8 +5322,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-summary-purple .qpi-summary-grand { border-top-color: rgba(167,139,250,.45); color: #c4b5fd; }
 
 [data-bs-theme="dark"] .qpi-modal-foot {
-  background: #1a1530;
-  border-top-color: rgba(167,139,250,.20);
+  background: #0b1220;
+  border-top-color: rgba(148,163,184,.16);
 }
 [data-bs-theme="dark"] .qpi-btn-back {
   background: rgba(167,139,250,.10);
@@ -5453,30 +5402,54 @@ const SCOPED_CSS = `
   .qpi-convert-btn { padding: 6px 8px; }
 }
 
-/* Search = the tab rail's track: the same 1px border, 3px padding and tint as
-   .dt-tabs (so both stand 48px), with the 40px field drawn inside it by ::before
-   — the icon, input and clear button all sit inside that field. */
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
   position: relative;
-  min-height: 48px;
-  padding: 3px 14px 3px 38px;
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  border: 0;
+  background: transparent;
   border-radius: 11px;
   box-shadow: none;
 }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before {
-  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
-  border-radius: 8px;
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  border-radius: 11px;
   background: var(--vz-card-bg, #fff);
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
   transition: border-color .16s, box-shadow .16s;
 }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search > * { position: relative; z-index: 1; }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search .dt-search-icon { position: absolute; }
-.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within { border: 0; box-shadow: none; }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
-[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
-[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
+[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search { background: transparent; border: 0; }
+[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before { background: #110c25; border-color: #3b2a6b; }
+/* Doc Type dropdown: the same near-black surface as the search bar beside it
+   (and the Add Customer inputs). The active-filter tint still wins. */
+[data-bs-theme="dark"] .qpi-root .qpi-tablebar .qpi-doctype-filter:not(.active) .master-select-wrap:not(.show) .master-select-toggle {
+  background: #110c25 !important; border-color: #3b2a6b !important;
+}
+[data-bs-theme="dark"] .qpi-root .qpi-tablebar .qpi-doctype-filter:not(.active) .master-select-wrap:not(.show) .master-select-toggle:hover {
+  border-color: #a78bfa !important;
+}
+
+/* List toolbar sizes: the tab rail keeps its 48px (40px tab inside); the search bar, the Doc Type
+   filter and the Create Quotation / Create PI button are 40px, centred on the rail, and all
+   read 12.5px. Before, the bar stretched them to the rail's 48px and Create read 11.5px. */
+.qpi-root .qpi-card .qpi-tablebar { align-items: center; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
+  box-sizing: border-box; height: 40px; min-height: 40px; align-self: center;
+}
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search input { font-size: 12.5px; }
+.qpi-root .qpi-card .qpi-tablebar .qpi-doctype-filter {
+  height: 40px; min-height: 40px; align-self: center;
+}
+.qpi-root .qpi-card .qpi-tablebar .qpi-doctype-filter .master-select-toggle {
+  height: 40px; min-height: 40px; font-size: 12.5px;
+}
+.qpi-root .qpi-card .qpi-tablebar .qpi-doctype-filter .master-select-value { font-size: 12.5px; }
+.qpi-root .qpi-card .qpi-tablebar .cstrip__action-btn {
+  box-sizing: border-box; height: 40px; min-height: 40px; align-self: center; font-size: 12.5px;
+}
 
 `;

@@ -5,38 +5,12 @@ namespace App\Services;
 use App\Mail\AnnouncementPublishedMail;
 use App\Models\Announcement;
 use App\Models\Branch;
-use App\Models\Client;
 use App\Models\Employee;
 use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
-/**
- * Resolves recipients for a published announcement and dispatches the
- * AnnouncementPublishedMail to each one. Recipient logic mirrors the
- * tenant scoping used elsewhere in the announcement flow:
- *
- *   - Branch-scoped announcement (branch_id is set, e.g. created by a
- *     branch_user) → mail goes to every employee of THAT branch only,
- *     filtered by the audience selection.
- *
- *   - Client-scoped announcement (client_id set, branch_id null,
- *     e.g. created by a client_admin/client_user) → mail goes to every
- *     employee under that client AND each branch's contact email,
- *     filtered by the audience selection.
- *
- *   - Platform-scoped (both null, super_admin) → every matching employee
- *     across all clients.
- *
- * Audience filter (roles / designations / exclusions) is honoured for
- * employees only — branch contact emails always receive client-wide
- * announcements so the branch ops team is in the loop.
- *
- * Failures are logged but never re-thrown — the announcement was already
- * persisted before this is called, and a transient SMTP issue must not
- * roll back the publish.
- */
 class AnnouncementMailer
 {
     public function sendForAnnouncement(Announcement $announcement, ?User $publisher = null): void
@@ -68,12 +42,6 @@ class AnnouncementMailer
 
             foreach ($recipients as $email => $name) {
                 try {
-                    // Delivered synchronously, but the CALLER wraps this whole
-                    // method in defer() so it runs AFTER the HTTP response is
-                    // flushed — the publish request never blocks on SMTP, and a
-                    // slow/unreachable host can't time the request out or roll
-                    // back the already-committed announcement. This keeps
-                    // delivery working without a running queue worker.
                     Mail::to($email)->send(new AnnouncementPublishedMail(
                         $announcement,
                         $name ?: 'there',
@@ -81,7 +49,6 @@ class AnnouncementMailer
                         $orgName,
                     ));
                 } catch (\Throwable $perRecipient) {
-                    // One bad address shouldn't sink the rest of the blast.
                     Log::warning('Announcement mail failed for recipient', [
                         'announcement_id' => $announcement->id,
                         'email'           => $email,
@@ -97,17 +64,11 @@ class AnnouncementMailer
         }
     }
 
-    /**
-     * Build a [email => name] map of unique recipients for this
-     * announcement, deduped by lowercase email so a person who has the
-     * same address as a branch contact doesn't get two copies.
-     */
     private function resolveRecipients(Announcement $announcement): array
     {
         $clientId = $announcement->client_id;
         $branchId = $announcement->branch_id;
 
-        // Employees matching the audience filter.
         $employees = $this->fetchEmployees(
             $clientId,
             $branchId,
@@ -129,10 +90,6 @@ class AnnouncementMailer
             $out[$key] = ['email' => $email, 'name' => $name];
         }
 
-        // Branch contact emails — only when the announcement is client-wide
-        // (branch_id null). For branch-scoped announcements the branch user
-        // already has the announcement; flooding the same inbox would
-        // duplicate the message.
         if ($clientId && !$branchId) {
             $branches = Branch::where('client_id', $clientId)
                 ->whereNotNull('email')
@@ -146,7 +103,6 @@ class AnnouncementMailer
             }
         }
 
-        // Flatten to [email => name].
         $flat = [];
         foreach ($out as $row) {
             $flat[$row['email']] = $row['name'];
@@ -154,10 +110,6 @@ class AnnouncementMailer
         return $flat;
     }
 
-    /**
-     * Mirror of AnnouncementController::computeAudienceCount but returning
-     * the actual rows (with email + display name) rather than a count.
-     */
     private function fetchEmployees(
         $clientId,
         $branchId,

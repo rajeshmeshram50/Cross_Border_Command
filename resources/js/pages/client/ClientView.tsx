@@ -98,14 +98,14 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
            pencil on each row — a second entry point here only split the action
            across two screens. */
         .cv-hero-actions {
-          position: absolute; top: 16px; right: 16px; z-index: 3;
+          position: absolute; top: 12px; right: 12px; z-index: 3;
           display: inline-flex; align-items: center;
         }
         /* The close X replaces Back: on a detail view opened from a list, the
            action is "shut this", and a cross says that in one glyph. */
         .cv-hero-close {
           display: inline-flex; align-items: center; justify-content: center;
-          width: 36px; height: 36px;
+          width: 30px; height: 30px;
           border-radius: 999px;
           border: 1px solid rgba(255, 255, 255, 0.38);
           background: rgba(255, 255, 255, 0.16);
@@ -118,7 +118,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
           border-color: rgba(255, 255, 255, 0.6);
           transform: translateY(-1px);
         }
-        .cv-hero-close i { font-size: 18px; line-height: 1; }
+        .cv-hero-close i { font-size: 15px; line-height: 1; }
 
         /* Back is an ACTION, so it has to look like one. As a reactstrap
            light-coloured button it rendered white-on-white against this strip
@@ -248,17 +248,17 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
           they now sit ON the hero, where the eye already is. */}
 
       {/* ── Hero banner — velzon-style profile cover with all hero content inside ── */}
-      <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 20 }}>
+      <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 16 }}>
         <div
           className="position-relative overflow-hidden cv-hero"
-          style={{ padding: '32px 32px 28px' }}
+          style={{ padding: '18px 20px 16px' }}
         >
           <div className="cv-hero-actions">
             <button type="button" className="cv-hero-close" onClick={onBack} aria-label="Close">
               <i className="ri-close-line" />
             </button>
           </div>
-          <Row className="g-4 align-items-center position-relative flex-nowrap">
+          <Row className="g-3 align-items-center position-relative flex-nowrap">
             <Col xs="auto">
               {(() => {
                 // Profile photo wins over logo (it's the more "human" avatar);
@@ -270,9 +270,9 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                     alt=""
                     className="rounded-circle"
                     style={{
-                      width: 120, height: 120, objectFit: 'cover',
+                      width: 76, height: 76, objectFit: 'cover',
                       background: '#fff',
-                      padding: 4,
+                      padding: 3,
                       border: '1px solid rgba(255,255,255,0.3)',
                       boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
                     }}
@@ -281,10 +281,10 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                   <div
                     className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
                     style={{
-                      width: 110, height: 110, fontSize: 40,
+                      width: 76, height: 76, fontSize: 26,
                       background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
                       color: '#fff',
-                      border: '3px solid rgba(255,255,255,0.3)',
+                      border: '2px solid rgba(255,255,255,0.3)',
                       backdropFilter: 'blur(6px)',
                       boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
                     }}
@@ -296,12 +296,12 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
             </Col>
 
             <Col className="min-w-0">
-              <h3 className="text-white mb-1 fw-semibold">{client.org_name}</h3>
-              <p className="mb-2" style={{ color: 'rgba(255,255,255,0.85)' }}>
+              <h3 className="text-white mb-1 fw-semibold" style={{ fontSize: 20, letterSpacing: '-.3px' }}>{client.org_name}</h3>
+              <p className="mb-1" style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12.5 }}>
                 <i className="ri-building-line align-bottom me-1"></i>
                 {client.org_type}{client.industry && <> &middot; {client.industry}</>}
               </p>
-              <div className="d-flex gap-3 flex-wrap" style={{ color: 'rgba(255,255,255,0.75)' }}>
+              <div className="d-flex gap-3 flex-wrap" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12.5 }}>
                 {location && (
                   <div>
                     <i className="ri-map-pin-user-line me-1 fs-16 align-middle" style={{ color: 'rgba(255,255,255,0.9)' }}></i>
@@ -318,32 +318,32 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
             </Col>
 
             <Col xs="auto">
-              <div className="d-flex align-items-center gap-3">
+              <div className="d-flex align-items-center gap-2">
                 <div
-                  className="text-center px-3 py-2"
+                  className="text-center px-3 py-1"
                   style={{
                     background: 'rgba(255,255,255,0.12)',
                     border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 14,
+                    borderRadius: 12,
                     backdropFilter: 'blur(6px)',
-                    minWidth: 92,
+                    minWidth: 78,
                   }}
                 >
-                  <h3 className="text-white mb-0 fw-bold lh-1">{client.branches_count ?? 0}</h3>
-                  <p className="fs-12 mb-0 mt-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em' }}>Branches</p>
+                  <h3 className="text-white mb-0 fw-bold lh-1" style={{ fontSize: 20 }}>{client.branches_count ?? 0}</h3>
+                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em', fontSize: 10.5, marginTop: 2 }}>Branches</p>
                 </div>
                 <div
-                  className="text-center px-3 py-2"
+                  className="text-center px-3 py-1"
                   style={{
                     background: 'rgba(255,255,255,0.12)',
                     border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 14,
+                    borderRadius: 12,
                     backdropFilter: 'blur(6px)',
-                    minWidth: 92,
+                    minWidth: 78,
                   }}
                 >
-                  <h3 className="text-white mb-0 fw-bold lh-1">{client.users_count ?? 0}</h3>
-                  <p className="fs-12 mb-0 mt-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em' }}>Users</p>
+                  <h3 className="text-white mb-0 fw-bold lh-1" style={{ fontSize: 20 }}>{client.users_count ?? 0}</h3>
+                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em', fontSize: 10.5, marginTop: 2 }}>Users</p>
                 </div>
               </div>
             </Col>

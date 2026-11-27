@@ -573,18 +573,28 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 
   // ── Lifecycle transitions (sender side) ──
   // After a rejection: push the corrected draft back for internal review.
-  const resubmitDraft = async () => {
-    if (!workingId || resubmitting) return;
-    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); setStage(1); return; }
+  // `approval` (optional) = the approver list chosen in the resubmit popup. The
+  // resubmit endpoint replaces the approvers when one is sent; without it the
+  // previous approvers are reset to pending, as before.
+  const resubmitDraft = async (approval?: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }): Promise<boolean> => {
+    if (!workingId || resubmitting) return false;
+    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); setStage(1); return false; }
     setResubmitting(true);
     try {
-      await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, { content: draft || null, title: agTitle, page_config: { margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }, header_config: header, footer_config: footer });
-      toast.success('Resubmitted', 'Revised draft sent back for internal review.');
+      await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, {
+        content: draft || null, title: agTitle, page_config: { margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }, header_config: header, footer_config: footer,
+        ...(approval ? { approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder } : {}),
+      });
       await refreshRecord();
       goStage(2);
-    } catch (e) { toast.error('Could not resubmit', errMsg(e) || 'Please try again.'); }
+      toast.success('Resubmitted', 'Revised draft sent back for internal review.');
+      return true;
+    } catch (e) { toast.error('Could not resubmit', errMsg(e) || 'Please try again.'); return false; }
     finally { setResubmitting(false); }
   };
+  /* The approvers of the last round, for pre-filling the resubmit popup. The
+     one who rejected carries a "Rejected" tag so the sender can drop or keep them. */
+  const prevApprovers = (Array.isArray(record?.approvers) ? record!.approvers : []) as { name?: string; email?: string; role?: string; mandatory?: boolean; status?: string }[];
 
   // Approved → after choosing signers, open the positioning step where the
   // user drags each signer's signature box, then sends via Zoho Sign.
@@ -741,7 +751,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
               editLock={editLock} lockReason={lockReason} signedUrl={signedDocUrl}
-              resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft} resubmitting={resubmitting}
+              resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft} resubmitting={resubmitting} prevApprovers={prevApprovers}
               declineReason={signDecline?.reason} declinedBy={signDecline?.by}
               onNext={() => goStage(2)}
             />
@@ -843,7 +853,8 @@ function Stage1(p: {
   margins: CtcMargins; setMargins: (m: CtcMargins) => void;
   isEditing: boolean; onUpdate: () => void;
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>;
-  resubmitMode: boolean; onResubmit: () => void; resubmitting?: boolean;
+  resubmitMode: boolean; onResubmit: (approval?: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>; resubmitting?: boolean;
+  prevApprovers?: { name?: string; email?: string; role?: string; mandatory?: boolean; status?: string }[];
   declineReason?: string; declinedBy?: string;
   // Draft is view-only unless it's fresh / internally-rejected / counterparty-
   // declined. lockReason explains why (awaiting approval, out for signature, signed).
@@ -884,6 +895,7 @@ function Stage1(p: {
   const [phOpen, setPhOpen] = useState(false);                  // placeholder picker
   const [clauseOpen, setClauseOpen] = useState(false);          // clause library picker
   const [approvalOpen, setApprovalOpen] = useState(false);      // Review & Approval Workflow popup
+  const [resubmitApprovalOpen, setResubmitApprovalOpen] = useState(false); // same popup, for a resubmit after rejection
   // TipTap-backed rich editor (replaces the old contentEditable + execCommand
   // machinery). The hook owns the ProseMirror document model, formatting-toolbar
   // commands, caret-safe insertion, and debounced sync back to the parent draft.
@@ -1265,26 +1277,29 @@ function Stage1(p: {
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="9" y1="12" x2="9" y2="12" /><line x1="9" y1="15" x2="9" y2="15" /></svg>
                 </div>
-                <span style={{ flex: 1, fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>Our Organisation Details</span>
-                <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '3px 9px' }}>{orgPct}%</span>
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>Our Organisation Details</span>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '3px 9px' }}>{orgPct}%</span>
               </div>
               <div style={{ padding: 10 }}>
             <div style={{ position: 'relative' }}>
               {!p.org ? (
-                <div onClick={() => { if (!prevLocked) p.setOrgOpen(!p.orgOpen); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1.5px dashed #C4B5FD', background: 'transparent', cursor: prevLocked ? 'not-allowed' : 'pointer', opacity: prevLocked ? 0.5 : 1 }}>
-                  <div style={{ width: 15, height: 15, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></div>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED' }}>Select Organisation</span>
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', transform: p.orgOpen ? 'rotate(180deg)' : 'none' }}><polyline points="6 9 12 15 18 9" /></svg>
+                /* A 40px picker row, not a 9px label in a bright dashed outline:
+                   the #C4B5FD dash glared on the dark card and the text was
+                   smaller than every field around it. */
+                <div onClick={() => { if (!prevLocked) p.setOrgOpen(!p.orgOpen); }} style={{ display: 'flex', alignItems: 'center', gap: 9, height: 40, padding: '0 12px', boxSizing: 'border-box', borderRadius: 10, border: `1.5px dashed ${t.dark ? 'rgba(167,139,250,.38)' : '#C4B5FD'}`, background: t.dark ? 'rgba(124,58,237,.08)' : '#FAF7FF', cursor: prevLocked ? 'not-allowed' : 'pointer', opacity: prevLocked ? 0.5 : 1 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>Select Organisation</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#A78BFA'} strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', transform: p.orgOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
               ) : (
                 <div style={{ borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Organisation</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
-                    <div style={{ flex: 1, minWidth: 0 }}><div title={p.org.name.length > 25 ? p.org.name : undefined} style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.org.name.length > 25 ? p.org.name.slice(0, 25) + '…' : p.org.name}</div><div style={{ fontSize: 8.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
-                    {!prevLocked && <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Organisation</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 8px' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 11.5, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
+                    <div style={{ flex: 1, minWidth: 0 }}><div title={p.org.name.length > 25 ? p.org.name : undefined} style={{ fontSize: 12.5, fontWeight: 800, color: t.textStrong, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.org.name.length > 25 ? p.org.name.slice(0, 25) + '…' : p.org.name}</div><div style={{ fontSize: 10, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
+                    {!prevLocked && <button onClick={p.onResetOrg} style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
                   </div>
-                  <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <OrgDetail t={t} label="Country" text={p.org.country} /><OrgDetail t={t} label="State" text={p.org.state} /><OrgDetail t={t} label="Short Code" text={p.org.shortCode} />
                   </div>
                 </div>
@@ -1408,14 +1423,31 @@ function Stage1(p: {
 
             {/* ══ STEP 2 — Agreement Basic Details ══ */}
             {midStep === 2 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Agreement Basics */}
-                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
+              /* Grows to the panel's foot and lets the Agreement Details card
+                 stretch, so the workspace ends at the Back / Next bar instead
+                 of leaving a blank band above it. 1 0 auto: never shrinks below
+                 its content, so a short screen still scrolls as before. */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: '1 0 auto' }}>
+                {/* Agreement Basics - grows by the same share as Agreement Details
+                    below, so the spare height is split between the two cards
+                    instead of all landing in the second one. */}
+                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ padding: '11px 14px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE 0%,#F3F0FF 40%,#E8E2FF 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
                   </div>
-                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'start' }}>
+                  {/* Equal halves, and the Type dropdown dressed as the Title input
+                      beside it - same height, border, radius, fill and text size
+                      (QA #76). Scoped to .ctc-agtype so no other MasterSelect moves. */}
+                  <style>{`
+                    .ctc-agtype .master-select-toggle,
+                    .ctc-agdate .master-datepicker-toggle { height: 40px !important; min-height: 40px !important; padding-top: 0 !important; padding-bottom: 0 !important; border: 1.5px solid ${t.searchBorder} !important; border-radius: 9px !important; background: ${t.dark ? 'rgba(255,255,255,.04)' : '#fff'} !important; font-size: 12.5px !important; font-weight: 500 !important; color: ${t.text} !important; box-shadow: none !important; }
+                    .ctc-agtype .master-select-toggle *, .ctc-agdate .master-datepicker-toggle * { font-size: 12.5px !important; }
+                    .ctc-agdate .master-datepicker-toggle:disabled { background: ${t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC'} !important; }
+                    .ctc-agtype .master-select-placeholder { color: ${t.textMuted} !important; }
+                    .ctc-agtype .master-select-toggle:disabled, .ctc-agtype .master-select-toggle.disabled { background: ${t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC'} !important; opacity: 1 !important; }
+                  `}</style>
+                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, alignItems: 'start' }}>
                     {/* 255-char limit enforced + surfaced WHILE typing (QA #43) —
                         maxLength hard-stops entry and the inline message shows the
                         moment the cap is hit, instead of only failing at Submit for
@@ -1425,28 +1457,28 @@ function Stage1(p: {
                       label="Agreement Title *"
                       counter={
                         <span style={{
-                          fontSize: 9, fontWeight: 800, letterSpacing: 0, textTransform: 'none',
+                          fontSize: 9, lineHeight: 1, fontWeight: 800, letterSpacing: 0, textTransform: 'none',
                           // Amber at the cap — the same "you've hit the limit" cue
                           // the Trade Document / Agreement Wizard titles use.
                           color: p.agTitle.length >= AG_TITLE_MAX ? '#b45309' : (t.dark ? 'rgba(255,255,255,.5)' : '#94a3b8'),
                         }}>{p.agTitle.length}/{AG_TITLE_MAX}</span>
                       }
                       error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= AG_TITLE_MAX ? `Agreement title cannot exceed ${AG_TITLE_MAX} characters.` : undefined)}
-                    ><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, AG_TITLE_MAX))} maxLength={AG_TITLE_MAX} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
+                    ><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, AG_TITLE_MAX))} maxLength={AG_TITLE_MAX} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, height: 40, fontSize: 12.5, fontWeight: 500, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
-                      <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
+                      <div className="ctc-agtype"><MasterSelect optionTipPosition="top" value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} /></div>
                     </Field>
                   </div>
                 </div>
 
                 {/* Agreement Details */}
-                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.3)' : '#BBF7D0'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
+                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.3)' : '#BBF7D0'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ padding: '11px 14px', background: t.dark ? 'rgba(16,185,129,.12)' : 'linear-gradient(110deg,#ECFDF5 0%,#F0FDF9 40%,#D1FAE5 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(16,185,129,.25)' : '#A7F3D0'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>Effective &amp; end dates</div></div>
                   </div>
-                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
+                  <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div className="ctc-agdate" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, alignItems: 'start' }}>
                       {/* minDate stops a past date being PICKED; effBeforeToday
                           still has to exist because an already-saved draft can
                           carry one from before this guard, and the picker alone
@@ -1627,7 +1659,7 @@ function Stage1(p: {
                 );
               })()
             ) : p.resubmitMode ? (
-              <button onClick={() => { if (!p.resubmitting && validateAll()) p.onResubmit(); }} disabled={p.resubmitting} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: p.resubmitting ? 'wait' : 'pointer', opacity: p.resubmitting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
+              <button onClick={() => { if (!p.resubmitting && validateAll()) setResubmitApprovalOpen(true); }} disabled={p.resubmitting} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: p.resubmitting ? 'wait' : 'pointer', opacity: p.resubmitting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
                 {p.resubmitting
                   ? <svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                   : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>}
@@ -1647,6 +1679,31 @@ function Stage1(p: {
         </Panel>
       </div>
       {approvalOpen && <ApprovalWorkflowModal t={t} orgName={p.org?.name ?? 'Our Organisation'} onClose={() => setApprovalOpen(false)} onSubmit={(data) => p.onSubmitForApproval(data)} />}
+      {/* Resubmit after a rejection: the same approver popup, pre-filled with
+          the last round's approvers (the one who rejected is tagged), so the
+          sender can keep them, drop them, or add someone new. */}
+      {resubmitApprovalOpen && (
+        <ApprovalWorkflowModal
+          t={t}
+          orgName={p.org?.name ?? 'Our Organisation'}
+          mode="resubmit"
+          initial={(p.prevApprovers ?? []).filter(a => a.email || a.name).map((a, i) => ({
+            name: String(a.name || a.email || 'Approver'),
+            email: String(a.email || ''),
+            role: String(a.role || ''),
+            initials: orgInitials(String(a.name || a.email || '')),
+            grad: ORG_GRADS[i % ORG_GRADS.length],
+            tags: [
+              ...(a.role ? [[String(a.role), '#7C3AED']] as [string, string][] : []),
+              ...(a.status === 'rejected' ? [['Rejected', '#DC2626']] as [string, string][] : []),
+              ...(a.status === 'approved' ? [['Approved', '#059669']] as [string, string][] : []),
+            ],
+            locked: false,
+          }))}
+          onClose={() => setResubmitApprovalOpen(false)}
+          onSubmit={async (data) => { const ok = await p.onResubmit(data); if (ok) setResubmitApprovalOpen(false); return ok; }}
+        />
+      )}
 
       {/* Evidence Vault — opened from a counterparty's compliance ring so the
           user can upload the missing mandatory documents; on close the CP's
@@ -1821,14 +1878,17 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             </div>
             <span onClick={() => setVhOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.9)' }}>Download</span></span>
           </div>
-          <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px' }}>
+          {/* Column so the agreement sheet can grow to the panel's foot: a short
+              draft read as a half-finished page with a blank band below it. A
+              long one still grows past it and scrolls, as before. */}
+          <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px', display: 'flex', flexDirection: 'column' }}>
             {stage === 4 && signedUrl ? (
               /* Final repository → the fully-signed PDF rendered as page canvases
                  (pdf.js) so it flows inside this column's own scrollbar — no black
                  native-viewer chrome, no inner scrollbar. */
               <SignedPdfViewer t={t} signatureRequestId={Number(record?.signature_request_id) || null} signedUrl={signedUrl} />
             ) : (
-            <div style={{ width: '100%', maxWidth: 820, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 48px', position: 'relative' }}>
+            <div style={{ width: '100%', maxWidth: 820, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 48px', position: 'relative', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: stage === 4 ? 'linear-gradient(90deg,#047857,#059669,#10B981)' : 'linear-gradient(90deg,#4C1D95,#7C3AED,#A78BFA)', borderRadius: '6px 6px 0 0' }} />
               {/* Configured document header from Stage 1 — logo + title are
                   free-positioned via logo_pos / title_pos (% of the band, centre
@@ -1854,8 +1914,11 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               {draft
                 ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
                 : <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.7, textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }}>No agreement content drafted yet.</div>}
-              {/* Configured document footer (text + pagination) from Stage 1 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: bandBg(footer.background), color: bandFg(footer.text_color), fontSize: 9, fontWeight: 500 }}>
+              {/* Configured document footer (text + pagination) from Stage 1 -
+                  held at the bottom of the sheet like a real page footer; the
+                  spacer keeps the old 26px gap when the text fills the sheet. */}
+              <div style={{ height: 26, flexShrink: 0 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 'auto', paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: bandBg(footer.background), color: bandFg(footer.text_color), fontSize: 9, fontWeight: 500 }}>
                 {(['left', 'center', 'right'] as const).map(cell => {
                   const pn = footer.page_number_format === 'N' ? '1' : footer.page_number_format === 'Page N' ? 'Page 1' : footer.page_number_format === 'N / M' ? '1 / 1' : 'Page 1 of 1';
                   return (
@@ -2105,7 +2168,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                     : versions.map(v => {
                         const meta = ctcTimelineMeta(v.status);
                         const reason = (v as { reason?: string }).reason;
-                        return { tone: meta.tone, title: meta.title, badge: v.status || meta.title, sub: reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label, date: v.date, by: v.by };
+                        return { tone: meta.tone, title: meta.title, badge: meta.badge ?? (v.status || meta.title), sub: reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label, date: v.date, by: v.by };
                       });
                   // One "Requested" item per query + a "Answered" item when the
                   // sender has replied. The answer uses its own `response_date`
@@ -2333,14 +2396,14 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
         </div>
         {/* footer */}
         <div style={{ flexShrink: 0, padding: '12px 18px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sent via secure e-sign link</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden' }}><svg style={{ flexShrink: 0 }} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sent via secure e-sign link</span>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={onClose} style={{ whiteSpace: 'nowrap', height: 40, padding: '0 18px', boxSizing: 'border-box', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
             {/* Live only once the contact persons have loaded. The recipients ARE
                 the contacts, so until they land the click could only ever fail
                 — it ran submit() against an empty list and answered a
                 still-loading screen with "No recipients". */}
-            <button onClick={submit} disabled={loading} title={loading ? 'Loading contact persons…' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 9, border: 'none', background: loading ? '#C4B5FD' : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: loading ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> {loading ? 'Loading contacts…' : <>Send for Signing &amp; Negotiation</>}</button>
+            <button onClick={submit} disabled={loading} title={loading ? 'Loading contact persons…' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 40, padding: '0 18px', whiteSpace: 'nowrap', boxSizing: 'border-box', borderRadius: 9, border: loading ? `1.5px solid ${t.dark ? 'rgba(167,139,250,.38)' : '#DDD6FE'}` : '1.5px solid transparent', background: loading ? (t.dark ? 'rgba(124,58,237,.16)' : '#EDE9FE') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: loading ? (t.dark ? '#c4b5fd' : '#6D28D9') : '#fff', fontSize: 12.5, fontWeight: 800, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: loading ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>{loading ? <svg className="ctc-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>} {loading ? 'Loading contacts…' : <>Send for Signing &amp; Negotiation</>}</button>
           </div>
         </div>
       </div>
@@ -2506,14 +2569,18 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
 }
 
 /* Map a stored version status → a timeline title + dot colour tone. */
-function ctcTimelineMeta(status: string): { title: string; tone: 'done' | 'active' | 'bad' } {
+function ctcTimelineMeta(status: string): { title: string; tone: 'done' | 'active' | 'bad'; badge?: string } {
   switch ((status || '').toLowerCase()) {
     case 'approved':        return { title: 'Approved', tone: 'done' };
     case 'signed':          return { title: 'Signed', tone: 'done' };
     case 'rejected':        return { title: 'Rejected', tone: 'bad' };
     case 'declined':        return { title: 'Declined', tone: 'bad' };
     case 'sent for signing':return { title: 'Sent for Signing', tone: 'active' };
-    case 'approving':       return { title: 'Partial Approval', tone: 'active' };
+    /* One approver said yes: a green tick and an "Approved" badge, the mirror
+       of a rejection's red cross. It used to be the same plain violet dot as
+       "Submitted for Review", so a reject stood out and an approve did not.
+       The "(1 of 2) - awaiting remaining approvers" line still says it is partial. */
+    case 'approving':       return { title: 'Partial Approval', tone: 'done', badge: 'Approved' };
     case 'under review':    return { title: 'Submitted for Review', tone: 'active' };
     default:                return { title: status || 'Update', tone: 'active' };
   }
@@ -2981,8 +3048,8 @@ function OrgMiniCard({ t, org }: { t: OpsTokens; org: Org }) {
 function OrgDetail({ t, label, text }: { t: OpsTokens; label?: string; text: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
-      {label && <span style={{ flexShrink: 0, fontSize: 8.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: t.textMuted }}>{label}</span>}
-      <span title={text} style={{ minWidth: 0, marginLeft: label ? 'auto' : 0, textAlign: label ? 'right' : 'left', fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+      {label && <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: t.textMuted }}>{label}</span>}
+      <span title={text} style={{ minWidth: 0, marginLeft: label ? 'auto' : 0, textAlign: label ? 'right' : 'left', fontSize: 12, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
     </div>
   );
 }
@@ -3019,9 +3086,12 @@ function Field({ t, label, green, error, counter, children }: { t: OpsTokens; la
 
 /* ── Counterparty picker modal ── */
 /* ── Stage-1 Step-3 "Submit & Send for Approval" → Review & Approval Workflow popup ── */
-type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean };
-function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean> }) {
-  const [approvers, setApprovers] = useState<Approver[]>([]);
+type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean; role?: string };
+/* mode "resubmit" = the same popup reopened after a rejection: `initial` holds
+   the previous round's approvers, and the copy / button say Resubmit. */
+function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit, initial, mode = 'submit' }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>; initial?: Approver[]; mode?: 'submit' | 'resubmit' }) {
+  const resubmit = mode === 'resubmit';
+  const [approvers, setApprovers] = useState<Approver[]>(() => initial ?? []);
   // Fixed default approval window — the on-screen steppers were removed, but
   // the values still drive the timeline preview and the backend payload.
   const [days] = useState(7);
@@ -3035,14 +3105,14 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
   const submit = async () => {
     if (submitting || approvers.length === 0) return;
     setSubmitting(true);
-    const ok = await onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder });
+    const ok = await onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.role ?? a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder });
     if (!ok) setSubmitting(false);
   };
   const mergeApprovers = (picked: Approver[]) => {
     setApprovers(list => { const have = new Set(list.map(a => a.email || a.name)); return [...list, ...picked.filter(p => !have.has(p.email || p.name))]; });
     setPickerOpen(false);
   };
-  const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
+  const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : c === '#059669' ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
   return (
     <div onClick={e => { if (!submitting && e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: 'var(--font-sans)', cursor: submitting ? 'wait' : 'auto' }}>
       <div style={{ width: '100%', maxWidth: 420, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
@@ -3050,7 +3120,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
         <div style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
-            <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Review &amp; Approval Workflow</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>Select approvers for this agreement draft</div></div>
+            <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>{resubmit ? 'Resubmit for Review' : <>Review &amp; Approval Workflow</>}</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>{resubmit ? 'Keep, remove or add approvers for the revised draft' : 'Select approvers for this agreement draft'}</div></div>
           </div>
           <button onClick={() => { if (!submitting) onClose(); }} disabled={submitting} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? .5 : 1, fontSize: 13, flexShrink: 0 }}>✕</button>
         </div>
@@ -3097,7 +3167,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
             {submitting
               ? <svg className="ctc-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
-            {submitting ? 'Submitting…' : 'Submit for Approval'}
+            {submitting ? (resubmit ? 'Resubmitting…' : 'Submitting…') : (resubmit ? 'Resubmit for Review' : 'Submit for Approval')}
           </button>
         </div>
       </div>
@@ -3289,43 +3359,47 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
   //  2. The Customer tab still hides the party already chosen as the consignee
   //     on THIS agreement (a company can't be both roles picked separately).
   const norm = (s: string) => s.trim().toLowerCase();
-  const excludedName = tab === 'buyer' ? taken.consignee : undefined;
-  const list = dir[tab].filter(p => {
-    if (!(p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase())) return false;
-    if (tab === 'consignee' && p.sameAsCustomer) return false;
-    if (excludedName && norm(p.name) === norm(excludedName)) return false;
-    // Every counterparty shares ONE category. Once ANY of them is added, the
-    // remaining lists — Customer, Consignee AND Supplier — are restricted to
-    // that same category (Domestic/India or International), so a mismatched
-    // party can't even be picked. No anchor yet means no restriction.
-    if (requiredDomestic !== null && isDomesticCountry(p.country) !== requiredDomestic) return false;
-    return true;
-  });
+  /* The parties a tab can offer, before the search. Split out so each tab can
+     show its own count; the list below is this plus the search, exactly the
+     rules it always had. */
+  const pickable = (tb: 'buyer' | 'consignee' | 'supplier') => {
+    const excludedName = tb === 'buyer' ? taken.consignee : undefined;
+    return dir[tb].filter(p => {
+      if (tb === 'consignee' && p.sameAsCustomer) return false;
+      if (excludedName && norm(p.name) === norm(excludedName)) return false;
+      // Every counterparty shares ONE category. Once ANY of them is added, the
+      // remaining lists — Customer, Consignee AND Supplier — are restricted to
+      // that same category (Domestic/India or International), so a mismatched
+      // party can't even be picked. No anchor yet means no restriction.
+      if (requiredDomestic !== null && isDomesticCountry(p.country) !== requiredDomestic) return false;
+      return true;
+    });
+  };
+  const list = pickable(tab).filter(p => (p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase()));
+  const tabName = (tb: 'buyer' | 'consignee' | 'supplier') => tb === 'buyer' ? 'Customer' : tb === 'consignee' ? 'Consignee' : 'Supplier';
+  const noun = tabName(tab).toLowerCase();
   const tabBadge = tab === 'buyer'
     ? { label: 'Customer', bg: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', bd: t.dark ? 'rgba(6,182,212,.4)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0891b2' }
     : tab === 'supplier'
       ? { label: 'Supplier', bg: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', bd: t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0', fg: t.dark ? '#6ee7b7' : '#059669' }
       : { label: 'Consignee', bg: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', bd: t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD', fg: t.dark ? '#c4b5fd' : '#7C3AED' };
 
-  // No backdrop-click-to-close: this modal dismisses ONLY via the ✕ / Back /
-  // Confirm & Add buttons, so a stray click outside never loses the picked
+  // No backdrop-click-to-close: this modal dismisses ONLY via the ✕ / Cancel /
+  // Back / Confirm & Add buttons, so a stray click outside never loses the picked
   // counter-party or a typed "referred as" name.
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,5,40,.42)', backdropFilter: 'blur(6px)' }} />
-      <div style={{ position: 'relative', zIndex: 1, /* One width for both steps. It used to be 460 for the list and 440 for the
-             confirm panel, so the box jumped 20px sideways the moment a party was
-             picked. 640 also stops the long company names in the list from
-             ellipsing: at 460 a name had roughly 300px left once the avatar, the
-             code chip and the gutters were taken out. */
-          width: 640, maxWidth: 'calc(100vw - 32px)', background: t.surface, borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
-        {/* The house modal head — .clm-modal-head in clmShared.ts, read off the
-            violet ramp: a 46px translucent icon tile, a 16px/500 title over a
-            10.5px sub, and a 32px close. It used to be a bare gradient strip
-            carrying a 12.5px bold label and a 24px cross, which read as a
-            coloured bar rather than a modal header beside the rest of the app.
-            The sheen and the soft corner disc are ::before / ::after in
-            CTC_FORM_CSS, as they are on .clm-modal-head. */}
+      {/* One width for both steps (760), so the box never jumps sideways when a
+          party is picked. The look lives in .ctc-cp-* (CTC_FORM_CSS); the theme
+          tokens and the tab's colour come in as CSS variables, so light and
+          dark are one set of rules. */}
+      <div className={`ctc-cp-modal${t.dark ? ' is-dark' : ''}`}
+        style={{
+          '--cp-surface': t.surface, '--cp-text': t.text, '--cp-strong': t.textStrong, '--cp-muted': t.textMuted,
+          '--cp-sub': t.textSub, '--cp-border': t.searchBorder,
+          '--cp-fg': tabBadge.fg, '--cp-bg': tabBadge.bg, '--cp-bd': tabBadge.bd,
+        } as React.CSSProperties}>
         <div className="ctc-cp-head">
           <div className="ctc-cp-head-left">
             <div className="ctc-cp-head-ico">
@@ -3334,9 +3408,6 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
                 : <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
             </div>
             <div style={{ minWidth: 0 }}>
-              {/* "Confirm CP 1" spelt out. The list step said "Counter Party"
-                  and the confirm step said "CP", so the same thing had two
-                  names one click apart. */}
               <div className="ctc-cp-head-title">{pending ? `Confirm Counter Party ${slot}` : `Add Counter Party ${slot}`}</div>
               <div className="ctc-cp-head-sub">{pending ? 'Check the name this party is referred as inside the agreement.' : 'Pick the company that signs this agreement as this counter party.'}</div>
             </div>
@@ -3346,104 +3417,135 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
           </button>
         </div>
         {!pending ? (
-          <div style={{ padding: '12px 16px 16px' }}>
-            <div style={{ display: 'flex', gap: 3, background: t.dark ? 'rgba(255,255,255,.05)' : '#F3F0FD', borderRadius: 9, padding: 3, marginBottom: 9 }}>
-              {(['buyer', 'consignee', 'supplier'] as const).map(tb => {
-                const isUsed = used.has(tb);
-                return (
-                  <button key={tb} disabled={isUsed} onClick={() => { if (isUsed) return; setTab(tb); setSearch(''); }}
-                    title={isUsed ? 'Already added — only one allowed' : undefined}
-                    style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', cursor: isUsed ? 'not-allowed' : 'pointer', opacity: isUsed ? .4 : 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textTransform: 'capitalize', background: tab === tb && !isUsed ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb && !isUsed ? '#fff' : t.textMuted, boxShadow: tab === tb && !isUsed ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>
-                    {tb === 'buyer' ? 'Customer' : tb}{isUsed ? ' ✓' : ''}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="ui-search-abs" style={{ position: 'relative', marginBottom: 8 }}>
-              <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <input autoComplete="off" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', padding: '10px 12px 10px 32px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
-              <SearchClear show={search} onClear={() => { setSearch(''); }} />
-            </div>
-            {/* Five rows, then scroll. A row stands 58px — a 38px avatar inside
-                10px of padding top and bottom, which is taller than the name +
-                e-mail stack beside it — and the rows sit 1px apart, so five of
-                them come to 5 x 58 + 4 x 1 = 294. The vh guard stays, for a
-                short window where even five would push the card off screen;
-                there it simply shows fewer. It used to cap at 440, which is
-                seven and a half rows. */}
-            <div style={{ overflowY: 'auto', maxHeight: 'min(60vh, 294px)', display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {/* The row reads left to right now: who they are on the left,
-                  where they are on the right. The country pill used to sit on a
-                  second line under the name, which left the right half of a
-                  640px row empty, and the e-mail — already carried on the
-                  entry, and shown on the confirm step — was not shown at all.
-                  Hover is CSS (.ctc-cp-row:hover) rather than two inline
-                  handlers writing style.background. */}
-              {list.map(p => (
-                <div key={p.id} className="ctc-cp-row" onClick={() => { setPending(p); setReferred(p.name); }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${p.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{p.initials}</span></div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                      <span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{p.id}</span>
-                      <Tooltip label={p.name} position="top" zIndex={10000001} disabled={!p.name || p.name === '—'}><span style={{ fontSize: 13, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span></Tooltip>
-                    </div>
-                    <Tooltip label={p.email} position="bottom" zIndex={10000001} disabled={!p.email || p.email === '—'}>
-                      <div style={{ fontSize: 10.5, fontWeight: 500, color: t.textMuted, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.email && p.email !== '—' ? p.email : 'No e-mail on record'}</div>
-                    </Tooltip>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
-                      {/* Tab already says the party type (Customer/Consignee/Supplier),
-                          so the redundant type badge is dropped — show the country
-                          in the badge instead. */}
-                      {p.country && p.country !== '—'
-                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 9.5, fontWeight: 700, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '3px 10px', borderRadius: 20, maxWidth: 160, overflow: 'hidden' }}>
-                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
-                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
-                          </span>
-                        : <span style={{ fontSize: 10, color: t.textMuted }}>No country</span>}
-                      <svg className="ctc-cp-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                  </div>
-                </div>
-              ))}
-              {/* An empty list is usually the category lock, not missing data —
-                  say so, otherwise "No suppliers found" reads as a bug when the
-                  suppliers exist but sit on the other side of the rule. */}
-              {!list.length && (
-                <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 12, color: t.textMuted }}>
-                  {loading ? 'Loading…' : (
-                    <>
-                      No {tab === 'buyer' ? 'customer' : tab}s found
-                      {requiredDomestic !== null && (
-                        <div style={{ marginTop: 6, fontSize: 11 }}>
-                          This agreement is <strong>{requiredDomestic ? 'Domestic (India)' : 'International'}</strong> — only {requiredDomestic ? 'Domestic' : 'International'} parties can be added.
-                        </div>
-                      )}
-                    </>
-                  )}
+          <>
+            <div className="ctc-cp-body">
+              {/* 48px track, 40px tabs. Each tab carries its count; a type already
+                  on this agreement shows "Added" and can't be opened. */}
+              <div className="ctc-cp-tabs" role="tablist">
+                {(['buyer', 'consignee', 'supplier'] as const).map(tb => {
+                  const isUsed = used.has(tb);
+                  const on = tab === tb && !isUsed;
+                  return (
+                    <button key={tb} type="button" role="tab" aria-selected={on} disabled={isUsed}
+                      className={`ctc-cp-tab${on ? ' is-on' : ''}`}
+                      onClick={() => { if (isUsed) return; setTab(tb); setSearch(''); }}
+                      title={isUsed ? 'Already added — only one allowed' : undefined}>
+                      <span>{tabName(tb)}</span>
+                      {isUsed
+                        ? <span className="ctc-cp-tab-added"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Added</span>
+                        : <span className="ctc-cp-tab-n">{ready[tb] ? pickable(tb).length : '…'}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ui-search-abs ctc-cp-search">
+                <svg className="ctc-cp-search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input autoComplete="off" className="ctc-cp-search-in" value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${noun} name, code or e-mail`} />
+                <SearchClear show={search} onClear={() => { setSearch(''); }} />
+              </div>
+              {/* The category rule, said up front instead of only when a list
+                  comes back empty. */}
+              {requiredDomestic !== null && (
+                <div className="ctc-cp-rule">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                  <span>This agreement is <strong>{requiredDomestic ? 'Domestic (India)' : 'International'}</strong> — only {requiredDomestic ? 'Domestic' : 'International'} parties are listed.</span>
                 </div>
               )}
+              {/* Five 58px rows (2px apart), then the list scrolls. */}
+              <div className="ctc-cp-list">
+                {list.map(p => (
+                  <div key={p.id} className="ctc-cp-row" onClick={() => { setPending(p); setReferred(p.name); }}>
+                    <div className="ctc-cp-av" style={{ background: `linear-gradient(135deg,${p.grad})` }}><span>{p.initials}</span></div>
+                    <div className="ctc-cp-main">
+                      <div className="ctc-cp-line">
+                        <span className="ctc-cp-code">{p.id}</span>
+                        <Tooltip label={p.name} position="top" zIndex={10000001} disabled={!p.name || p.name === '—'}><span className="ctc-cp-name">{p.name}</span></Tooltip>
+                      </div>
+                      <Tooltip label={p.email} position="bottom" zIndex={10000001} disabled={!p.email || p.email === '—'}>
+                        <div className="ctc-cp-mail">{p.email && p.email !== '—' ? p.email : 'No e-mail on record'}</div>
+                      </Tooltip>
+                    </div>
+                    <div className="ctc-cp-side">
+                      {p.country && p.country !== '—'
+                        ? <span className="ctc-cp-country">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
+                            <span>{p.country}</span>
+                          </span>
+                        : <span className="ctc-cp-nocountry">No country</span>}
+                      <svg className="ctc-cp-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                    </div>
+                  </div>
+                ))}
+                {/* An empty list is usually the category lock, not missing data. */}
+                {!list.length && (
+                  <div className="ctc-cp-empty">
+                    {loading ? (
+                      <><span className="ctc-cp-spin" />Loading {noun}s…</>
+                    ) : (
+                      <>
+                        <div className="ctc-cp-empty-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>
+                        <div className="ctc-cp-empty-t">No {noun}s found</div>
+                        <div className="ctc-cp-empty-s">
+                          {search
+                            ? 'Try a different name, code or e-mail.'
+                            : requiredDomestic !== null
+                              ? `Only ${requiredDomestic ? 'Domestic' : 'International'} parties can be added to this agreement.`
+                              : `There are no ${noun}s to pick yet.`}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+            <div className="ctc-cp-foot">
+              <div className="ctc-cp-count">
+                {loading ? 'Loading…' : <><b>{list.length}</b> {noun}{list.length === 1 ? '' : 's'}{search ? ' match' : ''}</>}
+              </div>
+              <button type="button" className="ctc-cp-btn ctc-cp-btn--ghost" onClick={onClose}>Cancel</button>
+            </div>
+          </>
         ) : (
-          /* The confirm panel is read at the same scale as the list behind it.
-             It used to run its own much smaller type — a 7px code chip and
-             label, an 11px name, an 8px email, a 10.5px input — against the
-             list's 9.5 / 13 / 12.5, so picking a party shrank everything. The
-             values below are the list's, so the two steps agree.
-             A braced JSX comment cannot stand here: this branch of the ternary
-             has to BE the element, and a JSX comment is not an expression. */
-          <div style={{ padding: '14px 18px 18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 13 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${pending.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{pending.initials}</span></div>
-              <div style={{ minWidth: 0, flex: 1 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}><span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{pending.id}</span><Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span style={{ fontSize: 13, fontWeight: 700, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.name}</span></Tooltip></div><Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}><div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.email}</div></Tooltip></div>
+          <>
+            <div className="ctc-cp-body ctc-cp-body--confirm">
+              <div className="ctc-cp-picked">
+                <div className="ctc-cp-av" style={{ background: `linear-gradient(135deg,${pending.grad})` }}><span>{pending.initials}</span></div>
+                <div className="ctc-cp-main">
+                  <div className="ctc-cp-line">
+                    <span className="ctc-cp-code">{pending.id}</span>
+                    <Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span className="ctc-cp-name">{pending.name}</span></Tooltip>
+                  </div>
+                  <Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}>
+                    <div className="ctc-cp-mail">{pending.email && pending.email !== '—' ? pending.email : 'No e-mail on record'}</div>
+                  </Tooltip>
+                </div>
+                <div className="ctc-cp-side">
+                  <span className="ctc-cp-type">{tabName(tab)}</span>
+                  {pending.country && pending.country !== '—' && (
+                    <span className="ctc-cp-country">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
+                      <span>{pending.country}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="ctc-cp-field">
+                <label className="ctc-cp-label" htmlFor="ctc-cp-referred">Referred As In Agreement</label>
+                <input id="ctc-cp-referred" className="ctc-cp-input" value={referred} onChange={e => setReferred(e.target.value)} placeholder={pending.name} />
+                <div className="ctc-cp-hint">The name used for this party inside the agreement text. Left empty, the company name is used.</div>
+              </div>
             </div>
-            <label style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
-            <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, lineHeight: 1.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 5 }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 13 }}>
-              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id, sourceDbId: pending.dbId })} style={{ flex: 1, padding: '11px 0', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
-              <button onClick={() => setPending(null)} style={{ padding: '11px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, color: t.textSub }}>Back</button>
+            <div className="ctc-cp-foot">
+              <button type="button" className="ctc-cp-btn ctc-cp-btn--ghost" onClick={() => setPending(null)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                Back
+              </button>
+              <button type="button" className="ctc-cp-btn ctc-cp-btn--primary" onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id, sourceDbId: pending.dbId })}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                Confirm &amp; Add
+              </button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
@@ -3502,22 +3604,235 @@ const CTC_FORM_CSS = `
 }
 .ctc-cp-close:hover { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.45); color: #fff; }
 
+/* ── Picker shell ── one 760px card for both steps: head, body, footer. The
+   theme tokens arrive as --cp-* variables set on the card, so the rules below
+   serve light and dark alike; .is-dark only swaps the violet tints. */
+.ctc-cp-modal {
+  position: relative; z-index: 1;
+  width: 760px; max-width: 100%; max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
+  background: var(--cp-surface); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 20px 56px rgba(76,29,149,.32), 0 2px 8px rgba(76,29,149,.12);
+  font-family: var(--font-sans);
+  --cp-line: #EEEAFB; --cp-field: #fff; --cp-tint: #F7F4FF; --cp-tint-bd: #EAE3FC;
+}
+.ctc-cp-modal.is-dark {
+  --cp-line: rgba(255,255,255,.08); --cp-field: rgba(255,255,255,.04);
+  --cp-tint: rgba(124,58,237,.10); --cp-tint-bd: rgba(167,139,250,.22);
+  box-shadow: 0 20px 56px rgba(0,0,0,.55), 0 0 0 1px rgba(167,139,250,.18);
+}
+.ctc-cp-body {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px 12px;
+}
+
+/* ── Tabs ── a 48px track holding 40px tabs (1px border + 3px padding each side). */
+.ctc-cp-tabs {
+  flex: 0 0 auto; box-sizing: border-box;
+  display: flex; gap: 4px; height: 48px; padding: 3px;
+  background: #F3F0FD; border: 1px solid #E7E0FB; border-radius: 12px;
+}
+.ctc-cp-tab {
+  flex: 1 1 0; min-width: 0; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: 0; border-radius: 9px; background: transparent;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; line-height: 1;
+  color: var(--cp-muted); cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.ctc-cp-tab:hover:not(:disabled):not(.is-on) { background: rgba(124,58,237,.08); color: #6D28D9; }
+.ctc-cp-tab.is-on {
+  background: linear-gradient(135deg, #7C3AED, #6D28D9); color: #fff;
+  box-shadow: 0 3px 10px rgba(109,40,217,.32);
+}
+.ctc-cp-tab:disabled { cursor: not-allowed; opacity: .8; }
+.ctc-cp-tab-n {
+  min-width: 22px; height: 20px; padding: 0 6px; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: rgba(124,58,237,.12); color: #6D28D9;
+}
+.ctc-cp-tab.is-on .ctc-cp-tab-n { background: rgba(255,255,255,.22); color: #fff; }
+.ctc-cp-tab-added {
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px;
+  border-radius: 10px; font-size: 10px; font-weight: 700;
+  color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0;
+}
+.ctc-cp-modal.is-dark .ctc-cp-tabs { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.18); }
+.ctc-cp-modal.is-dark .ctc-cp-tab:hover:not(:disabled):not(.is-on) { background: rgba(167,139,250,.12); color: #ddd6fe; }
+.ctc-cp-modal.is-dark .ctc-cp-tab-n { background: rgba(167,139,250,.16); color: #c4b5fd; }
+.ctc-cp-modal.is-dark .ctc-cp-tab-added { color: #6ee7b7; background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.35); }
+
+/* ── Search ── 40px, the house violet focus ring. */
+.ctc-cp-search { position: relative; flex: 0 0 auto; }
+.ctc-cp-search-ico { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #A78BFA; pointer-events: none; }
+.ctc-cp-search-in {
+  width: 100%; height: 40px; box-sizing: border-box; padding: 0 36px 0 36px;
+  border: 1.5px solid var(--cp-border); border-radius: 10px;
+  background: var(--cp-field); color: var(--cp-text);
+  font-family: inherit; font-size: 13px; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.ctc-cp-search-in::placeholder { color: var(--cp-muted); opacity: .85; }
+.ctc-cp-search-in:focus { border-color: #8B5CF6; box-shadow: 0 0 0 3px rgba(139,92,246,.16); }
+
+/* ── Category rule ── said up front, not only when a list comes back empty. */
+.ctc-cp-rule {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 8px 11px; border-radius: 9px;
+  font-size: 11.5px; font-weight: 500; line-height: 1.4; color: #5B21B6;
+  background: var(--cp-tint); border: 1px dashed #D8CCFB;
+}
+.ctc-cp-rule svg { flex-shrink: 0; color: #7C3AED; }
+.ctc-cp-rule strong { font-weight: 700; }
+.ctc-cp-modal.is-dark .ctc-cp-rule { color: #ddd6fe; border-color: rgba(167,139,250,.35); }
+.ctc-cp-modal.is-dark .ctc-cp-rule svg { color: #c4b5fd; }
+
+/* ── List ── 58px rows 2px apart; five rows (5 x 58 + 4 x 2 = 298) then it
+   scrolls on a thin violet bar. The vh guard keeps the card on short screens. */
+.ctc-cp-list {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; max-height: min(50vh, 298px);
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0 -6px; padding: 0 6px;
+  scrollbar-width: thin; scrollbar-color: rgba(124,58,237,.35) transparent;
+}
+.ctc-cp-list::-webkit-scrollbar { width: 6px; }
+.ctc-cp-list::-webkit-scrollbar-track { background: transparent; }
+.ctc-cp-list::-webkit-scrollbar-thumb { background: rgba(124,58,237,.3); border-radius: 6px; }
+.ctc-cp-list::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.5); }
 .ctc-cp-row {
+  position: relative; flex: 0 0 58px; height: 58px; box-sizing: border-box;
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-radius: 10px; cursor: pointer;
-  background: transparent;
-  transition: background .14s ease;
+  padding: 0 12px 0 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid transparent; background: transparent;
+  transition: background .14s ease, border-color .14s ease;
 }
-.ctc-cp-row:hover { background: #F5F0FF; }
-[data-bs-theme="dark"] .ctc-cp-row:hover { background: rgba(124,58,237,.14); }
-/* The chevron is the only thing that says a row is clickable; it rides in on
-   hover so a still list stays quiet. */
-.ctc-cp-chev {
-  color: #7C3AED; opacity: 0;
-  transition: opacity .14s ease, transform .14s ease;
+/* A 3px violet bar on the left edge marks the row under the pointer. */
+.ctc-cp-row::before {
+  content: ''; position: absolute; left: 0; top: 11px; bottom: 11px; width: 3px;
+  border-radius: 0 3px 3px 0; background: #7C3AED; opacity: 0; transition: opacity .14s ease;
 }
-.ctc-cp-row:hover .ctc-cp-chev { opacity: 1; transform: translateX(2px); }
-[data-bs-theme="dark"] .ctc-cp-chev { color: #c4b5fd; }
+.ctc-cp-row:hover { background: var(--cp-tint); border-color: var(--cp-tint-bd); }
+.ctc-cp-row:hover::before { opacity: 1; }
+.ctc-cp-modal.is-dark .ctc-cp-row::before { background: #a78bfa; }
+.ctc-cp-av {
+  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2);
+}
+.ctc-cp-av span { font-size: 11px; font-weight: 800; color: #fff; letter-spacing: .02em; }
+.ctc-cp-main { flex: 1 1 auto; min-width: 0; }
+.ctc-cp-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ctc-cp-code {
+  flex-shrink: 0; font-family: 'Geist Mono', monospace; font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+  padding: 2px 7px; border-radius: 6px;
+  color: var(--cp-fg); background: var(--cp-bg); border: 1px solid var(--cp-bd);
+}
+.ctc-cp-name {
+  display: block; min-width: 0; font-size: 13px; font-weight: 700; color: var(--cp-strong);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ctc-cp-mail {
+  margin-top: 4px; font-size: 11px; font-weight: 500; color: var(--cp-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ctc-cp-side { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+.ctc-cp-country {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 150px; height: 24px; box-sizing: border-box;
+  padding: 0 10px; border-radius: 12px; font-size: 10.5px; font-weight: 700;
+  color: var(--cp-fg); background: var(--cp-bg); border: 1px solid var(--cp-bd);
+}
+.ctc-cp-country span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctc-cp-nocountry { font-size: 10.5px; color: var(--cp-muted); }
+/* The chevron stays faintly in view so every row reads as clickable, and
+   steps forward in violet on hover. */
+.ctc-cp-chev { color: var(--cp-muted); opacity: .4; transition: opacity .14s ease, transform .14s ease, color .14s ease; }
+.ctc-cp-row:hover .ctc-cp-chev { opacity: 1; color: #7C3AED; transform: translateX(2px); }
+.ctc-cp-modal.is-dark .ctc-cp-row:hover .ctc-cp-chev { color: #c4b5fd; }
+
+/* ── Empty / loading ── */
+.ctc-cp-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 30px 16px; text-align: center; font-size: 12px; color: var(--cp-muted);
+}
+.ctc-cp-empty-ico {
+  width: 44px; height: 44px; border-radius: 12px; margin-bottom: 4px;
+  display: flex; align-items: center; justify-content: center;
+  color: #7C3AED; background: var(--cp-tint); border: 1px solid var(--cp-tint-bd);
+}
+.ctc-cp-empty-t { font-size: 13px; font-weight: 700; color: var(--cp-strong); }
+.ctc-cp-empty-s { font-size: 11.5px; max-width: 360px; line-height: 1.5; }
+.ctc-cp-spin {
+  display: inline-block; width: 18px; height: 18px; margin-bottom: 4px; border-radius: 50%;
+  border: 2px solid rgba(124,58,237,.2); border-top-color: #7C3AED;
+  animation: ctc-cp-spin .7s linear infinite;
+}
+@keyframes ctc-cp-spin { to { transform: rotate(360deg); } }
+.ctc-cp-modal.is-dark .ctc-cp-empty-ico { color: #c4b5fd; }
+
+/* ── Confirm step ── the picked party as a card, then the "referred as" field. */
+.ctc-cp-picked {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: 12px; background: var(--cp-tint); border: 1px solid var(--cp-tint-bd);
+}
+/* The party type in the tab's own colour (cyan Customer, violet Consignee,
+   green Supplier) - filled, so it reads apart from the outlined code chip and
+   country pill beside it, but in the same family. */
+.ctc-cp-type {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px;
+  font-size: 10.5px; font-weight: 700; color: #fff;
+  background: var(--cp-fg);
+}
+.ctc-cp-modal.is-dark .ctc-cp-type { color: var(--cp-fg); background: var(--cp-bg); border: 1px solid var(--cp-bd); }
+.ctc-cp-body--confirm { gap: 8px; }
+.ctc-cp-field { display: flex; flex-direction: column; gap: 6px; }
+.ctc-cp-label { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--cp-sub); margin: 0; }
+.ctc-cp-input {
+  width: 100%; height: 40px; box-sizing: border-box; padding: 0 12px;
+  border: 1.5px solid var(--cp-border); border-radius: 10px;
+  background: var(--cp-field); color: var(--cp-text);
+  font-family: inherit; font-size: 13px; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.ctc-cp-input::placeholder { color: var(--cp-muted); opacity: .8; }
+.ctc-cp-input:focus { border-color: #8B5CF6; box-shadow: 0 0 0 3px rgba(139,92,246,.16); }
+.ctc-cp-hint { font-size: 10.5px; color: var(--cp-muted); line-height: 1.45; }
+
+/* ── Footer ── count on the left, 40px buttons on the right (Back left /
+   Confirm right on the confirm step). */
+.ctc-cp-foot {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-top: 1px solid var(--cp-line);
+  background: var(--cp-surface);
+}
+.ctc-cp-count { font-size: 12px; color: var(--cp-muted); }
+.ctc-cp-count b { font-weight: 700; color: var(--cp-strong); font-variant-numeric: tabular-nums; }
+.ctc-cp-btn {
+  height: 40px; box-sizing: border-box; padding: 0 18px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .15s;
+}
+.ctc-cp-btn--ghost { background: var(--cp-surface); color: #5B21B6; border: 1.5px solid #DDD6FE; }
+.ctc-cp-btn--ghost:hover { background: #F5F0FF; border-color: #C4B5FD; }
+.ctc-cp-btn--primary {
+  border: 0; color: #fff; padding: 0 20px;
+  background: linear-gradient(135deg, #6D28D9, #7C3AED);
+  box-shadow: 0 4px 14px rgba(109,40,217,.34);
+}
+.ctc-cp-btn--primary:hover { box-shadow: 0 6px 18px rgba(109,40,217,.42); transform: translateY(-1px); }
+.ctc-cp-modal.is-dark .ctc-cp-btn--ghost { background: transparent; color: #ddd6fe; border-color: rgba(167,139,250,.35); }
+.ctc-cp-modal.is-dark .ctc-cp-btn--ghost:hover { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.55); }
+
+@media (max-width: 560px) {
+  .ctc-cp-tab { font-size: 11.5px; gap: 5px; }
+  .ctc-cp-country { max-width: 96px; }
+  .ctc-cp-body { padding: 12px 12px 10px; }
+  .ctc-cp-foot { padding: 10px 12px; }
+}
 /* ── Mobile / narrow-screen layout ─────────────────────────────────────────
    The workspace is a desktop-first 3-panel flex row locked to 100vh. Below
    820px that crushes each panel to ~1/3 width (unusable), so here we: unlock

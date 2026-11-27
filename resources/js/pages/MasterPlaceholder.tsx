@@ -3,7 +3,6 @@ import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, InputGroup,
 import { useAuth } from '../contexts/AuthContext';
 import { MASTER_GROUPS } from '../constants';
 
-// Remix icon lookup for lucide names used in constants.ts
 const ICONS: Record<string, string> = {
   Building: 'ri-building-4-line', Landmark: 'ri-bank-line', Building2: 'ri-building-line',
   UserCog: 'ri-user-settings-line', BadgeCheck: 'ri-verified-badge-line',
@@ -56,11 +55,6 @@ export default function MasterPlaceholder() {
     }
   }
 
-  /* No such master → no such route. `/master/:slug` is a catch-all, so a retired
-     master (e.g. legal_entities, replaced by the branch record) or a typo would
-     otherwise render this "Coming Soon — Phase 2" placeholder and advertise a
-     module that doesn't exist. Bounce to the Master list instead; `replace` keeps
-     the dead URL out of history so Back doesn't return to it. */
   if (!known) {
     return <Navigate to="/master" replace />;
   }
@@ -79,7 +73,6 @@ export default function MasterPlaceholder() {
 
   return (
     <>
-      {/* Breadcrumb */}
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -94,9 +87,6 @@ export default function MasterPlaceholder() {
               </div>
             </div>
             <div className="d-flex align-items-center gap-3 flex-wrap">
-              {/* Unified "Back to Master list" pill — same design as
-                  every other master surface (Departments / Legal Entities
-                  / Designations / Roles / KPIs / Assets). */}
               <button
                 type="button"
                 onClick={() => navigate('/master')}

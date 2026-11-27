@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
-import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
+import { Col, Row, Modal, ModalBody } from 'reactstrap';
+import FullPageLoader from '../../components/ui/FullPageLoader';
+import BusyLabel from '../../components/ui/BusyLabel';
 import { MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -192,6 +194,7 @@ export default function HrBroadcastCentre() {
   const [editingRow, setEditingRow] = useState<AnnRow | null>(null);
 
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchList = useCallback(async () => {
     const token = ++reqRef.current;
@@ -235,7 +238,10 @@ export default function HrBroadcastCentre() {
     } catch { setStats(ZERO_STATS); }
   };
 
-  const fetchAll = () => { fetchStats(); fetchList(); };
+  /* Returns the round trip so a caller can hold its busy state until the
+     refreshed list is on screen. Dropping these two promises is why the
+     publish veil came down after the PUT and never showed (QA #167). */
+  const fetchAll = () => Promise.all([fetchStats(), fetchList()]);
 
   useEffect(() => { fetchStats(); }, []);
   useEffect(() => { fetchList(); }, [fetchList]);
@@ -354,9 +360,7 @@ export default function HrBroadcastCentre() {
             {r.status === 'Draft' && (
               <Tooltip label={publishingId === r.id ? 'Publishing…' : 'Publish Now'}>
                 <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" disabled={publishingId === r.id} onClick={() => handlePublishNow(r)}>
-                  {publishingId === r.id
-                    ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-                    : <i className="ri-send-plane-line" />}
+                  <i className={publishingId === r.id ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-line'} />
                 </button>
               </Tooltip>
             )}
@@ -388,13 +392,14 @@ export default function HrBroadcastCentre() {
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
       return [saved, ...prev];
     });
-    fetchAll();
+    return fetchAll();
   };
 
   const handleSaved = (saved: AnnRow) => {
-    mergeSavedRow(saved);
+    const done = mergeSavedRow(saved);
     setCreateOpen(false);
     setEditingRow(null);
+    return done;
   };
 
   const handleSilentSave = (saved: AnnRow) => {
@@ -411,12 +416,15 @@ export default function HrBroadcastCentre() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
+    setDeleting(true);
     try {
       await api.delete(`/announcements/${row.id}`);
       toast.success('Deleted', `${row.code} removed.`);
-      fetchAll();
+      await fetchAll();
     } catch (err: any) {
       toast.error('Could not delete', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -440,7 +448,7 @@ export default function HrBroadcastCentre() {
         publish_at: null,
       });
       toast.success('Published', `${data.code} is now live.`);
-      handleSaved(data);
+      await handleSaved(data);
     } catch (err: any) {
       toast.error('Could not publish', err?.response?.data?.message || 'Please try again.');
     } finally {
@@ -451,6 +459,10 @@ export default function HrBroadcastCentre() {
   return (
     <>
       <MasterFormStyles />
+      {/* QA #167 — the row actions post and then refetch the list; the create /
+          edit wizard carries its own veil. */}
+      {publishingId !== null && <FullPageLoader label="Publishing announcement…" />}
+      {deleting && <FullPageLoader label="Deleting announcement…" />}
       <Row>
         <Col xs={12}>
           <div className="rec-page bcast-page">
@@ -867,6 +879,7 @@ function CreateAnnouncementModal({
 
       contentClassName="rec-form-content border-0 brd-wizard"
     >
+      {!!saving && <FullPageLoader label={saving === 'publish' ? 'Publishing…' : 'Saving…'} />}
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
 
         <div className="brd-wizard-head" style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #4c2d9c 0%, #6d28d9 60%, #7c3aed 100%)' }}>
@@ -1093,7 +1106,7 @@ function CreateAnnouncementModal({
             ) : (
               <>
                 <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={!!saving}>
-                  {saving === 'draft' ? <Spinner size="sm" /> : <i className="ri-save-3-line" />}Save Draft
+                  <BusyLabel busy={saving === 'draft'} icon="ri-save-3-line">Save Draft</BusyLabel>
                 </button>
                 {step < TOTAL_STEPS ? (
                   <button type="button" className="rec-btn-primary" onClick={handleNext} disabled={!!saving}>
@@ -1111,7 +1124,7 @@ function CreateAnnouncementModal({
                       display: 'inline-flex', alignItems: 'center', gap: 6,
                     }}
                   >
-                    {saving === 'publish' ? <Spinner size="sm" /> : <i className="ri-send-plane-line" />}Publish
+                    <BusyLabel busy={saving === 'publish'} icon="ri-send-plane-line" busyText="Publishing…">Publish</BusyLabel>
                   </button>
                 )}
               </>

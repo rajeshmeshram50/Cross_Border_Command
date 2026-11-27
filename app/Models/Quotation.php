@@ -8,16 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/**
- * Sales Matrix → Quotations.
- *
- * Header for outgoing quotations. Status lifecycle:
- *   draft → sent → approved → converted_to_pi
- *                          → cancelled (terminal — soft delete)
- *
- * Totals are recomputed from `items` whenever the controller writes;
- * see Quotation::recomputeTotals() for the single source of truth.
- */
 class Quotation extends Model
 {
     use HasFactory;
@@ -71,8 +61,6 @@ class Quotation extends Model
         'grand_total'      => 'decimal:2',
     ];
 
-    /* ── Relations ──────────────────────────────────────────── */
-
     public function items(): HasMany
     {
         return $this->hasMany(QuotationItem::class)->orderBy('line_no')->orderBy('id');
@@ -85,8 +73,6 @@ class Quotation extends Model
     public function salesManager(): BelongsTo { return $this->belongsTo(User::class, 'sales_manager_id'); }
     public function creator(): BelongsTo   { return $this->belongsTo(User::class, 'created_by'); }
 
-    /* ── Scopes ─────────────────────────────────────────────── */
-
     public function scopeForClient(Builder $q, ?int $clientId): Builder
     {
         return $clientId ? $q->where('client_id', $clientId) : $q->whereRaw('1 = 0');
@@ -97,15 +83,6 @@ class Quotation extends Model
         return $q->where('status', '!=', self::STATUS_CANCELLED);
     }
 
-    /* ── Helpers ────────────────────────────────────────────── */
-
-    /**
-     * Recompute sub_total / grand_total from the line items. Call after
-     * any write that touches items. Doesn't save — returns the new
-     * values so the caller can decide when to persist them.
-     *
-     * @return array{sub_total: float, grand_total: float}
-     */
     public function recomputeTotals(): array
     {
         $sub = 0.0;

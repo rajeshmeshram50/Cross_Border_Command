@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { fillHeight } from '../../../../utils/fillHeight';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -6,27 +7,11 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import '../../../../components/ui/DataTable.css';
 import '../../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
-import { LEAD_ACK_CSS as SCOPED_CSS } from './leadAckStyles';
+import { LEAD_ACK_CSS, LEAD_ACK_CSS_TEAL } from './leadAckStyles';
+import '../../../p2p/p2p-common.css';
 import LeadAckReasonModal, { LEAD_ACK_TYPE_LABELS, type OppType, type LeadAckReason as Reason } from './LeadAckReasonModal';
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Lead Acknowledgement Master
- *
- * React port of the IDIMS Lead Acknowledgement Master design. Three tabs —
- * Qualified / Disqualified / Clarity Pending — each backed by a row in
- * `lead_ack_reasons` (opportunity_type column). Only the Disqualified tab
- * carries a dq_status (Positive/Negative) — the column appears for that tab
- * only and the modal exposes the picker only for that opportunity type.
- *
- * Perm-gated on sales.lead_ack_master per the Sales Matrix permission sheet.
- * The trash icon flips status to inactive (PUT) rather than deleting — same
- * semantics as the source design. The mark-inactive action is routed through
- * the project's DeleteConfirmModal (with a "Mark Inactive" verb) so a stray
- * click can't silently disable a reason.
- *
- * Visual recipe matches the wider Sales module — violet hero strip, KPI
- * ribbon, pill-style tabs, sticky lavender table header, dark-mode aware.
- * ──────────────────────────────────────────────────────────────────────── */
+import MasterBackButton from '../../../../components/ui/MasterBackButton';
+import { RowsPerPageSelect } from '../../../../components/ui/TablePager';
 
 type GroupedReasons = {
   qualified: Reason[];
@@ -42,7 +27,9 @@ const COLUMN_HEADERS: Record<OppType, string> = {
   clarity_pending: 'Reason For Clarity Pending Opportunity',
 };
 
-export default function SalesLeadAckMaster() {
+export default function SalesLeadAckMaster({ variant = 'violet' }: { variant?: 'violet' | 'teal' } = {}) {
+  const teal = variant === 'teal';
+  const SCOPED_CSS = teal ? LEAD_ACK_CSS_TEAL : LEAD_ACK_CSS;
   const toast = useToast();
   const { user } = useAuth();
   // Active branch (from the switcher) so writes are scoped to the SAME branch
@@ -77,6 +64,26 @@ export default function SalesLeadAckMaster() {
   // CLM Segment Master / the QPI list). Stops overriding once the user manually
   // picks a value in the footer dropdown.
   const scrollRef  = useRef<HTMLDivElement>(null);
+  /* The page fills down to the app footer: the root's height is measured
+     (fillHeight), not the calc(100vh - 130px) guess in the CSS, which ran past
+     the screen or stopped short of the footer depending on the header, footer
+     and zoom, and gave the page its own scrollbar beside the table's. Only
+     when opened from the Master Control Center (teal). */
+  const rootRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    /* Master Control Center (teal) only; the Sales menu page keeps its CSS height. */
+    if (!el || !teal) return;
+    const fit = () => {
+      if (window.innerWidth < 768) { el.style.height = ''; return; }
+      const h = `${fillHeight(el, 320)}px`;
+      if (el.style.height !== h) el.style.height = h;
+    };
+    fit();
+    const raf = requestAnimationFrame(fit);
+    window.addEventListener('resize', fit);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', fit); };
+  });
   const autoFitRef = useRef(true);
   useEffect(() => {
     const recompute = () => {
@@ -238,43 +245,62 @@ export default function SalesLeadAckMaster() {
   }
 
   return (
-    <div className="lam-root">
+    <div className="lam-root" ref={rootRef}>
       <style>{SCOPED_CSS}</style>
 
       {/* ── Header strip — the Supplier list's header (.sup-fig .cstrip), same as
               the Customers / Consignee / Quotations V/S PI lists. ── */}
-      <div className="sup-fig">
-        <div className="cstrip">
-          <span className="cstrip__accent" />
-          <span className="cstrip__glow" />
-          <span className="cstrip__sheen" />
-          <div className="cstrip__left">
-            <div className="cstrip__avatar-wrap">
-              <div className="cstrip__avatar"><i className="ri-checkbox-circle-line" style={{ fontSize: 17, color: '#fff' }} /></div>
-              <span className="cstrip__online-dot" />
-            </div>
+      {teal ? (
+        <div className="spi-head">
+          <div className="spi-head-left">
+            <div className="spi-head-icon"><i className="ri-checkbox-circle-line" /></div>
             <div className="min-w-0">
-              <div className="cstrip__title">Lead Acknowledgement</div>
-              <div className="cstrip__sub">Manage qualification reasons for the sales pipeline</div>
+              <div className="spi-head-title">Lead Acknowledgement</div>
+              <div className="spi-head-sub">Manage qualification reasons for the sales pipeline</div>
             </div>
           </div>
+          <MasterBackButton />
           {canAdd && (
-            <div className="cstrip__right">
-              <button type="button" className="cstrip__action-btn" onClick={openAdd}>
-                <span className="cstrip__action-btn-sheen" />
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                Add New Reason
-              </button>
-            </div>
+            <button type="button" className="spi-head-btn" onClick={openAdd}>
+              <i className="ri-add-line" />
+              Add New Reason
+            </button>
           )}
         </div>
-      </div>
+      ) : (
+        <div className="sup-fig">
+          <div className="cstrip">
+            <span className="cstrip__accent" />
+            <span className="cstrip__glow" />
+            <span className="cstrip__sheen" />
+            <div className="cstrip__left">
+              <div className="cstrip__avatar-wrap">
+                <div className="cstrip__avatar"><i className="ri-checkbox-circle-line" style={{ fontSize: 17, color: '#fff' }} /></div>
+                <span className="cstrip__online-dot" />
+              </div>
+              <div className="min-w-0">
+                <div className="cstrip__title">Lead Acknowledgement</div>
+                <div className="cstrip__sub">Manage qualification reasons for the sales pipeline</div>
+              </div>
+            </div>
+            {canAdd && (
+              <div className="cstrip__right">
+                <button type="button" className="cstrip__action-btn" onClick={openAdd}>
+                  <span className="cstrip__action-btn-sheen" />
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  Add New Reason
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Table card — the Customers list card (dt-root hr-dt): toolbar with the
               list tab rail + search, the list header band, and the worklist pager. ── */}
-      <div className="lam-table-card dt-root hr-dt" data-accent="violet">
+      <div className="lam-table-card dt-root hr-dt" data-accent={teal ? 'teal' : 'violet'}>
         <div className="lam-toolbar">
-          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent={teal ? 'teal' : 'violet'}>
             <div className="dt-tabs" role="tablist">
               {TAB_KEYS.map(t => (
                 <button
@@ -408,15 +434,11 @@ export default function SalesLeadAckMaster() {
           <div className="tc-wl-right">
             <span className="tc-wl-rows">
               Rows per page:
-              <select
-                value={rpp}
-                onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}
-                aria-label="Rows per page"
-              >
-                {[...new Set([rpp, 5, 10, 15, 25, 50])].sort((a, b) => a - b).map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
+              <RowsPerPageSelect
+                pageSize={rpp}
+                options={[5, 10, 15, 25, 50]}
+                onChange={n => { autoFitRef.current = false; setRpp(n); setPage(1); }}
+              />
             </span>
             <span className="tc-wl-range">{safePage} / {pages}</span>
             <div className="tc-wl-nav">
@@ -449,6 +471,7 @@ export default function SalesLeadAckMaster() {
         editing={editingRow}
         onClose={() => { setModalOpen(false); setEditingRow(null); }}
         onSaved={onReasonSaved}
+        variant={variant}
       />
 
       {/* ── Mark Inactive confirmation — reuses the project's

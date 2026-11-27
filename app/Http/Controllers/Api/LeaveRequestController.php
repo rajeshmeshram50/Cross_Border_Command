@@ -22,9 +22,6 @@ use Illuminate\Validation\Rule;
 
 class LeaveRequestController extends Controller
 {
-    /** Tenant-facing timezone used to resolve "today" for date guards. The app
-     *  runs in UTC; leave dates are entered/read in IST. Matches the display
-     *  timezone used across the attendance module. */
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
     public function index(Request $request)
@@ -32,9 +29,6 @@ class LeaveRequestController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        // The Employee Profile page can be opened for any employee by an
-        // admin, so accept an explicit employee_id query param. Falls back
-        // to the user's linked employee record (employees.user_id = users.id).
         $employeeId = $request->integer('employee_id') ?: null;
         if (!$employeeId) {
             $own = Employee::find($user->employee_id);
@@ -44,18 +38,14 @@ class LeaveRequestController extends Controller
             $employeeId = $own->id;
         }
 
-        // Tenant guard — without this an admin from client X can pass any
-        // employee_id and read leave history belonging to client Y.
         if ($user->user_type !== 'super_admin' && $user->client_id) {
             $targetClientId = Employee::where('id', $employeeId)->value('client_id');
-            // Strict — a null client_id on the employee must NOT bypass the guard
-            // (legacy/seed rows would otherwise leak to any tenant). (LV-18)
             if ((int) $targetClientId !== (int) $user->client_id) {
                 abort(404);
             }
         }
 
-        $status = $request->input('status'); // 'Pending' | 'Approved' | 'Rejected' | null
+        $status = $request->input('status');
         $q = LeaveRequest::query()
             ->where('employee_id', $employeeId)
             ->with([
@@ -70,9 +60,6 @@ class LeaveRequestController extends Controller
         return response()->json(['data' => $q->get()]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Store — employee submits a new leave application
-    // ─────────────────────────────────────────────────────────────────────
     public function store(Request $request)
     {
         $user = $request->user();
@@ -80,24 +67,15 @@ class LeaveRequestController extends Controller
 
         $data = $request->validate([
             'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
-            // LV-23: only a leave type in the caller's own tenant (or a global
-            // null-client row) is valid — not any tenant's id.
             'leave_type_id' => ['required', 'integer', Rule::exists('master_leave_types', 'id')->where(function ($q) use ($user) {
-                if ($user->user_type === 'super_admin') return; // unscoped — acts across tenants
+                if ($user->user_type === 'super_admin') return;
                 $q->whereNull('client_id')->orWhere('client_id', $user->client_id);
             })],
             'from_date' => ['required', 'date'],
-            // LV-09: cap how far ahead leave can be booked (1 year) so a stray
-            // far-future request can't silently lock quota for years.
             'to_date' => ['required', 'date', 'after_or_equal:from_date', 'before_or_equal:' . now()->addYear()->toDateString()],
             'day_type' => ['nullable', Rule::in(['full', 'first_half', 'second_half'])],
-            // LV-22: bound the free-text fields (were unbounded → DoS/storage bloat).
             'reason' => ['nullable', 'string', 'max:2000'],
             'attachment_path' => ['nullable', 'string', 'max:1024'],
-            /* The inner key needs its own rule. validated() returns only keys
-               that HAVE rules, so 'notify' => ['array'] alone let the array
-               through and stripped employee_ids out of it — the request stored
-               notify => [] and no colleague was ever CC'd (QA #117). */
             'notify' => ['nullable', 'array'],
             'notify.employee_ids' => ['nullable', 'array'],
             'notify.employee_ids.*' => ['integer', 'exists:employees,id'],
@@ -110,8 +88,6 @@ class LeaveRequestController extends Controller
             'avail_note' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        // Resolve target employee — explicit id (admin filing on behalf) or
-        // the signed-in user's own employee row.
         $employee = null;
         if (!empty($data['employee_id'])) {
             $employee = Employee::find($data['employee_id']);
@@ -123,70 +99,35 @@ class LeaveRequestController extends Controller
             abort(422, 'Could not resolve target employee for this leave request.');
         }
 
-        // Tenant guard on the resolved employee — prevents an admin from
-        // client X filing leave on behalf of an employee in client Y by
-        // passing employee_id directly. Super_admin bypasses.
         if ($user->user_type !== 'super_admin'
             && $user->client_id
             && (int) $employee->client_id !== (int) $user->client_id) {
             abort(403, 'You cannot file leave for an employee outside your tenant.');
         }
 
-        // Self-service rule — raising a leave request is something an employee
-        // does for THEMSELVES. Filing on behalf of someone else is an admin-only
-        // capability (client/super admin). Branch users and employees can VIEW
-        // others' leave but not raise it — so a branch user can't apply leave
-        // from another employee's profile (matches the hidden "Request Leave"
-        // button in the UI).
         $isAdmin = in_array($user->user_type, ['super_admin', 'client_admin'], true);
         $isSelf  = (int) ($employee->user_id ?? 0) === (int) $user->id;
         if (!$isAdmin && !$isSelf) {
             abort(403, 'You can only raise a leave request for yourself.');
         }
 
-        // Onboarding gate (CBC #84) — an employee still mid-onboarding has no
-        // leave plan assigned and no approval chain to snapshot, so the request
-        // would be unroutable. Keyed on the TARGET employee, so it also stops an
-        // admin filing on their behalf before HR has finished.
         OnboardingGuard::assertComplete($employee, 'raise a leave request', $isSelf);
 
-        // Probation gate — the leave policy does not apply until probation
-        // ends, so the request is refused rather than routed to an approver
-        // who has no quota to grant against. Keyed on the TARGET employee, so
-        // an admin filing on their behalf is blocked too.
         ProbationGuard::assertCanRaiseLeave($employee, $isSelf);
 
-        // Notice-period gate — an employee serving notice cannot take PAID
-        // leave (the notice has to be served, not drawn as salary for days off).
-        // Unpaid leave is allowed and, once approved, pushes the last working
-        // day out by its length (applied in setStatus below).
         NoticePeriodGuard::assertLeaveAllowed(
             $employee,
             LeaveTypes::find($data['leave_type_id']),
             $isSelf,
         );
 
-        // Date guards. "Today" is resolved in the display timezone (IST): the
-        // app runs in UTC, so now()->toDateString() reports YESTERDAY for the
-        // first 5.5h of every IST day and would let a stale date slip through.
-        // Normalise from_date through Carbon so any accepted date format
-        // compares cleanly as Y-m-d.
         $todayStr = now(self::DISPLAY_TZ)->toDateString();
         $fromStr  = Carbon::parse($data['from_date'])->toDateString();
 
-        // Backdated leave bypasses the entire approval workflow's purpose, so
-        // it is blocked for everyone. (A dedicated HR "Adjustments" path could
-        // log historical absences later.)
         if ($fromStr < $todayStr) {
             abort(422, 'You cannot apply for leave in the past. Pick a date from tomorrow onward.');
         }
 
-        // Joining-date guard — leave cannot start before the employee has
-        // actually joined. Blocks future-dated joiners from booking leave that
-        // falls before their start date (CBC #85). Already-joined employees are
-        // unaffected: their date_of_joining is in the past, so from_date (which
-        // must be today or later, per the guard above) is always >= DOJ.
-        // Skipped only when DOJ is unset (can't enforce what we don't know).
         if ($employee->date_of_joining) {
             $dojStr = Carbon::parse($employee->date_of_joining)->toDateString();
             if ($fromStr < $dojStr) {
@@ -198,35 +139,19 @@ class LeaveRequestController extends Controller
         $to = Carbon::parse($data['to_date']);
         $dayType = $data['day_type'] ?? 'full';
 
-        // Same-day rule (self-service). The morning is already underway, so an
-        // employee applying for TODAY may only take the SECOND HALF — a full
-        // day or first-half for today is rejected (and so is a multi-day leave
-        // that starts today). Admins filing on behalf stay exempt so HR can
-        // still log a genuine same-day absence. Tomorrow onward is unrestricted.
         if (!$isAdmin && $fromStr === $todayStr
             && !($dayType === 'second_half' && $from->isSameDay($to))) {
             abort(422, 'Leave for today can only be applied for the second half of the day.');
         }
-        // Half-day only makes sense on a single calendar day. Reject the
-        // ambiguous "first_half across 5 days" case rather than silently
-        // billing it as 5 full days.
         if ($dayType !== 'full' && !$from->isSameDay($to)) {
             abort(422, 'Half-day requests are only valid for a single calendar day. Please pick the same from/to date or switch day type to "Full Day".');
         }
-        // NOTE: $days (chargeable day count) is computed further down, once the
-        // leave-type config is loaded.
 
-        // Overlap guard — same employee already has a Pending or Approved
-        // request whose date range intersects the new one. Two ranges
-        // overlap when each starts on or before the other one ends.
         $overlapQuery = LeaveRequest::where('employee_id', $employee->id)
             ->whereIn('status', ['Pending', 'Approved'])
             ->where('from_date', '<=', $to->toDateString())
             ->where('to_date',   '>=', $from->toDateString());
 
-        // LV-08: a half-day does NOT conflict with the OPPOSITE half on the same
-        // single day (AM + PM is a valid full day split across two requests).
-        // Exclude that complementary case from the overlap match.
         if ($dayType !== 'full' && $from->isSameDay($to)) {
             $opposite = $dayType === 'first_half' ? 'second_half' : 'first_half';
             $day = $from->toDateString();
@@ -241,9 +166,6 @@ class LeaveRequestController extends Controller
             abort(422, "You already have a {$overlap->status} leave request for {$overlap->from_date} → {$overlap->to_date}. Cancel it before applying for overlapping dates.");
         }
 
-        // Cover person + notify list must be in the same tenant. The /colleagues
-        // search endpoint enforces this in the UI, but a hand-rolled API call
-        // can still smuggle cross-tenant IDs in.
         if (!empty($data['cover_person_id'])) {
             $coverClientId = Employee::where('id', $data['cover_person_id'])->value('client_id');
             if ($coverClientId !== null && (int) $coverClientId !== (int) $employee->client_id) {
@@ -262,9 +184,6 @@ class LeaveRequestController extends Controller
             }
         }
 
-        // Find the employee's current leave plan (if any) for stamping. Prefer
-        // the pivot; fall back to the plan stamped on the employee record
-        // (onboarding wizard / employee form) so either assignment path works.
         $planId = DB::table('leave_plan_employees')
             ->where('employee_id', $employee->id)
             ->value('leave_plan_id');
@@ -272,9 +191,6 @@ class LeaveRequestController extends Controller
             $planId = (int) $employee->leave_plan;
         }
 
-        // Plan + leave-type sanity. Without a plan there are no quotas
-        // and no approval chain config, so let HR fix the assignment
-        // before the employee can apply.
         if (!$planId) {
             abort(422, 'You are not assigned to a leave plan yet. Please contact HR.');
         }
@@ -286,59 +202,43 @@ class LeaveRequestController extends Controller
             abort(422, 'The selected leave type is not part of your assigned leave plan.');
         }
 
-        // Balance / quota enforcement. Previously the backend accepted any
-        // request regardless of the configured quota, so an employee could
-        // file more days than their plan allowed (HRMS-BUG-107: "1 week per
-        // month" plan still let a 9-day request through). Block requests that
-        // exceed the available balance. Unlimited types are exempt; an opt-in
-        // per-type overdraft allowance extends the ceiling. Both Approved and
-        // still-Pending days count so a user can't stack several over-quota
-        // requests before any is acted on.
         $ptConfig  = json_decode((string) $ptConfigRaw, true);
         $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
-        $unlimited = (bool) ($accrual['unlimited'] ?? false);
+        $unlimited = \App\Support\LeaveCarry::isUnlimitedYear((array) $accrual, \App\Support\LeaveYear::of($from));
 
-        // Chargeable day count — a half-day is 0.5; otherwise count the working
-        // days in the range (weekly-offs and holidays inside the range are never
-        // charged). This count flows into the balance check, attendance (approved
-        // leave overlays the date range) and payroll.
         $leaveApp = (is_array($ptConfig) ? $ptConfig['leaveApp'] ?? [] : []);
-        $days = $this->computeLeaveDays($from, $to, $dayType, $employee);
+        $days = $this->computeLeaveDays($from, $to, $dayType, $employee, null, false, true);
 
-        // Half-day gate — only leave types whose setup enables "Allow half day
-        // leave" may be requested as first/second half. (This also blocks the
-        // same-day second-half path for types that don't allow half days.)
         if ($dayType !== 'full' && !(bool) ($ptConfig['leaveApp']['allowHalfDay'] ?? false)) {
             abort(422, 'This leave type does not allow half-day leave.');
         }
         if (!$unlimited) {
-            // Gate against the FULL annual entitlement (yearly quota + any
-            // opt-in overdraft), available from day one — no monthly vesting.
-            // Both Approved and still-Pending days count so a user can't stack
-            // several over-quota requests before any is acted on. This mirrors
-            // the "Available" figure shown on the employee profile.
-            $quotaDays = (float) ($accrual['yearlyQuota'] ?? 0);
+            $quotaDays = \App\Support\LeaveCarry::quotaForYear((array) $accrual, \App\Support\LeaveYear::of($from));
             $overdraft = !empty($accrual['employeeOverdraft']['enabled'])
                 ? (float) ($accrual['employeeOverdraft']['days'] ?? 0)
                 : 0.0;
+            // Scope to THIS leave's calendar year — the quota is per year, so a
+            // leave in one year must not be charged against another year's balance.
             $usedDays = (float) LeaveRequest::query()
                 ->where('employee_id', $employee->id)
                 ->where('leave_type_id', $data['leave_type_id'])
                 ->whereIn('status', ['Approved', 'Pending'])
+                ->whereYear('from_date', \App\Support\LeaveYear::of($from))
                 ->sum('days');
-            $available = max(0.0, ($quotaDays + $overdraft) - $usedDays);
+            // Opening carry-forward from prior years (0 when the rule is reset).
+            $carryIn = \App\Support\LeaveCarry::openingFor(
+                (int) $employee->id, (int) $data['leave_type_id'], \App\Support\LeaveYear::of($from),
+                (string) ($ptConfig['yearEnd']['carryForward'] ?? 'reset'),
+                (float) ($ptConfig['yearEnd']['carryForwardCap'] ?? 0),
+                (array) $accrual,
+            );
+            $available = max(0.0, ($quotaDays + $overdraft + $carryIn) - $usedDays);
             if ($days > $available) {
                 $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
                 abort(422, "Not enough leave balance — only {$fmt($available)} day(s) available for this leave type, but you requested {$fmt($days)}.");
             }
         }
 
-        // Monthly cap (Bug 60) — even when the annual quota still has balance,
-        // block draining a whole quota inside one month. A request is attributed
-        // to the calendar month it STARTS in; the cap is per leave type. Applies
-        // regardless of `unlimited`, since capping monthly usage is the point.
-        // Both Approved and Pending days count so requests can't be stacked
-        // before any is acted on.
         $maxPerMonth = is_array($leaveApp['maxPerMonth'] ?? null) ? $leaveApp['maxPerMonth'] : [];
         $monthlyCap = (float) ($maxPerMonth['days'] ?? 0);
         if (!empty($maxPerMonth['enabled']) && $monthlyCap > 0) {
@@ -358,25 +258,6 @@ class LeaveRequestController extends Controller
             }
         }
 
-        /* Periodic monthly accrual (was Bug #74) is GONE. "Leave accrued
-           periodically" was removed from the leave-type setup on request
-           (#102), leaving immediate allocation as the only mode: the whole
-           yearly quota is available from day one.
-
-           Its enforcement is removed with it rather than left running against
-           `accrual.mode === 'periodic'` still sitting in older config_json
-           rows. Keeping it would block leave by a rule HR can no longer see or
-           switch off in Setup — the balance would read "12 available" while
-           the request 422'd at 1/month, with the message naming a dropdown
-           that no longer exists.
-
-           Capping monthly usage is still supported and is now the only way to
-           do it: `leaveApp.maxPerMonth`, enforced just above. */
-
-        // Snapshot the approval chain from the plan-type config_json so
-        // changing the plan rules later doesn't reroute in-flight requests.
-        // Pass the computed day count so any skip_if rules (e.g. days_lt: 2)
-        // mark the matching levels Skipped right at snapshot time.
         $chain = $this->snapshotApprovalChain($employee, $planId, $data['leave_type_id'], $days);
         $startLevel = $this->firstActionableLevel($chain, 1);
         $autoApproved = $startLevel > count($chain) && count($chain) > 0;
@@ -409,13 +290,8 @@ class LeaveRequestController extends Controller
             'created_by' => $user->id,
         ]);
 
-        // Fire-and-forget notifications. Wrap in try/catch so a flaky SMTP
-        // doesn't kill a successful submit — the row is already persisted.
         $this->notifyForSubmission($row, $employee);
 
-        // Auto-approved (every chain level was Skipped by rule) — also tell
-        // the requester their leave is granted, otherwise they sit waiting
-        // for an approval email that will never come.
         if ($autoApproved) {
             $this->notifyForDecision($row, $row->approver_comment);
         }
@@ -423,15 +299,6 @@ class LeaveRequestController extends Controller
         return response()->json(['data' => $row->load(['leaveType:id,name,short_code', 'leavePlan:id,plan_name'])], 201);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Colleagues — lightweight employee search for the Notify field of
-    // the Request Leave drawer. The main /api/employees endpoint requires
-    // master.employees.can_view (an HR-only permission), which regular
-    // employees don't hold — so a search there silently 403s. This
-    // endpoint is open to any authenticated user, returns only employees
-    // in their own client (tenant safety), and includes just the fields
-    // the picker needs (id, name, emp_code, designation, photo_url).
-    // ─────────────────────────────────────────────────────────────────────
     public function colleagues(Request $request)
     {
         $user = $request->user();
@@ -444,17 +311,10 @@ class LeaveRequestController extends Controller
             ->with(['designation:id,name'])
             ->where('status', 'Active');
 
-        // Tenant scope — every authenticated user only sees colleagues
-        // in their own client. Super admin sees everyone (rare path).
         if ($user->user_type !== 'super_admin' && $user->client_id) {
             $q->where('client_id', $user->client_id);
         }
 
-        // Branch scope — "Notify Colleagues" is branch-local: a leave applicant
-        // should only see people from their OWN branch, not the whole client.
-        // Prefer the user's own branch (can't be spoofed); fall back to the
-        // active branch the BranchSwitcher sends (?branch_id=) for admins who
-        // aren't pinned to a single branch. Super admin stays unscoped.
         if ($user->user_type !== 'super_admin') {
             $branchId = $user->branch_id ?: ($request->integer('branch_id') ?: null);
             if ($branchId) {
@@ -462,10 +322,6 @@ class LeaveRequestController extends Controller
             }
         }
 
-        // Exclude the leave applicant themselves — you don't notify yourself.
-        // Prefer the explicit employee_id (admin raising a request on behalf of
-        // someone) and fall back to the authenticated user's own linked employee
-        // (the normal self-service flow). Mirrors how store() resolves the applicant.
         $selfId = $request->integer('employee_id')
             ?: $user->employee_id;
         if ($selfId) {
@@ -492,22 +348,18 @@ class LeaveRequestController extends Controller
                 'name' => $name,
                 'emp_code' => $e->emp_code,
                 'designation' => $e->designation?->name,
-                'photo_url' => null, // wire when employee_documents['photo'] resolution lands
+                'photo_url' => null,
             ];
         });
 
         return response()->json(['data' => $data]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Show — single request with every relation the approval modal needs
-    // ─────────────────────────────────────────────────────────────────────
     public function show(Request $request, int $id)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Tenant guard before loading relations — prevents IDOR.
         $this->findScopedOrFail($id, $user);
         $row = LeaveRequest::with([
             'employee:id,emp_code,first_name,last_name,display_name,department_id,designation_id,reporting_manager_id,email',
@@ -522,21 +374,6 @@ class LeaveRequestController extends Controller
             'sandwichWaiver:id,name',
         ])->findOrFail($id);
 
-        /* Sandwich context for the approver.
-         *
-         * `days` alone cannot be read: a 4-day Fri–Mon leave and a genuine
-         * 4-working-day leave look identical on screen, so an approver has no
-         * way to see that two of those days came from a policy rather than
-         * from the dates the employee asked for. These two fields make the
-         * policy's contribution explicit, and are what the waiver control
-         * keys off — no point offering a waiver on a leave the rule never
-         * touched. */
-        /* Loaded fresh, NOT reused from the eager-loaded `employee` relation
-         * above. That relation selects a trimmed column list for the UI
-         * payload, and branch_id / weekly_off / holiday_group_id are not in it
-         * — all three arrive as null, so the branch switch reads as off and the
-         * off-day detection silently falls back to Sundays. One extra query
-         * that cannot be broken by someone tuning the relation's select list. */
         $employee = Employee::find($row->employee_id);
         $applies  = $employee && \App\Support\SandwichPolicy::appliesTo($employee);
 
@@ -545,9 +382,6 @@ class LeaveRequestController extends Controller
             $from = Carbon::parse($row->from_date);
             $to   = Carbon::parse($row->to_date);
             $type = (string) ($row->day_type ?: 'full');
-            // The gap between sizing the leave with the rule and without it —
-            // derived rather than stored, so it can never drift out of date
-            // when a neighbouring leave is added, approved or cancelled.
             $sandwichDays = $this->computeLeaveDays($from, $to, $type, $employee, $row->id, false)
                           - $this->computeLeaveDays($from, $to, $type, $employee, $row->id, true);
         }
@@ -561,13 +395,6 @@ class LeaveRequestController extends Controller
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Approvals queue — pending requests where the signed-in user is the
-    // approver. Currently keyed off employees.reporting_manager_id matching
-    // an employee record linked to the current user. HR / admin scopes
-    // (super_admin, client_admin, branch_user) see every pending request
-    // in their tenant so they can act on behalf when a manager is offline.
-    // ─────────────────────────────────────────────────────────────────────
     public function approvals(Request $request)
     {
         $user = $request->user();
@@ -578,14 +405,7 @@ class LeaveRequestController extends Controller
             ->with([
                 'employee:id,emp_code,first_name,last_name,display_name,department_id,reporting_manager_id,reporting_manager_user_id,branch_id,client_id',
                 'employee.department:id,name',
-                /* Employee::$appends carries photo_url, whose accessor queries
-                   employee_documents PER ROW when this relation is absent — 12
-                   extra queries for a 10-row page, and it grows with the page.
-                   Loaded on the reporting manager too: that is another Employee
-                   carrying the same accessor. (QA #28) */
                 'employee.photoDocument:id,employee_id,document_key,file_path',
-                // Reporting manager — may be an Employee row OR a login User
-                // (Client/Branch admin); load both so the name resolves either way.
                 'employee.reportingManager:id,first_name,middle_name,last_name,display_name',
                 'employee.reportingManager.photoDocument:id,employee_id,document_key,file_path',
                 'employee.reportingManagerUser:id,name',
@@ -593,78 +413,45 @@ class LeaveRequestController extends Controller
             ])
             ->orderByDesc('created_at');
 
-        /* The status filter is applied LATER, just before paging — see the
-           counts block. Everything between here and there narrows the set the
-           tab strip counts across, so status has to be the last clause added or
-           the counts would each be filtered by the tab that is already open. */
-
-        // Super admin sees everything. Client admin / branch user see their
-        // tenant's requests so HR can act regardless of who the direct
-        // reporting manager is. Anyone else only sees requests where they
-        // are the reporting manager of the requestor OR are explicitly
-        // named on the approval chain.
-        $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        $isAdminScope = $user->user_type === 'branch_user';
         $myEmployeeId = null;
         if (!$isAdminScope) {
             $myEmployeeId = $user->employee_id;
-            if (!$myEmployeeId) {
+            if (!$myEmployeeId && !in_array($user->user_type, ['client_admin', 'client_user'], true)) {
                 return response()->json(['data' => []]);
             }
-            // Pre-filter: anything in my tenant where I might appear on
-            // the chain. We cast a wide net here (RM relation OR approved_by
-            // OR any chain row that name-checks me) and then post-filter
-            // in PHP using canActOnLevel for per-level precision —
-            // approval_chain is JSON so we can't reliably do that match
-            // entirely in SQL across PG / MySQL.
-            //
-            // Match the numeric id with a TRAILING terminator so user 5
-            // doesn't accidentally match `"approver_user_id":50` etc.
-            // JSON-encoded values are always followed by comma, closing
-            // brace, or whitespace (pretty-printed JSON). Three OR'd
-            // patterns cover all real shapes; without this guard, every
-            // user whose id is a prefix of another approver's id would see
-            // cross-row matches in the pre-filter.
             $uid  = (int) $user->id;
             $eid  = (int) $myEmployeeId;
             $q->where(function ($w) use ($myEmployeeId, $user, $uid, $eid) {
-                // My OWN leave requests — I'm the requestor, so the Leave page
-                // must show them (with their live status) even though I'm never
-                // an approver on my own chain. This is what a regular employee
-                // with `hr.leave` view expects to see.
-                $w->where('employee_id', $myEmployeeId)
-                  ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
-                    $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                })->orWhere('approved_by', $user->id)
+                if ($myEmployeeId) {
+                    $w->where('employee_id', $myEmployeeId)
+                      ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                        $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                    });
+                }
+                $w->orWhere('approved_by', $user->id)
                   ->orWhere(function ($w2) use ($uid) {
                       $w2->where('approval_chain', 'ilike', '%"approver_user_id":' . $uid . ',%')
                          ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '}%')
                          ->orWhere('approval_chain', 'ilike', '%"approver_user_id": ' . $uid . ',%')
                          ->orWhere('approval_chain', 'ilike', '%"approver_user_id": ' . $uid . '}%');
-                  })
-                  ->orWhere(function ($w2) use ($eid) {
-                      $w2->where('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . ',%')
-                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '}%')
-                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . ',%')
-                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . '}%');
                   });
+                if ($eid) {
+                    $w->orWhere(function ($w2) use ($eid) {
+                        $w2->where('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . ',%')
+                           ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '}%')
+                           ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . ',%')
+                           ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . '}%');
+                    });
+                }
             });
             if ($user->client_id) {
                 $q->where('client_id', $user->client_id);
             }
-        } elseif ($user->user_type !== 'super_admin' && $user->client_id) {
+        } elseif ($user->client_id) {
             $q->where('client_id', $user->client_id);
         }
 
-        /* Branch scope. Every branch is an isolated peer, so a branch_user is
-         * PINNED to their own branch — the BranchSwitcher cannot widen it
-         * (same rule as PayrollController::effectiveBranchId). Previously the
-         * filter applied ONLY when the request happened to carry a branch_id,
-         * and the Axios interceptor omits it whenever the switcher is on
-         * "All branches" (or the stored value is missing/stale) — so a branch
-         * user saw every sibling branch's leave requests.
-         *
-         * Client-level roles keep honouring the switcher: an explicit
-         * branch_id narrows, no branch_id means the whole client. */
         $branchId = $request->integer('branch_id') ?: null;
         if ($user->user_type === 'branch_user' && $user->branch_id) {
             $branchId = (int) $user->branch_id;
@@ -685,14 +472,6 @@ class LeaveRequestController extends Controller
             });
         }
 
-        /* The three toolbar filters, moved server-side.
-           They used to run in the browser over the whole downloaded set. Once
-           the list is paged that stops working: filtering a page filters 10
-           rows out of 1004 and reports "3 results" for a filter that matches
-           300. A filter and a page size cannot both live on the client.
-           Matched on NAME rather than id because that is what the filter modal
-           already holds (its options are built from the rows), so this needed
-           no change on the UI side. */
         if ($lt = trim((string) $request->input('leave_type', ''))) {
             $q->whereHas('leaveType', fn ($t) => $t->where('name', $lt));
         }
@@ -700,11 +479,6 @@ class LeaveRequestController extends Controller
             $q->whereHas('employee.department', fn ($d) => $d->where('name', $dept));
         }
         if ($pay = trim((string) $request->input('payroll', ''))) {
-            /* "Unpaid" is two conditions, not one: a type flagged paid_unpaid =
-               Unpaid, or the dedicated "Unpaid Leave" type. The client derived
-               it the same way (see apiToLeaveRequest), and the two definitions
-               have to agree or a row lands in one bucket here and the other
-               there. */
             $isUnpaid = fn ($t) => $t->where(fn ($w) => $w
                 ->where('paid_unpaid', 'Unpaid')->orWhere('type', 'Unpaid Leave'));
             $isPaid = fn ($t) => $t->where(fn ($w) => $w
@@ -713,30 +487,13 @@ class LeaveRequestController extends Controller
             $q->whereHas('leaveType', $pay === 'Unpaid' ? $isUnpaid : $isPaid);
         }
 
-        /* "On leave on <date>" — the panel at the top of the HR Leave page.
-           A date range straddles the day, so this cannot be answered from a
-           page of the list; it is its own small question and gets its own small
-           query rather than keeping the whole table in the browser to filter
-           locally. */
         if ($onDate = trim((string) $request->input('on_leave_on', ''))) {
             $q->whereDate('from_date', '<=', $onDate)
               ->whereDate('to_date', '>=', $onDate);
         }
 
-        /* Status tab counts. Taken from a copy of the query with every filter
-           applied EXCEPT status — which is what a tab strip means: "how many
-           would I see if I clicked this one", under the search and filters I
-           already have. Counting the rows on screen would report the page. */
         $counts = null;
         if ($request->boolean('with_counts') && $isAdminScope) {
-            /* Cloned BEFORE the status clause goes on, so this counts across
-               every status. reorder() drops the orderByDesc — Postgres rejects
-               an ORDER BY column that is not in the GROUP BY, and the ordering
-               is meaningless for a count anyway.
-               Admin scope only: for everyone else the visible set is decided by
-               canActOnLevel() in PHP, so a SQL count would report rows the
-               viewer is not allowed to see. Those counts come off the filtered
-               collection instead, below. */
             $byStatus = (clone $q)->reorder()
                 ->select('status', DB::raw('count(*) as n'))
                 ->groupBy('status')
@@ -751,53 +508,28 @@ class LeaveRequestController extends Controller
             ];
         }
 
-        /* The same thing for non-admins, who cannot be counted in SQL: keep a
-           copy with every filter EXCEPT status, to run the permission pass
-           over further down. Taken here for the same reason as the admin
-           clone above — once the status clause is on, the other tabs are
-           unreachable. (#5) */
         $countQuery = ($request->boolean('with_counts') && !$isAdminScope)
             ? (clone $q)->reorder()
             : null;
 
-        // Now the status clause, after the counts have seen the full spread.
         if ($status && $status !== 'All') {
             $q->where('status', $status);
         }
 
-        /* PAGINATION — opt-in, by sending per_page.
-           Three other screens (Inbox, the HR Leave overview) call this endpoint
-           for aggregates and expect the whole set; defaulting to a page size
-           would silently truncate them into wrong counts, which is worse than
-           the slow response it would fix. So: no per_page, no paging, exactly
-           as before. Send per_page and you get one page plus a total. */
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
         $page = max(1, (int) $request->input('page', 1));
 
         if ($perPage && $isAdminScope) {
-            /* Admin scope applies no post-fetch filtering, so the database can
-               do both the count and the slice — the only arrangement where the
-               1000-row table is never materialised in PHP at all. */
             $total = (clone $q)->count();
             $rows  = $q->forPage($page, $perPage)->get();
         } else {
             $rows  = $q->get();
-            $total = null; // set below, after the permission pass has run
+            $total = null;
         }
 
-        // Per-level precision pass for non-admins. For Pending requests
-        // only show ones where I can act on the current level. For
-        // decided requests fall back to "I was somewhere on the chain"
-        // so my history view still includes them.
-        /* One definition, used for the rows on screen AND for the tab counts
-           below. Two copies would eventually disagree, and a count that
-           disagreed would report rows the viewer may not open. (#5) */
         $visibleToViewer = function (LeaveRequest $row) use ($user, $myEmployeeId) {
-            // Always keep my own requests — I'm the requestor, not an
-            // approver, so the canActOnLevel pass below would otherwise
-            // drop them and leave my own Leave page empty.
             if ((int) $row->employee_id === (int) $myEmployeeId) return true;
             $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
             if ($row->status === 'Pending') {
@@ -814,18 +546,7 @@ class LeaveRequestController extends Controller
             $rows = $rows->filter($visibleToViewer)->values();
         }
 
-        /* Non-admin paging happens HERE, after the permission pass — never
-           before it. canActOnLevel() reads each row's approval chain in PHP, so
-           it cannot be pushed into SQL, and a database LIMIT would cut the set
-           before the filter that decides what the viewer may see: page 1 would
-           return 25 rows, drop 17 of them, and show 8 with no way to reach the
-           rest. Count and slice the filtered set instead. */
         if ($total === null) {
-            /* Non-admin counts, across EVERY status. $countQuery was cloned
-               before the status clause and goes through the same permission
-               filter as the rows on screen, so a tab reports what the viewer
-               would actually get if they clicked it. Counting $rows instead
-               reported only the open tab and zeroed the rest (#5). */
             if ($request->boolean('with_counts') && $counts === null) {
                 $countRows = $countQuery
                     ? $countQuery->get()->filter($visibleToViewer)->values()
@@ -846,57 +567,28 @@ class LeaveRequestController extends Controller
             }
         }
 
-        // Per-row "can the viewer act on this RIGHT NOW?" flag. True only when
-        // the request is still Pending AND the viewer is the approver for the
-        // CURRENT level — i.e. the reporting manager while it sits at the
-        // manager level, then HR once the manager has approved and it advances
-        // to the HR level. Super admins keep a blanket override. This is what
-        // the UI uses to show Approve/Reject vs. a View-only row, so HR can't
-        // act before the manager and a manager-rejected request shows View-only.
         $isHrScope = in_array($user->user_type, ['client_admin', 'branch_user'], true);
-        /* One pass for the whole page instead of ~3 queries per row.
-           isReportingManagerUnavailable() was being called inside the loop,
-           so a page of 25 rows cost 75 queries to answer one boolean. */
         $rmAway = $this->rmUnavailableMap($rows);
         $rows->each(function (LeaveRequest $row) use ($user, $isHrScope, $rmAway) {
             $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
             $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
             $away = (bool) ($rmAway[$row->id] ?? false);
 
-            /* Surfaced to the SPA so the Approval Chain column can show an HR
-               step only when HR is genuinely part of this request. Leave is
-               reporting-manager-only; HR appears solely when the manager is
-               away and someone has to stand in. */
             $row->rm_unavailable = $away;
 
-            // HR (branch admin / client admin) can decide any pending leave in
-            // their tenant, alongside the reporting manager — matches the Inbox
-            // copy "reporting manager or a branch admin can decide".
             $row->can_act_now = $row->status === 'Pending'
-                && ($user->user_type === 'super_admin'
-                    || $this->canActOnLevel($user, $chain, $idx, $row)
-                    || $isHrScope);
+                && ($this->canActOnLevel($user, $chain, $idx, $row) || $isHrScope);
         });
 
-        /* `total` is always sent, paged or not, so a caller can show "1–25 of
-           275" without a second count request. The rmUnavailableMap and
-           can_act_now passes above now run over one page rather than the whole
-           table — they were the per-row work that made the old response slow as
-           well as large. */
         return response()->json(array_filter([
             'data'     => $rows,
             'total'    => $total,
             'page'     => $perPage ? $page : 1,
             'per_page' => $perPage ?? $total,
-            // Absent unless asked for, so the existing callers' payload is
-            // byte-identical to what it was.
             'counts'   => $counts,
         ], fn ($v) => $v !== null));
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Approve / Reject — reporting manager or HR acts on a request
-    // ─────────────────────────────────────────────────────────────────────
     public function approve(Request $request, int $id)
     {
         return $this->setStatus($request, $id, 'Approved');
@@ -907,14 +599,6 @@ class LeaveRequestController extends Controller
         return $this->setStatus($request, $id, 'Rejected');
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // HR view acknowledgement — leave is reporting-manager-only, so HR never
-    // acts on the chain, but the UI shows an "HR" node that turns green once HR
-    // has reviewed the request. This records the FIRST such view (idempotent —
-    // set once, never overwritten) so the green state persists across reloads.
-    // Only HR / admin tiers can mark a request viewed; the requester opening
-    // their own request does not count.
-    // ─────────────────────────────────────────────────────────────────────
     public function hrView(Request $request, int $id)
     {
         $user = $request->user();
@@ -931,26 +615,11 @@ class LeaveRequestController extends Controller
         return response()->json(['data' => $row]);
     }
 
-    /**
-     * Set or clear the Sandwich Leave Policy waiver on a single leave, and
-     * re-size `days` to match.
-     *
-     * Recomputing here is the whole point. `days` is the one number both the
-     * leave balance and the payslip read, so a waiver that only changed a flag
-     * would leave the employee's balance down 4 while payroll paid 2, with
-     * nothing to reconcile the two. Flipping the flag and re-deriving `days` in
-     * the same transaction keeps them a single fact.
-     *
-     * Reachable from the leave approval screen and from the payroll run screen;
-     * both write here rather than each keeping their own idea of the waiver.
-     */
     public function sandwichWaiver(Request $request, int $id)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Discretionary reversal of a company policy — restricted to the tiers
-        // that own payroll and HR, not the requester.
         if (!in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
             abort(403, 'Only HR or an administrator can waive the sandwich policy.');
         }
@@ -978,10 +647,9 @@ class LeaveRequestController extends Controller
                 Carbon::parse($row->to_date),
                 (string) ($row->day_type ?: 'full'),
                 $employee,
-                // Exclude this very leave from the "other approved leave"
-                // lookup; its own dates are added back by computeLeaveDays.
                 $row->id,
                 $waived,
+                true,
             );
 
             $row->sandwich_waived         = $waived;
@@ -1000,22 +668,6 @@ class LeaveRequestController extends Controller
             ]);
         });
 
-        /* Push the decision through to the draft payslips, exactly as approve()
-         * and cancel() do for every other leave change.
-         *
-         * This was the one leave mutation that did not. Waiving a sandwich on an
-         * UNPAID leave changes the payslip directly — PayrollService's
-         * leaveAggregates() reads `sandwich_waived` and drops the sandwiched
-         * off-days from loss of pay — but nothing recomputed, so the flag flipped
-         * and the money did not. The row on screen said "excused" while the
-         * payslip beside it still deducted the days, until somebody happened to
-         * re-run the whole cycle. It matters more now that the switch is offered
-         * inside the run modal itself, where re-running is the very next step and
-         * the figures are read before it.
-         *
-         * Outside the transaction, and best-effort inside propagateToPayroll():
-         * the waiver itself is committed either way, and approved/paid runs are
-         * frozen so nothing settled can be moved by this. */
         $this->propagateToPayroll($row->employee_id);
 
         return $response;
@@ -1026,7 +678,6 @@ class LeaveRequestController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $row = $this->findScopedOrFail($id, $user);
-        // Only the requester (or HR) can cancel their own pending request.
         $isOwner = Employee::where('id', $row->employee_id)->where('user_id', $user->id)->exists();
         if (!$isOwner && !in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
             abort(403, 'You can only cancel your own leave requests.');
@@ -1037,17 +688,10 @@ class LeaveRequestController extends Controller
         $row->status = 'Cancelled';
         $row->save();
 
-        // Give back any last-working-day extension this leave caused, so an
-        // approve→cancel cycle can't ratchet the exit date further out. A
-        // Pending request never had one, but this is the single cancellation
-        // path — guarding here keeps it correct if approved leave ever becomes
-        // cancellable.
         NoticePeriodGuard::revertExtension($row, Employee::find($row->employee_id));
 
-        // Let the current-level approver know they can drop it from the queue.
         $this->notifyForCancellation($row);
 
-        // Cancelling an (already-approved) leave changes payroll days.
         $this->propagateToPayroll($row->employee_id);
 
         return response()->json(['data' => $row]);
@@ -1067,34 +711,18 @@ class LeaveRequestController extends Controller
 
         $chain = $row->approval_chain ?? [];
         $level = max(1, (int) ($row->current_approval_level ?? 1));
-        // Hierarchy gate: only super admins may act out of turn. HR
-        // (client_admin / branch_user) must wait for the chain to reach a level
-        // they own — the leave goes to the reporting manager FIRST; HR can view
-        // a manager-level request but cannot approve/reject it until the manager
-        // has confirmed and it advances to the HR level. This matches the
-        // per-row `can_act_now` flag the approvals() list already exposes (only
-        // super_admin overrides there), so the API can no longer be used to
-        // bypass the manager via a direct call.
         $isSuperOverride = $user->user_type === 'super_admin';
         $isApproverForLevel = $this->canActOnLevel($user, $chain, $level - 1, $row);
-        // Deadlock escape (Bug 55): if the reporting manager is unavailable (on
-        // approved leave, disabled, or unassigned), HR may step in and act so
-        // the request doesn't stall under an absent manager.
-        // HR (branch admin / client admin) may decide any pending leave in the
-        // tenant, not only when the reporting manager is away.
         $isHr = in_array($user->user_type, ['client_admin', 'branch_user'], true);
         if (!$isApproverForLevel && !$isSuperOverride && !$isHr) {
             abort(403, 'You cannot act on this leave request yet — it is awaiting approval from the reporting manager.');
         }
 
-        // LV-11: no one may APPROVE their own leave — not even via the admin
-        // override. (Rejecting your own is harmless and handled by /cancel.)
         $ownEmployeeId = (int) ($user->employee_id ?? 0);
         if ($next === 'Approved' && $ownEmployeeId && (int) $row->employee_id === $ownEmployeeId) {
             abort(403, 'You cannot approve your own leave request.');
         }
 
-        // Record the decision on this chain entry.
         if (isset($chain[$level - 1])) {
             $chain[$level - 1]['status'] = $next;
             $chain[$level - 1]['acted_by'] = $user->id;
@@ -1104,9 +732,6 @@ class LeaveRequestController extends Controller
         $row->approval_chain = $chain;
 
         if ($next === 'Rejected') {
-            // Reject at any level terminates the workflow immediately. Mark
-            // every downstream level Skipped so a later approver (e.g. HR) no
-            // longer shows as Pending once the request has been rejected.
             for ($i = $level; $i < count($chain); $i++) {
                 $st = $chain[$i]['status'] ?? 'Pending';
                 if (!in_array($st, ['Approved', 'Rejected'], true)) {
@@ -1119,10 +744,6 @@ class LeaveRequestController extends Controller
             $row->approved_at = now();
             $row->approver_comment = $data['comment'] ?? null;
         } else {
-            // Approved — advance to next actionable level or finalize.
-            // firstActionableLevel walks past any consecutive Skipped
-            // entries so a 3-level chain with the middle level skipped
-            // collapses correctly from level 1 → 3.
             $nextLevel = $this->firstActionableLevel($chain, $level + 1);
             if ($nextLevel > count($chain)) {
                 $row->status = 'Approved';
@@ -1131,33 +752,23 @@ class LeaveRequestController extends Controller
                 $row->approver_comment = $data['comment'] ?? null;
             } else {
                 $row->current_approval_level = $nextLevel;
-                // Stays Pending — the next level needs to act.
             }
         }
         $row->save();
 
-        /* Notice-period rule 2 — a FINALLY approved unpaid leave taken while
-           serving notice pushes the last working day out by its length, so the
-           notice period is still served in full. Runs only on the terminal
-           Approved state, never on an intermediate chain level. */
         $noticeDays = 0;
         if ($row->status === 'Approved') {
             $noticeDays = NoticePeriodGuard::applyExtension($row, Employee::find($row->employee_id));
         }
 
-        // Fire notifications based on the new state. Logged-only on failure.
         $this->notifyForDecision($row, $data['comment'] ?? null);
 
-        // A finalized leave decision changes paid/unpaid days — propagate it to
-        // any non-locked payroll already generated for this employee.
         if (in_array($row->status, ['Approved', 'Rejected'], true)) {
             $this->propagateToPayroll($row->employee_id);
         }
 
         return response()->json([
             'data' => $row->fresh(['leaveType:id,name,short_code']),
-            // Surfaced so the approver is told the exit date moved rather than
-            // discovering it later on the exit screen.
             'notice_extension' => $noticeDays > 0 ? [
                 'days'             => $noticeDays,
                 'last_working_day' => NoticePeriodGuard::lastWorkingDayLabel(Employee::find($row->employee_id)),
@@ -1165,16 +776,12 @@ class LeaveRequestController extends Controller
         ]);
     }
 
-    /** Recompute the employee's draft/generated payslips so a leave change
-     *  reflects everywhere (locked runs are untouched). Best-effort. */
     private function propagateToPayroll(?int $employeeId): void
     {
         if (!$employeeId) return;
         try {
             app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $employeeId);
         } catch (\Throwable $e) {
-            // Never block a leave action on a payroll recompute hiccup — but LOG
-            // it so a silent payroll/leave divergence can be diagnosed. (LV-29)
             \Illuminate\Support\Facades\Log::warning('Leave→payroll propagation failed', [
                 'employee_id' => $employeeId,
                 'error'       => $e->getMessage(),
@@ -1182,10 +789,6 @@ class LeaveRequestController extends Controller
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Approvers list — surfaces the "View Approvers" popover on a request.
-    // Now returns the full snapshotted chain with per-level status + actor.
-    // ─────────────────────────────────────────────────────────────────────
     public function approvers(Request $request, int $id)
     {
         $user = $request->user();
@@ -1194,13 +797,10 @@ class LeaveRequestController extends Controller
         $row = $this->findScopedOrFail($id, $user);
         $chain = $row->approval_chain ?? [];
 
-        // Hydrate each level with the resolved approver's name / email.
         $employeeIds = collect($chain)->pluck('approver_employee_id')->filter()->unique()->all();
         $employees = Employee::with('user:id,name,email')
             ->whereIn('id', $employeeIds)
             ->get()->keyBy('id');
-        // Some levels (e.g. a reporting manager who is a login User, not an
-        // Employee) resolve to a user id — hydrate those names too.
         $userIds = collect($chain)->pluck('approver_user_id')->filter()->unique()->all();
         $users = \App\Models\User::whereIn('id', $userIds)->get(['id', 'name', 'email'])->keyBy('id');
 
@@ -1228,8 +828,6 @@ class LeaveRequestController extends Controller
             ];
         }
 
-        // Backward compat: if a request has no chain (pre-migration data),
-        // return the v1 single-line response so existing UI keeps working.
         if (empty($out)) {
             $employee = Employee::find($row->employee_id);
             if ($employee && $employee->reporting_manager_id) {
@@ -1254,24 +852,6 @@ class LeaveRequestController extends Controller
         return response()->json(['data' => $out]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Helpers — chain snapshotting + per-level approver checks
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Build the approval chain that gets frozen onto a new leave_request.
-     * Reads the plan-type Setup config_json.approval.chain when present;
-     * otherwise falls back to a single "Reporting Manager" level so v1
-     * behaviour is preserved.
-     *
-     * Conditional skip rules: each chain entry may carry `skip_if` with
-     * one or more numeric thresholds (e.g. {"days_lt": 2}). When a rule
-     * matches at submission time the level is created with status =
-     * Skipped, so it never blocks the request. snapshotApprovalChain
-     * evaluates against the leave's day count and returns the chain
-     * already-marked; setStatus / firstActionableLevel then walk past
-     * skipped levels automatically.
-     */
     private function snapshotApprovalChain(Employee $employee, ?int $planId, int $leaveTypeId, float $days = 0): array
     {
         $rawChain = null;
@@ -1283,9 +863,6 @@ class LeaveRequestController extends Controller
             if ($pivot) {
                 $cfg = is_string($pivot) ? json_decode($pivot, true) : $pivot;
                 $approval = $cfg['approval'] ?? null;
-                // Two shapes supported:
-                //   - new: approval.chain = [{kind, role, user_id, ...}, ...]
-                //   - legacy: approval.required + approval.approverRole — wrap as a single level
                 if (is_array($approval['chain'] ?? null) && count($approval['chain']) > 0) {
                     $rawChain = $approval['chain'];
                 } elseif (!empty($approval['required']) && !empty($approval['approverRole'])) {
@@ -1294,17 +871,11 @@ class LeaveRequestController extends Controller
             }
         }
         if ($rawChain === null) {
-            // No saved config — default to Reporting Manager only. The manager
-            // approves or rejects and that decision is final; HR is view-only.
             $rawChain = [
                 ['approver_kind' => 'reporting_manager'],
             ];
         }
 
-        // HR is view-only: strip any HR role level from the chain so it ends at
-        // the reporting manager, even for leave types whose config_json still
-        // carries a legacy RM → HR chain. If filtering empties the chain (e.g. a
-        // legacy HR-only config), fall back to the reporting manager.
         $rawChain = array_values(array_filter($rawChain, function ($r) {
             $kind = $r['approver_kind'] ?? ($r['kind'] ?? null);
             $role = strtolower((string) ($r['approver_role'] ?? ($r['role'] ?? '')));
@@ -1321,27 +892,15 @@ class LeaveRequestController extends Controller
             $userId = $r['approver_user_id'] ?? ($r['user_id'] ?? null);
             $empIdOverride = $r['approver_employee_id'] ?? ($r['employee_id'] ?? null);
 
-            // Resolve to a concrete employee_id when possible. Reporting
-            // Manager is read off the requesting employee. Role-based and
-            // user-based references stay symbolic — resolution happens at
-            // approval time in canActOnLevel().
             $resolvedEmpId = $empIdOverride;
             $resolvedUserId = $userId;
             if (!$resolvedEmpId && $kind === 'reporting_manager') {
                 $resolvedEmpId = $employee->reporting_manager_id;
-                // The reporting manager may be stored as a login User (a
-                // Client/Branch admin) rather than an Employee row — fall back
-                // to it so the level resolves to that user instead of staying
-                // Unassigned.
                 if (!$resolvedEmpId && !$resolvedUserId) {
                     $resolvedUserId = $employee->reporting_manager_user_id;
                 }
             }
 
-            // If the resolved approver is soft-deleted (active employee
-            // record gone but reporting_manager_id still points at the
-            // legacy id), treat as missing so the chain auto-skips this
-            // level instead of stalling forever.
             $resolvedExists = $resolvedEmpId
                 ? Employee::where('id', $resolvedEmpId)->exists()
                 : true;
@@ -1350,16 +909,6 @@ class LeaveRequestController extends Controller
             $shouldSkip = $this->evaluateSkipRule($skipIf, ['days' => $days]);
             $skipReason = $shouldSkip ? 'Auto-skipped by rule' : null;
 
-            // Defensive: a level that ultimately points back at the
-            // requester themselves (self-loop, common when HR forgot to
-            // set the RM during onboarding so it defaults to their own
-            // id) would otherwise stall forever or — worse — let the
-            // requester self-approve. Catches both:
-            //   - kind === 'reporting_manager' resolving to self
-            //   - kind === 'role' with role === 'reporting_manager'
-            //     where employee.reporting_manager_id is the requester
-            //   - explicit approver_employee_id / approver_user_id that
-            //     happens to point at the requester
             $loopsToSelf = false;
             if (!$shouldSkip) {
                 if ($kind === 'reporting_manager'
@@ -1391,18 +940,8 @@ class LeaveRequestController extends Controller
                 && !$resolvedExists
             ) {
                 if ($kind === 'reporting_manager') {
-                    // The reporting manager was removed / soft-deleted. Do NOT
-                    // skip this level: on the default sole-RM chain, skipping the
-                    // only level makes firstActionableLevel run past the end and
-                    // the request auto-approves with no human review (bug #68).
-                    // Keep it Pending — an inactive/disabled/missing RM is treated
-                    // as unavailable by isReportingManagerUnavailable(), so HR can
-                    // step in (Bug 55) and the request is actually reviewed
-                    // instead of silently granted.
                     $skipReason = 'Reporting manager unavailable — awaiting HR review';
                 } else {
-                    // A non-RM explicit approver that no longer exists → skip to
-                    // the next level so the chain doesn't stall on a dead entry.
                     $shouldSkip = true;
                     $skipReason = "Auto-skipped — approver employee #{$resolvedEmpId} no longer exists";
                 }
@@ -1425,12 +964,6 @@ class LeaveRequestController extends Controller
         return $chain;
     }
 
-    /**
-     * Decide if a chain entry should be auto-skipped at submission time
-     * based on the request's runtime values. Supported keys (extend as
-     * needed):
-     *   days_lt / days_lte / days_gt / days_gte — compare to ctx.days
-     */
     private function evaluateSkipRule(mixed $rule, array $ctx): bool
     {
         if (!is_array($rule) || empty($rule)) return false;
@@ -1442,12 +975,6 @@ class LeaveRequestController extends Controller
         return false;
     }
 
-    /**
-     * Walk forward from `start` (1-based) past every Skipped level until
-     * we hit a Pending one (or run past the end of the chain). Used at
-     * snapshot time to set current_approval_level, and after each
-     * approval to fast-forward through consecutive skips.
-     */
     private function firstActionableLevel(array $chain, int $start): int
     {
         $i = max(1, $start);
@@ -1456,17 +983,9 @@ class LeaveRequestController extends Controller
             if ($status === 'Pending') return $i;
             $i++;
         }
-        return count($chain) + 1; // past the end → fully approved
+        return count($chain) + 1;
     }
 
-    /**
-     * Can the given user act on the given chain entry? True when their
-     * linked employee matches approver_employee_id, OR their user_id
-     * matches approver_user_id, OR (for role-based levels) they hold the
-     * named role. Admin / HR scopes bypass via the caller.
-     */
-    /** Public so cross-module inboxes (e.g. MyTeamController approvals) can
-     *  reuse the exact per-level approver resolution without duplicating it. */
     public function canActOnLevel($user, array $chain, int $idx, ?LeaveRequest $request = null): bool
     {
         if (!isset($chain[$idx])) return false;
@@ -1481,9 +1000,6 @@ class LeaveRequestController extends Controller
             }
         }
         if (!empty($entry['approver_role'])) {
-            // Role gating — `branch_user` and `client_admin` are treated as
-            // HR-equivalent here. Extend with proper role-table lookups if
-            // org structure formalizes more roles later.
             $role = strtolower($entry['approver_role']);
             if ($role === 'hr' && in_array($user->user_type, ['branch_user', 'client_admin'], true)) {
                 return true;
@@ -1509,17 +1025,6 @@ class LeaveRequestController extends Controller
         return false;
     }
 
-    /**
-     * Chargeable leave days for [from, to]. A single half-day is 0.5; otherwise
-     * each working day in the range counts 1, and weekly-offs / holidays inside
-     * the range are free.
-     *
-     * Unless the employee's BRANCH runs the Sandwich Leave Policy, in which case
-     * an off-day flanked by leave on both sides is charged as well — see
-     * App\Support\SandwichPolicy. The extra days can fall outside [from, to]:
-     * when Friday and Monday were applied for separately, the Monday request is
-     * the one that pays for the weekend between them.
-     */
     private function computeLeaveDays(
         Carbon $from,
         Carbon $to,
@@ -1527,25 +1032,16 @@ class LeaveRequestController extends Controller
         Employee $employee,
         ?int $ignoreRequestId = null,
         bool $sandwichWaived = false,
+        bool $minOneDay = false,
     ): float {
         if ($dayType !== 'full' && $from->isSameDay($to)) return 0.5;
 
         $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
 
-        // Holidays are fetched for a PADDED window. The sandwich scan steps
-        // outside the request on both sides, and a holiday just beyond the
-        // edge is part of the run it is testing — loading only [from, to]
-        // would make that day look like a working day and silently break the
-        // flanking test.
         $pad     = \App\Support\SandwichPolicy::LOOKAROUND_DAYS;
         $padFrom = $from->copy()->subDays($pad);
         $padTo   = $to->copy()->addDays($pad);
 
-        /* Unconditional now: a company holiday carries no group (QA #93), so
-         * gating the lookup on the employee having one meant an employee not
-         * placed in a group had every holiday counted as an ordinary working day
-         * — charged against their leave here, while payroll credited it as paid.
-         * The two sizing sites have to read the same calendar. */
         $holidaySet = $this->holidayDatesInRange($employee, $padFrom, $padTo);
 
         $isOff = fn (Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
@@ -1556,18 +1052,12 @@ class LeaveRequestController extends Controller
             if (!$isOff($d)) $total += 1.0;
         }
 
-        // A waiver spares THIS leave only. The employee was still absent on
-        // those days, so the leave keeps counting as leave for any neighbouring
-        // request's own sandwich test — waiving one leave must not quietly
-        // un-sandwich another.
         if (!$sandwichWaived && \App\Support\SandwichPolicy::appliesTo($employee)) {
             $approved = \App\Support\SandwichPolicy::approvedLeaveDates(
                 (int) $employee->id, $padFrom, $padTo, $ignoreRequestId,
             );
             $rangeStart = $from->copy()->startOfDay();
             $rangeEnd   = $to->copy()->startOfDay();
-            // "On leave" means this request's own days OR any other approved
-            // leave — the two halves of a sandwich are routinely filed apart.
             $isLeave = function (Carbon $d) use ($approved, $rangeStart, $rangeEnd): bool {
                 $day = $d->copy()->startOfDay();
                 if ($day->gte($rangeStart) && $day->lte($rangeEnd)) return true;
@@ -1578,25 +1068,18 @@ class LeaveRequestController extends Controller
             );
         }
 
+        // A full-day leave over a real date range that lands entirely on
+        // week-offs/holidays still costs at least one day — a leave is never
+        // recorded as 0 days (QA #246/#247). Only the stored leave uses this
+        // floor ($minOneDay); the internal sandwich-diff keeps the raw count,
+        // and payroll recomputes its own span, so paid/LOP days are unaffected.
+        if ($minOneDay && $dayType === 'full' && $from->lte($to) && $total < 1.0) {
+            $total = 1.0;
+        }
+
         return $total;
     }
 
-    /* parseWeeklyOffSet() lived here — a duplicate of the one in
-     * AttendanceController. Both are gone: App\Support\WeekOff::isOff() is now
-     * the single answer to "is this date an off day?", and it understands the
-     * nth-Saturday patterns a day-of-week set never could. */
-
-    /**
-     * Holiday dates (Y-m-d => true) that apply to this EMPLOYEE within
-     * [start, end], re-anchoring recurring holidays to the window's years.
-     *
-     * Company holidays (holiday_group_id NULL, scoped by client/branch) plus the
-     * employee's own group, if they are in one — the same resolution
-     * PayrollService::holidayDateSet() performs. It takes the employee rather
-     * than a group id precisely so the company-wide half can be resolved; keyed
-     * on a group id alone it could only ever answer half the question, and an
-     * employee with no group got nothing.
-     */
     private function holidayDatesInRange(Employee $employee, Carbon $start, Carbon $end): array
     {
         if (!\Illuminate\Support\Facades\Schema::hasTable('holidays')) return [];
@@ -1610,13 +1093,7 @@ class LeaveRequestController extends Controller
             ->where(function ($q) use ($groupId, $clientId, $branchId) {
                 $q->where(function ($w) use ($clientId, $branchId) {
                     $w->whereNull('holiday_group_id');
-                    // Client must MATCH, never "match or null" — an unscoped row
-                    // is not a global holiday, and treating it as one leaks one
-                    // tenant's calendar into every other. Twin of the rule in
-                    // PayrollService::holidayDateSet().
                     $w->where('client_id', $clientId);
-                    // Branch stays "match or null": a company holiday with no
-                    // branch covers every office of that client.
                     if ($branchId) {
                         $w->where(fn($b) => $b->whereNull('branch_id')->orWhere('branch_id', $branchId));
                     }
@@ -1632,18 +1109,6 @@ class LeaveRequestController extends Controller
             $d = Carbon::parse($r->date);
 
             if ($r->is_recurring) {
-                /* Anchor to EVERY year the window touches, not just the start
-                 * year. Callers pad this window by SandwichPolicy::LOOKAROUND_DAYS
-                 * on both sides, so a leave in late December is looked up across
-                 * a range that ends in January — and anchoring a recurring 1 Jan
-                 * to the START year produced last January's date, which then
-                 * failed the range test and was dropped. New Year read as an
-                 * ordinary working day, which both truncated the off-run being
-                 * walked and broke the flanking test beside it.
-                 *
-                 * PayrollService::holidayDateSet() has always anchored this way,
-                 * so the leave screen and the payslip were sizing the same leave
-                 * off different calendars across a year boundary. */
                 foreach (range($start->year, $end->year) as $year) {
                     $anchored = Carbon::create($year, $d->month, $d->day);
                     if ($anchored->gte($start) && $anchored->lte($end)) {
@@ -1659,24 +1124,6 @@ class LeaveRequestController extends Controller
         return $out;
     }
 
-    /**
-     * Is the requester's reporting manager currently UNAVAILABLE to approve —
-     * i.e. on an approved leave that covers today, an inactive/soft-deleted
-     * employee, a disabled login user, or simply not assigned? When true, leave
-     * approval is allowed to fall through to HR so requests don't deadlock under
-     * a manager who is away on vacation. (Bug 55)
-     */
-    /**
-     * isReportingManagerUnavailable() for a whole page, in a fixed number of
-     * queries rather than three per row.
-     *
-     * Same four conditions as the single-row version — RM record missing,
-     * inactive, login disabled, or on an approved leave covering today — just
-     * answered set-at-a-time.
-     *
-     * @param  \Illuminate\Support\Collection<int, LeaveRequest>  $rows
-     * @return array<int, bool>  keyed by leave_request id
-     */
     private function rmUnavailableMap($rows): array
     {
         if ($rows->isEmpty()) return [];
@@ -1695,7 +1142,6 @@ class LeaveRequestController extends Controller
             ? Employee::whereIn('id', $rmEmpIds)->get(['id', 'status', 'user_id'])->keyBy('id')
             : collect();
 
-        // Logins to check: the RMs' own, plus any RM stored directly as a user.
         $userIds = array_values(array_unique(array_merge(
             $rmEmployees->pluck('user_id')->filter()->all(),
             $rmUserIds,
@@ -1722,7 +1168,7 @@ class LeaveRequestController extends Controller
 
             if ($emp->reporting_manager_id) {
                 $rm = $rmEmployees->get($emp->reporting_manager_id);
-                if (!$rm) { $out[$row->id] = true; continue; }                  // record gone
+                if (!$rm) { $out[$row->id] = true; continue; }
                 if (strcasecmp((string) $rm->status, 'Active') !== 0) { $out[$row->id] = true; continue; }
                 if ($rm->user_id) {
                     $u = $users->get($rm->user_id);
@@ -1738,7 +1184,6 @@ class LeaveRequestController extends Controller
                 continue;
             }
 
-            // No manager assigned at all — same verdict as the per-row version.
             $out[$row->id] = true;
         }
 
@@ -1751,16 +1196,14 @@ class LeaveRequestController extends Controller
         if (!$emp) return false;
         $todayStr = now(self::DISPLAY_TZ)->toDateString();
 
-        // RM stored as an Employee row.
         if ($emp->reporting_manager_id) {
             $rm = Employee::find($emp->reporting_manager_id);
-            if (!$rm) return true; // RM record gone
-            if (strcasecmp((string) $rm->status, 'Active') !== 0) return true; // inactive
+            if (!$rm) return true;
+            if (strcasecmp((string) $rm->status, 'Active') !== 0) return true;
             if ($rm->user_id) {
                 $u = User::find($rm->user_id);
-                if ($u && strcasecmp((string) $u->status, 'active') !== 0) return true; // disabled login
+                if ($u && strcasecmp((string) $u->status, 'active') !== 0) return true;
             }
-            // RM on an approved leave that covers today.
             $onLeave = LeaveRequest::where('employee_id', $rm->id)
                 ->where('status', 'Approved')
                 ->whereDate('from_date', '<=', $todayStr)
@@ -1769,44 +1212,27 @@ class LeaveRequestController extends Controller
             return $onLeave;
         }
 
-        // RM stored as a login user (Client/Branch admin acting as manager).
         if ($emp->reporting_manager_user_id) {
             $u = User::find($emp->reporting_manager_user_id);
             if (!$u) return true;
             return strcasecmp((string) $u->status, 'active') !== 0;
         }
 
-        // No reporting manager at all → must route to HR.
         return true;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Notification dispatchers — fire and forget. Every send is wrapped
-    // in try/catch + Log::warning so a flaky SMTP / missing recipient
-    // doesn't break the API call that triggered it.
-    // ─────────────────────────────────────────────────────────────────────
-
     private function notifyForSubmission(LeaveRequest $row, Employee $employee): void
     {
-        // 1) Every approver at level 1 (role-based levels can fan out
-        //    to multiple users, e.g. all HRs in the tenant).
         foreach ($this->resolveApproverNotifiables($row, 1, $employee) as $r) {
             $this->safeSend($r, new LeaveRequestNotification($row, 'submitted_to_approver'));
         }
 
-        // 1b) Deadlock escape (Bug 55): if the reporting manager is unavailable
-        //     (on approved leave, disabled, or unassigned), the only level-1
-        //     recipient above is an absent manager — the request would sit
-        //     silently. Also notify HR (every branch_user / client_admin in the
-        //     tenant) so they know to step in and approve/reject in the RM's
-        //     place. Backend already permits HR to act in this case.
         if ($this->isReportingManagerUnavailable($row)) {
             foreach ($this->resolveRoleRecipients('hr', $employee) as $r) {
                 $this->safeSend($r, new LeaveRequestNotification($row, 'escalated_to_hr'));
             }
         }
 
-        // 2) CC'd colleagues from notify.employee_ids
         $ccIds = $this->extractNotifyEmployeeIds($row);
         foreach ($ccIds as $ccEmpId) {
             $cc = Employee::find($ccEmpId);
@@ -1832,13 +1258,10 @@ class LeaveRequestController extends Controller
         }
 
         if ($row->status === 'Approved') {
-            // Final approval reached — tell the employee
             $this->safeSend($employeeNotifiable, new LeaveRequestNotification($row, 'approved', $comment));
             return;
         }
 
-        // Still Pending → advanced to a new level. Notify every approver
-        // at the new level (role-based fans out to all users).
         foreach ($this->resolveApproverNotifiables($row, (int)$row->current_approval_level, $employee) as $r) {
             $this->safeSend($r, new LeaveRequestNotification($row, 'submitted_to_approver'));
         }
@@ -1853,15 +1276,6 @@ class LeaveRequestController extends Controller
         }
     }
 
-    /**
-     * Resolve recipients for the given chain level (1-based) on a request.
-     * Returns an ARRAY of notifiables — most levels have one (RM, specific
-     * user/employee) but role-based levels can have many (every HR user
-     * in the tenant). Empty array means "couldn't resolve to anyone".
-     *
-     * Also handles the pre-migration fallback when a request has no
-     * approval_chain — defaults to the single Reporting Manager line.
-     */
     private function resolveApproverNotifiables(LeaveRequest $row, int $level, Employee $employee): array
     {
         $chain = $row->approval_chain ?? [];
@@ -1901,28 +1315,12 @@ class LeaveRequestController extends Controller
         return [];
     }
 
-    /**
-     * Map a chain role-name to the set of users that fill that role for
-     * the requestor's tenant.
-     *
-     *   hr / branch_admin → all branch_user + client_admin in the same
-     *                        client (and same branch when set)
-     *   reporting_manager → the requestor's RM (treated like the kind)
-     *
-     * We don't have a roles table per se yet — branch_user / client_admin
-     * are the de-facto HR roles in this codebase. Extend with proper
-     * master_roles lookups later if/when org structure formalizes more
-     * named approval roles.
-     */
     private function resolveRoleRecipients(string $role, Employee $employee): array
     {
         $role = strtolower($role);
 
         if ($role === 'reporting_manager') {
             if (!$employee->reporting_manager_id) return [];
-            // Self-loop guard — never notify the requester as their own
-            // approver (handled at snapshot time too, but the runtime
-            // resolver might be called with a stale chain).
             if ((int) $employee->reporting_manager_id === (int) $employee->id) return [];
             $rm = Employee::find($employee->reporting_manager_id);
             $r = $rm ? $this->employeeAsRecipient($rm) : null;
@@ -1933,30 +1331,15 @@ class LeaveRequestController extends Controller
             return [];
         }
 
-        $userTypes = $role === 'branch_admin'
-            ? ['branch_user']
-            : ['branch_user', 'client_admin'];
-
         $q = User::query()
-            ->whereIn('user_type', $userTypes)
+            ->where('user_type', 'branch_user')
             ->whereNotNull('email');
         if ($employee->client_id) $q->where('client_id', $employee->client_id);
-        if ($role === 'branch_admin' && $employee->branch_id) {
+        if ($employee->branch_id) {
             $q->where('branch_id', $employee->branch_id);
         }
 
         return $q->get()->all();
-    }
-
-    /**
-     * Backward-compatible wrapper used by older callers — returns the
-     * FIRST recipient or null. New code should call the array version
-     * directly so role-based levels notify everyone.
-     */
-    private function resolveApproverNotifiable(LeaveRequest $row, int $level, Employee $employee): mixed
-    {
-        $list = $this->resolveApproverNotifiables($row, $level, $employee);
-        return $list[0] ?? null;
     }
 
     private function employeeAsRecipient(Employee $emp): mixed
@@ -1980,13 +1363,6 @@ class LeaveRequestController extends Controller
         return array_values(array_filter(array_map('intval', $ids), fn($v) => $v > 0));
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Tenant scope guard — every single-row endpoint (show / approve /
-    // reject / cancel / approvers) must hit this so a user in client X
-    // can't read or act on a leave_request belonging to client Y just by
-    // guessing the ID. Super admins bypass the check; everyone else is
-    // pinned to their own client_id.
-    // ─────────────────────────────────────────────────────────────────────
     private function findScopedOrFail(int $id, $user): LeaveRequest
     {
         $row = LeaveRequest::findOrFail($id);
@@ -1995,11 +1371,6 @@ class LeaveRequestController extends Controller
             && (int) $row->client_id !== (int) $user->client_id) {
             abort(404);
         }
-        // Branch isolation. This guard fronts show / hrView / approve / reject
-        // / approvers, so without it a branch user who knew (or guessed) an id
-        // could read AND decide a sibling branch's leave request — the listing
-        // leak with worse consequences. A NULL branch_id row is client-level
-        // and stays visible, matching the convention used elsewhere.
         if (($user->user_type ?? null) === 'branch_user'
             && $user->branch_id
             && $row->branch_id
@@ -2013,11 +1384,6 @@ class LeaveRequestController extends Controller
     {
         if (!$notifiable) return;
 
-        // LV-28: the notification implements ShouldQueue but there is no queue
-        // worker, so delivery is forced SYNCHRONOUS.
-        // One channel at a time, each in its own try: a single send() aborts the
-        // whole channel list on the first throw, so a dead SMTP server used to
-        // swallow the bell row too. The bell goes first and stands on its own.
         foreach (['database', 'mail'] as $channel) {
             try {
                 Notification::sendNow($notifiable, $notif, [$channel]);

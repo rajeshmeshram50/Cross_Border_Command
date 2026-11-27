@@ -726,6 +726,8 @@ export const CLM_CSS = `
   color: #22d3ee; pointer-events: none; z-index: 2;
 }
 .clm-filter-ms .master-select-toggle { padding-left: 34px; }
+/* 40px like the Add button beside it - the toggle came out 38. */
+.clm-filter-ms .master-select-toggle { height: 40px !important; min-height: 40px !important; box-sizing: border-box; }
 [data-bs-theme="dark"] .clm-filter-ms .clm-filter-ico { color: #67e8f9; }
 
 /* .clm-rows-scroll is gone. It gave the rows their own scroll box inside a
@@ -734,10 +736,51 @@ export const CLM_CSS = `
    also the last scrollbar-gutter: stable left in CLM. All three lists now use
    the plain minHeight floor the rest of the module uses. */
 .clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
-.clm-table-fill > .clm-table { background: #fff; }
+.clm-table-fill > .clm-table, .clm-table-fill > .clm-tscroll > .clm-table { background: #fff; }
 .clm-table-fill.clm-fill-empty { background: #fff; }
 [data-bs-theme="dark"] .clm-table-fill.clm-fill-empty { background: #0f172a; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
+/* Opened from the Master Control Center (/master/..., wrapped in .clm-mc):
+ * table scrollbar, not a page scrollbar -- the fill wrap is capped at the
+ * space above the app footer and only the rows scroll (.clm-tscroll), under
+ * the sticky column headings, with the pager below. From the CLM menu the
+ * page keeps its own CLM look: the wrap only has a minimum height, the page
+ * scrolls, and .clm-tscroll is a plain box. */
+body:not(:has(.clm-mc)) .clm-table-fill { max-height: none !important; }
+.clm-mc .clm-table-fill { overflow: hidden; }
+.clm-mc .clm-tscroll {
+  flex: 1 1 0; min-height: 0; min-width: 0;
+  overflow: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #a5e8f5 transparent;
+}
+.clm-mc .clm-tscroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.clm-mc .clm-tscroll::-webkit-scrollbar-track { background: transparent; }
+.clm-mc .clm-tscroll::-webkit-scrollbar-thumb { background: #a5e8f5; border-radius: 8px; }
+.clm-mc .clm-tscroll::-webkit-scrollbar-thumb:hover { background: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-tscroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+[data-bs-theme="dark"] .clm-mc .clm-tscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
+/* From the CLM menu: the sideways scroll belongs to the rows, not the card.
+   The wrap used to scroll horizontally with the pager inside it, so on zoom /
+   narrow screens the scrollbar sat UNDER the pager, at the card's foot. Now the
+   wrap clips and .clm-tscroll (table only) scrolls, so the bar sits right under
+   the last row and the pager stays below it - as on Case to Case. */
+body:not(:has(.clm-mc)) .clm-table-fill { overflow-x: hidden; }
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll {
+  flex: 0 0 auto; min-width: 0; max-width: 100%;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; scrollbar-color: #a5e8f5 transparent;
+}
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar { height: 8px; }
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar-track { background: transparent; }
+body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar-thumb { background: #a5e8f5; border-radius: 8px; }
+[data-bs-theme="dark"] body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+[data-bs-theme="dark"] body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
+/* Master Control Center header insets, as on the Master lists: 12px sides
+ * plus 6px before the icon, the What We Are Doing Here strip lined up under it. */
+.clm-mc .clm-head-strip { padding: 0 12px; }
+.clm-mc .clm-head-strip-left { padding-left: 6px; }
+.clm-mc .clm-bref-head { gap: 13px; padding: 7px 12px 7px 18px; }
+.clm-mc .clm-bref-ico { width: 38px; height: 38px; border-radius: 12px; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
  * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
  * viewports the "Showing…" pill and the page arrows are pushed outside the
@@ -1340,6 +1383,8 @@ body > .dropdown-menu.master-select-menu,
 }
 .clm-input-err { border-color: #ef4444 !important; }
 .clm-err { font-size: 10.5px; color: #ef4444; overflow-wrap: anywhere; word-break: break-word; }
+.clm-dup-alert { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+[data-bs-theme="dark"] .clm-dup-alert { background: rgba(239, 68, 68, .12); border-color: rgba(248, 113, 113, .35); color: #fca5a5; }
 .clm-field-hint { font-size: 10px; color: #0891b2; opacity: .7; margin-top: 3px; }
 
 /* Inline + button (next to selects) */
@@ -1357,7 +1402,7 @@ body > .dropdown-menu.master-select-menu,
 
 /* Modal footer */
 .clm-modal-foot {
-  background: #fff;
+  background: #f0f9ff; /* the colour the body's wash ends on, so body and footer meet without a band */
   border-top: 1px solid rgba(6,182,212,.15);
   /* 10 on every side, matching the head and the body. */
   padding: 10px;
@@ -1765,10 +1810,11 @@ body > .dropdown-menu.master-select-menu,
  * this rule was clobbering .clm-tab.active's white text (same specificity,
  * later in the cascade wins), leaving the active tab readable as a muddy
  * grey-blue against the teal gradient. */
-/* Dark: the light rule's accent wash, inverted — a translucent accent fill and
-   an accent label, as CTC does it, rather than the flat slate panel this used
-   to be. */
-[data-bs-theme="dark"] .clm-tab:not(.active) { color: #67e8f9; background: linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10)); border-color: rgba(6,182,212,.28); }
+/* Dark: the same as light - an unselected tab is transparent, no fill and no
+   border, with the accent as its ink, so only the selected tab is an object.
+   It used to be a filled chip under a .28 accent border, which read as every
+   tab being outlined (QA #38). */
+[data-bs-theme="dark"] .clm-tab:not(.active) { color: #67e8f9; background: transparent; border-color: transparent; }
 [data-bs-theme="dark"] .clm-tab.active { color: #fff; border-color: transparent; }
 /* Dark has no white to lift with, so the chip is the lightest surface the
    rail can carry — but the border goes here too, for the same reason. */
@@ -1788,6 +1834,16 @@ body > .dropdown-menu.master-select-menu,
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 3px rgba(6,182,212,.20);
 }
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
+/* The search's clear (x) in dark. The shared rule (app.css .ui-search-clear)
+   fills it solid #cbd5e1 on hover - a white square in a dark field. In CLM the
+   hover is a stronger wash of the button's own colour with a light x, so it
+   suits the teal masters and the violet CTC pages alike. Here, not in app.css,
+   so nothing outside CLM changes. */
+[data-bs-theme="dark"] :is(.clm-root, .clm-search, .ops-search, .clm-modal, .ctc-cp-modal, .clm-mc) .ui-search-clear:hover,
+/* And any clear button while a CLM page is on screen - CLM's filter modals,
+   clause panels and pickers are portalled to <body>, outside every wrapper
+   above (the DCP Filter Segment Rules search still went white). */
+[data-bs-theme="dark"] body:has(.clm-root, .clm-mc, .seg-page) .ui-search-clear:hover { background: color-mix(in srgb, var(--_c) 34%, transparent); color: #f8fafc; }
 [data-bs-theme="dark"] .clm-search > svg { stroke: #67e8f9; }
 [data-bs-theme="dark"] .clm-search input::placeholder { color: #5b8ca3; }
 /* Chrome/WebKit paints autofilled (and "previously-searched") inputs with a
@@ -1810,7 +1866,7 @@ body > .dropdown-menu.master-select-menu,
 /* Same idea in dark: the filler under a short page lifts slightly off the card
    instead of matching it exactly, so the empty space still reads as surface. */
 [data-bs-theme="dark"] .clm-table-fill { background: linear-gradient(180deg, #101d2e, #0f172a); }
-[data-bs-theme="dark"] .clm-table-fill > .clm-table { background: #0f172a; }
+[data-bs-theme="dark"] .clm-table-fill > .clm-table, [data-bs-theme="dark"] .clm-table-fill > .clm-tscroll > .clm-table { background: #0f172a; }
 /* The header has to read as a header (QA #9). On the dark surface a 18% teal
    wash sat only a shade above the rows, the labels were weight 500 like the
    data, and the rule under them was a 1.5px line at 30% — so the first row of
@@ -1883,8 +1939,10 @@ body > .dropdown-menu.master-select-menu,
   color: #fff; border-color: transparent;
 }
 [data-bs-theme="dark"] .clm-modal { background: #0f172a; }
-[data-bs-theme="dark"] .clm-modal-body { background: linear-gradient(160deg, rgba(8,145,178,.10), rgba(8,145,178,.05) 50%, #0f172a 100%); }
-[data-bs-theme="dark"] .clm-modal-foot { background: #1e293b; border-top-color: rgba(6,182,212,.18); }
+/* Flat, the footer's own colour: the teal wash that faded down the body
+   left it a shade lighter than the footer, so the two read as separate bands. */
+[data-bs-theme="dark"] .clm-modal-body { background: #0f172a; }
+[data-bs-theme="dark"] .clm-modal-foot { background: #0f172a; border-top-color: rgba(6,182,212,.18); }
 /* Use background-color (not shorthand) so we don't reset the
    chevron background-image + no-repeat set in the base rule.
    Bug: shorthand "background: #1e293b" was clearing background-repeat
@@ -1893,6 +1951,18 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-input,
 [data-bs-theme="dark"] .clm-textarea,
 [data-bs-theme="dark"] .clm-select { background-color: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
+/* The light field's lit top edge (inset 0 1px 0 white .9, at rest AND on
+   focus) was never cleared in dark, so every CLM form field - the KYC name,
+   which opens focused, most visibly - drew a white line along its top. Dark
+   gets a .05 sheen, a dark drop, and the teal ring on focus. */
+[data-bs-theme="dark"] .clm-input,
+[data-bs-theme="dark"] .clm-textarea,
+[data-bs-theme="dark"] .clm-select { box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 1px 3px rgba(0,0,0,.25); }
+[data-bs-theme="dark"] .clm-input:focus,
+[data-bs-theme="dark"] .clm-textarea:focus,
+[data-bs-theme="dark"] .clm-select:focus { border-color: #22d3ee; box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 0 3px rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .clm-input::placeholder,
+[data-bs-theme="dark"] .clm-textarea::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .clm-btn-cancel { background: #1e293b; border-color: #334155; color: #cbd5e1; }
 [data-bs-theme="dark"] .clm-btn-cancel:hover:not(:disabled) { background: rgba(8,145,178,.16); border-color: #0891b2; color: #67e8f9; box-shadow: 0 4px 12px rgba(8,145,178,.28); }
 
@@ -2055,12 +2125,21 @@ body > .dropdown-menu.master-select-menu,
  * row visibly white. We also paint each th explicitly so the cells
  * pick up the dark band even when the row's own background is hidden
  * behind any default browser th rule. */
+/* Opaque: the th is sticky, and the old rgba(8,145,178,.22) band let the
+ * rows scrolling under it show through - codes, names and the row checkbox
+ * read on top of the headings. Same teal tint, laid over a solid base, and
+ * the labels in the CLM dark header ink. */
 [data-bs-theme="dark"] .dcp-thead-row,
 [data-bs-theme="dark"] .dcp-thead-row > th {
-  background: rgba(8,145,178,.22) !important;
-  border-bottom-color: rgba(6,182,212,.30) !important;
+  background: linear-gradient(rgba(8,145,178,.22), rgba(8,145,178,.22)), #0f1c2b !important;
+  border-bottom: 1px solid rgba(34,211,238,.28) !important;
 }
-[data-bs-theme="dark"] .dcp-thead-row > th > span { color: #cffafe !important; }
+[data-bs-theme="dark"] .dcp-thead-row > th > span { color: #67e8f9 !important; }
+/* Checkboxes: a white box on the dark row. Dark field, teal hairline; the
+ * checked / indeterminate gradient is the same in both modes. */
+[data-bs-theme="dark"] .clm-doc-check-box { background: rgba(15,23,42,.9); border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .clm-doc-check input:checked + .clm-doc-check-box,
+[data-bs-theme="dark"] .clm-doc-check-box.is-indet { background: linear-gradient(135deg,#06b6d4,#0891b2); border-color: #22d3ee; }
 
 /* Stage 2 — Mandatory / Optional segmented buttons. Unselected state uses
  * an inline rgba(248,250,252,.8) bg + #94a3b8 text — both light-mode
@@ -2136,6 +2215,234 @@ body > .dropdown-menu.master-select-menu,
   .clm-modal-body { padding: 12px 14px; }
   .clm-modal-foot { padding: 10px 14px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * MASTER CONTROL CENTER SKIN
+ * A CLM master opened from the Master Control Center (/master/..., wrapped in
+ * .clm-mc) wears the Master list's UI: the P2P page header and Add button,
+ * an "All …" tab pill with the count, the wide tinted search, the Master
+ * table card, rows and the solid teal row buttons. The CLM menu (/clm/...)
+ * renders the same pages without .clm-mc and keeps CLM's own look.
+ * Values are the Master list's own (p2p-common.css .spi-*, order.css
+ * .ord-list, warehouse-master.css .whm-page, master.css .mp-inv).
+ * ══════════════════════════════════════════════════════════════════════════ */
+.clm-mc .clm-root { font-family: 'DM Sans', system-ui, sans-serif; }
+
+/* Header */
+.clm-mc .clm-head-strip {
+  border: 1px solid #9ce1ee; border-radius: 16px;
+  background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #a5e9f3 100%);
+  box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(6, 182, 212, .2), 0 2px 8px rgba(0, 0, 0, .06);
+}
+.clm-mc .clm-head-strip::before { width: 5px; z-index: 10; border-radius: 16px 0 0 16px; background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490); }
+.clm-mc .clm-head-strip::after {
+  inset: 0; height: auto;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .5) 0%, transparent 50%), radial-gradient(ellipse at 10% 50%, rgba(103, 232, 249, .45) 0%, transparent 50%), radial-gradient(ellipse at 90% 50%, rgba(34, 211, 238, .28) 0%, transparent 55%);
+}
+.clm-mc .clm-head-strip-title { font-weight: 800; color: #0c4a6e; }
+.clm-mc .clm-add-btn {
+  height: 40px; padding: 0 20px; border-radius: 12px;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  background: linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+  box-shadow: 0 4px 16px rgba(8, 145, 178, .5), 0 1px 3px rgba(14, 116, 144, .3), inset 0 1px 0 rgba(255, 255, 255, .2);
+  transition: transform .14s, box-shadow .14s;
+}
+.clm-mc .clm-add-btn::before { display: none; }
+.clm-mc .clm-add-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .2); }
+[data-bs-theme="dark"] .clm-mc .clm-head-strip {
+  border-color: rgba(34, 211, 238, .22);
+  background: linear-gradient(110deg, #0c2630 0%, #0e2e3a 40%, #103642 70%, #0c2c38 100%);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(34, 211, 238, .14);
+}
+[data-bs-theme="dark"] .clm-mc .clm-head-strip::after { background-image: radial-gradient(ellipse at 10% 50%, rgba(34, 211, 238, .18) 0%, transparent 55%), radial-gradient(ellipse at 90% 50%, rgba(34, 211, 238, .12) 0%, transparent 55%); }
+[data-bs-theme="dark"] .clm-mc .clm-head-strip-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .clm-mc .clm-head-strip-sub { color: #7dd3fc; }
+
+/* Card */
+.clm-mc .clm-page-card { border: 1px solid #d6eef5; border-radius: 16px; box-shadow: 0 4px 16px rgba(6, 182, 212, .06); }
+[data-bs-theme="dark"] .clm-mc .clm-page-card { background: #0e1b24; border-color: rgba(34, 211, 238, .18); box-shadow: 0 6px 22px rgba(0, 0, 0, .4); }
+
+/* Toolbar: the tab pill on the left, the search after it, actions last */
+.clm-mc .clm-tabs-bar,
+.clm-mc .clm-tabs-bar:has(.clm-total) {
+  gap: 14px; padding: 14px;
+  background: transparent;
+  border-bottom: 1px solid #eef5f8;
+}
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-tabs-bar, .clm-mc .clm-tabs-bar:has(.clm-total) { gap: 10px; padding: 10px 12px; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-tabs-bar, [data-bs-theme="dark"] .clm-mc .clm-tabs-bar:has(.clm-total) { background: transparent; border-bottom-color: rgba(148, 163, 184, .14); }
+
+/* The toolbar heading becomes the Master list's single "All …" tab */
+.clm-mtab { display: none; }
+.clm-mc .clm-total:has(> .clm-mtab) { padding-left: 0; min-height: 0; }
+.clm-mc .clm-total:has(> .clm-mtab) > .clm-subhead-text { display: none; }
+.clm-mc .clm-mtab {
+  display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px;
+  padding: 4px; border-radius: 14px;
+  border: 1px solid #d4f3f9;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
+}
+.clm-mc .clm-mtab-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 42px; padding: 0 12px; border: 0; border-radius: 11px;
+  font-family: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: -.2px; white-space: nowrap;
+  color: #0e7490; background: transparent; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.clm-mc .clm-mtab-btn:not(.is-active):hover { color: #0891b2; background: rgba(8, 145, 178, .06); }
+.clm-mc .clm-mtab-btn.is-active {
+  color: #fff; cursor: default;
+  background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee);
+  box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
+  text-shadow: 0 1px 2px rgba(14, 116, 144, .4);
+}
+.clm-mc .clm-mtab-ico {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px; color: #fff;
+  background: linear-gradient(135deg, #67e8f9, #0891b2 70%, #0e7490);
+  box-shadow: 0 3px 9px -2px rgba(8, 145, 178, .45);
+}
+.clm-mc .clm-mtab-btn.is-active .clm-mtab-ico { background: rgba(255, 255, 255, .24); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
+.clm-mc .clm-mtab-ico svg { width: 13px; height: 13px; }
+.clm-mc .clm-mtab-c {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; margin-left: 1px; padding: 2px 7px;
+  border: 1px solid #c2ecf3; border-radius: 20px; background: #e0f7fb;
+  font-size: 10.5px; font-weight: 800; line-height: 1.1; color: #0e7490;
+  font-variant-numeric: tabular-nums; text-shadow: none;
+}
+.clm-mc .clm-mtab-btn.is-active .clm-mtab-c { border-color: rgba(255, 255, 255, .75); background: rgba(255, 255, 255, .9); color: #0b5563; }
+[data-bs-theme="dark"] .clm-mc .clm-mtab-btn:not(.is-active) { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-mtab-btn:not(.is-active):hover { color: #a5f3fc; background: rgba(34, 211, 238, .08); }
+[data-bs-theme="dark"] .clm-mc .clm-mtab-btn:not(.is-active) .clm-mtab-c { border-color: rgba(34, 211, 238, .28); background: rgba(34, 211, 238, .12); color: #67e8f9; }
+/* A status dropdown the tabs replace (T&C's Highly / Less Regulatory). */
+.clm-mc .clm-status-dd { display: none !important; }
+/* Dropdowns in CLM forms and wizards open exactly as wide as their field:
+   MasterSelect sizes a menu to its longest option (max-content), so one long
+   name pushed the menu past the edge of the form. Long options now end in an
+   ellipsis inside the field width (the option labels already clip). */
+body:has(:is(.clm-modal-bd, .clm-conf-bd, .tnw-overlay, .tdw-overlay, .dr-overlay, .rdf-overlay, .itm-overlay, .lfm-backdrop)) .master-select-menu[style*="min-width"] { width: 0 !important; }
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-mtab-btn { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
+}
+@media (min-width: 769px) and (max-width: 1280px) {
+  .clm-mc .clm-mtab-btn { padding: 0 8px; font-size: 11px; }
+  .clm-mc .clm-mtab-ico { display: none; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-mtab { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+
+/* Search: the Master list's wide tinted field */
+.clm-mc .clm-root .clm-tabs-bar .clm-search {
+  flex: 1 1 460px; width: auto; min-width: 260px; max-width: 594px;
+  height: 52px; margin-left: auto; padding: 0 16px;
+  border: 1.5px solid #d4f3f9; border-radius: 14px;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
+  box-shadow: none;
+}
+.clm-mc .clm-root .clm-tabs-bar .clm-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34, 211, 238, .12); }
+.clm-mc .clm-root .clm-tabs-bar .clm-search > svg { stroke: #7ba6b8; }
+.clm-mc .clm-root .clm-tabs-bar .clm-search input { font-size: 13px; font-weight: 600; color: #0c4a6e; }
+.clm-mc .clm-root .clm-tabs-bar .clm-search input::placeholder { color: #9fb7c2; font-weight: 500; }
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { flex-basis: 400px; height: 46px; }
+}
+@media (min-width: 769px) and (max-width: 1280px) {
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { flex-basis: 280px; min-width: 200px; }
+}
+@media (max-width: 768px) {
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { flex: 1 1 100%; max-width: 100%; margin-left: 0; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-root .clm-tabs-bar .clm-search { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+[data-bs-theme="dark"] .clm-mc .clm-root .clm-tabs-bar .clm-search > svg { stroke: #5f8ea1; }
+[data-bs-theme="dark"] .clm-mc .clm-root .clm-tabs-bar .clm-search input { color: #e2e8f0; }
+
+/* Table: the Master list's head, rows and spacing */
+.clm-mc .clm-table-wrap, .clm-mc .clm-tab-body { background: #fff; }
+.clm-mc .clm-table thead th {
+  padding: 11px 12px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em; color: #0e7490;
+  background: linear-gradient(180deg, #f0fdff, #e3f7fb);
+  border-bottom: 1px solid #c9ebf2; box-shadow: none;
+}
+.clm-mc .clm-table tbody tr { background: #fff; border-bottom: 0; }
+.clm-mc .clm-table tbody tr:nth-child(even) { background: #fbfeff; }
+.clm-mc .clm-table tbody tr:hover { background: #f0fbfd; box-shadow: none; }
+.clm-mc .clm-table tbody td { padding: 12px; font-size: 11.5px; color: #1e293b; border-bottom: 1px solid #eef5f8; }
+.clm-mc .clm-table tbody tr:last-child td { border-bottom: 0; }
+.clm-mc .clm-table thead th:last-child, .clm-mc .clm-table tbody td:last-child { padding-right: 18px; }
+.clm-mc .clm-td-num { color: #0e7490; font-weight: 800; }
+[data-bs-theme="dark"] .clm-mc .clm-table-wrap, [data-bs-theme="dark"] .clm-mc .clm-tab-body { background: transparent; }
+[data-bs-theme="dark"] .clm-mc .clm-table thead th { color: #67e8f9; font-weight: 800; background: linear-gradient(180deg, #102a34, #0f222c); border-bottom: 1px solid rgba(34, 211, 238, .2); box-shadow: none; }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody tr { background: transparent; }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody tr:nth-child(even) { background: rgba(148, 163, 184, .04); }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody tr:hover { background: rgba(34, 211, 238, .07); }
+[data-bs-theme="dark"] .clm-mc .clm-table tbody td { color: #cbd5e1; border-bottom-color: rgba(148, 163, 184, .14); }
+[data-bs-theme="dark"] .clm-mc .clm-td-num { color: #67e8f9; }
+
+/* Row buttons: the Master list's solid teal squares, delete included */
+.clm-mc .clm-actions { gap: 8px; }
+.clm-mc .clm-act.clm-act {
+  width: 32px; height: 32px; border: 0; border-radius: 10px; color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 6px 12px -6px rgba(8, 145, 178, .75), inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+.clm-mc .clm-act.clm-act:hover:not(:disabled) { background: linear-gradient(140deg, #0891b2, #0e7490 60%, #0b4f63); transform: translateY(-1px); }
+.clm-mc .clm-act.clm-act svg { stroke: currentColor; }
+.clm-mc .clm-act.clm-act:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+[data-bs-theme="dark"] .clm-mc .clm-act.clm-act { color: #fff; }
+
+/* Tab rails (Segments' All / Highly / Less Regulated): the Master list's tabs */
+.clm-mc .clm-tabrail {
+  gap: 4px; padding: 4px; border-radius: 14px;
+  border: 1px solid #d4f3f9;
+  background: linear-gradient(180deg, #f4fdff, #eafafd);
+  box-shadow: none;
+}
+.clm-mc .clm-tabrail .clm-tab {
+  height: 42px; gap: 7px; padding: 0 12px; border: 0; border-radius: 11px;
+  font-size: 12.5px; font-weight: 800; letter-spacing: -.2px; white-space: nowrap;
+  color: #0e7490; background: transparent; box-shadow: none;
+}
+.clm-mc .clm-tabrail .clm-tab:not(.active):hover { color: #0891b2; background: rgba(8, 145, 178, .06); }
+.clm-mc .clm-tabrail .clm-tab.active {
+  color: #fff;
+  background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee);
+  box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
+  text-shadow: 0 1px 2px rgba(14, 116, 144, .4);
+}
+.clm-mc .clm-tabrail .clm-tab .clm-tab-count {
+  min-width: 18px; height: auto; margin-left: 1px; padding: 2px 7px;
+  border: 1px solid #c2ecf3; border-radius: 20px; background: #e0f7fb;
+  font-size: 10.5px; font-weight: 800; line-height: 1.1; color: #0e7490;
+}
+.clm-mc .clm-tabrail .clm-tab.active .clm-tab-count { border-color: rgba(255, 255, 255, .75); background: rgba(255, 255, 255, .9); color: #0b5563; text-shadow: none; }
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-tabrail { gap: 2px; }
+  .clm-mc .clm-tabrail .clm-tab { height: 38px; gap: 6px; padding: 0 10px; font-size: 11.5px; }
+}
+[data-bs-theme="dark"] .clm-mc .clm-tabrail { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab:not(.active):hover { color: #a5f3fc; background: rgba(34, 211, 238, .08); }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab.active { color: #fff; }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab .clm-tab-count { border-color: rgba(34, 211, 238, .28); background: rgba(34, 211, 238, .12); color: #67e8f9; }
+[data-bs-theme="dark"] .clm-mc .clm-tabrail .clm-tab.active .clm-tab-count { border-color: rgba(255, 255, 255, .6); background: rgba(255, 255, 255, .9); color: #0b5563; }
+
+/* One toolbar height, at every width: the tab rail, the search and every
+   toolbar button are 48px -- a 40px tab inside 3px of rail padding and a 1px
+   border. The Master list's own 42/38px tabs and 52/46px search made the rail,
+   the field and the buttons three different heights side by side. */
+.clm-mc .clm-mtab, .clm-mc .clm-tabrail { padding: 3px; }
+.clm-mc .clm-mtab-btn, .clm-mc .clm-tabrail .clm-tab { height: 40px; }
+.clm-mc .clm-root .clm-tabs-bar .clm-search { height: 48px; }
+.clm-mc .clm-root .clm-tabs-bar :is(.auth-xl-btn, .clm-ie-btn, .clm-add-btn, .tdl-dl-btn) { height: 48px; box-sizing: border-box; }
+.clm-mc .clm-root .clm-tabs-bar .clm-filter-ms .master-select-toggle { height: 48px; min-height: 48px; box-sizing: border-box; }
+@media (min-width: 769px) and (max-width: 1800px) {
+  .clm-mc .clm-mtab-btn, .clm-mc .clm-tabrail .clm-tab { height: 40px; }
+  .clm-mc .clm-root .clm-tabs-bar .clm-search { height: 48px; }
+}
 `;
 
 /* ── Common helpers ── */
@@ -2192,6 +2499,11 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   // Full response body, for extras such as tab counts.
   const [meta, setMeta] = useState<Partial<M>>({});
   const [loading, setLoading] = useState(true);
+  /* True once the first answer has landed. A table shows its skeleton only
+     before that; every later load (a search keystroke, a page move) keeps the
+     last answer on screen, dimmed, so the table does not blank and jump on each
+     letter typed. */
+  const [booted, setBooted] = useState(false);
   const [search, setSearch]   = useState('');
   const [debounced, setDebounced] = useState('');
   const [page, setPage] = useState(1);
@@ -2235,7 +2547,7 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
         setApplied({ search: debounced, page, rpp, params: paramsKey });
       })
       .catch((e) => { if (token === reqRef.current) { loadFailed(toast, 'the list', e); setRows([]); setTotal(0); } })
-      .finally(() => { if (token === reqRef.current) setLoading(false); });
+      .finally(() => { if (token === reqRef.current) { setLoading(false); setBooted(true); } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, page, rpp, debounced, paramsKey, reloadKey]);
 
@@ -2244,7 +2556,57 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   const replacing = loading
     && (applied.search !== debounced || applied.page !== page || applied.rpp !== rpp || applied.params !== paramsKey);
 
-  return { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
+  return { rows, total, loading, booted, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
+}
+
+/* Height a CLM list's table box may take.
+ *
+ * From the Master Control Center (.clm-mc) the page itself never scrolls: the
+ * scroll area's height, less where the box starts in it, less everything that
+ * sits below the box -- the card's own bottom padding and border, any content
+ * after it, gaps, .page-content's padding, and the app footer when it lives
+ * inside the scroll area.
+ *
+ * From the CLM menu it is the CLM page's own flat allowance: the viewport less
+ * the box's top and `reserve` (the footer + 8, or 64). */
+/* Space a CLM list card leaves under itself: the app footer, MEASURED, plus
+   the 8px gap and the card's own 1px bottom border (the box measured is the
+   table inside the card, so the border sits below it). It was a flat 64 for
+   Agreements / T&C - 23px of gap - and footer + 8 elsewhere, which left 7px and
+   a 1px page scroll. */
+export function clmBottomReserve(): number {
+  const f = document.querySelector('footer.footer') as HTMLElement | null;
+  return f && f.offsetHeight > 0 ? f.offsetHeight + 9 : 15;
+}
+export function clmFillHeight(el: HTMLElement, min = 0, reserve?: number): number {
+  if (!el.closest('.clm-mc')) {
+    return Math.max(min, window.innerHeight - el.getBoundingClientRect().top - (reserve ?? clmBottomReserve()));
+  }
+  const scroller = el.closest('.main-content') as HTMLElement | null;
+  const rect = el.getBoundingClientRect();
+  const top = scroller
+    ? rect.top - scroller.getBoundingClientRect().top + scroller.scrollTop
+    : rect.top + (document.scrollingElement?.scrollTop ?? 0);
+  const space = scroller ? scroller.clientHeight : window.innerHeight;
+  const px = (v: string) => parseFloat(v) || 0;
+  let below = 0;
+  for (let node: HTMLElement | null = el; node && node !== scroller && node !== document.body; node = node.parentElement) {
+    below += px(getComputedStyle(node).marginBottom);
+    const parent = node.parentElement;
+    const ps = parent ? getComputedStyle(parent) : null;
+    const gap = ps && /flex|grid/.test(ps.display) ? px(ps.rowGap) : 0;
+    for (let s = node.nextElementSibling as HTMLElement | null; s; s = s.nextElementSibling as HTMLElement | null) {
+      const ss = getComputedStyle(s);
+      if (ss.display === 'none' || ss.position === 'absolute' || ss.position === 'fixed') continue;
+      below += s.offsetHeight + px(ss.marginTop) + px(ss.marginBottom) + gap;
+    }
+    if (parent && parent !== scroller && ps) below += px(ps.paddingBottom) + px(ps.borderBottomWidth);
+  }
+  if (!scroller) {
+    const f = document.querySelector('footer.footer') as HTMLElement | null;
+    below += f ? f.offsetHeight + 8 : 15;
+  }
+  return Math.max(min, Math.floor(space - top - below));
 }
 
 /* Rows that fit the visible table, never fewer than PER_PAGE (10).
@@ -2260,6 +2622,14 @@ export function useAutoFitRows(
      its next load. Omit it and nothing is remembered — the list simply keeps
      measuring after its first fetch, as it did before. */
   endpoint?: string,
+  /* A row's real height, for a table whose rows are taller than the usual 46
+     (Trade Document Library carries a 40px Download Draft button: 49). Fitting
+     ten 49px rows as if they were 46 overflowed the card by 33px, and it shrank
+     back the moment a search returned fewer rows - the table "jumped". */
+  rowH = 46,
+  /* The fewest rows a page may fit. Ten by default; a table with taller rows
+     passes less, or the floor alone would push ten of them past the card. */
+  minRows = PER_PAGE,
 ) {
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -2276,19 +2646,18 @@ export function useAutoFitRows(
          or footer height, and 15 is the fallback for a surface with no
          footer at all (inside a modal, say). Same rule DataTable already
          uses — see bottomReserve() in components/ui/DataTable.tsx. */
-      const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
-      const footerH  = footerEl?.offsetHeight ?? 0;
-      const bottomReserve = footerH > 0 ? footerH + 8 : 15;
+      // Footer + 8px gap + the card's 1px border - see clmBottomReserve.
+      const bottomReserve = clmBottomReserve();
 
-      const THEAD = 40, ROW = 46, PAGER = 56;
+      const THEAD = 40, ROW = rowH, PAGER = 56;
       const avail = window.innerHeight - top - THEAD - PAGER - bottomReserve;
-      const fit = Math.max(PER_PAGE, Math.floor(avail / ROW));
+      const fit = Math.max(minRows, Math.floor(avail / ROW));
       if (autoFitRef.current) {
         if (endpoint) fittedPageSize.set(endpoint, fit);
         setRpp(prev => (prev === fit ? prev : fit));
       }
 
-      const fh = Math.max(0, window.innerHeight - top - bottomReserve);
+      const fh = clmFillHeight(el, 0, bottomReserve);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();

@@ -4,16 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Polymorphic doc-type support for clm_signature_requests.
- *
- *   document_type = 'trade_doc'  (default) → trade_doc_ids reference clm_trade_doc_library
- *   document_type = 'agreement'            → trade_doc_ids reference clm_agreement_library
- *
- * Also adds a `lead_id` association so the agreement send flow from the
- * Sales Matrix lead detail can scope requests back to the originating
- * opportunity without scanning metadata JSON.
- */
 return new class extends Migration
 {
     public function up(): void

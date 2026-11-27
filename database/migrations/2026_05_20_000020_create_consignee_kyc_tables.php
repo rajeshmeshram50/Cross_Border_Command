@@ -4,22 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Consignee Stage 2 — KYC / Due Diligence storage.
- *
- * Mirrors customer_documents + customer_owners 1:1 (same column
- * shape, same file-storage strategy). Only the parent FK changes
- * from customer_id → consignee_id.
- *
- *  consignee_documents — Company DD + Trade Licence (kind: 'dd'|'tl')
- *  consignee_owners    — Owner KYC rows with three identity proofs
- *
- * Files land on the public disk under
- *   consignee_documents/{consignee_id}/...
- * Only the relative path is persisted. Deleting the parent consignee
- * cascade-deletes both children; on-disk cleanup happens in the
- * matching controllers when a single row is removed.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -27,8 +11,6 @@ return new class extends Migration
         Schema::create('consignee_documents', function (Blueprint $table) {
             $table->id();
             $table->foreignId('consignee_id')->constrained('consignees')->cascadeOnDelete();
-            // 'dd' = Company Due Diligence, 'tl' = Trade Licence.
-            // Owner KYC uses consignee_owners (different shape).
             $table->string('kind', 8);
 
             $table->string('name', 255);

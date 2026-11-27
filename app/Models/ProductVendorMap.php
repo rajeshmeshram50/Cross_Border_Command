@@ -15,6 +15,7 @@ class ProductVendorMap extends Model
         'vendor_code', 'vendor_name', 'vendor_website',
         'contact_person', 'contact_no', 'email', 'designation',
         'attachment_path',
+        'origin', 'currency_code', 'exchange_rate', 'inr_amount',
         'purchase_price', 'gst_percentage', 'gst_amount', 'total_amount',
         'map_date', 'remarks',
     ];

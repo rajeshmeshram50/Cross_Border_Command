@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('branch_name', 255)->nullable();
             $table->string('account_number', 64);
             $table->string('ifsc_code', 32)->nullable();
-            $table->string('account_type', 32)->nullable();   // Current / Savings
+            $table->string('account_type', 32)->nullable();
             $table->boolean('is_primary')->default(false);
             $table->timestamps();
         });

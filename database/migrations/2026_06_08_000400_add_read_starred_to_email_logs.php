@@ -4,10 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Gmail-style state on each email row: read/unread (bold rows) and starred.
- * Trash is already covered by the table's soft-delete column.
- */
 return new class extends Migration
 {
     public function up(): void

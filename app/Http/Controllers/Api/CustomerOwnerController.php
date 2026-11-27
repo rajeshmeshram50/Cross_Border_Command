@@ -10,7 +10,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-
 class CustomerOwnerController extends Controller
 {
     private const FILE_FIELDS = [
@@ -84,12 +83,6 @@ class CustomerOwnerController extends Controller
         return response()->json(['id' => $owner->id, 'deleted' => true]);
     }
 
-    /**
-     * Re-mirror the customer's KYC into every same-as-customer consignee
-     * linked to this customer. Called after every owner create / update /
-     * delete so the mirrored consignees stay in lock-step instead of
-     * drifting until the user triggers another manual clone.
-     */
     private function resyncMirrors(Customer $customer, Request $request): void
     {
         app(ConsigneeKycMirror::class)->resyncForCustomer(
@@ -97,8 +90,6 @@ class CustomerOwnerController extends Controller
             optional($request->user())->id
         );
     }
-
-    /* ── Helpers ──────────────────────────────────────────────────── */
 
     private function shape(CustomerOwner $o): array
     {
@@ -108,12 +99,6 @@ class CustomerOwnerController extends Controller
             'designation'         => $o->designation,
             'official_email'      => $o->official_email,
             'phone_number'        => $o->phone_number,
-            // URL fields use the project-wide file_url() helper
-            // (app/helpers.php) — the same one HR Employees and
-            // Onboarding use for their attachments. It handles legacy
-            // path prefixes (storage/, public/), falls back to a
-            // constructed URL when the disk has no `url` config, and
-            // collapses double slashes.
             'id_proof_path'       => $o->id_proof_path,
             'id_proof_url'        => file_url($o->id_proof_path),
             'id_proof_name'       => $o->id_proof_path      ? basename($o->id_proof_path)      : null,
@@ -136,13 +121,6 @@ class CustomerOwnerController extends Controller
             'official_email'  => 'nullable|email|max:255',
             'phone_number'    => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
             'status'          => 'nullable|in:Active,Inactive',
-            // File slots — 2 MB cap, restricted to safe document types.
-            // ID / Address proof allow PDF + Office docs alongside images
-            // (passports, utility bills are often scanned PDFs). Photograph
-            // is image-only since it's literally a picture of a person.
-            // Server-side enforcement so executables / scripts / archives
-            // (.php, .exe, .zip, .txt) are rejected even if the UI is
-            // bypassed.
             'id_proof'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
             'address_proof'   => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
             'photograph'      => 'sometimes|file|mimes:jpg,jpeg,png|max:2048',

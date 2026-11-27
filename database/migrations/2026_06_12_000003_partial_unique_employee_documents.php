@@ -3,14 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * OB-03 — the (employee_id, document_key) unique index ignored soft-deletes, so
- * a soft-deleted document still occupied the slot and a clean re-upload tripped
- * a 23505 (the controller had to work around it with withTrashed()->restore()).
- *
- * Make it a PARTIAL unique index that only constrains live rows (deleted_at IS
- * NULL), so re-uploading after a soft delete just works.
- */
 return new class extends Migration
 {
     public function up(): void

@@ -5,11 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * A saved snapshot of a document template. Append-only: nothing edits or
- * deletes a version, because the whole value of one is that it still says what
- * it said. (#34)
- */
 class HrDocumentTemplateVersion extends Model
 {
     protected $table = 'hr_document_template_versions';

@@ -1,0 +1,1260 @@
+/* Map Supplier Directory popup. Self-contained (no dependency on the .sta-modal tokens). */
+.stmap-overlay {
+    position: fixed;
+    inset: 0;
+    /* Opens ON TOP of Mapped Suppliers (.stsv-overlay, 3000) — Add Supplier and
+       Edit price are both launched from that list. All three modals used to sit
+       at 3000, so which one painted on top came down to portal mount order.
+       Layers here: 3000 list modals · 3100 this · 3200 attach picker. */
+    z-index: 3100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: rgba(2, 12, 27, .55);
+    backdrop-filter: blur(6px);
+    font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.stmap-overlay *,
+.stmap-overlay *::before,
+.stmap-overlay *::after {
+    box-sizing: border-box;
+}
+
+.stmap-box {
+    background: #f8fafc;
+    border-radius: 24px;
+    width: min(760px, calc(100vw - 28px));
+    max-height: calc(100vh - 44px);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 40px 100px -16px rgba(0, 20, 50, .5), 0 0 0 1px rgba(34, 211, 238, .18);
+    overflow: hidden;
+    animation: stmapSlideIn .28s cubic-bezier(.34, 1.4, .64, 1);
+}
+
+@keyframes stmapSlideIn {
+    0% {
+        transform: translateY(28px) scale(.95);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+/* header (Figma values) */
+.stmap-header {
+    flex: none;
+    position: relative;
+    overflow: hidden;
+    color: #fff;
+    background: linear-gradient(135deg, #042838 0%, #083d56 40%, #0c6080 80%, #0e7490 100%);
+}
+
+.stmap-header::before {
+    content: '';
+    position: absolute;
+    top: -60px;
+    right: -60px;
+    width: 220px;
+    height: 220px;
+    background: radial-gradient(circle, rgba(34, 211, 238, .12) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.stmap-hrow {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 22px 12px;
+}
+
+.stmap-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.stmap-hicon {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: rgba(255, 255, 255, .14);
+    border: 1.5px solid rgba(255, 255, 255, .22);
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .2), 0 1px 0 rgba(255, 255, 255, .18) inset;
+}
+
+.stmap-title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.stmap-title-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.stmap-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: -.3px;
+    line-height: 1.2;
+    color: #fff;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, .25);
+}
+
+.stmap-step {
+    padding: 2px 8px;
+    font-size: 9.5px;
+    font-weight: 800;
+    color: #67e8f9;
+    background: rgba(103, 232, 249, .14);
+    border: 1px solid rgba(103, 232, 249, .3);
+    border-radius: 6px;
+}
+
+.stmap-sub {
+    margin: 0;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: rgba(180, 230, 255, .7);
+}
+
+.stmap-close {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    color: #fff;
+    background: rgba(255, 255, 255, .1);
+    border: 1.5px solid rgba(255, 255, 255, .2);
+    border-radius: 10px;
+    transition: background .15s;
+}
+
+.stmap-close:hover:not(:disabled) {
+    background: rgba(239, 68, 68, .65);
+}
+
+.stmap-prod-strip {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 22px 14px;
+    overflow-x: auto;
+}
+
+.stmap-ppill {
+    flex: none;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 16px;
+}
+
+.stmap-ppill:first-child {
+    padding-left: 0;
+}
+
+.stmap-ppill-sep {
+    flex: none;
+    align-self: center;
+    width: 1px;
+    height: 32px;
+    background: rgba(255, 255, 255, .1);
+}
+
+.stmap-ppill-lbl {
+    font-size: 7.5px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: rgba(150, 210, 255, .55);
+}
+
+.stmap-ppill-val {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #fff;
+    white-space: nowrap;
+}
+
+/* A long product name (up to 150 characters) must not stretch the strip: cap it, end in "…",
+   and the full name shows in the tooltip. */
+.stmap-ppill--name {
+    flex: 0 1 auto;
+    min-width: 110px;
+    max-width: 260px;
+}
+
+/* The segment is master data and can be long too: same cap, shorter. */
+.stmap-ppill--seg {
+    flex: 0 1 auto;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+.stmap-ppill--name .stmap-ppill-val,
+.stmap-ppill--seg .stmap-ppill-val,
+.stmap-ppill--price .stmap-ppill-val {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Target Price pill (CS-2308): capped like Product Name, so a very long price ends in "…" (tooltip
+   shows it all) instead of stretching the header strip into a sideways scroll. */
+.stmap-ppill--price {
+    flex: 0 1 auto;
+    min-width: 90px;
+    max-width: 200px;
+}
+
+.stmap-ppill-val.cyan {
+    color: #67e8f9;
+    font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+}
+
+.stmap-ppill-val.amber {
+    color: #fcd34d;
+}
+
+.stmap-ppill-val.green {
+    color: #6ee7b7;
+}
+
+/* step 1 */
+.stmap-choose-body {
+    padding: 10px 12px 0;
+    background: #f8fafc;
+    overflow: auto;
+}
+
+.stmap-opt-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 0;
+}
+
+.stmap-ocard {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 13px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    outline: none;
+    background: #fff;
+    border: 1.5px solid #e8edf2;
+    transition: all .22s cubic-bezier(.34, 1.4, .64, 1);
+}
+
+.stmap-ocard>* {
+    position: relative;
+    z-index: 1;
+}
+
+.stmap-oc-glow {
+    position: absolute;
+    z-index: 0;
+    top: -30px;
+    right: -30px;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity .3s;
+    pointer-events: none;
+}
+
+.stmap-master-glow {
+    background: radial-gradient(circle, rgba(34, 211, 238, .18) 0%, transparent 70%);
+}
+
+.stmap-new-glow {
+    background: radial-gradient(circle, rgba(52, 211, 153, .18) 0%, transparent 70%);
+}
+
+.stmap-ocard:hover .stmap-oc-glow,
+.stmap-ocard:focus-visible .stmap-oc-glow {
+    opacity: 1;
+}
+
+.stmap-master-card:hover,
+.stmap-master-card:focus-visible {
+    transform: translateY(-3px);
+    border-color: #22d3ee;
+    box-shadow: 0 10px 28px rgba(8, 145, 178, .15), 0 2px 6px rgba(8, 145, 178, .08);
+}
+
+.stmap-new-card:hover,
+.stmap-new-card:focus-visible {
+    transform: translateY(-3px);
+    border-color: #34d399;
+    box-shadow: 0 10px 28px rgba(22, 163, 74, .13), 0 2px 6px rgba(22, 163, 74, .07);
+}
+
+.stmap-oc-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.stmap-oc-iconbox {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .22s cubic-bezier(.34, 1.56, .64, 1);
+}
+
+.stmap-master-iconbox {
+    background: linear-gradient(135deg, #cffafe, #7dd3fc);
+    color: #0891b2;
+    box-shadow: 0 4px 14px rgba(8, 145, 178, .25);
+}
+
+.stmap-new-iconbox {
+    background: linear-gradient(135deg, #d1fae5, #6ee7b7);
+    color: #16a34a;
+    box-shadow: 0 4px 14px rgba(22, 163, 74, .22);
+}
+
+.stmap-ocard:hover .stmap-oc-iconbox {
+    transform: scale(1.1) rotate(-4deg);
+}
+
+.stmap-oc-title {
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: -.2px;
+    line-height: 1.2;
+    color: #0f172a;
+}
+
+.stmap-oc-desc {
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: #64748b;
+}
+
+.stmap-oc-divider {
+    height: 1px;
+    border-radius: 1px;
+    background: linear-gradient(90deg, #f0f4f8, #e2e8f0, #f0f4f8);
+}
+
+.stmap-oc-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: auto;
+}
+
+.stmap-oc-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.stmap-ocpill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    font-size: 9.5px;
+    font-weight: 700;
+    border-radius: 999px;
+    border: 1px solid;
+}
+
+.stmap-master-pill {
+    color: #0891b2;
+    background: #f0fdff;
+    border-color: #b2ebf2;
+}
+
+.stmap-new-pill {
+    color: #16a34a;
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+}
+
+.stmap-oc-cta {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    border: 1.5px solid;
+    transition: all .2s;
+}
+
+.stmap-master-cta {
+    color: #0891b2;
+    background: #e0f7fa;
+    border-color: #b2ebf2;
+}
+
+.stmap-new-cta {
+    color: #16a34a;
+    background: #d1fae5;
+    border-color: #bbf7d0;
+}
+
+.stmap-master-card:hover .stmap-master-cta,
+.stmap-master-card:focus-visible .stmap-master-cta {
+    color: #fff;
+    border-color: transparent;
+    background: linear-gradient(135deg, #22d3ee, #0891b2);
+    box-shadow: 0 4px 12px rgba(8, 145, 178, .45);
+}
+
+.stmap-new-card:hover .stmap-new-cta,
+.stmap-new-card:focus-visible .stmap-new-cta {
+    color: #fff;
+    border-color: transparent;
+    background: linear-gradient(135deg, #34d399, #16a34a);
+    box-shadow: 0 4px 12px rgba(22, 163, 74, .4);
+}
+
+.stmap-cancel-row {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 12px;
+    background: #f8fafc;
+}
+
+.stmap-btn-cancel {
+    height: 40px; /* every text button in the module is 40px */
+    padding: 0 18px;
+    font: 700 12.5px 'DM Sans', system-ui, sans-serif; /* every text button in the module: 12.5px */
+    color: #64748b;
+    cursor: pointer;
+    background: #f1f5f9;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 9px;
+    transition: background .14s;
+}
+
+.stmap-btn-cancel:hover {
+    background: #e2e8f0;
+}
+
+/* The app MasterSelect boxes always take the field's full width, whatever the parent's display. */
+.stnf-ms {
+    width: 100%;
+    min-width: 0;
+}
+
+/* The app MasterSelect in the New Supplier form (Segment, State): same box as .stnf-inp. */
+/* The app's dropdown and calendar, sized like .stnf-inp. */
+.stnf-ms .master-select-toggle,
+.stnf-ms .master-datepicker-toggle {
+    height: 38px;
+    min-height: 38px;
+    padding: 0 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border: 1.5px solid #dfeef2;
+    border-radius: 10px;
+    background: #f8fdff;
+}
+
+.stnf-ms.is-err .master-select-toggle {
+    border-color: #f87171;
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, .15);
+}
+
+[data-bs-theme="dark"] .stnf-ms .master-select-toggle,
+[data-bs-theme="dark"] .stnf-ms .master-datepicker-toggle {
+    color: #f1f5f9;
+    background: #11263a;
+    border-color: #24445f;
+}
+
+[data-bs-theme="dark"] .stnf-ms.is-err .master-select-toggle {
+    border-color: #f87171;
+}
+
+.stmap-btn-back,
+.stmap-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 40px; /* every text button in the module is 40px */
+    padding: 0 20px;
+    font: 800 12.5px 'DM Sans', system-ui, sans-serif; /* every text button in the module: 12.5px */
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.stmap-btn-back {
+    color: #475569;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+}
+
+.stmap-close:disabled,
+.stmap-btn-back:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.stmap-btn-back:hover:not(:disabled) {
+    background: #e2e8f0;
+}
+
+.stmap-btn-primary {
+    color: #fff;
+    border: 0;
+    background: linear-gradient(135deg, #22d3ee, #0891b2);
+    box-shadow: 0 6px 16px -4px rgba(8, 145, 178, .5);
+}
+
+.stmap-btn-primary:hover:not(:disabled) {
+    filter: brightness(1.06);
+}
+
+.stmap-btn-primary:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+@media (max-width: 640px) {
+    .stmap-opt-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stnf-row-2,
+    .stnf-row-3,
+    .stnf-row-4 {
+        grid-template-columns: 1fr;
+    }
+
+    .stnf-sum {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .stnf-sec-hdr {
+        flex-wrap: wrap;
+    }
+}
+
+/* ── Dark mode ([data-bs-theme="dark"]) ───────────────────────────────── */
+[data-bs-theme="dark"] .stmap-overlay {
+    background: rgba(0, 6, 16, .7);
+}
+
+[data-bs-theme="dark"] .stmap-box {
+    background: #0b1a2a;
+    box-shadow: 0 40px 100px -16px rgba(0, 0, 0, .7), 0 0 0 1px rgba(34, 211, 238, .22);
+}
+
+[data-bs-theme="dark"] .stmap-choose-body,
+[data-bs-theme="dark"] .stmap-cancel-row {
+    background: #0b1a2a;
+}
+
+[data-bs-theme="dark"] .stmap-ocard {
+    background: #11263a;
+    border-color: #1f3a52;
+}
+
+[data-bs-theme="dark"] .stmap-master-card:hover,
+[data-bs-theme="dark"] .stmap-master-card:focus-visible {
+    border-color: #22d3ee;
+    box-shadow: 0 10px 28px -10px rgba(34, 211, 238, .35);
+}
+
+[data-bs-theme="dark"] .stmap-new-card:hover,
+[data-bs-theme="dark"] .stmap-new-card:focus-visible {
+    border-color: #34d399;
+    box-shadow: 0 10px 28px -10px rgba(52, 211, 153, .35);
+}
+
+[data-bs-theme="dark"] .stmap-master-glow {
+    background: radial-gradient(circle, rgba(34, 211, 238, .28) 0%, transparent 70%);
+}
+
+[data-bs-theme="dark"] .stmap-new-glow {
+    background: radial-gradient(circle, rgba(52, 211, 153, .28) 0%, transparent 70%);
+}
+
+[data-bs-theme="dark"] .stmap-oc-title {
+    color: #f1f5f9;
+}
+
+[data-bs-theme="dark"] .stmap-oc-desc {
+    color: #94a8bb;
+}
+
+[data-bs-theme="dark"] .stmap-oc-divider {
+    background: transparent;
+    border-top: 1px solid #1f3a52;
+}
+
+[data-bs-theme="dark"] .stmap-master-iconbox {
+    background: linear-gradient(135deg, #0e7490, #0369a1);
+    color: #cffafe;
+    box-shadow: 0 4px 14px rgba(34, 211, 238, .22);
+}
+
+[data-bs-theme="dark"] .stmap-new-iconbox {
+    background: linear-gradient(135deg, #047857, #15803d);
+    color: #d1fae5;
+    box-shadow: 0 4px 14px rgba(52, 211, 153, .22);
+}
+
+[data-bs-theme="dark"] .stmap-master-pill {
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .1);
+    border-color: rgba(34, 211, 238, .35);
+}
+
+[data-bs-theme="dark"] .stmap-new-pill {
+    color: #6ee7b7;
+    background: rgba(52, 211, 153, .1);
+    border-color: rgba(52, 211, 153, .35);
+}
+
+[data-bs-theme="dark"] .stmap-master-cta {
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .1);
+    border-color: rgba(34, 211, 238, .35);
+}
+
+[data-bs-theme="dark"] .stmap-new-cta {
+    color: #6ee7b7;
+    background: rgba(52, 211, 153, .1);
+    border-color: rgba(52, 211, 153, .35);
+}
+
+[data-bs-theme="dark"] .stmap-master-card:hover .stmap-master-cta,
+[data-bs-theme="dark"] .stmap-master-card:focus-visible .stmap-master-cta {
+    color: #fff;
+    border-color: transparent;
+    background: linear-gradient(135deg, #22d3ee, #0891b2);
+}
+
+[data-bs-theme="dark"] .stmap-new-card:hover .stmap-new-cta,
+[data-bs-theme="dark"] .stmap-new-card:focus-visible .stmap-new-cta {
+    color: #fff;
+    border-color: transparent;
+    background: linear-gradient(135deg, #34d399, #059669);
+}
+
+[data-bs-theme="dark"] .stmap-btn-cancel,
+[data-bs-theme="dark"] .stmap-btn-back {
+    color: #cbd5e1;
+    background: #162f45;
+    border-color: #24445f;
+}
+
+[data-bs-theme="dark"] .stmap-btn-cancel:hover,
+[data-bs-theme="dark"] .stmap-btn-back:hover:not(:disabled) {
+    background: #1d3b56;
+}
+
+/* ── New Supplier form (step 2) ───────────────────────────────────────── */
+.stmap-box--wide {
+    width: min(980px, calc(100vw - 28px));
+}
+
+.stmap-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 16px 4px;
+    background: #f4f9fb;
+}
+
+/* Each section is a white card. */
+.stnf-section {
+    margin: 0 0 12px;
+    padding: 16px 20px 18px;
+    background: #fff;
+    border: 1px solid #e5eef2;
+    border-radius: 16px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 10px 24px -16px rgba(15, 55, 70, .2);
+}
+
+/* Card header: teal icon, title + subtitle, a fading rule, optional extras on the right. */
+.stnf-sec-hdr {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 30px;
+    margin-bottom: 12px;
+}
+
+.stnf-sec-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    color: #fff;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #22d3ee, #0891b2);
+    box-shadow: 0 5px 12px -3px rgba(8, 145, 178, .5), 0 1px 0 rgba(255, 255, 255, .35) inset;
+}
+
+.stnf-sh__txt {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.stnf-sh__t {
+    font-size: 13.5px;
+    font-weight: 900;
+    letter-spacing: -.15px;
+    color: #0f172a;
+    white-space: nowrap;
+}
+
+.stnf-sh__s {
+    overflow: hidden;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: #94a3b8;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.stnf-sh__line {
+    flex: 1;
+    align-self: center;
+    min-width: 20px;
+    height: 1px;
+    background: linear-gradient(90deg, #e2e8f0, transparent);
+}
+
+/* HSN + target price on the price card's header. */
+.stnf-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.stnf-hsn {
+    padding: 2px 7px;
+    font: 700 10px 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-style: normal;
+    color: #0e7490;
+    background: #ecfeff;
+    border: 1px solid #cffafe;
+    border-radius: 6px;
+}
+
+.stnf-hsn--txt {
+    font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.stnf-tgt {
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 700;
+    color: #64748b;
+}
+
+.stnf-tgt b {
+    margin-left: 4px;
+    font-weight: 800;
+    color: #d97706;
+    font-variant-numeric: tabular-nums;
+}
+
+/* A field icon sits inside the input, turning teal while it has focus. */
+.stnf-iw {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.stnf-iw__ico {
+    position: absolute;
+    z-index: 1;
+    left: 13px;
+    top: 50%;
+    display: flex;
+    color: #94a3b8;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.stnf-iw:focus-within .stnf-iw__ico {
+    color: #0891b2;
+}
+
+.stnf-iw .stnf-inp {
+    padding-left: 36px;
+}
+
+/* Unit price: a rupee sign inside the field. */
+.stnf-cur {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.stnf-cur > span {
+    position: absolute;
+    z-index: 1;
+    left: 14px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0891b2;
+    pointer-events: none;
+}
+
+.stnf-cur .stnf-inp {
+    padding-left: 28px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Price, rate: numbers read in tabular figures. */
+.stnf-inp--num {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Price summary tiles. */
+.stnf-sum {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+/* International price summary: three tiles (no "vs Target Price"), filling the row. */
+.stnf-sum.stnf-sum--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stnf-k {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    padding: 7px 12px;
+    background: #fff;
+    border: 1px solid #d9eef4;
+    border-radius: 10px;
+}
+
+.stnf-k span {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.stnf-k b {
+    font-size: 13.5px;
+    font-weight: 800;
+    letter-spacing: -.1px;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    /* A long amount (the top of the price range is ₹9,99,99,99,999.99) wraps inside its tile
+       rather than running across the next one. */
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.stnf-k small {
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #94a3b8;
+    overflow-wrap: anywhere;
+}
+
+.stnf-k { min-width: 0; }
+
+/* New Supplier form dropdowns (Segment, Country, State, Currency, GST): the menu is exactly as wide
+   as its field. MasterSelect lets a menu grow to its longest option (up to field + 260px), and one
+   long segment name pushed the Segment menu out past the popup's right edge. width: 0 lets the
+   inline min-width (= the field's width) decide; a long name ends in "…" with the full name in the
+   row's tooltip. The menu is portalled to <body>, hence its own class. */
+/* Only while it has rows — an empty list carries the field's width as a plain width, which width 0
+   would crush to the size of "No results". */
+.stnf-ms-menu.master-select-menu:not(:has(.master-select-empty)) { width: 0 !important; max-width: none !important; }
+.stnf-ms-menu .master-select-item { overflow: hidden; }
+
+.stnf-k--tot {
+    background: linear-gradient(135deg, #ecfeff, #e0f7fa);
+    border-color: #a5e8f2;
+}
+
+.stnf-k--tot b,
+.stnf-k b.is-eq {
+    color: #0e7490;
+}
+
+.stnf-k b.is-ok {
+    color: #059669;
+}
+
+.stnf-k b.is-hi {
+    color: #d97706;
+}
+
+.stnf-k b.is-na {
+    color: #cbd5e1;
+}
+
+.stnf-row {
+    display: grid;
+    gap: 8px 14px;
+    margin-bottom: 8px;
+}
+
+.stnf-row:last-child {
+    margin-bottom: 0;
+}
+
+.stnf-row-1 {
+    grid-template-columns: 1fr;
+}
+
+.stnf-row-2 {
+    grid-template-columns: 1fr 1fr;
+}
+
+.stnf-row-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+.stnf-row-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stnf-field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.stnf-lbl {
+    margin: 0;   /* the theme gives <label> a bottom margin; <span> labels (Segment, State) have none */
+    min-height: 16px;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 16px;
+    color: #083344;
+    white-space: nowrap;
+}
+
+.stnf-req {
+    color: #ef4444;
+}
+
+.stnf-inp {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px;
+    font: 600 12.5px 'DM Sans', system-ui, sans-serif;
+    color: #0f172a;
+    background: #f8fdff;
+    border: 1.5px solid #dfeef2;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+}
+
+.stnf-inp:hover {
+    border-color: #b7e4ee;
+}
+
+.stnf-inp::placeholder {
+    font-weight: 500;
+    color: #94a3b8;
+}
+
+.stnf-inp:focus {
+    border-color: #22d3ee;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .16);
+}
+
+.stnf-inp.is-err {
+    border-color: #f87171;
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, .15);
+}
+
+.stnf-upload {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+    outline: none;
+    gap: 12px;
+    padding: 10px 14px;
+    cursor: pointer;
+    background: #f0fdff;
+    border: 2px dashed #a5f3fc;
+    border-radius: 10px;
+    transition: background .15s, border-color .15s;
+}
+
+.stnf-upload:hover {
+    background: #e0f9fd;
+    border-color: #22d3ee;
+}
+.stnf-upload:focus-visible {
+    border-color: #22d3ee;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .25);
+}
+
+.stnf-upload-icon {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    color: #0891b2;
+    background: linear-gradient(135deg, #cffafe, #a5f3fc);
+    border-radius: 12px;
+    flex: none;
+}
+
+.stnf-upload-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.stnf-upload-main {
+    font-size: 14px;
+    font-weight: 800;
+    color: #0891b2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stnf-upload-sub {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+/* Business card attached: the same box, solid, as one row — the file (click it to replace) on the
+   left, NEW · View · Remove on the right (the shared AttachedFiles buttons, .stfile__*). */
+.stnf-upload.is-attached {
+    gap: 8px;
+    padding: 8px 10px 8px 14px;
+    cursor: default;
+    border-style: solid;
+    border-width: 1.5px;
+    border-color: #a5e4f0;
+}
+.stnf-upload.is-attached:hover { background: #f0fdff; border-color: #67e8f9; }
+.stnf-upload-pick {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.stnf-upload-pick:focus-visible { outline: 2px solid #22d3ee; outline-offset: 3px; }
+.stnf-upload-main.is-file {
+    font-size: 13.5px;
+    color: #0f172a;
+}
+.stnf-upload-pick:hover .stnf-upload-main.is-file { color: #0e7490; }
+[data-bs-theme="dark"] .stnf-upload.is-attached { border-color: rgba(34, 211, 238, .35); }
+[data-bs-theme="dark"] .stnf-upload-main.is-file { color: #e2e8f0; }
+
+.stnf-foot {
+    position: sticky;
+    bottom: 0;
+    margin: 0 -16px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 10px 22px 12px;
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+}
+
+[data-bs-theme="dark"] .stmap-body {
+    background: #0b1a2a;
+}
+
+[data-bs-theme="dark"] .stnf-section {
+    background: #0e2133;
+    border-color: #1f3a52;
+    box-shadow: none;
+}
+
+[data-bs-theme="dark"] .stnf-sh__t {
+    color: #f1f5f9;
+}
+
+[data-bs-theme="dark"] .stnf-sh__s,
+[data-bs-theme="dark"] .stnf-iw__ico,
+[data-bs-theme="dark"] .stnf-k small {
+    color: #6b86a0;
+}
+
+[data-bs-theme="dark"] .stnf-sh__line {
+    background: linear-gradient(90deg, #24445f, transparent);
+}
+
+[data-bs-theme="dark"] .stnf-hsn {
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .12);
+    border-color: rgba(34, 211, 238, .3);
+}
+
+[data-bs-theme="dark"] .stnf-tgt,
+[data-bs-theme="dark"] .stnf-k span {
+    color: #94a8bb;
+}
+
+[data-bs-theme="dark"] .stnf-tgt b,
+[data-bs-theme="dark"] .stnf-k b.is-hi {
+    color: #fbbf24;
+}
+
+[data-bs-theme="dark"] .stnf-iw:focus-within .stnf-iw__ico,
+[data-bs-theme="dark"] .stnf-cur > span,
+[data-bs-theme="dark"] .stnf-k--tot b,
+[data-bs-theme="dark"] .stnf-k b.is-eq {
+    color: #67e8f9;
+}
+
+[data-bs-theme="dark"] .stnf-k {
+    background: #11263a;
+    border-color: #24445f;
+}
+
+[data-bs-theme="dark"] .stnf-k b {
+    color: #f1f5f9;
+}
+
+[data-bs-theme="dark"] .stnf-k--tot {
+    background: rgba(34, 211, 238, .1);
+    border-color: rgba(34, 211, 238, .32);
+}
+
+[data-bs-theme="dark"] .stnf-k b.is-ok {
+    color: #34d399;
+}
+
+[data-bs-theme="dark"] .stnf-k b.is-na {
+    color: #3d5a74;
+}
+
+[data-bs-theme="dark"] .stnf-foot {
+    background: #0b1a2a;
+    border-color: #1f3a52;
+}
+
+[data-bs-theme="dark"] .stnf-lbl {
+    color: #cbd5e1;
+}
+
+[data-bs-theme="dark"] .stnf-inp {
+    color: #f1f5f9;
+    background: #11263a;
+    border-color: #24445f;
+    color-scheme: dark;
+}
+
+[data-bs-theme="dark"] .stnf-inp::placeholder {
+    color: #6b86a0;
+}
+
+[data-bs-theme="dark"] .stnf-inp:hover {
+    border-color: rgba(34, 211, 238, .45);
+}
+
+/* The dark border above would otherwise also win over the light :focus rule; error keeps priority. */
+[data-bs-theme="dark"] .stnf-inp:focus {
+    border-color: #22d3ee;
+}
+
+[data-bs-theme="dark"] .stnf-inp.is-err {
+    border-color: #f87171;
+}
+
+[data-bs-theme="dark"] .stnf-upload {
+    background: rgba(34, 211, 238, .06);
+    border-color: rgba(34, 211, 238, .35);
+}
+
+[data-bs-theme="dark"] .stnf-upload:hover {
+    background: rgba(34, 211, 238, .12);
+    border-color: #22d3ee;
+}
+
+[data-bs-theme="dark"] .stnf-upload:focus-visible {
+    border-color: #22d3ee;
+}
+
+[data-bs-theme="dark"] .stnf-upload-icon {
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .15);
+}
+
+[data-bs-theme="dark"] .stnf-upload-main {
+    color: #67e8f9;
+}
+/* Business card upload error (inline, replaces the browser alert). */
+.stnf-err {
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #dc2626;
+}
+
+[data-bs-theme="dark"] .stnf-err {
+    color: #fb7185;
+}

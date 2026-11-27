@@ -9,21 +9,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * On-demand SANDWICH-LEAVE test-data generator (not a seeder — run only when
- * you ask, via a curl). For the chosen month/year, client, branch and a list of
- * employee CODES, it:
- *
- *   1. turns ON the branch's sandwich policy,
- *   2. books, per employee (honouring their own weekly-off), ONE continuous
- *      approved leave spanning each weekend (working day before → after), so the
- *      off day(s) sit inside the leave and get "sandwiched",
- *   3. alternates PAID / UNPAID leave types (creating an "Unpaid Leave (LWP)"
- *      type once if the tenant has none),
- *   4. sets attendance (Leave / Weekly Off) to match.
- *
- * Idempotent per employee+month (clears its own leaves first). Admins only.
- */
 class SandwichTestController extends Controller
 {
     use GuardsDevTooling;
@@ -60,10 +45,8 @@ class SandwichTestController extends Controller
             return response()->json(['status' => false, 'message' => 'No matching employees for those codes in this client/branch.'], 422);
         }
 
-        // Turn the policy ON for the branch (else the rule no-ops).
         DB::table('branches')->where('id', $branchId)->update(['sandwich_policy' => true]);
 
-        // Resolve a PAID + UNPAID leave type (create the unpaid one once).
         $paidTypeId = DB::table('master_leave_types')
             ->where('client_id', $clientId)->where('branch_id', $branchId)
             ->whereRaw('LOWER(paid_unpaid) = ?', ['paid'])->orderBy('id')->value('id');
@@ -91,7 +74,6 @@ class SandwichTestController extends Controller
         $totalLeaves = 0;
         foreach ($emps as $e) {
             $label = $e->weekly_off;
-            // Clear this tool's own leaves for the employee in the target month.
             DB::table('leave_requests')
                 ->where('employee_id', $e->id)->where('reason', self::REASON)
                 ->whereBetween('from_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
@@ -119,21 +101,6 @@ class SandwichTestController extends Controller
                     for ($x = $before->copy(); $x->lte($after); $x->addDay()) {
                         if (!WeekOff::isOff($label, $x)) $working++;
                     }
-                    /* `days` must be the POLICY-sized figure, not just the
-                     * working days.
-                     *
-                     * This tool writes rows straight through the query builder,
-                     * so it bypasses LeaveRequestController, which is where the
-                     * sandwich normally gets folded into `days`. Storing only
-                     * the working days produced leave that looked, to every
-                     * reader, exactly like leave approved BEFORE the policy was
-                     * switched on: the payroll review list dropped it ("nothing
-                     * is actually being charged") and payroll deducted the
-                     * plain 2 days. The tool turned the policy ON and then
-                     * seeded data that contradicted it.
-                     *
-                     * Sized by the same engine the app uses, so the row is
-                     * indistinguishable from one raised through the UI. */
                     $leaveId = DB::table('leave_requests')->insertGetId([
                         'client_id' => $clientId, 'branch_id' => $branchId,
                         'employee_id' => $e->id, 'leave_type_id' => $typeId,
@@ -146,7 +113,7 @@ class SandwichTestController extends Controller
                     $empModel = \App\Models\Employee::find($e->id);
                     $leaveRow = DB::table('leave_requests')->find($leaveId);
                     if ($empModel && $leaveRow) {
-                        \App\Support\SandwichPolicy::flushCache();   // the switch was just turned on
+                        \App\Support\SandwichPolicy::flushCache();
                         $bd = app(\App\Services\PayrollService::class)->sandwichBreakdown($empModel, $leaveRow);
                         DB::table('leave_requests')->where('id', $leaveId)
                             ->update(['days' => $bd['working'] + $bd['sandwich']]);
@@ -166,8 +133,6 @@ class SandwichTestController extends Controller
             }
             $out[] = [
                 'emp_code' => $e->emp_code, 'weekly_off' => $label,
-                // Off-days the policy will actually charge — 0 here means the
-                // rule did not bite and the review list will stay empty.
                 'sandwich_days_charged' => $sandwichDays,
                 'weekends' => $rows,
             ];
@@ -184,7 +149,6 @@ class SandwichTestController extends Controller
         ]);
     }
 
-    /** Upsert one attendance row (no punches for Leave / Weekly Off). */
     private function setAttendance(int $clientId, int $branchId, object $e, string $date, string $status): void
     {
         DB::table('attendances')->updateOrInsert(

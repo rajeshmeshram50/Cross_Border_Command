@@ -9,34 +9,8 @@ use App\Models\P2p\SpiBoxAttachment;
 use App\Models\P2p\SupplierInvoice;
 use Illuminate\Support\Facades\DB;
 
-/**
- * The Evidence Vault, from either end of the same chain.
- *
- * A purchase order and its supplier invoices hold one body of paperwork between
- * them, and which end you start from is a question about the screen you are on,
- * not about the documents. So this answers both:
- *
- *   forPo()   the order, its trade documents, a block per INVOICE raised under
- *             it, and any payment released against the order itself
- *   forSpi()  one invoice's own papers, plus the order's documents above it
- *
- * SHAPE. Every group holds SECTIONS, and every section holds documents — one
- * level the whole way down, so a screen renders it with a single loop rather
- * than special-casing the invoice blocks. An empty section is dropped entirely:
- * a heading with nothing under it reads as a gap in the file, not as a section
- * nobody filled.
- *
- * READ-ONLY, and it gathers rather than generates — every document here was
- * produced somewhere else.
- *
- * NOT THE SUPPLIER'S VAULT. KYC, due diligence and trade licences belong to the
- * vendor, not to an order, and live at /segment-uploads/supplier/{id}/vault.
- */
 class P2pVaultService
 {
-    /* ══════════════════════════ ENTRY POINTS ══════════════════════════ */
-
-    /** @return array<string, mixed> */
     public function forSpi(SupplierInvoice $spi): array
     {
         $spi->loadMissing('purchaseOrder');
@@ -49,42 +23,25 @@ class P2pVaultService
                 $po ? $this->tradeGroup($po) : null,
                 $this->invoiceGroup($po, $spi),
             ],
-            /* The ids of the records this vault reaches into.
-             *
-             * A document row carries its OWN id, which is a
-             * purchase_order_DOCUMENT id — nothing in the payload said what the
-             * PO id was, so the only id in sight was the wrong one to call the
-             * PO vault with. Named here so a screen can link across without
-             * parsing a code out of a subtitle. */
             ['purchase_order' => $po ? ['id' => $po->id, 'code' => $po->code] : null],
         );
     }
 
-    /** @return array<string, mixed> */
     public function forPo(PurchaseOrder $po): array
     {
-        // Oldest first: the invoices read in the order they were raised.
         $invoices = SupplierInvoice::where('purchase_order_id', $po->id)->orderBy('id')->get();
 
         return $this->body(
             ['kind' => 'po', 'id' => $po->id, 'code' => $po->code],
             array_merge(
                 [$this->poGroup($po), $this->tradeGroup($po)],
-                /* One block per invoice, so a PO carrying several keeps them
-                   apart — and each carries its OWN payments, because a proof is
-                   read against the invoice it answered, not against the order. */
                 $invoices->map(fn (SupplierInvoice $s) => $this->invoiceGroup($po, $s, true))->all(),
-                // What is left: money released with no invoice behind the request.
                 [$this->loosePaymentGroup($po)],
             ),
-            // Every invoice this order carries, for the same reason.
             ['invoices' => $invoices->map(fn (SupplierInvoice $s) => ['id' => $s->id, 'code' => $s->code])->all()],
         );
     }
 
-    /* ══════════════════════════ GROUPS ══════════════════════════ */
-
-    /** The order itself, and its signed copy. */
     private function poGroup(PurchaseOrder $po): array
     {
         $row = PurchaseOrderDocument::where('purchase_order_id', $po->id)
@@ -97,13 +54,6 @@ class P2pVaultService
             ]);
     }
 
-    /**
-     * Trade documents and agreements, with where each stands in its signing.
-     *
-     * Rows with no file are kept on purpose: a Bill of Lading nobody has
-     * uploaded is the most useful line in the vault, and dropping it would make
-     * an incomplete file look complete.
-     */
     private function tradeGroup(PurchaseOrder $po): ?array
     {
         $rows = PurchaseOrderDocument::where('purchase_order_id', $po->id)
@@ -120,7 +70,6 @@ class P2pVaultService
             $d->signature_request_id ? $sigs->get($d->signature_request_id) : null,
         );
 
-        // The title says "Documents & Agreements"; the sections make that true.
         return $this->group('trade', 'Trade Documents & Agreements',
             'Signed paperwork and shipping documents for this order', [
                 $this->section('trade_documents', 'Trade Documents',
@@ -130,21 +79,6 @@ class P2pVaultService
             ]);
     }
 
-    /**
-     * One invoice, in four sections: the invoice itself, the stickers printed
-     * for its boxes, the images taken against the goods, and the money released
-     * against it.
-     *
-     * $named titles the block with the invoice code, which matters only when a
-     * PO is showing several of them at once.
-     *
-     * NULLABLE, because group() returns null once every section is empty — and
-     * a new invoice is exactly that: no invoice file, no e-way bill, no boxes,
-     * no payment proof. Declared as a plain array this threw a TypeError on
-     * every freshly created SPI, which is the one case the vault is most likely
-     * to be opened in. body() already drops the nulls, so the vault then shows
-     * the PO and trade groups, or reads as empty.
-     */
     private function invoiceGroup(?PurchaseOrder $po, SupplierInvoice $spi, bool $named = false): ?array
     {
         $general = [];
@@ -177,7 +111,6 @@ class P2pVaultService
             ]);
     }
 
-    /** Money released on the order itself, with no invoice behind the request. */
     private function loosePaymentGroup(PurchaseOrder $po): ?array
     {
         $rows = $this->paymentRows($po, null, true);
@@ -189,17 +122,6 @@ class P2pVaultService
             ]);
     }
 
-    /* ══════════════════════════ ROWS ══════════════════════════ */
-
-    /**
-     * Box stickers, and the images taken against the goods, as two lists.
-     *
-     * A STICKER IS NOT A STORED FILE — it is rendered on demand, so the row
-     * carries an `action_url` to print it rather than a `file_url` to download.
-     * Saying so here keeps the screen from drawing a download that would 404.
-     *
-     * @return array{0: array<int, array>, 1: array<int, array>}  [stickers, images]
-     */
     private function boxDocs(SupplierInvoice $spi): array
     {
         $boxes = $spi->boxes()->orderBy('box_code')->get();
@@ -212,8 +134,6 @@ class P2pVaultService
                 $b->sticker_printed_at ? 'Printed ' . $this->day($b->sticker_printed_at) : 'Not printed yet',
                 null, 'box_sticker', $b->sticker_printed_at ? 'Printed' : 'Pending', 'generated',
             ) + [
-                // The same idea as the Purchase Order PDF: rendered on demand,
-                // so the action is what exists, not a file.
                 'action_url' => "/api/p2p/spi/{$spi->id}/boxes/{$b->id}/sticker/download",
                 'action'     => 'print',
             ];
@@ -226,8 +146,6 @@ class P2pVaultService
         foreach ($files as $a) {
             $images[] = $this->doc(
                 $a->file_name ?: 'Packing image',
-                // A box_item_id means the picture is of ONE product in the box,
-                // not of the box as a whole — worth saying which.
                 ($a->box_item_id ? 'Against a product in ' : 'Box ') . ($codes[$a->box_id] ?? $a->box_id),
                 $a->file_path, $a->box_item_id ? 'product_image' : 'box_image', 'Uploaded',
             );
@@ -236,14 +154,6 @@ class P2pVaultService
         return [$stickers, $images];
     }
 
-    /**
-     * Money released, with its proof — and the invoice it was raised against.
-     *
-     * Payments always sit on the PO, even when the request was raised from an
-     * invoice; `supplier_invoice_id` on the request is what ties one back.
-     *
-     * @return array<int, array<string, mixed>>
-     */
     private function paymentRows(?PurchaseOrder $po, ?SupplierInvoice $only, bool $unlinkedOnly = false): array
     {
         if (!$po) return [];
@@ -275,14 +185,8 @@ class P2pVaultService
             ->all();
     }
 
-    /** One PO document, with its signing state when it has been sent. */
     private function fromPoDocument(PurchaseOrderDocument $d, ?ClmSignatureRequest $sig = null): array
     {
-        /* Where this document sits in its signature request. A request carries
-         * several documents and the signed files come back in the same order,
-         * so the index is what names this one. Matched the way shape() matches
-         * it in PurchaseOrderDocumentController: our row id for a P2P request,
-         * the CLM library id otherwise. */
         $pos = null;
         if ($sig && is_array($sig->trade_doc_ids)) {
             $mine = $sig->document_type === ClmSignatureRequest::DOC_P2P_PO_DOCUMENT || $d->source_id === null
@@ -300,10 +204,6 @@ class P2pVaultService
             $d->file_path,
             $d->doc_kind,
             ucfirst((string) $d->status),
-            /* A SIGNED document is stored on its signature REQUEST, not here:
-             * signing sets status and signed_at and leaves file_path holding
-             * the unsigned draft it was sent as. Saying "signed" names what the
-             * row is; signed_file_url below is where the executed copy lives. */
             $d->status === 'signed' ? 'signed' : ($d->doc_kind === 'purchase_order' ? 'generated' : 'uploaded'),
         ) + [
             'id'               => $d->id,
@@ -311,26 +211,9 @@ class P2pVaultService
             'required'         => $d->needed === 'yes',
             'signature_status' => $sig?->status,
             'signed_at'        => optional($d->signed_at)->toDateTimeString(),
-            /* The EXECUTED copy. file_url above is the draft that was sent —
-             * signing never writes back to file_path — so a screen offering
-             * only that would hand someone an unsigned PDF of a signed
-             * document. Null until the request completes and the index of this
-             * document within it is known. */
             'signed_file_url'  => ($d->status === 'signed' && $sig && $pos !== null)
                 ? "/api/clm/signature-requests/{$sig->id}/view-file/{$pos}"
                 : null,
-            /* SOME DOCUMENTS ARE MADE, NOT UPLOADED.
-             *
-             * The Purchase Order PDF is rendered from the order on demand, so
-             * until someone asks for it there is no file to preview or save —
-             * and a vault that only offered those would show the one document
-             * that definitely exists as permanently missing. The action that
-             * produces it is named instead, and only while it still can be:
-             * generate() refuses a document already sent or signed.
-             *
-             * A trade document or an agreement has no such action. Nothing
-             * generates a Bill of Lading — it is waiting to be uploaded, and
-             * `file_url: null` with no action is exactly that state. */
             'action_url' => (!$d->file_path
                 && $d->doc_kind === 'purchase_order'
                 && $d->status === 'pending')
@@ -342,25 +225,6 @@ class P2pVaultService
         ];
     }
 
-    /**
-     * One vault line.
-     *
-     * `file_url` is null when nothing has been uploaded, and that is a state the
-     * screen should draw rather than hide. Files stream through
-     * /p2p/files/download because Azure keeps them off-origin, where a direct
-     * link cannot be saved.
-     */
-    /**
-     * One vault line.
-     *
-     * $source is the field the screen should branch on, so it never has to
-     * infer a state from which urls happen to be null:
-     *
-     *   uploaded   a person put this file here      → preview + download
-     *   generated  it is rendered on demand          → the action, until a file exists
-     *   signed     it came back from the signer      → preview + download, from the request
-     *   awaited    nobody has provided it yet        → nothing to offer; this is the gap
-     */
     private function doc(string $name, string $meta, ?string $path, string $kind, string $status, string $source = 'uploaded'): array
     {
         return [
@@ -369,26 +233,12 @@ class P2pVaultService
             'kind'     => $kind,
             'status'   => $status,
             'source'   => $path ? $source : ($source === 'uploaded' ? 'awaited' : $source),
-            // The raw storage path, kept for anything that wants a plain link.
             'file_url' => $path ? file_url($path) : null,
-            /* ONE url for both buttons: append ?mode=preview to open it in the
-             * tab, ?mode=download to save it. Two separate links said the same
-             * thing twice and could fall out of step; the endpoint decides the
-             * disposition and nothing else about the request changes.
-             *
-             * It is the authenticated stream, which checks the caller, finds
-             * the disk actually holding the path and hands back the ORIGINAL
-             * filename rather than the random stored one — none of which a
-             * direct storage link can do, and on Azure the blob is off-origin,
-             * where a browser may open a file but not save it. */
             'url'      => $path ? '/api/p2p/files/download?path=' . rawurlencode($path) : null,
             'modes'    => $path ? ['preview', 'download'] : [],
         ];
     }
 
-    /* ══════════════════════════ SHAPE ══════════════════════════ */
-
-    /** A group with no section left holding anything is dropped by body(). */
     private function group(string $key, string $title, string $subtitle, array $sections): ?array
     {
         $sections = array_values(array_filter($sections));

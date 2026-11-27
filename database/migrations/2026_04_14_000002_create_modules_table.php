@@ -16,12 +16,12 @@ return new class extends Migration
             $table->string('slug', 255)->unique()->nullable();
             $table->string('icon', 100)->nullable();
             $table->text('description')->nullable();
-            $table->string('route_name', 255)->nullable(); // Laravel route name for this module
-            $table->string('route_prefix', 255)->nullable(); // URL prefix
+            $table->string('route_name', 255)->nullable();
+            $table->string('route_prefix', 255)->nullable();
 
             $table->integer('sort_order')->nullable()->default(0);
             $table->boolean('is_active')->nullable()->default(true);
-            $table->boolean('is_default')->nullable()->default(false); // available in all plans
+            $table->boolean('is_default')->nullable()->default(false);
 
             $table->timestamps();
         });

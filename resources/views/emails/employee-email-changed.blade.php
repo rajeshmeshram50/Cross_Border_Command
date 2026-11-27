@@ -1,13 +1,6 @@
 @php
-  /* Branding — defaulted so a standalone preview (no Mailable context) still
-     renders. BrandingResolver passes the client org's name through as
-     $brandName; platform users fall back to the IGC defaults, same as every
-     other HR template. */
   $brandName    = $brandName    ?? 'Inorbvict Group Of Companies';
 
-  /* Header: the employee's own branch when we know it, the organisation
-     otherwise. $branchName is passed by the Mailable; it is not part of the
-     BrandingResolver array, which only resolves to the client. */
   $headerName = ($branchName ?? '') !== '' ? $branchName : $brandName;
   $headerNote = $headerNote ?? 'Account Notification';
   $appName      = $appName      ?? 'Cross Border Command';
@@ -18,9 +11,6 @@
   $changedAt    = $changedAt    ?? now('Asia/Kolkata')->format('d M Y, h:i A');
   $profileUrl   = $profileUrl   ?? (rtrim(config('app.frontend_url') ?: config('app.url') ?: 'http://localhost', '/') . '/profile');
 
-  /* Two audiences, one design. The old address is being warned, so its copy
-     leads with what changed and where mail goes now; the new address is being
-     confirmed. */
   $toOldAddress = ($variant ?? 'new') === 'old';
 
   $heading    = $toOldAddress ? 'Your Email Address' : 'Your Email Has Been';
@@ -42,7 +32,6 @@
 <body
   style="margin:0;padding:0;background-color:#eef2f7;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;color:#0f172a;">
 
-  {{-- Preheader: the one line a crowded inbox shows next to the subject. --}}
   <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#eef2f7;">
     @if ($toOldAddress)
       Your {{ $brandName }} login email was changed to {{ $newEmail }}. If this wasn't you, tell HR now.
@@ -59,26 +48,10 @@
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
           style="max-width:600px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 40px rgba(15,23,42,0.06);">
 
-          {{-- The corner folds: stacked ellipses, top right and bottom right,
-               so each edge reads as a curve rather than a diagonal cut. Each
-               layer positions itself with `at`, so no background-position is
-               set — one would move all four together.
-
-               Gradients rather than an image, because a background image is
-               stripped by most clients and a blocked <img> would leave a white
-               hole where the artwork should be. Outlook's Word engine ignores
-               both and falls back to the flat white card, which is the
-               intended degradation. --}}
           <tr>
             <td
               style="padding:0;background:radial-gradient(86px 118px at 100% 0,#dbeafe 0,#dbeafe 100%,transparent 100%),radial-gradient(144px 196px at 100% 0,#eff6ff 0,#eff6ff 100%,transparent 100%);background-color:#ffffff;background-repeat:no-repeat;">
 
-              {{-- HEADER — accent rule, the branch the employee belongs to,
-                   and what this message is. Same shape as the sales document
-                   email, which is the house pattern for a transactional
-                   header. The branch is named rather than the client: an
-                   employee answers to their own office, and that is the name
-                   they will recognise in a crowded inbox. --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:32px 36px 0;">
@@ -99,7 +72,6 @@
                 </tr>
               </table>
 
-              {{-- HERO --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:26px 36px 0;" valign="top">
@@ -113,12 +85,6 @@
                           </h1>
                         </td>
                         <td width="72" valign="top" align="right" style="padding-left:12px;">
-                          {{-- Outlined envelope with a verified badge. Inline
-                               SVG, not an <img>: images are blocked by default
-                               in most desktop clients and this is the only mark
-                               on the page, so a blocked one would read as a
-                               broken message. Hidden from Outlook, which cannot
-                               render SVG, and given a glyph instead. --}}
                           <!--[if !mso]><!-->
                           <svg xmlns="http://www.w3.org/2000/svg" width="62" height="48" viewBox="0 0 62 48"
                             style="display:block;" aria-hidden="true">
@@ -146,7 +112,6 @@
                 </tr>
               </table>
 
-              {{-- BODY --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:22px 36px 0;">
@@ -173,7 +138,6 @@
                 </tr>
               </table>
 
-              {{-- THE ADDRESS CARD --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:20px 36px 0;">
@@ -184,10 +148,6 @@
                           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                             <tr>
                               <td width="62" valign="top">
-                                {{-- Solid disc with a white envelope. SVG for
-                                     the same reason as the hero mark: an <img>
-                                     is blocked by default and would leave a
-                                     hole in the middle of the card. --}}
                                 <!--[if !mso]><!-->
                                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"
                                   style="display:block;" aria-hidden="true">
@@ -228,7 +188,6 @@
                 </tr>
               </table>
 
-              {{-- CTA --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding:24px 36px 0;">
@@ -246,7 +205,6 @@
                 </tr>
               </table>
 
-              {{-- One quiet line, both variants. --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:22px 36px 0;">
@@ -257,7 +215,6 @@
                 </tr>
               </table>
 
-              {{-- SIGN-OFF --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="padding:22px 36px 0;">
@@ -267,10 +224,6 @@
                 </tr>
               </table>
 
-              {{-- FOOTER — same shape as the sales document email. Opaque
-                   white on purpose: the corner artwork must stop at the rule
-                   above it, not run behind the address and cut the divider in
-                   half. --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
                 style="background-color:#ffffff;">
                 <tr>
@@ -282,8 +235,6 @@
                 </tr>
               </table>
 
-              {{-- The closing fold, below the footer rather than behind it, so
-                   it balances the one at the top without touching any text. --}}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td height="68"

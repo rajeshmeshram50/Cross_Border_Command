@@ -29,12 +29,8 @@
   position: relative;
   width: min(1280px, 90vw);
   height: 100vh;
-  /* fallback for old browsers */
   height: 100dvh;
-  /* dynamic viewport — mobile address bar no longer hides the footer */
   background: #f0fdff;
-  /* No curve — straight edges so the drawer feels like a flush
-     extension of the page rather than a floating card. */
   border-radius: 0;
   overflow: hidden;
   display: flex;
@@ -55,7 +51,6 @@
   }
 }
 
-/* ─── HEADER ─── */
 .cev-header {
   position: relative;
   flex-shrink: 0;
@@ -65,10 +60,6 @@
   overflow: hidden;
 }
 
-/* Decorative bubble cluster — mirrors the green Figma reference. Pure
-   CSS circles sized + positioned so they read as soft floating orbs on
-   the right side of the gradient. pointer-events: none keeps them
-   purely cosmetic. */
 .cev-header-bg {
   position: absolute;
   inset: 0;
@@ -103,8 +94,6 @@
   background: radial-gradient(circle at 30% 30%, rgba(103, 232, 249, 0.30), rgba(103, 232, 249, 0.06) 60%, transparent 75%);
 }
 
-/* Extra orb via a span on the JSX side too — gives a third bubble
-   without nesting another wrapper. */
 .cev-header-orb {
   position: absolute;
   width: 90px;
@@ -226,8 +215,6 @@
   flex-shrink: 0;
 }
 
-/* "+N more" segment list popover — white card with a titled list of segment
- * pills (matches the CLM authority/segment popovers). */
 .cev-seg-pop {
   background: #fff;
   border: 1.5px solid #a5f3fc;
@@ -269,17 +256,12 @@
   padding: 2px 11px;
 }
 
-/* Reg-High / Reg-Low badge: name stays on one line, badge never squeezed; solid white on the dark vault header. */
 .cev-seg-pop-pill { white-space: nowrap; max-width: 100%; }
 .cev-seg-pop-row { gap: 8px; }
 .cev-seg-pop-pill .seg-reg-badge,
 .cev-chip .seg-reg-badge { flex-shrink: 0; }
-.cev-chip .seg-reg-badge { background: #fff !important; }
+html:not([data-bs-theme="dark"]) .cev-chip .seg-reg-badge { background: #fff !important; }
 
-/* Code prefix inside a popover row's pill -- the Mapped Customers list answers
-   "which customer" as "C-206: Nova Foods". Leading, not trailing: the code is
-   the identifier people quote, and at the front the codes line up down the list
-   instead of drifting with each name's length. */
 .cev-seg-pop-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9.5px;
@@ -351,11 +333,6 @@
   }
 }
 
-/* ─── TABS — pill ribbon. Inactive tabs read as soft chips,
-   active tab gets a violet gradient + lifted shadow. Animated icon
-   square and pill count badge keep the row visually rich. */
-/* ─── GROUP CARDS — two big selectors that split the sub-tabs into
-   Standard Documents (one-time) and Case to Case Agreements (per-deal). */
 .cev-groups-wrap {
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0fdff 0%, #ecfeff 100%);
@@ -386,7 +363,6 @@
   background: #f0fdff;
 }
 
-/* The icon+text selector (picks the active group). */
 .cev-group-main {
   flex: 1;
   min-width: 0;
@@ -401,8 +377,6 @@
   font-family: inherit;
 }
 
-/* "Document Overview" button on the right of each group card. */
-/* INACTIVE card → ghost button (secondary). */
 .cev-group-overview {
   flex-shrink: 0;
   display: inline-flex;
@@ -433,7 +407,6 @@
   font-size: 13px;
 }
 
-/* ACTIVE (selected) card → SOLID WHITE button (the prominent one). */
 .cev-group.is-active .cev-group-overview {
   background: #fff;
   color: #0891b2;
@@ -447,7 +420,6 @@
   border-color: #fff;
 }
 
-/* ─── Document Overview popup ─── */
 .cev-ov-overlay {
   position: fixed;
   inset: 0;
@@ -534,92 +506,12 @@
   background: rgba(255, 255, 255, .25);
 }
 
-/* Fixed height for ~5 rows so the popup size stays constant regardless of how
-   many documents the selected shipment/page has (paginated at 5/page). */
-/* Top spacing is a non-scrolling BORDER, not padding: padding-top is inside
-   the scrollport, so a sticky (top:0) thead sticks below it and earlier rows
-   peek into the gap above the header. A border sits outside the scrollport and
-   clips the content, so the sticky header stays flush and nothing shows above it. */
 .cev-ov-body {
   overflow: auto;
   padding: 0 18px 18px;
   border-top: 14px solid #fff;
   min-height: 312px;
   max-height: 312px;
-}
-
-/* Case-to-case shipment tabs (horizontal, scrollable) */
-.cev-ov-shiptabs {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 12px 18px 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(8, 145, 178, .3) transparent;
-}
-
-.cev-ov-shiptabs::-webkit-scrollbar {
-  height: 6px;
-}
-
-.cev-ov-shiptabs::-webkit-scrollbar-thumb {
-  background: rgba(8, 145, 178, .3);
-  border-radius: 99px;
-}
-
-.cev-ov-shiptab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  padding: 8px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  border: 1.5px solid rgba(6, 182, 212, .22);
-  background: #fff;
-  color: #0e7490;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  transition: all .15s;
-}
-
-.cev-ov-shiptab:hover {
-  background: #ecfeff;
-}
-
-.cev-ov-shiptab.is-active {
-  background: linear-gradient(135deg, #0e7490, #06b6d4);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
-}
-
-.cev-ov-shiptab-opp {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 7px;
-  border-radius: 20px;
-  background: rgba(8, 145, 178, .1);
-  color: #0891b2;
-}
-
-.cev-ov-shiptab.is-active .cev-ov-shiptab-opp {
-  background: rgba(255, 255, 255, .22);
-  color: #fff;
-}
-
-[data-bs-theme="dark"] .cev-ov-shiptab {
-  background: rgba(8, 145, 178, .12);
-  color: #67e8f9;
-  border-color: rgba(8, 145, 178, .34);
-}
-
-[data-bs-theme="dark"] .cev-ov-shiptab.is-active {
-  background: linear-gradient(135deg, #06b6d4, #22d3ee);
-  color: #fff;
-  border-color: transparent;
 }
 
 .cev-ov-table {
@@ -672,9 +564,6 @@
   color: #0a2630;
 }
 
-/* Align the # / STATUS / ACTION columns centered (header AND cells) so the
-   status pills and download buttons sit directly under their headings.
-   DOCUMENT NAME stays left-aligned. */
 .cev-ov-table thead th:first-child,
 .cev-ov-table tbody td:first-child,
 .cev-ov-table thead th:nth-child(3),
@@ -689,46 +578,6 @@
   color: #5e94a1;
   padding: 28px 12px !important;
   font-weight: 600;
-}
-
-/* Shipment group header row inside the Case-to-Case overview. */
-.cev-ov-ship-head td {
-  background: #ecfeff !important;
-  border-bottom: 1px solid #a5f3fc !important;
-  padding: 9px 12px !important;
-  font-weight: 800;
-  font-size: 12px;
-  color: #0e7490;
-  letter-spacing: .02em;
-}
-
-.cev-ov-ship-head td i {
-  margin-right: 6px;
-}
-
-.cev-ov-ship-opp {
-  display: inline-block;
-  margin-left: 10px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: #fff7ed;
-  color: #c2410c;
-  border: 1px solid #fed7aa;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .03em;
-}
-
-[data-bs-theme="dark"] .cev-ov-ship-head td {
-  background: rgba(8, 145, 178, .16) !important;
-  color: #67e8f9;
-  border-bottom-color: rgba(8, 145, 178, .3) !important;
-}
-
-[data-bs-theme="dark"] .cev-ov-ship-opp {
-  background: rgba(194, 65, 12, .18);
-  color: #fdba74;
-  border-color: rgba(194, 65, 12, .4);
 }
 
 .cev-ov-dl {
@@ -746,10 +595,6 @@
   font-weight: 700;
   cursor: pointer;
   transition: all .15s ease;
-  /* No min-width here. Reserving room for "Downloading…" widened the Action
-     column until the table overflowed its modal. The busy state keeps the
-     same label instead and only swaps the icon for a spinner, so the button
-     never changes size and needs no reserved space. */
   white-space: nowrap;
 }
 
@@ -823,8 +668,6 @@
   font-weight: 800;
   color: #0a2630;
   letter-spacing: -.01em;
-  /* The overview button never wraps, so the heading yields instead of
-     pushing the card past its width. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -867,9 +710,6 @@
   display: none;
 }
 
-/* Underline sub-tabs — matches the CLM prototype's .ev-tab: a flat row of
- * tabs with a glowing cyan underline on the active one, an icon chip and a
- * pill count badge. */
 .cev-tab {
   flex: 0 0 auto;
   position: relative;
@@ -963,7 +803,6 @@
   box-shadow: 0 2px 6px rgba(6, 182, 212, .38);
 }
 
-/* ─── BODY ─── */
 .cev-body {
   flex: 1;
   min-height: 0;
@@ -973,9 +812,6 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
-     .avm-body so the rail is obvious when a tab's table grows past
-     the body. Solid violet replaces the prior near-invisible rgba(.30). */
   scrollbar-width: thin;
   scrollbar-color: #67e8f9 transparent;
 }
@@ -993,11 +829,6 @@
   background: #06b6d4;
 }
 
-/* Unified scroller — KPIs + group cards + toggle + tabs + table scroll together
-   between the fixed header and footer, so a short/zoomed viewport (or a long
-   table) can reach ALL the content instead of clipping the strip above the
-   table. Only present in the Supplier vault; the customer modal has no
-   .cev-scroll element so its layout is unchanged. */
 .cev-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1021,20 +852,14 @@
   background: #06b6d4;
 }
 
-/* Inside the unified scroller the table area flows naturally (the scroller owns
-   the overflow) but still grows to fill when the content is short. */
 .cev-scroll .cev-body {
   flex: 1 0 auto;
   overflow: visible;
 }
 
-/* Shipment tabs: ONE combined card like Standard Docs — section header fused to
-   a Customer=/≠Consignee toggle band, fused to the table (no gaps). */
 .cev-body-ship {
   gap: 0;
 }
-
-
 
 .cev-section {
   display: flex;
@@ -1088,22 +913,6 @@
   justify-content: flex-end;
 }
 
-.cev-section-count {
-  font-size: 26px;
-  font-weight: 800;
-  color: #0c4a6e;
-  line-height: 1;
-}
-
-.cev-section-count-label {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: .12em;
-  color: #0891b2;
-  margin-top: 2px;
-}
-
-/* Figma-style status count pills on the section header band. */
 .cev-sec-pill {
   display: inline-flex;
   align-items: center;
@@ -1133,16 +942,6 @@
   background: #10b981;
 }
 
-.cev-sec-pill-warn {
-  background: #fffbeb;
-  color: #b45309;
-  border-color: #fde68a;
-}
-
-.cev-sec-pill-warn .cev-sec-dot {
-  background: #f59e0b;
-}
-
 .cev-sec-pill-bad {
   background: #fef2f2;
   color: #dc2626;
@@ -1159,7 +958,6 @@
   border-color: #bfdbfe;
 }
 
-/* ─── Loading skeleton (shimmer) ─── */
 .cev-skel {
   flex: 1;
   min-height: 0;
@@ -1250,56 +1048,14 @@
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .10), transparent);
 }
 
-.cev-filter-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cev-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
-  border: 1px solid transparent;
-}
-
-.cev-filter-verified {
-  background: #d1fae5;
-  color: #047857;
-  border-color: rgba(5, 150, 105, .30);
-}
-
-.cev-filter-expiring {
-  background: #fef3c7;
-  color: #92400e;
-  border-color: rgba(217, 119, 6, .30);
-}
-
-.cev-filter-pending {
-  background: #fee2e2;
-  color: #b91c1c;
-  border-color: rgba(239, 68, 68, .30);
-}
-
 .cev-table-wrap {
   background: #fff;
   border: 1px solid #e4e7f5;
   border-top: none;
   border-radius: 0 0 10px 10px;
   overflow: hidden;
-  /* keep the rounded edge crisp over the
-                                 sticky header band — w/o this the band
-                                 paints over the corner radius */
   scrollbar-width: thin;
   position: relative;
-  /* Don't let the flex column body squash this wrap below its
-     intrinsic height — without this, extra rows can be clipped at
-     the bottom and .cev-body's overflow-y never trips, so the user
-     has no scrollbar to reach hidden documents. */
   flex-shrink: 0;
 }
 
@@ -1307,17 +1063,6 @@
   flex-shrink: 0;
 }
 
-/* Inner scroll context for the table — own scrolling ancestor so
-   the sticky thead pins inside the table, not against the outer
-   body. Viewport-relative max-height so the table fills the
-   available vertical space on any laptop screen while still
-   leaving a hard ceiling that keeps the sticky band working. */
-/* Cap the table at ~5 rows and scroll inside it after that (instead of
- * letting the whole vault grow). The sticky thead pins to the top of THIS
- * scroll box, so the header stays visible while the extra rows scroll under
- * it. max-height (not a fixed height) means 2-4 row buckets still shrink to
- * their content with no empty space. overflow-x stays auto so wide tables
- * (min-width 980px) can still scroll sideways on narrow screens. */
 .cev-table-scroll {
   overflow-x: auto;
   overflow-y: auto;
@@ -1357,10 +1102,6 @@
   font-size: 13px;
 }
 
-/* ONE continuous gradient across the whole header row (not per-column).
-   The gradient + sticky both live on the <tr> so it spans left→right as a
-   single band AND stays pinned on scroll; the <th> cells are transparent
-   so they don't restart the gradient per column. */
 .cev-table thead tr {
   position: sticky;
   top: 0;
@@ -1370,7 +1111,6 @@
 
 .cev-table thead th {
   padding: 9px 14px;
-  /* tighter than 12px — visually slim band */
   text-align: left;
   background: transparent;
   font-size: 10.5px;
@@ -1445,8 +1185,6 @@
   flex-shrink: 0;
 }
 
-/* Keep long filenames from stretching the Attachment column — cap the label
- * and ellipsize; the full name stays available via the cell's title tooltip. */
 .cev-attach-name {
   max-width: 160px;
   overflow: hidden;
@@ -1515,12 +1253,6 @@
   color: #b91c1c;
 }
 
-/* "N/A" placeholder for the Issued Date / Expired At cells.
-   A bare em dash read as a rendering gap rather than a stated value — these
-   documents genuinely have no date, which is a fact about them, not missing
-   data. `display: block` so it centres across the whole cell instead of
-   hugging the left padding edge the way an inline dash did. Matches the
-   Consignee vault's overview list, which already says N/A. */
 .cev-na {
   display: block;
   text-align: center;
@@ -1542,9 +1274,6 @@
   border: 1px solid rgba(8, 145, 178, .30);
 }
 
-/* Row Actions — View / Download / Re-upload icons. Shared baseline
- * with a per-action tint so users can scan the column without reading
- * the icons. Disabled state stays visible but loses its hover affordance. */
 .cev-row-actions {
   display: inline-flex;
   align-items: center;
@@ -1605,9 +1334,6 @@
   pointer-events: none;
 }
 
-/* Dark mode — lift the action-button fills + icon colours so they read on the
- * dark row. Send / Reminder / Certificate set their colours inline, so those
- * need !important to win over the inline style attribute. */
 [data-bs-theme="dark"] .cev-row-act-view {
   color: #93c5fd;
   background: rgba(59, 130, 246, .16);
@@ -1681,7 +1407,6 @@
   color: #b91c1c;
 }
 
-/* Chip pills used in shipment matrix */
 .cev-chip-pill {
   display: inline-flex;
   align-items: center;
@@ -1694,10 +1419,6 @@
   font-weight: 700;
   border: 1px solid rgba(8, 145, 178, .30);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  /* An id is one token. Without this the cell wrapped it at the hyphen when
-     the column got tight — "SHP-" on one line, "004" on the next — which
-     read as two broken chips rather than one id. The column widens to the
-     id instead. */
   white-space: nowrap;
 }
 
@@ -1727,7 +1448,6 @@
   flex-shrink: 0;
 }
 
-/* Coloured-number compliance cell — bold ratio + % beneath, no circle. */
 .cev-ratio-num {
   display: inline-flex;
   flex-direction: column;
@@ -1761,9 +1481,6 @@
   color: #dc2626;
 }
 
-
-
-/* ─── FOOTER ─── */
 .cev-footer {
   position: relative;
   flex-shrink: 0;
@@ -1835,9 +1552,6 @@
   box-shadow: 0 8px 22px rgba(12, 74, 110, .45);
 }
 
-/* Spinner used by the Export All button while the XLSX workbook is
- * being built. Class-scoped to .cev-spin so it doesn't collide with
- * any global ri-spin rule the project may add later. */
 .cev-spin {
   display: inline-block;
   animation: cevSpin .8s linear infinite;
@@ -1853,7 +1567,6 @@
   }
 }
 
-/* ─── DARK MODE — violet palette mapped to lavender-on-deep-purple ─── */
 [data-bs-theme="dark"] .cev-card {
   background: #08222b;
 }
@@ -1877,7 +1590,6 @@
   border-color: #06b6d4;
 }
 
-/* Inactive ghost button readable on the dark card; active stays solid white. */
 [data-bs-theme="dark"] .cev-group-overview {
   background: linear-gradient(135deg, #06b6d4, #0891b2);
   color: #fff;
@@ -1990,14 +1702,6 @@
   color: #67e8f9;
 }
 
-[data-bs-theme="dark"] .cev-section-count {
-  color: #cffafe;
-}
-
-[data-bs-theme="dark"] .cev-section-count-label {
-  color: #67e8f9;
-}
-
 [data-bs-theme="dark"] .cev-table-wrap {
   background: #0a2a33;
   border-color: rgba(8, 145, 178, .28);
@@ -2102,9 +1806,6 @@
   background: rgba(8, 145, 178, .18);
 }
 
-
-
-/* All badges — translucent colour fills on dark (match the segment chips). */
 [data-bs-theme="dark"] .cev-req-m {
   background: rgba(16, 185, 129, .18) !important;
   color: #6ee7b7 !important;
@@ -2117,16 +1818,28 @@
   border-color: rgba(148, 163, 184, .32) !important;
 }
 
-[data-bs-theme="dark"] .cev-sec-pill-ok {
+[data-bs-theme="dark"] .cev-ship-pill--ok {
   background: rgba(16, 185, 129, .18) !important;
   color: #6ee7b7 !important;
   border-color: rgba(16, 185, 129, .4) !important;
 }
 
-[data-bs-theme="dark"] .cev-sec-pill-warn {
-  background: rgba(245, 158, 11, .18) !important;
+[data-bs-theme="dark"] .cev-ship-pill--warn {
+  background: rgba(245, 158, 11, .16) !important;
   color: #fcd34d !important;
   border-color: rgba(245, 158, 11, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-ship-pill--bad {
+  background: rgba(239, 68, 68, .18) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(239, 68, 68, .4) !important;
+}
+
+[data-bs-theme="dark"] .cev-sec-pill-ok {
+  background: rgba(16, 185, 129, .18) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, .4) !important;
 }
 
 [data-bs-theme="dark"] .cev-sec-pill-bad {
@@ -2177,7 +1890,6 @@
   color: #cbd5e1 !important;
 }
 
-/* Expanded shipment detail panel (ShipmentDocPanel) — all inline light styles. */
 [data-bs-theme="dark"] .cev-ship-expand>td {
   background: #08222b !important;
 }
@@ -2214,25 +1926,6 @@
   border-color: rgba(245, 158, 11, .4) !important;
 }
 
-[data-bs-theme="dark"] .cev-filter-verified {
-  background: rgba(16, 185, 129, .18);
-  color: #6ee7b7;
-  border-color: rgba(16, 185, 129, .30);
-}
-
-[data-bs-theme="dark"] .cev-filter-expiring {
-  background: rgba(245, 158, 11, .18);
-  color: #fcd34d;
-  border-color: rgba(217, 119, 6, .30);
-}
-
-[data-bs-theme="dark"] .cev-filter-pending {
-  background: rgba(239, 68, 68, .18);
-  color: #fca5a5;
-  border-color: rgba(239, 68, 68, .30);
-}
-
-/* ─── RESPONSIVE ─── */
 @media (max-width: 1440px) {
   .cev-card {
     width: min(1100px, 92vw);
@@ -2309,10 +2002,6 @@
     padding: 12px 14px;
   }
 
-  .cev-section-count {
-    font-size: 22px;
-  }
-
   .cev-footer {
     flex-direction: column;
     align-items: stretch;
@@ -2359,7 +2048,6 @@
     padding: 1px 6px;
   }
 
-  /* Tabs scroll sideways instead of squashing when they don't fit. */
   .cev-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -2370,7 +2058,6 @@
     flex: 0 0 auto;
   }
 
-  /* Section header (title + status pills) stacks so pills don't overflow. */
   .cev-section {
     flex-direction: column;
     align-items: flex-start;
@@ -2423,8 +2110,6 @@
     font-size: 11px;
   }
 }
-
-/* ══ End of the shared base layer — the supplier .sev skin follows ══ */
 
 .cev-shp-toggle {
   display: inline-flex;
@@ -2482,7 +2167,6 @@
   color: #fff;
 }
 
-/* Complete / Partial / Pending status pills in the deal-matrix section header (Figma .ev-spill). */
 .cev-deal-spill {
   display: inline-flex;
   align-items: center;
@@ -2503,8 +2187,6 @@
   flex-shrink: 0;
 }
 
-/* Deal-matrix surfaces as CSS variables so the inline-styled table + JS
-   hover flip with the theme (the matrix is Figma-light by default). */
 .cev-deal {
   --dl-row: #fff;
   --dl-zebra: #fafbff;
@@ -2533,8 +2215,6 @@
   --dl-docline: rgba(148, 197, 255, .08);
 }
 
-/* On phones the With/Without toggle fills the row (equal buttons) so it
-   can't overflow at ~320-360px. */
 @media (max-width: 640px) {
   .cev-shp-toggle {
     display: flex;
@@ -2548,22 +2228,16 @@
   }
 }
 
-/* ══ Supplier vault skin (.sev) ═══════════════════════════════════
-   Scoped to this modal on purpose: .cev-* is shared with the Customer
-   and Consignee vaults, and they are not part of this redesign. */
 .cev-card.sev {
   width: min(1380px, 88vw);
-  /* Flush drawer — no cast shadow bleeding over the page behind it. */
   box-shadow: none;
 }
 
-/* HEADER — deep teal hero, code-led title, translucent tag row. */
 .sev .cev-header {
   background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
   min-height: 82px;
 }
 
-/* Eyebrow — pale cyan on the teal hero, led by a short rule, as .ev-hd-label. */
 .sev .cev-header-eyebrow {
   display: flex;
   align-items: center;
@@ -2670,7 +2344,6 @@
   }
 }
 
-/* GROUP CARDS now open the body, so they carry the top band's wash. */
 .sev .cev-groups-wrap {
   position: relative;
   background: linear-gradient(180deg, #f4f5fb 0%, #fbfbfe 100%);
@@ -2678,8 +2351,6 @@
   border-bottom: 1.5px solid #e8eaf5;
 }
 
-/* The accent line carries on from the header. It used to ride on the KPI
-   strip; the group cards lead the body now, so it rides on them. */
 .sev .cev-groups-wrap::before {
   content: '';
   position: absolute;
@@ -2693,32 +2364,21 @@
   animation: cevStatsAccent 4s linear infinite;
 }
 
-/* The top wash (group cards + KPI strip + tabs) ends at the tab row's
-   bottom rule; everything below it is plain white. */
 .sev .cev-body {
   background: #ffffff;
 }
 
-/* Tab row on the column's gutter. The wrap's 18px padding stacked on the
-   tab's own 14px pushed the first label 32px in, so "Trade Documents" sat
-   noticeably right of the With/Without toggle above it and the section card
-   below — both of which sit at 18px. 4 + 14 = 18 lines all three up while the
-   tab keeps its own padding (hit area and active underline unchanged). */
 .sev .cev-tabs-wrap {
   padding: 0 4px;
 }
 
 @media (max-width: 900px) {
 
-  /* The base sheet switches to `10px 14px` here; keep its vertical rhythm and
-     zero only the sides, so the tab's own 14px lands on the 14px gutter the
-     rest of the column uses at this width. */
   .sev .cev-tabs-wrap {
     padding: 10px 0;
   }
 }
 
-/* STAT CARDS */
 .sev .sev-stats {
   display: flex;
   align-items: stretch;
@@ -2891,7 +2551,6 @@
   border-color: #dbe3ec;
 }
 
-/* One place per colour — wash, glyph, ring and text all read from it. */
 .sev .sev-stat--slate {
   --evTone: #3b82f6;
   --evTint: #eff6ff;
@@ -2937,8 +2596,6 @@
   }
 }
 
-/* Seven cards do not fit a phone; let the strip scroll instead of
-   squeezing every card down to an unreadable sliver. */
 @media (max-width:820px) {
   .sev .sev-stats {
     overflow-x: auto;
@@ -2949,7 +2606,6 @@
   }
 }
 
-/* Section banner — amber pill for the expiring bucket. */
 .sev .sev-sec-pill-warn {
   background: linear-gradient(135deg, #fffbeb, #fef3c7);
   color: #b45309;
@@ -2960,9 +2616,6 @@
   background: #f59e0b;
 }
 
-/* Footer provenance line. Only the DATE carries colour — the "Last updated:"
-   label and the "Vault managed by…" note are quiet grey, so the one piece of
-   real information in the row is the one the eye lands on. */
 .sev .cev-footer-meta {
   display: flex;
   align-items: center;
@@ -2983,8 +2636,6 @@
   display: inline-block;
 }
 
-/* Light grey, icon included (it inherits currentColor) — this line is a
-   footnote, not a status. */
 .sev .sev-foot-managed {
   display: inline-flex;
   align-items: center;
@@ -3041,8 +2692,6 @@
   border-bottom-color: rgba(148, 197, 255, .12);
 }
 
-/* GROUP CARDS — .ev-group-tab: a white pill that lifts on hover and
-   turns into the header's deep teal gradient when it is the open group. */
 .sev .cev-group {
   display: flex;
   align-items: center;
@@ -3055,10 +2704,6 @@
   overflow: hidden;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(30, 27, 75, .04);
-  /* No `background` here on purpose: the active card's gradient cannot
-     interpolate to the inactive card's flat #fff, so the browser snaps it
-     in a single frame. Only the properties that genuinely tween are
-     listed, and the colours below flip in that same frame. */
   transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s, border-color .2s;
 }
 
@@ -3113,11 +2758,6 @@
   transition: border-color .2s, box-shadow .2s, transform .25s;
 }
 
-/* The title is nowrap (wrapping it beside the icon reads badly), so a long one
-   — "Case to Case Documents & Agreements" — overflowed its box and ran UNDER
-   the overview button, which is opaque and sits at z-index 2: the name looked
-   chopped off mid-word. Clip the text column to the space actually left beside
-   the button and end it with an ellipsis; the full title is on its tooltip. */
 .sev .cev-group-text {
   min-width: 0;
   overflow: hidden;
@@ -3148,7 +2788,6 @@
   white-space: nowrap;
 }
 
-/* ACTIVE — the open group wears the header's gradient. */
 .sev .cev-group.is-active {
   background: linear-gradient(125deg, #083344 0%, #0e7490 55%, #0891b2 100%);
   border-color: transparent;
@@ -3160,7 +2799,6 @@
   opacity: 0;
 }
 
-/* Shimmer line along the top edge of the open card. */
 .sev .cev-group.is-active::after {
   content: '';
   position: absolute;
@@ -3190,7 +2828,6 @@
   color: rgba(165, 243, 252, .9);
 }
 
-/* Overview pill — cyan on a resting card. */
 .sev .cev-group-overview {
   flex-shrink: 0;
   margin-left: auto;
@@ -3219,8 +2856,6 @@
   box-shadow: 0 7px 18px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .45);
 }
 
-/* On the open card it flips to a white pill with teal type — cyan on
-   cyan would sink into the gradient behind it. */
 .sev .cev-group.is-active .cev-group-overview {
   color: #0e7490;
   background: linear-gradient(180deg, #ffffff 0%, #f2fdff 52%, #d3f2fc 100%);
@@ -3234,6 +2869,14 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(8, 51, 68, .28), inset 0 1px 0 rgba(255, 255, 255, .9);
 }
+[data-bs-theme="dark"] .sev.spev .cev-group.is-active .cev-group-overview,
+[data-bs-theme="dark"] .sev.spev .cev-group.is-active .cev-group-overview:hover {
+  color: #a5f3fc;
+  background: rgba(34, 211, 238, .18);
+  border-color: rgba(103, 232, 249, .35);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .sev.spev .cev-group.is-active .cev-group-overview:hover { background: rgba(34, 211, 238, .26); }
 
 [data-bs-theme="dark"] .sev .cev-group {
   background: #132b36;
@@ -3264,7 +2907,6 @@
   color: #9db2c4;
 }
 
-/* Same split on the dark ground: grey note, cyan date. */
 [data-bs-theme="dark"] .sev .sev-foot-managed {
   color: #7f97aa;
 }
@@ -3277,7 +2919,6 @@
   background: rgba(148, 197, 255, .2);
 }
 
-/* HEADER ICON — translucent tile with the compliance tick badge. */
 .sev .cev-vault-icon {
   width: 48px;
   height: 48px;
@@ -3309,7 +2950,6 @@
   box-shadow: 0 0 10px rgba(16, 185, 129, .7), 0 2px 4px rgba(0, 0, 0, .2);
 }
 
-/* CHIP PALETTE — one tint per kind of fact. */
 .sev .cev-chip-seg,
 .sev .cev-chip-type,
 .sev .cev-chip-contact,
@@ -3329,9 +2969,6 @@
   background: rgba(255, 255, 255, .22);
 }
 
-/* The reference header carries texture, not bubbles: the decorative
-   orbs go, and the wash layer becomes the prototype's radial tints
-   over a fine dot grid. */
 .sev .cev-header-orb {
   display: none;
 }
@@ -3349,7 +2986,6 @@
     radial-gradient(ellipse 20% 60% at 50% 0%, rgba(255, 255, 255, .07) 0%, transparent 60%);
 }
 
-/* Bottom shine line, as on .ev-hd. */
 .sev .cev-header-bg::after {
   display: block;
   content: '';
@@ -3365,7 +3001,6 @@
   background: linear-gradient(90deg, transparent 0%, rgba(103, 232, 249, .5) 30%, rgba(255, 255, 255, .35) 50%, rgba(103, 232, 249, .5) 70%, transparent 100%);
 }
 
-/* Close button — a rounded square that turns red on hover. */
 .sev .cev-close {
   width: 28px;
   height: 28px;
@@ -3388,14 +3023,12 @@
   transform: scale(1.08);
 }
 
-/* Table head — a slightly smaller band than the shared vault default. */
 .sev .cev-table thead th {
   font-size: 9.5px;
   letter-spacing: .06em;
   padding: 8px 12px;
 }
 
-/* Row actions carry their label, so they size to their content. */
 .sev .cev-row-act.sev-row-act-txt {
   width: auto;
   height: 26px;
@@ -3418,18 +3051,11 @@
   flex-wrap: nowrap;
 }
 
-/* Neutral slate backdrop instead of the shared teal wash. */
 .cev-overlay.sev-overlay {
   background: rgba(15, 23, 42, .45);
 }
 
-/* ── Document Overview popup ─────────────────────────────────────────────
-   Matches the reference: the header gradient runs on into the table's head
-   band, and the list scrolls rather than being pinned to five rows. */
 .sev-ov .cev-ov-card {
-  /* Wide enough for the full document panel the Case-to-Case view now shows —
-     select column, name, requirement, signed-on, status and the labelled row
-     actions. At 760px the document name and the date both wrapped. */
   width: 940px;
   max-width: 92%;
   max-height: 84%;
@@ -3476,11 +3102,6 @@
   background: rgba(255, 255, 255, .28);
 }
 
-/* One size whatever the list holds. The body grew with its rows, so a vault
-   with a single document opened as a sliver and one with sixteen filled the
-   screen — the same dialog, two different shapes. Fixed at the header plus
-   five rows (31 + 5 x 47); row six onwards scrolls under the sticky header.
-   It may still shrink, so the card's own 84% cap wins on a short window. */
 .sev-ov .cev-ov-body {
   padding: 0;
   border-top: 0;
@@ -3497,10 +3118,6 @@
   table-layout: fixed;
 }
 
-/* Head band carries the popup header's own gradient. It has to live on
-   <thead>, not on each <th>: a gradient set on a cell restarts inside every
-   column and the row reads as four different colours. Sticky moves up to
-   <thead> as well so the band travels with it while the list scrolls. */
 .sev-ov .cev-ov-table thead {
   position: sticky;
   top: 0;
@@ -3531,19 +3148,6 @@
   text-align: center;
 }
 
-/* The table sizes itself instead of being cut into fixed columns.
- *
- * Fixed widths were the wrong tool twice over: six equal 155px columns left
- * the Action cell 4px short of its two buttons, and hand-picking 180px for it
- * forgot the cell's own 32px of padding, so the buttons were squeezed and
- * Re-upload clipped. Either way a few pixels of overflow drew a horizontal
- * scrollbar across the dialog.
- *
- * With auto layout every column takes exactly what it holds, and the document
- * name takes the slack — `width:100%` with `max-width:0` is what makes a cell
- * absorb the remainder and ellipsize instead of pushing the table wider. So
- * the dialog fits at any card width, and a long document name shortens rather
- * than breaking the layout. */
 .sev-ov .cev-ov-table { table-layout: auto; }
 .sev-ov .cev-ov-table th:nth-child(2),
 .sev-ov .cev-ov-table td:nth-child(2) {
@@ -3555,7 +3159,6 @@
 }
 .sev-ov .cev-ov-table th:not(:nth-child(2)),
 .sev-ov .cev-ov-table td:not(:nth-child(2)) { white-space: nowrap; }
-/* Nothing should ever need to scroll sideways now. */
 .sev-ov .cev-ov-body { overflow-x: hidden; }
 
 .sev-ov .cev-ov-table tbody tr {
@@ -3584,25 +3187,6 @@
   font-size: 11px;
   font-weight: 700;
   color: #a5b9c9;
-}
-
-.sev-ov .sev-ov-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 9.5px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 6px;
-  white-space: nowrap;
-}
-
-.sev-ov .sev-ov-pill-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
 }
 
 .sev-ov .cev-ov-dl {
@@ -3646,14 +3230,12 @@
   color: #e7f2f7;
 }
 
-/* Neutral backdrop for the overview popup, matching the vault's own. */
 .cev-ov-overlay.sev-ov {
   background: rgba(117, 125, 129, 0.55);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
 }
 
-/* Upload sits where Download would be when a document has no file yet. */
 .sev-ov .cev-ov-up {
   display: inline-flex;
   align-items: center;
@@ -3676,7 +3258,6 @@
   box-shadow: 0 4px 12px rgba(6, 182, 212, .45);
 }
 
-/* Shorter footer buttons. */
 .sev .cev-footer {
   padding: 10px 14px;
 }
@@ -3697,7 +3278,6 @@
   overflow: hidden;
 }
 
-/* Export All */
 .cev-card.sev .cev-btn-light {
   gap: 6px;
   background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%);
@@ -3711,8 +3291,15 @@
   transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(6, 182, 212, .28), inset 0 1px 0 rgba(255, 255, 255, .6);
 }
+[data-bs-theme="dark"] .cev-card.sev .cev-btn-light {
+  background: rgba(8, 145, 178, .14); border-color: rgba(34, 211, 238, .32); color: #67e8f9;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .cev-card.sev .cev-btn-light:hover {
+  background: rgba(34, 211, 238, .22); border-color: rgba(103, 232, 249, .5); color: #a5f3fc;
+  box-shadow: 0 5px 14px rgba(6, 182, 212, .22);
+}
 
-/* Close Vault */
 .cev-card.sev .cev-btn-dark {
   gap: 7px;
   padding: 0 18px;
@@ -3727,13 +3314,7 @@
   box-shadow: 0 6px 20px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .22);
 }
 
-/* ── Case to Case overview: shipment picker + per-deal document list ─────
-   The popup opens on a list of the supplier's deals rather than a flat pile
-   of every trade document, so a row can name the shipment it belongs to.
-   Both header buttons sit on the teal band, so they are drawn as translucent
-   white chips like the close button next to them. */
-.sev-ov .sev-ov-back,
-.sev-ov .sev-ov-bulk {
+.sev-ov .sev-ov-back {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3751,14 +3332,8 @@
   white-space: nowrap;
 }
 
-.sev-ov .sev-ov-back:hover,
-.sev-ov .sev-ov-bulk:hover:not(:disabled) {
+.sev-ov .sev-ov-back:hover {
   background: rgba(255, 255, 255, .28);
-}
-
-.sev-ov .sev-ov-bulk:disabled {
-  opacity: .5;
-  cursor: not-allowed;
 }
 
 .sev-ov .sev-ov-back i {
@@ -3860,46 +3435,10 @@
   color: #0891b2;
 }
 
-/* The per-deal table carries a tick column, so the centred-column rule keyed
-   to child positions (1 / 3 / 4 on the standard four-column table) lands on
-   the wrong cells. Restate it for this five-column shape: only the document
-   name stays left. */
-.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(3) {
-  text-align: left;
-}
-
-.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(2),
-.sev-ov .cev-ov-table.sev-ov-c2c thead th:nth-child(5) {
-  text-align: center;
-}
-
-/* Same story for the standard list now that it carries Issued Date and
-   Expired At: the base rule centres children 1 / 3 / 4, which would leave
-   Status and Action left-aligned. Everything after the name is centred. */
-.sev-ov .cev-ov-table.sev-ov-std thead th:nth-child(n+3),
-.sev-ov .cev-ov-table.sev-ov-std tbody td:nth-child(n+3) {
-  text-align: center;
-}
-
-.sev-ov .cev-ov-table.sev-ov-c2c input[type="checkbox"] {
-  width: 13px;
-  height: 13px;
-  accent-color: #0891b2;
-  cursor: pointer;
-  vertical-align: middle;
-}
-
-.sev-ov .cev-ov-table.sev-ov-c2c input[type="checkbox"]:disabled {
-  opacity: .4;
-  cursor: not-allowed;
-}
-
 .sev-ov .sev-ov-acts {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* The three pills stay on one line; the table scrolls sideways instead
-     of wrapping them, which reads as a broken row. */
   flex-wrap: nowrap;
   gap: 6px;
 }
@@ -3917,10 +3456,6 @@
   white-space: nowrap;
 }
 
-/* Send / Resend is the primary action on the row, so it carries the filled
-   cyan pill; Track is secondary and stays pale beside it. Both were pale
-   before, which left the row with no clear primary — and Track's violet was
-   the only non-cyan accent in the vault. */
 .sev-ov .sev-ov-act-send {
   background: linear-gradient(135deg, #22d3ee, #0891b2);
   color: #fff;
@@ -3944,30 +3479,6 @@
   border-color: rgba(6, 182, 212, .55);
 }
 
-/* Remind chases a document already out for signature — amber keeps it apart
-   from Resend, which sends a new one. */
-.sev-ov .sev-ov-act-remind {
-  background: #fffbeb;
-  color: #b45309;
-  border: 1px solid rgba(217, 119, 6, .30);
-}
-
-.sev-ov .sev-ov-act-remind:hover:not(:disabled) {
-  background: #fef3c7;
-  border-color: rgba(217, 119, 6, .55);
-}
-
-[data-bs-theme="dark"] .sev-ov .sev-ov-act-remind {
-  background: rgba(180, 83, 9, .18);
-  color: #fcd34d;
-  border-color: rgba(217, 119, 6, .40);
-}
-
-[data-bs-theme="dark"] .sev-ov .sev-ov-act-remind:hover:not(:disabled) {
-  background: rgba(180, 83, 9, .30);
-  border-color: rgba(252, 211, 77, .55);
-}
-
 .sev-ov .sev-ov-act:disabled {
   opacity: .45;
   cursor: not-allowed;
@@ -3985,9 +3496,6 @@
   border-color: rgba(103, 232, 249, .55);
 }
 
-/* ══ Shipment doc panel — bulk send ═════════════════════════════════════
-   Select column + action bar inside .cev-sdp (Customer vault, Case-to-Case).
-   Only rendered when the panel is given an onBulkSend handler. */
 .cev-sdp-check {
   width: 14px;
   height: 14px;
@@ -4087,9 +3595,6 @@
   margin: 12px 22px 10px;
 }
 
-/* Segment badge — the named segment and its overflow count are ONE chip, so
-   the count rides inside it as a small inset pill instead of standing alone
-   as a separate "+N more" button beside it. */
 .sev .cev-chip-seg-count {
   display: inline-block;
   margin-left: 3px;
@@ -4146,15 +3651,10 @@
   --evInk: #fca5a5;
 }
 
-/* The unfilled part of the ring: .18 of the tone was tuned against white and
- * all but vanishes on the dark card, which left the dial reading as a filled
- * arc floating on nothing. */
 [data-bs-theme="dark"] .sev .sev-stat-ring .rg-bg {
   opacity: .3;
 }
 
-/* The tag ("COMPLIANT" / "ACTION NEEDED") takes its text from --evInk above;
- * give it an edge so it still reads as a chip rather than loose text. */
 [data-bs-theme="dark"] .sev .sev-stat-tag {
   background: rgba(255, 255, 255, .04);
   border-color: var(--evEdge, rgba(148, 197, 255, .22));
@@ -4184,12 +3684,6 @@
   box-shadow: 0 0 10px rgba(34, 211, 238, .75);
 }
 
-/* ─── Case-to-Case panel row actions ────────────────────────────────────────
- *
- * Scoped to `.cev-sdp`, the panel's own root, so they hold wherever the panel
- * renders — expanded under a matrix row, or inside the Case-to-Case popup,
- * which is outside the `.sev` vault root the table's own action classes need.
- * Metrics match the standard-document table's action pills exactly. */
 .cev-sdp-act {
   display: inline-flex;
   align-items: center;
@@ -4242,37 +3736,33 @@
   border-color: #67e8f9;
 }
 
-/* Dark — every action gets the SOLID pale fill Send already had.
- *
- * View's 8%-of-blue wash was tuned for a white row; on the dark panel it read
- * as an empty outline next to a clearly-filled Send, so the two looked like
- * different kinds of control rather than two actions on the same row. Each now
- * uses the same recipe — pale fill, dark ink, matching edge — and keeps its own
- * hue so the actions stay tellable apart at a glance. */
 [data-bs-theme="dark"] .cev-sdp-act-view {
-  color: #10305e;
-  background: #bfdbfe;
-  border-color: #93c5fd;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, .14);
+  border-color: rgba(147, 197, 253, .35);
 }
 
 [data-bs-theme="dark"] .cev-sdp-act-send {
-  color: #05363f;
-  background: #a5f3fc;
-  border-color: #67e8f9;
+  color: #a5f3fc;
+  background: rgba(34, 211, 238, .14);
+  border-color: rgba(103, 232, 249, .38);
 }
 
 [data-bs-theme="dark"] .cev-sdp-act-remind {
-  color: #4a2a05;
-  background: #fde68a;
-  border-color: #fcd34d;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .14);
+  border-color: rgba(252, 211, 77, .35);
 }
 
 [data-bs-theme="dark"] .cev-sdp-act-track {
-  color: #05363f;
-  background: #a5f3fc;
-  border-color: #67e8f9;
+  color: #a5f3fc;
+  background: rgba(34, 211, 238, .14);
+  border-color: rgba(103, 232, 249, .38);
 }
 
+[data-bs-theme="dark"] .cev-sdp-act:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
 
 [data-bs-theme="dark"] .sev-ov .cev-ov-body {
   background: #08222b;
@@ -4327,22 +3817,7 @@
   font-weight: 800;
   opacity: .85;
 }
-/* ─── Standard-document upload / re-upload popup ────────────────────────────
- *
- * Was an inline <style> block inside the Supplier vault. It moved here when the
- * Customer vault gained the same popup: two copies of one stylesheet drift, and
- * the point of the port is that both vaults show the SAME control. Portalled to
- * document.body, so nothing here may depend on a vault-root class. */
-/* The scrim blurs what is behind it, like every other overlay in the app
- * (.acm-root blurs 4px, .acm-sub-modal 8px). This one only dimmed, so the
- * form underneath stayed perfectly legible and the popup read as one more
- * panel on a busy screen rather than the single thing now asking for input.
- * Safe to blur unconditionally here: the popup is portalled to document.body,
- * so no ancestor backdrop-filter is in play to scope it. */
 .cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; padding:16px; }
-/* 760, not 640. Two columns of fields plus a full-width upload drop zone
-   had ~300px per column, which is tight for a document name and leaves
-   the drop zone's one line of instructions nearly filling its width. */
 .cev-reup-card { width:100%; max-width:760px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
 .cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
 .cev-reup-hd-l { display:flex; align-items:center; gap:12px; min-width:0; }
@@ -4352,27 +3827,18 @@
 .cev-reup-x { background:rgba(255,255,255,.18); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
 .cev-reup-x:hover:not(:disabled) { background:rgba(255,255,255,.3); }
 .cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; transition: opacity .15s ease; }
-/* `inert` stops the clicks but changes nothing on screen, and a form that
-   ignores you while looking live reads as broken rather than busy. */
 .cev-reup-bd[inert] { opacity: .55; cursor: progress; }
 .cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:0; text-transform:none; color:#3b0764; margin-bottom:6px; }
 .cev-reup-req { color:#dc2626; }
 .cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }
 .cev-reup-cur span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cev-reup-cur:hover { background:#ede9fe; }
-.cev-reup-none { font-size:12.5px; color:#94a3b8; font-style:italic; }
 .cev-reup-drop { width:100%; display:flex; align-items:center; gap:9px; padding:12px 14px; border-radius:10px; border:1.5px dashed #cbd5e1; background:#f8fafc; color:#64748b; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; text-align:left; }
 .cev-reup-drop:hover { border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
 .cev-reup-drop.has { border-style:solid; border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
 .cev-reup-drop i { font-size:18px; flex-shrink:0; }
 .cev-reup-drop span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cev-reup-ft { display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid #eef2f7; }
-/* One height for both, and the border counted inside it.
-   Cancel carries a 1.5px border and Save has none, so at the same 9px padding
-   Cancel came out 3px taller -- and Save centred its label with flex while
-   Cancel used the default line box, so they sat on different baselines too.
-   A fixed height with border-box settles both; the horizontal padding stays
-   per-button, since Save's icon makes it the wider of the two. (QA #36) */
 .cev-reup-cancel,
 .cev-reup-save {
   height: 38px;
@@ -4388,19 +3854,9 @@
 .cev-reup-cancel:hover:not(:disabled) { background:#f8fafc; }
 .cev-reup-save { display:inline-flex; align-items:center; gap:7px; padding:9px 22px; border-radius:9px; border:none; background:linear-gradient(135deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
 .cev-reup-save:disabled, .cev-reup-cancel:disabled { opacity:.55; cursor:not-allowed; }
-/* min-width:0 on the cells is what makes 1fr mean 1fr.
-   A grid track defaults to min-width:auto, so it refuses to shrink below its
-   content -- and the Issuing Authority value is free text that can run to a
-   paragraph. The left column stretched to fit it and pushed Document Name and
-   Issued Date straight off the right edge of the card. */
 .cev-reup-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 .cev-reup-grid > * { min-width: 0; }
-/* The read-only value already ellipsises; the editable one has nowhere to put
-   the overflow, so it scrolls within its own width like any input. */
-.cev-reup-in { min-width: 0; }
 .cev-reup-ro { height:38px; padding:0 12px; border-radius:10px; background:#f7f4ff; border:1px solid #e4dcf7; color:#495057; font-family:inherit; font-size:13px; font-weight:400; display:flex; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
-.cev-reup-in { width:100%; height:38px; padding:5px 12px; border-radius:10px; border:1px solid #e4dcf7; background:#f7f4ff; font-family:inherit; font-size:13px; font-weight:400; color:#495057; box-sizing:border-box; transition:border-color .18s ease, box-shadow .18s ease; }
-.cev-reup-in:focus { outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.12); background:#fff; }
 .cev-reup-hint { font-size:11px; font-weight:500; text-transform:none; letter-spacing:0; color:#94a3b8; margin-left:6px; }
 .cev-reup-toggle { display:inline-flex; height:38px; border:1.5px solid #e9e2f7; background:#faf8ff; border-radius:9px; overflow:hidden; }
 .cev-reup-toggle button { min-width:46px; padding:0 15px; border:none; border-right:1.5px solid #e9e2f7; background:transparent; color:#6b7280; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background .14s, color .14s; }
@@ -4408,12 +3864,8 @@
 .cev-reup-toggle button:hover { background:#f1ebfe; color:#7c3aed; }
 .cev-reup-toggle button.on { background:#7c3aed; color:#fff; }
 
-/* The auto code is the one monospaced value in the form — it is an identifier,
- * not prose, and reads as amber to match the code column in the table behind. */
 .cev-reup-code { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; color:#d97706; font-weight:700; }
 
-/* Expiry owns a full row: its Yes/No toggle and the date picker it reveals do
- * not fit a half-width cell beside another field. */
 .cev-reup-fld-wide { grid-column:1 / -1; }
 
 [data-bs-theme="dark"] .cev-reup-card { background:#0f2731; }
@@ -4423,48 +3875,25 @@
 [data-bs-theme="dark"] .cev-reup-cancel { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
 [data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) { background:#1c3a45; }
 [data-bs-theme="dark"] .cev-reup-ro { background:#16303b; border-color:#2a4a56; color:#cbd5e1; }
-[data-bs-theme="dark"] .cev-reup-in { background:#16303b; border-color:#2a4a56; color:#e2e8f0; }
 [data-bs-theme="dark"] .cev-reup-toggle { border-color:#2a4a56; }
 [data-bs-theme="dark"] .cev-reup-toggle button { background:#16303b; color:#9db3c1; }
 [data-bs-theme="dark"] .cev-reup-fld label { color:#c4b5fd; }
-[data-bs-theme="dark"] .cev-reup-none { color:#7c93a8; }
 [data-bs-theme="dark"] .cev-reup-code { color:#fbbf24; }
 @media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
 
-/* Expiry row: Yes/No toggle, then the date it reveals, side by side. The date
- * picker takes whatever width is left so it lines up with the fields above it
- * rather than stretching the full row on its own line. */
 .cev-reup-expiry { display:flex; align-items:center; gap:10px; }
 .cev-reup-expiry .cev-reup-toggle { flex:0 0 auto; }
 .cev-reup-expiry-date { flex:1 1 auto; min-width:0; }
 
-/* Stacked on a narrow sheet, where the two side by side would each be too
- * cramped to read. */
 @media (max-width:560px) {
   .cev-reup-expiry { flex-direction:column; align-items:stretch; }
   .cev-reup-expiry-date { width:100%; }
 }
 
-/* The date picker portals its calendar to document.body at a fixed
- * z-index: 11100 !important — chosen for the master screens, where the tallest
- * thing above it is a modal in the 11000s. The upload popup sits at 100000
- * (it has to clear the vault drawer at 11200 and the overview popup at 11400),
- * so the calendar opened UNDERNEATH it and read as "the calendar won't open".
- *
- * Raised only for calendars opened from inside that popup, via the picker's
- * own popupClassName hook — the global value is left alone. Both !important,
- * so the extra class is what decides it. */
 .master-datepicker-popup.cev-reup-cal {
   z-index: 100010 !important;
 }
 
-/* ─── Upload popup: dark-mode corrections ───────────────────────────────────
- *
- * `[data-bs-theme="dark"] .cev-reup-toggle button` and `.cev-reup-toggle
- * button.on` carry the SAME specificity (0,2,1), and the dark rule is declared
- * later — so in dark mode it repainted the selected segment too and Yes/No came
- * out identical, with no way to see which answer was active. The selected
- * segment is restated here, after both. */
 [data-bs-theme="dark"] .cev-reup-toggle button.on {
   background: linear-gradient(135deg, #7c3aed, #8b5cf6);
   color: #fff;
@@ -4477,11 +3906,6 @@
   color: #c4b5fd;
 }
 
-/* The card is violet-headed, so its dark surfaces take a violet cast rather
- * than the teal one they inherited from the vault palette — the header, the
- * field fills and the Save button now read as one control instead of a violet
- * banner sitting on a teal sheet. Set on the shared class, so the Customer and
- * Supplier vaults stay pixel-identical. */
 [data-bs-theme="dark"] .cev-reup-card {
   background: #17102b;
 }
@@ -4491,7 +3915,6 @@
 }
 
 [data-bs-theme="dark"] .cev-reup-ro,
-[data-bs-theme="dark"] .cev-reup-in,
 [data-bs-theme="dark"] .cev-reup-toggle,
 [data-bs-theme="dark"] .cev-reup-drop {
   background: #1f1637;
@@ -4504,12 +3927,6 @@
   color: #a5a0c0;
 }
 
-/* MasterDatePicker is a shared widget: its dark rule forces Velzon's
-   --vz-input-bg (#262a2f) and a generic rgba(255,255,255,.45) placeholder,
-   neither of which belongs to this violet form. Without an override the
-   Issued Date box and its placeholder were the only ones that did not match
-   their neighbours. Same surface, border, text and placeholder as the fields
-   either side of it. */
 [data-bs-theme="dark"] .cev-reup-fld .master-datepicker-toggle {
   background: #1f1637;
   border-color: rgba(139, 92, 246, .30);
@@ -4552,15 +3969,6 @@
   color: #fbbf24;
 }
 
-/* ─── Loading skeleton, restyled ────────────────────────────────────────────
- *
- * The old placeholder was a flat teal block with a white sweep across it. On
- * the dark vault the sweep ran at 10% white, which is below the point where it
- * reads as motion at all — the vault looked frozen rather than loading. The
- * block now carries its own soft gradient so it has shape when the sweep is
- * elsewhere, the sweep itself is a wider, brighter band, and each block starts
- * a beat after the one before so the strip resolves as a wave down the page
- * instead of every tile pulsing in lockstep. */
 .cev-sk {
   position: relative;
   overflow: hidden;
@@ -4584,8 +3992,6 @@
   animation: cevShimmer 1.45s cubic-bezier(.4, 0, .2, 1) infinite;
 }
 
-/* The wave. Six KPI tiles and six table rows are the long runs, so the stagger
- * is keyed off nth-child and wraps every six. */
 .cev-sk:nth-child(6n+2)::after { animation-delay: .08s; }
 .cev-sk:nth-child(6n+3)::after { animation-delay: .16s; }
 .cev-sk:nth-child(6n+4)::after { animation-delay: .24s; }
@@ -4607,8 +4013,6 @@
   );
 }
 
-/* Radii that match what each placeholder stands in for, so the shapes do not
- * change as the real content arrives. */
 .cev-skel-kpi    { border-radius: 12px; }
 .cev-skel-group  { border-radius: 13px; }
 .cev-skel-tab    { border-radius: 8px; }
@@ -4616,41 +4020,22 @@
 .cev-skel-thead  { border-radius: 0; }
 .cev-skel-row    { border-radius: 8px; }
 
-/* Placeholders keep their declared heights (QA #14).
- *
- * .cev-skel is a column flex container, so every child is shrinkable by
- * default. The placeholder stack adds up to more than the modal body on a
- * shorter viewport, and flex answered that by squeezing all of them — the
- * 66px section came out a few pixels tall, and the shimmer sweeping across
- * that sliver read as a blue line travelling under the loader. The container
- * already clips (overflow: hidden), so holding the real heights simply hides
- * the overflow instead of deforming every tile. */
 .cev-skel > *,
 .cev-skel-table > * { flex-shrink: 0; }
 
-/* A sweeping highlight is decoration; hold it still for anyone who has asked
- * the OS to stop moving things. The tiles keep their gradient, so the page
- * still reads as "not loaded yet". */
 @media (prefers-reduced-motion: reduce) {
   .cev-sk::after { animation: none; opacity: .35; transform: none; }
 }
 
-/* The attachment chip is a label, not the document — a long export filename was
- * pushing the column wider than the two date columns and the actions put
- * together. Clipped shorter; the full name stays on the chip's own tooltip. */
 .cev-attach-name {
   max-width: 112px;
 }
 
-/* Two actions instead of three (Download moved out — the attachment chip
- * already downloads), so the buttons sit closer together and the column stops
- * reserving room that nothing fills. */
 .cev-table .cev-row-actions {
   gap: 5px;
   flex-wrap: nowrap;
 }
 
-/* Overview action cell now holds two buttons (Download + Re-upload). */
 .cev-ov-acts {
   display: inline-flex;
   align-items: center;
@@ -4658,8 +4043,6 @@
   white-space: nowrap;
 }
 
-/* Re-upload is the secondary of the pair, so it drops the filled cyan pill the
- * first-time Upload carries and sits as a pale outline beside Download. */
 .cev-ov-reup {
   background: #f0fdff !important;
   color: #0891b2 !important;
@@ -4682,28 +4065,6 @@
   background: rgba(8, 145, 178, .30) !important;
 }
 
-/* Case to Case carries the widest action set in the vault (Resend, Remind,
-   Track). Below this width the table scrolls rather than wrapping a row. */
-.sev-ov .cev-ov-table.sev-ov-c2c {
-  min-width: 720px;
-}
-
-/* The reference under a document name — the PO number on a purchase order. */
-.sev-ov .sev-ov-name-sub {
-  margin-top: 2px;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  color: #5e94a1;
-}
-
-[data-bs-theme="dark"] .sev-ov .sev-ov-name-sub {
-  color: #7dd3e8;
-}
-
-/* ══ Working state ═══════════════════════════════════════════════════════
-   Sending or reminding takes a moment. Until it lands the veil takes every
-   click, and the row it belongs to says which one is working (CS-567). */
 .cev-busy-veil {
   position: absolute;
   inset: 0;
@@ -4717,11 +4078,9 @@
   background: rgba(8, 34, 43, .38);
 }
 
-/* The bar travels while the request is out, so a slow send still reads as alive. */
 .cev-row-working {
   position: relative;
   z-index: 41;
-  /* Above the veil so the bar is visible, but still untouchable. */
   pointer-events: none;
 }
 
@@ -4749,3 +4108,108 @@
 @media (prefers-reduced-motion: reduce) {
   .cev-row-working > td { animation: none; }
 }
+
+.spev-ov.spev-ov-std .cev-ov-card { width: 760px; display: flex; flex-direction: column; }
+.spev-ov.spev-ov-std .cev-ov-body { height: 296px; max-height: 296px; min-height: 0; flex: 0 1 auto; }
+.spev-ov.spev-ov-std .cev-ov-table thead th { height: 36px; padding-top: 0; padding-bottom: 0; }
+.spev-ov.spev-ov-std .cev-ov-table tbody tr { height: 52px; }
+.spev-ov.spev-ov-std .cev-ov-table tbody td { padding-top: 0; padding-bottom: 0; }
+.spev-ov.spev-ov-std .cev-ov-table tbody td.cev-ov-empty { height: 260px; }
+.spev-ov.spev-ov-std .cev-ov-table { table-layout: fixed; }
+.spev-ov.spev-ov-std .cev-ov-table th:nth-child(2),
+.spev-ov.spev-ov-std .cev-ov-table td:nth-child(2) { width: auto; max-width: none; }
+.spev-ov.spev-ov-std .cev-ov-table thead th { color: rgba(255, 255, 255, .72); }
+.spev-ov.spev-ov-std .cev-ov-table thead th:nth-child(2) { text-align: left; }
+.spev-ov.spev-ov-std .cev-ov-acts { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.spev-ov-pill {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 6px;
+  font-size: 9.5px; font-weight: 700; white-space: nowrap; border: 1px solid;
+}
+.spev-ov-pill i { width: 5px; height: 5px; border-radius: 50%; flex: none; }
+.spev-ov-pill.is-ok   { color: #059669; border-color: #6ee7b7; background: linear-gradient(135deg, #ecfdf5, #fff); }
+.spev-ov-pill.is-ok i { background: #10b981; }
+.spev-ov-pill.is-warn   { color: #d97706; border-color: #fcd34d; background: linear-gradient(135deg, #fffbeb, #fff); }
+.spev-ov-pill.is-warn i { background: #f59e0b; }
+.spev-ov-pill.is-bad   { color: #dc2626; border-color: #fecaca; background: linear-gradient(135deg, #fef2f2, #fff); }
+.spev-ov-pill.is-bad i { background: #ef4444; }
+.spev-ov .cev-ov-up.cev-ov-reup {
+  background: linear-gradient(135deg, #f0fdff, #e0f9ff); color: #0891b2; border: 1px solid rgba(6, 182, 212, .25); box-shadow: none;
+}
+.spev-ov .cev-ov-up.cev-ov-reup:hover { transform: none; background: linear-gradient(135deg, #e0f9ff, #cffafe); box-shadow: none; }
+[data-bs-theme="dark"] .spev-ov-pill.is-ok   { color: #6ee7b7; border-color: rgba(110, 231, 183, .4); background: rgba(16, 185, 129, .12); }
+[data-bs-theme="dark"] .spev-ov-pill.is-warn { color: #fcd34d; border-color: rgba(252, 211, 77, .4); background: rgba(245, 158, 11, .12); }
+[data-bs-theme="dark"] .spev-ov-pill.is-bad  { color: #fca5a5; border-color: rgba(252, 165, 165, .4); background: rgba(239, 68, 68, .12); }
+[data-bs-theme="dark"] .spev-ov .cev-ov-up.cev-ov-reup { background: rgba(34, 211, 238, .1); color: #67e8f9; border-color: rgba(103, 232, 249, .3); }
+
+.spev .cev-group-overview { height: 40px; padding: 0 16px; border-radius: 10px; font-size: 11px; gap: 7px; }
+.cev-card.sev.spev .cev-btn { height: 40px; padding: 0 18px; border-radius: 10px; font-size: 12px; }
+.spev .cev-close { width: 40px; height: 40px; border-radius: 11px; }
+.spev-ov .cev-ov-close { width: 40px; height: 40px; border-radius: 11px; font-size: 17px; }
+.spev-ov.spev-ov-std :is(.cev-ov-dl, .cev-ov-up) { height: 40px; padding: 0 14px; border-radius: 10px; font-size: 11.5px; gap: 6px; }
+.spev-ov.spev-ov-std :is(.cev-ov-dl, .cev-ov-up) { justify-content: center; box-sizing: border-box; white-space: nowrap; }
+.spev-ov.spev-ov-std :is(.cev-ov-dl, .cev-ov-up) i { font-size: 14px; }
+.spev-ov.spev-ov-std .cev-ov-table td:last-child { overflow: visible; padding-left: 12px; padding-right: 12px; }
+.spev-ov.spev-ov-std .cev-ov-acts { flex-wrap: nowrap; }
+.spev :is(.cev-row-act, .cev-sdp-act),
+.spev-ov :is(.cev-sdp-act, .sev-ov-act) {
+  height: 40px; min-height: 40px; padding: 0 14px; border-radius: 10px; font-size: 11.5px; gap: 6px;
+  display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; box-sizing: border-box;
+}
+.spev :is(.cev-row-act, .cev-sdp-act) svg,
+.spev-ov :is(.cev-sdp-act, .sev-ov-act) svg { width: 14px; height: 14px; flex: none; }
+.spev .cev-group-overview,
+.cev-card.sev.spev .cev-btn,
+.spev-ov.spev-ov-std :is(.cev-ov-dl, .cev-ov-up),
+.spev :is(.cev-row-act, .cev-sdp-act),
+.spev-ov :is(.cev-sdp-act, .sev-ov-act) { font-size: 12.5px; }
+.cev-card.sev.spev .cev-row-act.sev-row-act-txt { height: 40px; padding: 0 14px; border-radius: 10px; font-size: 12.5px; gap: 6px; }
+.spev .cev-reup-ft :is(.cev-reup-cancel, .cev-reup-save),
+:is(body:has(.smc-root.sup-list), body.apm-supplier-wizard-open) :is(.cev-reup-cancel, .cev-reup-save) { height: 40px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+
+.spev-ov .sev-ov-back { height: 40px; padding: 0 16px; border-radius: 10px; font-size: 12.5px; gap: 6px; }
+.spev-ov .cev-ov-head-text { min-width: 0; flex: 1 1 auto; }
+.spev-ov .cev-ov-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spev-ov:not(.spev-ov-std) .cev-ov-body { height: 380px; max-height: 380px; }
+.spev-ov:not(.spev-ov-std) .cev-sdp tbody tr { height: 60px; }
+.spev-ov .cev-sdp td .cev-sdp-act { min-width: 104px; margin: 0 4px; justify-content: center; }
+.spev-ov:not(.spev-ov-std) .cev-ov-body { overflow: hidden; }
+.spev-ov .cev-sdp > div:has(> table) { max-height: 340px; overflow-y: auto !important; overscroll-behavior: contain; }
+.spev-ov .cev-sdp thead { position: sticky; top: 0; z-index: 2; }
+
+.spev-ov.spev-ov-std .cev-ov-acts { display: grid; grid-template-columns: 120px 124px; gap: 8px; justify-content: center; }
+.spev-ov.spev-ov-std .cev-ov-acts > * { width: 100%; }
+.spev-ov.spev-ov-std .cev-ov-acts > .cev-ov-up { grid-column: 2; }
+
+[data-bs-theme="dark"] .spev .spev-status { background: rgba(255, 255, 255, .05) !important; }
+[data-bs-theme="dark"] .spev .spev-status[data-status="Verified"] { background: rgba(34, 197, 94, .14) !important; color: #86efac !important; border-color: rgba(134, 239, 172, .35) !important; }
+[data-bs-theme="dark"] .spev .spev-status[data-status="Signed"]   { background: rgba(34, 211, 238, .14) !important; color: #67e8f9 !important; border-color: rgba(103, 232, 249, .35) !important; }
+[data-bs-theme="dark"] .spev .spev-status[data-status="Expiring"] { background: rgba(245, 158, 11, .14) !important; color: #fcd34d !important; border-color: rgba(252, 211, 77, .35) !important; }
+[data-bs-theme="dark"] .spev .spev-status:is([data-status="Pending"], [data-status="Expired"]) { background: rgba(239, 68, 68, .14) !important; color: #fca5a5 !important; border-color: rgba(252, 165, 165, .35) !important; }
+[data-bs-theme="dark"] .spev .cev-section-icon { background: rgba(34, 211, 238, .12) !important; color: #67e8f9 !important; border-color: rgba(103, 232, 249, .3) !important; box-shadow: none !important; }
+
+.spev-ov .sev-ov-pick-code { width: 136px; flex: 0 0 136px; display: inline-flex; justify-content: center; box-sizing: border-box; }
+
+[data-bs-theme="dark"] .spev-ov .cev-ov-dl {
+  background: rgba(34, 211, 238, .16); color: #a5f3fc; border-color: rgba(103, 232, 249, .38); box-shadow: none;
+}
+[data-bs-theme="dark"] .spev-ov .cev-ov-dl:hover:not(:disabled) { background: rgba(34, 211, 238, .26); color: #cffafe; }
+[data-bs-theme="dark"] .spev-ov .cev-ov-up.cev-ov-reup:hover { background: rgba(34, 211, 238, .18); }
+
+.spev-ov.spev-ov-std .cev-ov-acts > .cev-ov-up:only-child { grid-column: 1 / -1; justify-self: center; width: 124px; }
+
+.spev-ov:not(.spev-ov-std) .cev-ov-body:has(> .sev-ov-picks) { display: flex; flex-direction: column; }
+.spev-ov:not(.spev-ov-std) .cev-ov-body > .sev-ov-pick-cap { flex: 0 0 auto; }
+.spev-ov:not(.spev-ov-std) .cev-ov-body > .sev-ov-picks { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; }
+
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="ok"]    { background: rgba(16, 185, 129, .14) !important; color: #6ee7b7 !important; border-color: rgba(110, 231, 183, .35) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="warn"]  { background: rgba(245, 158, 11, .14) !important; color: #fcd34d !important; border-color: rgba(252, 211, 77, .35) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="bad"]   { background: rgba(239, 68, 68, .14) !important; color: #fca5a5 !important; border-color: rgba(252, 165, 165, .35) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .spev-tone[data-tone="muted"] { background: rgba(148, 163, 184, .12) !important; color: #cbd5e1 !important; border-color: rgba(148, 163, 184, .3) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .seg-reg-badge { background: rgba(255, 255, 255, .08) !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act-view   { color: #93c5fd; background: rgba(59, 130, 246, .14); border-color: rgba(147, 197, 253, .35); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) :is(.cev-sdp-act-send, .cev-sdp-act-track) { color: #a5f3fc; background: rgba(34, 211, 238, .14); border-color: rgba(103, 232, 249, .38); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act-remind { color: #fcd34d; background: rgba(245, 158, 11, .14); border-color: rgba(252, 211, 77, .35); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-sdp-act:hover:not(:disabled) { filter: brightness(1.2); }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-row-act-send   { background: rgba(34, 211, 238, .14) !important; color: #67e8f9 !important; border-color: rgba(103, 232, 249, .38) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-row-act-remind { background: rgba(245, 158, 11, .14) !important; color: #fcd34d !important; border-color: rgba(252, 211, 77, .38) !important; }
+[data-bs-theme="dark"] :is(.spev, .spev-ov) .cev-row-act-track  { background: rgba(139, 92, 246, .16) !important; color: #c4b5fd !important; border-color: rgba(196, 181, 253, .38) !important; }

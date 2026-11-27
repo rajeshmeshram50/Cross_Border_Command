@@ -69,8 +69,6 @@ class UserDetail extends Model
         ];
     }
 
-    // ── Relationships ──
-
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

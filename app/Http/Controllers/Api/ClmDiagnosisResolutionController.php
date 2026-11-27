@@ -8,21 +8,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
-/**
- * CLM Command Center → Diagnosis & Resolution Center.
- *
- * A read-only "command center" that combines the Buyer, Supplier and
- * Case-to-Case compliance views into a single payload so the SPA can render
- * its three diagnosis sub-tabs from one round-trip. The heavy aggregation
- * (segment rules → required-doc union → upload progress → agreements) is
- * reused verbatim from the existing profile controllers — they already scope
- * by client_id / branch_id through `forUser()`, so tenant isolation is
- * inherited and there is no duplicated query logic to drift.
- *
- * `escalate()` records a Resolution Center escalation against a blocked
- * record (audit log + success ack); there is no Notification model yet, so
- * the notify-via channels are accepted but only logged.
- */
 class ClmDiagnosisResolutionController extends Controller
 {
     public function index(
@@ -46,11 +31,6 @@ class ClmDiagnosisResolutionController extends Controller
         ]);
     }
 
-    /**
-     * Record a Resolution Center escalation for a blocked record. Returns an
-     * ack; persistence is limited to an audit log line until a dedicated
-     * escalations / notifications store lands.
-     */
     public function escalate(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -77,10 +57,6 @@ class ClmDiagnosisResolutionController extends Controller
         ]);
     }
 
-    /**
-     * Case-to-Case contract rows for the diagnosis sub-tab: code, title, the
-     * primary counterparty + its role badge, and the list-bucket status.
-     */
     private function ctcRows(int $clientId): array
     {
         if (!$clientId) return [];
@@ -102,7 +78,6 @@ class ClmDiagnosisResolutionController extends Controller
             ->all();
     }
 
-    /** First counterparty's display name + normalised role badge. */
     private function primaryCounterparty(CtcContract $c): array
     {
         $cps = is_array($c->counterparties) ? $c->counterparties : [];
@@ -113,7 +88,6 @@ class ClmDiagnosisResolutionController extends Controller
         ];
     }
 
-    /** Map a stored badge / source_type to one of Buyer | Supplier | Partner. */
     private function normaliseRole(string $raw): string
     {
         $r = mb_strtolower(trim($raw));
@@ -122,7 +96,6 @@ class ClmDiagnosisResolutionController extends Controller
         return 'Partner';
     }
 
-    /** Approval lifecycle → CTC-list bucket (mirrors CtcContractController). */
     private function listStatus(CtcContract $c): string
     {
         if ($c->approval_status === 'rejected') return 'rejected';

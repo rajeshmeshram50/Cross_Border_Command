@@ -164,18 +164,26 @@
         .ep-bd-foot { border-top: 1px solid var(--vz-border-color); }
         /* Footer buttons — ghost Cancel + gradient primary, matching the
         header so the action colour reads as one system. */
+        /* One height and one text size for both, set explicitly rather than
+        left to padding: the two buttons carried different padding AND the save
+        button an icon, so they rendered at different heights side by side
+        (QA #245). 40px / 12.5px is the house control size. */
+        .ep-bd-btn-cancel, .ep-bd-btn-save {
+        height: 40px; min-height: 40px; font-size: 12.5px; line-height: 1;
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        border-radius: 8px; cursor: pointer;
+        }
         .ep-bd-btn-cancel {
         border: 1px solid var(--vz-border-color);
         background: transparent; color: var(--vz-secondary-color);
-        font-weight: 600; font-size: 13px;
-        padding: 8px 18px; border-radius: 8px; cursor: pointer;
+        font-weight: 600;
+        padding: 0 18px;
         transition: background 0.15s ease, border-color 0.15s ease;
         }
         .ep-bd-btn-cancel:hover:not(:disabled) { background: var(--vz-light); }
         .ep-bd-btn-save {
-        border: 0; color: #fff; font-weight: 700; font-size: 13px;
-        padding: 8px 20px; border-radius: 8px; cursor: pointer;
-        display: inline-flex; align-items: center; gap: 6px;
+        border: 0; color: #fff; font-weight: 700;
+        padding: 0 20px;
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
         box-shadow: 0 8px 18px rgba(124,92,252,0.30);
         transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -433,7 +441,7 @@
         }
 
         /* ── Submit New Expense Claim modal ── */
-        .ep-claim-modal { --accent: #f97316; --accent-2: #fb923c; --accent-soft: rgba(249,115,22,0.10); --accent-border: rgba(249,115,22,0.30); }
+        .ep-claim-modal { --accent: #7c5cfc; --accent-2: #a78bfa; --accent-soft: rgba(124,92,252,0.10); --accent-border: rgba(124,92,252,0.30); }
         .ep-claim-modal.is-advance { --accent: #6366f1; --accent-2: #8b5cf6; --accent-soft: rgba(99,102,241,0.10); --accent-border: rgba(99,102,241,0.30); }
         .ep-claim-hero {
           background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
@@ -668,6 +676,21 @@
           font-weight: 600;
         }
         .ep-claim-err i { font-size: 12px; }
+
+        /* Advance recovery notes — theme-aware so dark mode isn't bright pink. */
+        .ep-adv-note {
+          display: flex; align-items: flex-start; gap: 8px;
+          border-radius: 10px; padding: 10px 14px;
+          font-size: 12.5px; line-height: 1.5;
+          border: 1px solid transparent;
+        }
+        .ep-adv-note--danger { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
+        .ep-adv-note--info   { background: #f0fbff; border-color: #cdeef6; color: #0e7490; }
+        .ep-adv-note--warn   { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+        [data-bs-theme="dark"] .ep-adv-note--danger { background: rgba(240,101,72,0.14); border-color: rgba(240,101,72,0.38); color: #ffa897; }
+        [data-bs-theme="dark"] .ep-adv-note--info   { background: rgba(41,156,219,0.14); border-color: rgba(41,156,219,0.38); color: #6dd3fb; }
+        [data-bs-theme="dark"] .ep-adv-note--warn   { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.40); color: #fcd34d; }
+        [data-bs-theme="dark"] .ep-adv-note strong { color: inherit; }
         [data-bs-theme="dark"] .ep-claim-input.is-invalid,
         [data-layout-mode="dark"] .ep-claim-input.is-invalid {
           background-color: rgba(240,101,72,0.10) !important;
@@ -703,7 +726,7 @@
           cursor: pointer;
           transition: background .15s ease;
         }
-        .ep-claim-upload:hover { background: rgba(249,115,22,0.16); }
+        .ep-claim-upload:hover { background: rgba(124,92,252,0.16); }
         .ep-claim-upload.is-invalid {
           border-color: #ef4444;
           background: rgba(239,68,68,0.06);
@@ -712,7 +735,7 @@
         .ep-claim-upload-icon {
           display: inline-flex; align-items: center; justify-content: center;
           width: 32px; height: 32px; border-radius: 9px;
-          background: rgba(249,115,22,0.15); color: var(--accent);
+          background: rgba(124,92,252,0.15); color: var(--accent);
           margin-bottom: 6px; font-size: 14px;
         }
         .ep-claim-intel {

@@ -1,4 +1,5 @@
 import { resolveFileUrl } from './resolveFileUrl';
+import { supplierPartyToken, supplierPartyAliases } from './supplierPartyToken';
 
 /**
  * Shared helper used by the Customer / Consignee / Supplier Evidence
@@ -198,12 +199,21 @@ export type VaultPartyKey = 'buyer' | 'consignee' | 'supplier';
 /** Does a trade-doc's applicable-party CSV apply to the given party
  *  bucket? Mirrors ClmTradeDocumentController::libraryForParty so the
  *  Evidence Vault shows exactly the docs the edit form would. */
-export function tradeDocMatchesParty(partyCsv: string | null | undefined, key: VaultPartyKey): boolean {
+export function tradeDocMatchesParty(
+  partyCsv: string | null | undefined,
+  key: VaultPartyKey,
+  supplierType?: string | null,
+): boolean {
   const p = (partyCsv ?? '').toLowerCase();
   if (!p) return false;
   if (key === 'buyer')     return p.includes('buyer');
   if (key === 'consignee') return p.includes('consignee');
-  return p.includes('supplier');   // any Supplier-* sub-type
+
+  // A recognised supplier type narrows it to that type's documents; otherwise any Supplier-* sub-type.
+  const token = supplierPartyToken(supplierType);
+  if (!token) return p.includes('supplier');
+  const wanted = supplierPartyAliases(token);
+  return p.split(/[,;]/).some(t => wanted.includes(t.trim()));
 }
 
 /**
@@ -224,6 +234,7 @@ export function mergeTradeDocuments(
   expected: VaultDocLike[],
   sigRows: VaultDocLike[],
   partyKey: VaultPartyKey,
+  supplierType?: string | null,
 ): VaultDocLike[] {
   // Latest signature row per library id. signatureRequestsToVaultDocs
   // already keeps newest-first / first-seen, so the first hit wins.
@@ -232,7 +243,7 @@ export function mergeTradeDocuments(
     if (s.db_id != null && !sigByDoc.has(s.db_id)) sigByDoc.set(s.db_id, s);
   }
 
-  const filtered = expected.filter(d => tradeDocMatchesParty(d.party, partyKey));
+  const filtered = expected.filter(d => tradeDocMatchesParty(d.party, partyKey, supplierType));
 
   const merged: VaultDocLike[] = filtered.map(d => {
     const sig = d.db_id != null ? sigByDoc.get(d.db_id) : undefined;

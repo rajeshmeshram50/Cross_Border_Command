@@ -3,6 +3,7 @@ import { Col, Row, Button, Modal, ModalBody } from 'reactstrap';
 import HrEmployees from '../hrms/HrEmployees';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { ciSort } from '../../utils/tableSort';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import api from '../../api';
@@ -18,6 +19,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import DocGenerateModal from '../hrms/doc-templates/DocGenerateModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
@@ -609,6 +611,7 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Employee',
       accessorKey: 'name',
+      sortingFn: ciSort,
       meta: { width: '13%', wrap: true },
       cell: info => {
         const r = info.row.original;
@@ -625,11 +628,12 @@ export default function HrEmployeeOnboarding() {
       },
     },
     { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%', align: 'center' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%', align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  sortingFn: ciSort, meta: { width: '8%', align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', sortingFn: ciSort, meta: { width: '9%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
+      sortingFn: ciSort,
       meta: { width: '9%', align: 'center' },
       cell: info => <ChipCell value={info.getValue() as string} className="onb-role-pill" />,
     },
@@ -650,6 +654,7 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
+      sortingFn: ciSort,
       meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
@@ -711,6 +716,7 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Status',
       accessorKey: 'status',
+      sortingFn: ciSort,
       meta: { width: '8%', align: 'center' },
       cell: info => {
         const statusColor = ONBOARD_STATUS_COLOR[info.row.original.status];
@@ -1842,8 +1848,15 @@ function InitiateOnboardingModal({
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  const countryOpts     = mCountries.map(c => ({ value: String(c.id), label: c.name }));
-  const departmentOpts  = mDepts.map(d => ({ value: String(d.id), label: d.name }));
+  // Active only — bulk masters carry Inactive rows; a disabled country must not
+  // be pickable on the onboarding form.
+  const countryOpts     = mCountries
+    .filter((c: any) => String(c.status ?? 'Active').toLowerCase() === 'active')
+    .map(c => ({ value: String(c.id), label: c.name }));
+  // Active only — a disabled department must not be pickable on onboarding.
+  const departmentOpts  = mDepts
+    .filter((d: any) => String(d.status ?? 'Active').toLowerCase() === 'active')
+    .map(d => ({ value: String(d.id), label: d.name }));
   const designationOpts = mDesignations
     .filter(d => d?.name !== 'Director / CEO')
     .map(d => ({ value: String(d.id), label: d.name }));
@@ -2776,10 +2789,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   const [stage2Docs, setStage2Docs] = useState<{ document_key: string; status: string }[]>([]);
   /* The SAME fetch's full rows, kept so Stage 2 can be seeded from them instead
-     of asking for the list again when it mounts. stage2Docs stays the narrow
-     shape because onDocsChanged feeds it that, and the two must not be
-     conflated. (QA #5) */
+     of asking for the list again when it mounts. (QA #5) */
   const [stage2DocsFull, setStage2DocsFull] = useState<ApiDocument[]>([]);
+  /* Stage 2 unmounts on every stage change and re-seeds from this snapshot, so
+     the snapshot has to track its uploads too, not just the open-time fetch. */
+  const handleStage2Docs = useCallback((rows: ApiDocument[]) => {
+    setStage2Docs(rows.map(d => ({ document_key: d.document_key, status: d.status })));
+    setStage2DocsFull(rows);
+  }, []);
   // Same guard, same reason — this one measured 1.21s + 432ms on the server
   // for one answer. See the note on docSetLoadedForRef. (QA #4/#5)
   const stage2DocsLoadedForRef = useRef<number | null>(null);
@@ -2894,7 +2911,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       else if (!/^\d{9,18}$/.test(acc))    missing.push('Account Number (9–18 digits)');
       if (!ifsc)                           missing.push('IFSC Code');
       else if (!IFSC_RE.test(ifsc))        missing.push('IFSC Code (e.g. HDFC0000350)');
-      if (!s4.account_holder_name.trim())  missing.push('Account Holder Name');
+      if (!s4.account_holder_name.trim() || !/[A-Za-z]/.test(s4.account_holder_name)) missing.push('Account Holder Name');
       if (!s4.bank_branch.trim())          missing.push('Bank Branch');
       if (missing.length > 0) {
         if (skipValidate) return false;
@@ -3212,7 +3229,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       isValidBankName(s4.bank_name) &&
       /^\d{9,18}$/.test(s4.bank_account_number.trim()) &&
       IFSC_RE.test(s4.ifsc_code.trim()) &&
-      !!s4.account_holder_name.trim() &&
+      !!s4.account_holder_name.trim() && /[A-Za-z]/.test(s4.account_holder_name) &&
       !!s4.bank_branch.trim()
     );
   const stage4PanOk = PAN_RE.test(s4.pan_number.trim());
@@ -3250,6 +3267,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       }
       if (!s4.account_holder_name.trim()) {
         p.push({ field: 'account_holder_name', label: 'Name on the Account', message: 'Enter the account holder name.' });
+      } else if (!/[A-Za-z]/.test(s4.account_holder_name)) {
+        p.push({ field: 'account_holder_name', label: 'Name on the Account', message: 'Account name must include at least one letter.' });
       }
       if (!s4.bank_branch.trim()) {
         p.push({ field: 'bank_branch', label: 'Branch', message: 'Enter the bank branch.' });
@@ -3508,7 +3527,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 ref={stage2Ref}
                 emp={emp}
                 initialDocs={stage2DocsFull}
-                onDocsChanged={(rows) => setStage2Docs(rows)}
+                onDocsChanged={handleStage2Docs}
                 onProgress={setStage2Prev}
               />
             )}
@@ -4563,6 +4582,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         </div>
       </ModalBody>
 
+      {/* Completing onboarding activates the employee record and closes the
+          wizard behind this dialog — a single irreversible step, and long
+          enough that a spinner inside one button was the only sign it had
+          started. Scoped to this confirmation: the rest of the wizard saves
+          per stage and does not need a veil. */}
+      {showCompleteConfirm && nextLoading && (
+        <FullPageLoader label="Completing onboarding…" />
+      )}
+
       <Modal
         isOpen={showCompleteConfirm}
         toggle={() => { if (!nextLoading) { setShowCompleteConfirm(false); setCompleteNotes(''); } }}
@@ -4807,7 +4835,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
      reloadDocs() after any upload or delete, so it is a head start, not a
      substitute. (QA #5) */
   initialDocs?: ApiDocument[];
-  onDocsChanged?: (rows: { document_key: string; status: string }[]) => void;
+  onDocsChanged?: (rows: ApiDocument[]) => void;
   onProgress?: (p: { required: number; uploaded: number }) => void;
 }>(({ emp, initialDocs, onDocsChanged, onProgress }, ref) => {
   const toast = useToast();
@@ -5218,7 +5246,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       const map: Record<string, ApiDocument> = {};
       for (const d of list) map[d.document_key] = d;
       setDocsByKey(map);
-      onDocsChanged?.(list.map(d => ({ document_key: d.document_key, status: d.status })));
+      onDocsChanged?.(list);
       return map;
     } catch { return null; }
     finally { setDocsLoading(false); }
@@ -5307,7 +5335,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         if (saved?.document_key) {
           const next = { ...docsByKey, [saved.document_key]: saved };
           setDocsByKey(next);
-          onDocsChanged?.(Object.values(next).map(d => ({ document_key: d.document_key, status: d.status })));
+          onDocsChanged?.(Object.values(next));
           toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
         } else {
           const fresh = await reloadDocs();
@@ -6175,7 +6203,7 @@ function Stage4Payroll({
     bank_name:           showErrors && bankMode && !s4.bank_name.trim(),
     bank_account_number: showErrors && bankMode && !/^\d{9,18}$/.test(s4.bank_account_number.trim()),
     ifsc_code:           showErrors && bankMode && !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(s4.ifsc_code.trim()),
-    account_holder_name: showErrors && bankMode && !s4.account_holder_name.trim(),
+    account_holder_name: showErrors && bankMode && (!s4.account_holder_name.trim() || !/[A-Za-z]/.test(s4.account_holder_name)),
     bank_branch:         showErrors && bankMode && !s4.bank_branch.trim(),
     pan_number:          showErrors && !/^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(s4.pan_number.trim()),
     pf_deduction:        showErrors && !s4.pf_deduction.trim(),
@@ -6276,6 +6304,9 @@ function Stage4Payroll({
             <Col data-field="account_holder_name" md={4}>
               <label className="onb-init-label">Name on the Account {bankMode && <span className="req">*</span>}</label>
               <input className={`onb-init-input ${bankMode ? 'is-required' : ''}${invalid.account_holder_name ? ' is-invalid' : ''}`} placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
+              {s4.account_holder_name.trim() && !/[A-Za-z]/.test(s4.account_holder_name) && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>Must include at least one letter</small>
+              )}
             </Col>
             <Col data-field="bank_branch" md={4}>
               <label className="onb-init-label">Branch {bankMode && <span className="req">*</span>}</label>
@@ -6820,7 +6851,10 @@ function Stage5Policies({ emp, onProgress }: {
         {!loading && docSetLoaded && templates.length > 0 && (
           <div className="onb-docset-bar" style={{
             display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-            padding: '10px 12px', margin: '2px 0 10px', borderRadius: 10,
+            /* The 16px side gutter the section head and every document row
+               below already use — with margin 0 this strip ran edge to edge
+               inside a card whose contents are all inset. (QA #255) */
+            padding: '10px 12px', margin: '2px 16px 10px', borderRadius: 10,
             background: docFinalized ? 'rgba(16,185,129,.08)' : 'rgba(124,92,252,.07)',
             border: `1px solid ${docFinalized ? 'rgba(16,185,129,.3)' : 'rgba(124,92,252,.22)'}`,
           }}>

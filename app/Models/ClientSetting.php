@@ -16,14 +16,10 @@ class ClientSetting extends Model
         'description',
     ];
 
-    // ── Relationships ──
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
     }
-
-    // ── Helpers ──
 
     public function getTypedValue()
     {

@@ -24,13 +24,8 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-
 class OnboardingController extends Controller
 {
-    /* ─────────────────────────────────────────────────────────────────
-     *  ADMIN — create invite + send email
-     * ───────────────────────────────────────────────────────────────── */
-
     public function createInvite(Request $request)
     {
         $user = $request->user();
@@ -41,36 +36,15 @@ class OnboardingController extends Controller
             'invitee_name'       => 'required|string|max:255',
             'invitee_email'      => 'required|email|max:191',
             'department_id'      => 'nullable|integer|exists:master_departments,id',
-            // HR's call, captured with the link rather than asked of the
-            // candidate on the public form. (CBC #24)
             'designation_id'     => 'nullable|integer|exists:master_designations,id',
             'primary_role_id'    => 'nullable|integer|exists:master_roles,id',
-            // Realistic window for a new joiner — no absurd historical dates,
-            // no far-future. Mirrors validateOnboardingPayload's date_of_joining.
             'expected_join_date' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
             'expiry_days'        => 'nullable|integer|in:3,7,15,30',
-            // Optional caller-supplied origin (e.g. http://127.0.0.1:8000)
-            // so the invite link points at the SPA the admin is using right
-            // now, not whatever APP_URL happens to be set to in .env. Falls
-            // back to APP_URL when omitted.
             'app_origin'         => 'nullable|url|max:255',
         ]);
 
-        // Resolve tenant tuple from the authenticated user — same rule the
-        // EmployeeController uses for stamp-time ownership.
         [$clientId, $branchId] = $this->resolveOwnership($user);
 
-        // Fail fast if the email is already on a real user account IN THIS
-        // TENANT — no point inviting someone whose login already exists here.
-        // Email is unique PER CLIENT now (not globally), so we scope the check
-        // to this invite's client_id: the same email living in a DIFFERENT
-        // client must NOT block an invite here. Case-insensitive so "RD@x.com"
-        // and "rd@x.com" are treated as the same login within the tenant.
-        /* Normalised once, here, so everything downstream stores and compares the
-         * same string. The duplicate check below already lower-cased for its
-         * comparison but the ORIGINAL casing was what got saved and mailed — so
-         * "DFSD@FDGDFG.COM" went out shouted, and the same person entered twice
-         * with different casing passed the check and became two invitees. */
         $data['invitee_email'] = mb_strtolower(trim($data['invitee_email']));
 
         $existingUser = User::whereRaw('LOWER(email) = ?', [$data['invitee_email']])
@@ -101,22 +75,9 @@ class OnboardingController extends Controller
             'status'             => 'pending',
         ]);
 
-        // Share the SHORT link (/o/{slug}) — it redirects to the full
-        // /onboarding/{token} URL, so the emailed/copied link stays tidy while
-        // the 64-char token remains the real credential. Prefer the SPA's own
-        // origin (sent by the frontend) so the link opens on the host the admin
-        // is using right now; trailing slash is stripped when composing.
         $url = $this->buildShortUrl($slug, $data['app_origin'] ?? null);
 
-        /* Onboarding invite mail — gated by Settings → Notifications → newUser.
-           OnboardingInviteMail is ShouldQueue, so this hands the mail to the
-           queue and returns in milliseconds instead of holding the request
-           open for the whole SMTP conversation. What is caught here is now a
-           QUEUE failure, not a delivery failure — a send that fails at the
-           SMTP end surfaces in `failed_jobs`, not in this catch. */
         if (Settings::shouldSendMail('newUser')) try {
-            // Use ?: (not ??) so an empty-string org_name also falls back —
-            // otherwise the mail subject would dangle as "Complete your onboarding — ".
             $orgName = Client::find($clientId)?->org_name ?: config('mail.from.name', 'Cross Border Command');
             $deptName = $invite->department_id ? Departments::find($invite->department_id)?->name : null;
             Mail::to($invite->invitee_email)->send(new OnboardingInviteMail(
@@ -153,10 +114,6 @@ class OnboardingController extends Controller
         ], 201);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  PUBLIC — show invite (preview the form)
-     * ───────────────────────────────────────────────────────────────── */
-
     public function show(string $token)
     {
         $invite = EmployeeOnboardingInvite::where('token', $token)->first();
@@ -170,23 +127,17 @@ class OnboardingController extends Controller
             return response()->json(['message' => 'This onboarding link was cancelled.'], 410);
         }
         if ($invite->expires_at?->isPast()) {
-            // Auto-mark expired so it can't be used even if status was still
-            // 'pending' from a stale row.
             if ($invite->status !== 'expired') {
                 $invite->update(['status' => 'expired']);
             }
             return response()->json(['message' => 'This onboarding link has expired.'], 410);
         }
 
-        // Inviter context — tenant name, logo and website shown in the form sidebar.
         $client  = Client::find($invite->client_id);
         $orgName = $client?->org_name ?? 'Your Organization';
         $logoUrl = $client?->logo_url;
         $website = $client?->website;
 
-        // Master lists scoped to the inviting tenant. Public endpoint, so we
-        // construct the queries manually rather than going through MasterController
-        // (which requires auth).
         $tenantScope = function ($q) use ($invite) {
             $q->where(function ($w) use ($invite) {
                 $w->whereNull('client_id');
@@ -199,8 +150,6 @@ class OnboardingController extends Controller
                 'invitee_name'       => $invite->invitee_name,
                 'invitee_email'      => $invite->invitee_email,
                 'department_id'      => $invite->department_id,
-                // Read-only on the form — shown so the candidate can SEE the
-                // role they were hired for, not choose it. (CBC #24)
                 'designation_id'     => $invite->designation_id,
                 'primary_role_id'    => $invite->primary_role_id,
                 'expected_join_date' => $invite->expected_join_date?->toDateString(),
@@ -210,20 +159,14 @@ class OnboardingController extends Controller
                 'website'            => $website,
             ],
             'masters' => [
-                'countries'    => \App\Models\Masters\Countries::orderBy('name')->get(['id', 'name']),
-                'states'       => \App\Models\Masters\States::orderBy('name')->get(['id', 'name', 'country_id']),
-                'departments'  => Departments::where($tenantScope)->orderBy('name')->get(['id', 'name']),
+                // Active only — a disabled country/state must not be offered on
+                // the public onboarding form (this bundle feeds those pickers).
+                'countries'    => \App\Models\Masters\Countries::whereRaw("LOWER(COALESCE(status,'active')) = 'active'")->orderBy('name')->get(['id', 'name']),
+                'states'       => \App\Models\Masters\States::whereRaw("LOWER(COALESCE(status,'active')) = 'active'")->orderBy('name')->get(['id', 'name', 'country_id']),
+                'departments'  => Departments::where($tenantScope)->whereRaw("LOWER(COALESCE(status,'active')) = 'active'")->orderBy('name')->get(['id', 'name']),
                 'designations' => \App\Models\Masters\Designations::where($tenantScope)->orderBy('name')->get(['id', 'name']),
                 'roles'        => \App\Models\Masters\Roles::where($tenantScope)->orderBy('name')->get(['id', 'name']),
-                /* Legal entities are the client's BRANCHES — the branch carries
-                   the GST/PAN/CIN and bank accounts, so that's what an employee
-                   is hired into. `entity_name` is kept as the label key so the
-                   public form's existing shape is unchanged, and `location`
-                   (city + country) pre-fills the read-only Location field. */
                 'legal_entities' => \App\Models\Branch::where('client_id', $invite->client_id)
-                    // The invite already fixes which branch is hiring, so the
-                    // candidate gets exactly that one and the form shows it
-                    // read-only — they never choose their own legal entity.
                     ->when($invite->branch_id, fn ($q) => $q->where('id', $invite->branch_id))
                     ->orderBy('name')
                     ->get(['id', 'name', 'city', 'country'])
@@ -238,10 +181,6 @@ class OnboardingController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  PUBLIC — submit the completed form
-     * ───────────────────────────────────────────────────────────────── */
-
     public function complete(Request $request, string $token)
     {
         $invite = EmployeeOnboardingInvite::where('token', $token)->first();
@@ -252,25 +191,12 @@ class OnboardingController extends Controller
         $data = $this->validateOnboardingPayload($request, $invite);
 
         try {
-            // Only the DB writes run inside the transaction. The welcome
-            // email is deliberately kept OUT of it (and queued) — sending it
-            // synchronously over SMTP was holding the transaction (and the
-            // allocateEmpCode row lock) open for the full ~15s SMTP round-trip,
-            // which is what made this endpoint slow. See the queue() call below.
             $result = DB::transaction(function () use ($invite, $data) {
-                // OB-08: re-fetch + row-lock the invite INSIDE the transaction and
-                // re-check it's still pending. Without this, a double-click / two
-                // tabs both passed the earlier status check and provisioned two
-                // Users + Employees from a single invite.
                 $invite = EmployeeOnboardingInvite::whereKey($invite->id)->lockForUpdate()->first();
                 if (!$invite || $invite->status !== 'pending') {
                     abort(409, 'This onboarding link has already been completed.');
                 }
 
-                // Provision the User row first (login account). Same shape as
-                // EmployeeController::store but tenant comes from the invite,
-                // not the request user (which doesn't exist on this public
-                // endpoint).
                 $rawPassword = $this->generatePassword();
                 $loginUser = User::create([
                     'name'        => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
@@ -294,19 +220,7 @@ class OnboardingController extends Controller
                     'emp_code'     => $empCode,
                     'display_name' => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
                     'email'        => $invite->invitee_email,
-                    // Department defaults to the one the admin pre-set on the
-                    // invite if the candidate didn't override.
                     'department_id' => $data['department_id'] ?? $invite->department_id,
-                    /* Designation and Primary Role come from the INVITE and only
-                     * the invite. (CBC #24)
-                     *
-                     * These used to be pickers on the public form, so a
-                     * candidate chose their own job title from the master list.
-                     * They are HR's decision now, set when the link is
-                     * generated. The `??` deliberately does NOT fall back to
-                     * $data: the fields are gone from the form, and honouring
-                     * them if they reappeared in a hand-made request would put
-                     * the choice back in the candidate's hands. */
                     'designation_id'  => $invite->designation_id,
                     'primary_role_id' => $invite->primary_role_id,
                     'date_of_joining' => $data['date_of_joining'] ?? $invite->expected_join_date,
@@ -314,8 +228,6 @@ class OnboardingController extends Controller
 
                 $loginUser->update(['employee_code' => $empCode]);
 
-                // Default permissions — same self-service pack a regular
-                // create gets, plus inherited master view perms.
                 $this->grantSelfServicePermissions($loginUser, $invite->client_id, $invite->branch_id, $invite->created_by);
 
                 $invite->update([
@@ -331,17 +243,8 @@ class OnboardingController extends Controller
             $loginUser   = $result['loginUser'];
             $rawPassword = $result['rawPassword'];
 
-            // Welcome email — gated by Settings → Notifications → newUser.
-            // QUEUED (not ->send()) and run AFTER the transaction commits so
-            // the HTTP response returns immediately instead of blocking on the
-            // SMTP send. Requires the queue worker (database queue) to be
-            // running to actually dispatch the mail.
             if (Settings::shouldSendMail('newUser')) try {
                 $orgName = Client::find($invite->client_id)?->org_name ?? 'Your Organization';
-                // OB-12: send SYNCHRONOUSLY — there is no queue worker running, so
-                // a ->queue()'d credentials mail would sit undelivered forever and
-                // the new employee could never log in. Costs a little request
-                // latency, but the credentials actually arrive.
                 Mail::to($invite->invitee_email)->send(new WelcomeCredentialsMail(
                     $loginUser->name,
                     $invite->invitee_email,
@@ -368,8 +271,6 @@ class OnboardingController extends Controller
             ]);
         } catch (QueryException $e) {
             if ($e->getCode() === '23505') {
-                // Per-tenant unique index — this only fires when the email is
-                // already a login WITHIN this invite's client.
                 throw ValidationException::withMessages([
                     'email' => ['This email already has an account in this organization. Each email can be used only once per organization.'],
                 ]);
@@ -378,38 +279,12 @@ class OnboardingController extends Controller
         }
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  Helpers
-     * ───────────────────────────────────────────────────────────────── */
-
-    /**
-     * May this user issue an onboarding invite? (CBC #211)
-     *
-     * This used to be a bare user_type whitelist — super_admin / client_admin /
-     * branch_user — which ignored the permission system entirely. Granting an
-     * HR user "Employee Onboarding" in Permissions changed nothing: they were
-     * still refused with "Only admins can issue onboarding invites", because
-     * their user_type is `employee`. The screen said they had the access and
-     * the API disagreed.
-     *
-     * The whitelist is KEPT as a standing allow rather than replaced by the
-     * permission lookup. Admins can already do this today, and some of them
-     * have no explicit `permissions` row; swapping the check outright would
-     * have locked them out to fix somebody else's access. This is purely
-     * additive — the only people who gain the ability are those a client-admin
-     * has deliberately granted can_add on `hr.onboarding`.
-     *
-     * Tenancy is unaffected: resolveOwnership() falls through to the user's own
-     * client_id / branch_id for employee logins, so an invite raised by an HR
-     * user is stamped with their own tenant, not a caller-supplied one.
-     */
     private function authorizeInvite($user): void
     {
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
             return;
         }
 
-        // `can_add` is the create flag on this schema (there is no can_create).
         $moduleId = Module::where('slug', 'hr.onboarding')->value('id');
         if ($moduleId && Permission::where('user_id', $user->id)
             ->where('module_id', $moduleId)
@@ -431,7 +306,6 @@ class OnboardingController extends Controller
 
     private function generateToken(): string
     {
-        // 64-char URL-safe token. Loop on the (extremely improbable) collision.
         do {
             $token = Str::random(64);
         } while (EmployeeOnboardingInvite::where('token', $token)->exists());
@@ -440,36 +314,16 @@ class OnboardingController extends Controller
 
     private function generateSlug(): string
     {
-        // 10-char URL-safe slug for the short /o/{slug} link. Loop on the
-        // (extremely improbable) collision — same pattern as generateToken.
         do {
             $slug = Str::random(10);
         } while (EmployeeOnboardingInvite::where('slug', $slug)->exists());
         return $slug;
     }
 
-    /**
-     * Resolve the host the shared link should point at. Caller-supplied Origin
-     * wins (it knows where the SPA actually served the request from). Falls
-     * back to app.frontend_url for non-browser callers (cron, queue jobs) that
-     * have no Origin — and finally APP_URL as a last-resort floor inside
-     * frontend_url's env() chain. The candidate opens the link in a browser, so
-     * it MUST resolve to the SPA host, not the Laravel API host.
-     *
-     * OB-21: only honour a caller-supplied origin if its host is one we trust
-     * (the configured frontend / app URL). Otherwise an attacker who can reach
-     * createInvite could plant a phishing host in the emailed link.
-     */
     private function resolveShareBase(?string $appOrigin = null): string
     {
         $base = rtrim((string) config('app.frontend_url'), '/');
         if ($appOrigin) {
-            // Loopback hosts are interchangeable in local dev — the SPA may be
-            // opened at 127.0.0.1:8000 while APP_URL is http://localhost (or
-            // vice-versa). Normalise them so the browser-supplied origin (which
-            // crucially carries the correct PORT) is still trusted; otherwise we
-            // fell back to a portless APP_URL and the emitted link 404'd /
-            // refused to connect (e.g. http://localhost/onboarding/… on :80).
             $loopback = ['localhost', '127.0.0.1', '::1'];
             $norm = fn (?string $h) => in_array(strtolower((string) $h), $loopback, true)
                 ? 'localhost'
@@ -486,13 +340,6 @@ class OnboardingController extends Controller
         return $base;
     }
 
-    /** Full onboarding URL — the real target the short link redirects to. */
-    private function buildOnboardingUrl(string $token, ?string $appOrigin = null): string
-    {
-        return $this->resolveShareBase($appOrigin) . "/onboarding/{$token}";
-    }
-
-    /** Short shareable link (/o/{slug}) → resolved by the web redirect route. */
     private function buildShortUrl(string $slug, ?string $appOrigin = null): string
     {
         return $this->resolveShareBase($appOrigin) . "/o/{$slug}";
@@ -524,18 +371,8 @@ class OnboardingController extends Controller
         return 'EMP-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * Mirrors EmployeeController::grantSelfServicePermissions but inheritance
-     * source is the invite's creator (since this endpoint is unauthenticated).
-     */
     private function grantSelfServicePermissions(User $user, $clientId, $branchId, $grantedBy): void
     {
-        // Baseline for a freshly self-onboarded hire: Dashboard + Profile only.
-        // The old `master.employees` view-grant was dropped when the Employee
-        // permission was consolidated into `hr.employee` — granting that here
-        // would expose the full Employee-management menu to every new hire.
-        // Their own profile still loads via EmployeeController's self-exemption
-        // (show()/authorizeViewOrSelf), so no self-service access is lost.
         $alwaysOnSlugs = ['profile', 'dashboard'];
         $adminMasterIds = [];
         if ($grantedBy) {
@@ -569,37 +406,14 @@ class OnboardingController extends Controller
         }
     }
 
-    /**
-     * Validation rules for the candidate-submitted onboarding form. Subset
-     * of the admin Add Employee form — job-related fields stay nullable
-     * because the admin pre-set them on the invite.
-     */
     private function validateOnboardingPayload(Request $request, EmployeeOnboardingInvite $invite): array
     {
-        // Names accept letters/space/apostrophe/hyphen/period only — digits
-        // and other punctuation are rejected (mirrors the frontend nameRe).
         $nameRule = ['regex:/^[A-Za-z][A-Za-z\s\'\-.]*$/'];
-        // E.164-style mobile: 7-15 digits after stripping +/0/spaces is what
-        // the frontend allows; here we accept the raw input and normalize.
         $mobileRule = ['regex:/^[+\d\s\-()]{7,20}$/'];
-        // Pincode: 4-10 digits.
         $pincodeRule = ['regex:/^\d{4,10}$/'];
-        // Free-text address fields must not carry HTML/script markup — reject
-        // any angle brackets so `<script>`/tag-injection can never be stored
-        // (XSS defence). SQL injection is already neutralised by Eloquent's
-        // parameter binding, so we deliberately do NOT blacklist SQL keywords,
-        // which would wrongly reject legitimate values like "123 Drop Lane".
         $noTags = ['not_regex:/[<>]/'];
-        // A real street address contains at least one letter AND at least one
-        // digit or whitespace (a house/building number, or multiple words).
-        // This rejects meaningless input like "@@@@@", "#####", "12345",
-        // "asdfgh", "@@@123" while still accepting "12 MG Road" /
-        // "Flat 4B, Park Lane". Paired with $noTags (XSS) below.
         $addressRule = ['regex:/^(?=.*[A-Za-z])(?=.*[\s\d]).{5,}$/'];
 
-        // OB-01 fix: every FK below must reference a master that belongs to THIS
-        // invite's tenant (or a global/null-client row), so a public submitter
-        // can't inject another tenant's department/legal-entity/role/geography id.
         $tenantFk = fn (string $table) => Rule::exists($table, 'id')->where(function ($q) use ($invite) {
             $q->whereNull('client_id')->orWhere('client_id', $invite->client_id);
         });
@@ -609,14 +423,12 @@ class OnboardingController extends Controller
             'middle_name'  => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'last_name'    => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'gender'       => 'nullable|in:Male,Female,Other',
-            // Onboardee must be at least 18 (matches the frontend validator).
             'date_of_birth' => 'nullable|date|before_or_equal:' . now()->subYears(18)->toDateString(),
             'nationality_country_id' => ['nullable', 'integer', $tenantFk('master_countries')],
             'work_country_id'        => ['nullable', 'integer', $tenantFk('master_countries')],
             'mobile'       => array_merge(['nullable', 'string', 'max:30'], $mobileRule),
             'alt_mobile'   => array_merge(['nullable', 'string', 'max:30'], $mobileRule),
 
-            // Current address
             'country_id'   => ['nullable', 'integer', $tenantFk('master_countries')],
             'state_id'     => ['nullable', 'integer', $tenantFk('master_states')],
             'city'         => array_merge(['nullable', 'string', 'max:100'], $nameRule),
@@ -624,7 +436,6 @@ class OnboardingController extends Controller
             'address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags, $addressRule),
             'pincode'      => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
-            // Permanent address
             'perm_country_id'    => ['nullable', 'integer', $tenantFk('master_countries')],
             'perm_state_id'      => ['nullable', 'integer', $tenantFk('master_states')],
             'perm_city'          => array_merge(['nullable', 'string', 'max:100'], $nameRule),
@@ -632,24 +443,16 @@ class OnboardingController extends Controller
             'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags, $addressRule),
             'perm_pincode'       => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
-            // Job — defaults from invite when omitted
             'department_id'   => ['nullable', 'integer', $tenantFk('master_departments')],
             'designation_id'  => ['nullable', 'integer', $tenantFk('master_designations')],
             'primary_role_id' => ['nullable', 'integer', $tenantFk('master_roles')],
             'ancillary_role_id' => ['nullable', 'integer', $tenantFk('master_roles')],
-            /* Legal entity = one of the inviting client's branches. Not $tenantFk:
-               that helper also allows global rows (client_id IS NULL), which for
-               `branches` would let a candidate post another tenant's branch id. */
             'legal_entity_id' => [
                 'nullable', 'integer',
                 Rule::exists('branches', 'id')
                     ->where(fn ($q) => $q->where('client_id', $invite->client_id)->whereNull('deleted_at')),
             ],
             'location'        => 'nullable|string|max:191',
-            // Joining date must be realistic for a NEW joiner — not an absurd
-            // historical date (e.g. 1900) and not far in the future. Window:
-            // up to 1 year in the past (covers late onboarding) through 2 years
-            // ahead (covers scheduled future starts).
             'date_of_joining' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
         ], [
             'city.regex'                   => 'Enter a valid city name (letters only — no numbers or special characters).',

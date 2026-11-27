@@ -9,6 +9,7 @@ import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { Shimmer } from '../../components/ui/Shimmer';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import '../../../css/recruitment.css';
 
 type RecruitmentStatus = 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
@@ -1154,12 +1155,14 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
             <div className="d-flex align-items-center gap-2">
               <span
                 style={{
-                  width: 32, height: 32, borderRadius: 8,
+                  width: 40, height: 40, borderRadius: 10,
                   background: 'rgba(255,255,255,0.18)',
+                  backdropFilter: 'blur(4px)',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
-                <i className="ri-file-add-line" style={{ fontSize: 16 }} />
+                {/* 40/20 is the header tile scale Add Employee sets. */}
+                <i className="ri-file-add-line" style={{ fontSize: 20, color: '#fff' }} />
               </span>
               <div>
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>Raise Hiring Request</h5>
@@ -1388,14 +1391,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
             other action mid-save. Absolute inset:0 resolves against
             .modal-content, so it covers the header and footer too. Same pattern
             as the CLM trade-document / agreement wizards. */}
-        {!!saving && (
-          <div className="rec-save-lock">
-            <div className="rec-save-lock-box">
-              <Spinner size="sm" style={{ width: 18, height: 18 }} />
-              <span>{saving === 'draft' ? 'Saving draft…' : 'Submitting…'}</span>
-            </div>
-          </div>
-        )}
+        {!!saving && <FullPageLoader label={saving === 'draft' ? 'Saving draft…' : 'Submitting…'} />}
       </ModalBody>
     </Modal>
   );
@@ -1814,8 +1810,8 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-3 min-w-0">
-              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <i className="ri-eye-line" style={{ fontSize: 18 }} />
+              <span style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(4px)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="ri-eye-line" style={{ fontSize: 20, color: '#fff' }} />
               </span>
               <div className="min-w-0">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
@@ -2546,12 +2542,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
             <div className="d-flex align-items-center gap-2">
               <span
                 style={{
-                  width: 38, height: 38, borderRadius: 9,
+                  width: 40, height: 40, borderRadius: 10,
                   background: 'rgba(255,255,255,0.18)',
+                  backdropFilter: 'blur(4px)',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
-                <i className={mode === 'edit' ? 'ri-pencil-line' : 'ri-add-circle-line'} style={{ fontSize: 19 }} />
+                <i className={mode === 'edit' ? 'ri-pencil-line' : 'ri-add-circle-line'} style={{ fontSize: 20, color: '#fff' }} />
               </span>
               <div>
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, letterSpacing: '-0.01em', lineHeight: 1.2 }}>
@@ -2913,14 +2910,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           </div>
         </div>
         {/* Same modal-wide save lock as the Raise-Request form (#49). */}
-        {saving && (
-          <div className="rec-save-lock">
-            <div className="rec-save-lock-box">
-              <Spinner size="sm" style={{ width: 18, height: 18 }} />
-              <span>{mode === 'edit' ? 'Saving changes…' : 'Saving recruitment…'}</span>
-            </div>
-          </div>
-        )}
+        {saving && <FullPageLoader label={mode === 'edit' ? 'Saving changes…' : 'Saving recruitment…'} />}
       </ModalBody>
     </Modal>
   );

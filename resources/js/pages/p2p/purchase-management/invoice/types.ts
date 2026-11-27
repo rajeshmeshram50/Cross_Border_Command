@@ -59,13 +59,20 @@ export interface InvoiceRow {
   approvedForPayment?: number;
 }
 
+const MIN_REQUEST = 1;
+
+export function invoiceSettled(row: InvoiceRow): boolean {
+  return row.totalPaid > 0 && row.netPayable - row.totalPaid < MIN_REQUEST;
+}
+
 export function invoiceBalance(row: InvoiceRow): number {
-  return row.netPayable - row.totalPaid;
+  return invoiceSettled(row) ? 0 : row.netPayable - row.totalPaid;
 }
 
 export function invoicePaidPercent(row: InvoiceRow): number {
+  if (invoiceSettled(row)) return 100;
   if (row.netPayable <= 0) return 0;
-  return Math.round((row.totalPaid / row.netPayable) * 100);
+  return Math.min(99, Math.floor((row.totalPaid / row.netPayable) * 100));
 }
 
 export type InvoiceScope = 'all' | 'with-po' | 'without-po';
@@ -75,18 +82,13 @@ export type InvoiceShipmentScope = 'with-shipment' | 'without-shipment';
 export interface StorageWarehouse {
   id: string;
   name: string;
-  /** City and state — what the collapsed picker shows. */
   location: string;
   apiId?: number;
   code?: string;
-  /** The street line, which is what tells two sites in one city apart. */
   address?: string;
   pincode?: string;
-  /** Floor area in square feet. */
   areaSqft?: number;
-  /** 'own' or 'tpl'. */
   kind?: string;
-  /** When the site was added — shown under its code in the picker. */
   addedOn?: string;
 }
 

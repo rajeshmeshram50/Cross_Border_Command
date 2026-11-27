@@ -28,7 +28,6 @@ class CtcContract extends Model
         'counterparties' => 'array',
         'header_config'  => 'array',
         'footer_config'  => 'array',
-        // { "margin_x": 25 } — left/right page margin in px, see the migration.
         'page_config'    => 'array',
         'approvers'      => 'array',
         'approver_emails' => 'array',

@@ -10,18 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Sales Matrix → Consignee.
- *
- * Mirrors Customer (owns 1..N ConsigneeAddress rows, exactly one
- * flagged is_primary=true). Adds customer_id, the FK that ties this
- * consignee to the customer account it was created under.
- */
 class Consignee extends Model
 {
-    /* Email uniqueness — the rule itself lives in
-       config/email_uniqueness.php; these two lines only say which
-       identity this model belongs to. (#email-unique) */
     use EnforcesUniqueEmail;
     protected static string $emailScope   = 'consignee';
     protected static array  $emailColumns = ['primary_email'];
@@ -57,14 +47,11 @@ class Consignee extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /** The "primary" customer — drives the Same-as-Customer KYC mirror and
-     *  downstream party resolution. Also present in the customers() pivot. */
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
     }
 
-    /** All customers this consignee is mapped to (many-to-many, incl. primary). */
     public function customers(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
         return $this->belongsToMany(Customer::class, 'consignee_customer')
@@ -82,36 +69,23 @@ class Consignee extends Model
         return $this->hasOne(ConsigneeAddress::class)->where('is_primary', true);
     }
 
-    /** Stage 2 — Company Due Diligence + Trade Licence rows. */
     public function documents(): HasMany
     {
         return $this->hasMany(ConsigneeDocument::class)->orderByDesc('id');
     }
 
-    /** Stage 2 — Owner KYC rows. */
     public function owners(): HasMany
     {
         return $this->hasMany(ConsigneeOwner::class)->orderByDesc('id');
     }
 
-    /**
-     * Tenant visibility scope — mirrors Customer::scopeForUser by
-     * delegating to the same creator-hierarchy rule. See Customer.php
-     * for the role matrix.
-     */
     public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        // Sales AND Legal employees share the WHOLE branch's consignee book —
-        // every member sees all the branch's consignees, not only the rows they
-        // created (QA #14). Kept in step with Customer::scopeForUser on purpose:
-        // a consignee is reached FROM a customer profile, so widening one book
-        // without the other just moves the empty screen one click along.
         if (\App\Support\SalesVisibility::sharesBranchCustomerBook($user)) {
             \App\Support\MasterVisibility::applyBranchScope($q, $user);
             return $q;
         }
 
-        // $branchFilter = BranchSwitcher narrowing; see Customer::scopeForUser.
         \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;
     }

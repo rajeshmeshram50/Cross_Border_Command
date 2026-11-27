@@ -15,12 +15,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-/**
- * Senior approval for a PO whose supplier's GST return is overdue.
- * The requester raises it to one senior; only that senior approves or rejects,
- * from their Inbox. The approver may sit in another branch, so their reads are
- * scoped to the client, not the request branch.
- */
 class PoGstApprovalController extends Controller
 {
     use RunsInTransaction;
@@ -44,7 +38,6 @@ class PoGstApprovalController extends Controller
         return $user;
     }
 
-    /** PO ids of the client, across branches. */
     private function clientPoIds(int $clientId)
     {
         return PurchaseOrder::withoutGlobalScope('tenant')->where('client_id', $clientId)->select('id');
@@ -55,9 +48,6 @@ class PoGstApprovalController extends Controller
         return SupplierInvoice::withoutGlobalScope('tenant')->where('client_id', $clientId)->select('id');
     }
 
-    /* An approval hangs off a PO or off a Direct SPI, never both. Fencing on
-       purchase_order_id alone dropped every SPI-raised row: NULL never matches
-       an IN (...), so show() and decide() answered 404. */
     private function findApproval(int $clientId, int $id): PoGstApproval
     {
         return PoGstApproval::where(fn ($q) => $q
@@ -66,7 +56,6 @@ class PoGstApprovalController extends Controller
             ->findOrFail($id);
     }
 
-    /** The PO or the Direct SPI an approval was raised against. */
     private function subjectOf(PoGstApproval $row, bool $withItems = false)
     {
         $q = $row->purchase_order_id
@@ -77,13 +66,6 @@ class PoGstApprovalController extends Controller
         return $q->find($row->purchase_order_id ?: $row->supplier_invoice_id);
     }
 
-    /* ══════════════════════════ REQUESTER ══════════════════════════ */
-
-    /**
-     * GET /p2p/orders/gst-approvals/approvers — active users of the client, except the caller,
-     * with department and designation from their employee record. The request stores the user id:
-     * approving needs a login, and that is what the Inbox and bell are keyed on.
-     */
     public function approvers(Request $request): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -94,17 +76,10 @@ class PoGstApprovalController extends Controller
             ->where('u.client_id', $user->client_id)
             ->where('u.status', 'active')
             ->whereNull('u.deleted_at')
-            /* A branch head is the senior of their branch, so they may always pick
-               themselves. Everyone else is listed only when the caller asks for it
-               (?include_self=1) — a payment request may be sent to yourself, a senior
-               GST approval may not. */
             ->when($user->user_type !== 'branch_user' && !$request->boolean('include_self'),
                 fn ($q) => $q->where('u.id', '!=', $user->id))
-            // This branch's people only — the branch head is the last approver, so the
-            // client admin is never sent a PO approval.
             ->where('u.user_type', '!=', 'client_admin')
             ->when($this->approverBranch($request, $user), fn ($q, $b) => $q->where('u.branch_id', $b))
-            // The branch head sits at the top of the list.
             ->orderByRaw("CASE WHEN u.user_type = 'branch_user' THEN 0 ELSE 1 END")
             ->orderBy('u.name')
             ->get(['u.id', 'u.name', 'u.email', 'u.user_type', 'e.id as employee_id', 'e.emp_code',
@@ -113,13 +88,11 @@ class PoGstApprovalController extends Controller
         return $this->ok($rows->unique('id')->values());
     }
 
-    /** The branch whose people can approve: the active branch switcher, else the user's own. */
     private function approverBranch(Request $request, $user): ?int
     {
         return ($request->integer('branch_id') ?: null) ?? ($user->branch_id ? (int) $user->branch_id : null);
     }
 
-    /** POST /p2p/orders/{id}/gst-approval/request */
     public function store(Request $request, int $id): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -136,8 +109,6 @@ class PoGstApprovalController extends Controller
             'parentId'      => $po->id,
             'subjectWord'   => 'PO',
             'noSupplierMsg' => 'Select a supplier on Step 01 first.',
-            /* The PO caches the gate it was approved past. A Direct SPI has
-               no such columns — it re-reads the supplier instead. */
             'onRaised'      => function (array $gst) use ($po, $user) {
                 $po->update([
                     'gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date'],
@@ -147,16 +118,11 @@ class PoGstApprovalController extends Controller
         ]);
     }
 
-    /** POST /p2p/spi/{id}/gst-approval/request — the Direct SPI equivalent. */
     public function storeForInvoice(Request $request, int $id): JsonResponse
     {
         $user = $this->tenantUser($request);
         $spi  = SupplierInvoice::findOrFail($id);
 
-        /* A PO-backed invoice does not raise its own: the order carries the
-           supplier, and its approval already covers this invoice. Allowing
-           both would leave two approvals for one supplier risk, free to
-           disagree. */
         if (!$spi->isStandalone()) {
             return $this->fail("{$spi->code} is raised against a purchase order — send that order for approval instead.");
         }
@@ -176,18 +142,8 @@ class PoGstApprovalController extends Controller
         ]);
     }
 
-    /**
-     * The rules both documents are held to. See the class note: this is
-     * shared because every test in it is a compliance test, and the copy that
-     * drifts is the one that stops refusing.
-     */
     private function raiseApproval(Request $request, $user, array $sub): JsonResponse
     {
-
-        // A document that was rejected goes back to the senior who rejected it —
-        // the requester does not get to shop around for a softer approver. Any
-        // requested_to sent with it is ignored. Only if that senior is no longer
-        // active does the pick open up again.
         $last = ($sub['approvals'])()->latest('id')->first();
         $sameApprover = $last && $last->status === PoGstApproval::STATUS_REJECTED
             ? DB::table('users')->where('id', $last->requested_to)->where('client_id', $user->client_id)
@@ -203,7 +159,6 @@ class PoGstApprovalController extends Controller
         if ($sub['cancelled']) return $this->fail("This {$sub['subjectWord']} is cancelled.");
         if (!$sub['vendorId']) return $this->fail($sub['noSupplierMsg']);
 
-        // The gate is re-read live: only an overdue return can be approved past.
         $gst = $this->svc->gstGate($sub['vendorId'], $sub['international']);
         if ($gst['gate'] === 'blocked') {
             return $this->fail('GST scrutiny is older than ' . PurchaseOrderService::GST_STALE_MONTHS . ' months — a senior cannot approve this. Update the supplier\'s GST scrutiny first.');
@@ -249,17 +204,12 @@ class PoGstApprovalController extends Controller
         return $this->ok($this->shapeRow($row->fresh(), $this->names([$row->requested_by, $row->requested_to])), 201);
     }
 
-    /* ══════════════════════════ APPROVER ══════════════════════════ */
-
-    /** GET /p2p/orders/gst-approvals?history=1 — requests sent to the caller, 10 per page. */
     public function index(Request $request): JsonResponse
     {
         $user = $this->tenantUser($request);
         $history = $request->boolean('history');
         $perPage = max(1, min(50, (int) $request->integer('per_page', 10)));
 
-        /* LEFT joins to both parents. An approval raised from a Direct SPI has
-           no purchase_order_id, and the inner join dropped it from this list. */
         $q = DB::table('p2p_po_gst_approvals as a')
             ->leftJoin('p2p_purchase_orders as po', 'po.id', '=', 'a.purchase_order_id')
             ->leftJoin('p2p_supplier_invoices as spi', 'spi.id', '=', 'a.supplier_invoice_id')
@@ -274,9 +224,6 @@ class PoGstApprovalController extends Controller
         if ($history) {
             $q->where('a.status', '!=', PoGstApproval::STATUS_PENDING)->orderByDesc('a.decided_at');
         } else {
-            // A cancelled PO no longer needs a decision.
-            /* COALESCE, not po.status: NULL <> 'cancelled' evaluates to NULL,
-               which is not true, so every SPI-raised row fell out here too. */
             $q->where('a.status', PoGstApproval::STATUS_PENDING)
                 ->whereRaw('COALESCE(po.status, spi.status) <> ?', [PurchaseOrder::STATUS_CANCELLED])
                 ->orderByDesc('a.requested_at');
@@ -284,8 +231,6 @@ class PoGstApprovalController extends Controller
 
         $page = $q->select(
             'a.id', 'a.purchase_order_id', 'a.supplier_invoice_id', 'a.status', 'a.request_note', 'a.reason', 'a.requested_at', 'a.decided_at',
-            /* Same keys whichever the subject, so the Inbox keeps one row shape;
-               po_code carries the invoice code for a Direct SPI. */
             DB::raw("CASE WHEN a.supplier_invoice_id IS NOT NULL THEN 'supplier_invoice' ELSE 'purchase_order' END as subject_type"),
             DB::raw('COALESCE(po.code, spi.code) as po_code'),
             DB::raw('COALESCE(po.po_date, spi.invoice_date) as po_date'),
@@ -298,9 +243,6 @@ class PoGstApprovalController extends Controller
             'rd.name as requested_by_department',
         )->paginate($perPage);
 
-        // Raw query rows carry DB timestamps with no zone ("2026-09-21 14:47:36"), which a
-        // browser reads as its own local time. Send them as ISO 8601 with the offset, the
-        // same as show() does via shapeRow(), so both screens show the same time.
         $iso = fn ($v) => $v ? \Illuminate\Support\Carbon::parse($v)->toIso8601String() : null;
         return $this->ok(collect($page->items())->map(fn ($r) => [
             'grand_total'  => (float) $r->grand_total,
@@ -311,7 +253,6 @@ class PoGstApprovalController extends Controller
         ]);
     }
 
-    /** GET /p2p/orders/gst-approvals/{approval} — the full picture the senior decides on. */
     public function show(Request $request, int $approval): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -323,9 +264,6 @@ class PoGstApprovalController extends Controller
         if (!$sub) return $this->fail('The document this approval was raised against no longer exists.', 404);
         $isPo = $sub instanceof PurchaseOrder;
 
-        /* Enough of the supplier to judge it here: who they are, what type of
-           supplier they are, where they sit and how to reach them. The senior
-           was otherwise deciding on a code and a name. */
         $vendor = $sub->vendor_id ? DB::table('vendors as v')
             ->leftJoin('vendor_addresses as ad', fn ($j) => $j->on('ad.vendor_id', '=', 'v.id')->where('ad.is_primary', true))
             ->leftJoin('master_risk_levels as r', 'r.id', '=', 'v.risk_level_id')
@@ -338,8 +276,6 @@ class PoGstApprovalController extends Controller
                 'st.name as state_name', 'vt.name as vendor_type', 'r.name as risk_level']) : null;
 
         $refs = $this->subjectRefs($sub);
-        /* A PO line stores only product_id, so its labels need a lookup. An SPI
-           line already carries its description, HSN and UOM. */
         $live  = $isPo ? $this->svc->lineDetails($sub->items) : [];
         $inter = $isPo ? $sub->tax_mode === 'inter' : (float) $sub->total_igst > 0;
 
@@ -359,7 +295,6 @@ class PoGstApprovalController extends Controller
                 'type' => $vendor->vendor_type, 'status' => $vendor->status, 'website' => $vendor->website,
                 'risk' => $vendor->risk_level, 'category' => $vendor->supplier_category,
             ] : null,
-            // Read live, so the senior sees today's position, not the one at request time.
             'gst' => $sub->vendor_id ? $this->svc->gstGate($sub->vendor_id, $sub->document_type === 'international') + ['stale_months' => PurchaseOrderService::GST_STALE_MONTHS] : null,
             'lines' => $sub->items->map(fn ($it) => [
                 'line_no' => $it->line_no,
@@ -377,7 +312,6 @@ class PoGstApprovalController extends Controller
         ]);
     }
 
-    /** PUT /p2p/orders/gst-approvals/{approval} — only the chosen senior; a reason either way. */
     public function decide(Request $request, int $approval): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -396,9 +330,6 @@ class PoGstApprovalController extends Controller
 
         $this->inTransaction('record the decision', function () use ($row, $sub, $user, $data) {
             $row->update(['status' => $data['decision'], 'reason' => $data['reason'], 'decided_at' => now()]);
-            /* A PO caches the verdict in its own gst_approval_* columns. An SPI
-               has none on purpose: the approval row is the record, read back
-               through gstApprovals() — one place to keep in step, not two. */
             $sub->update($sub instanceof PurchaseOrder
                 ? ['gst_approval_status' => $data['decision'], 'gst_approval_by' => $user->id,
                    'gst_approval_at' => now(), 'updated_by' => $user->id]
@@ -416,11 +347,6 @@ class PoGstApprovalController extends Controller
         return $this->ok($this->shapeRow($row->fresh(), $this->names([$row->requested_by, $row->requested_to])));
     }
 
-    /**
-     * GET /p2p/spi/{id}/gst-approvals — every approval raised against one
-     * invoice, newest first. The screen that raised it needs its own history;
-     * the Inbox list is the approver's view, keyed on who it was sent to.
-     */
     public function indexForInvoice(Request $request, int $id): JsonResponse
     {
         $user = $this->tenantUser($request);
@@ -430,7 +356,6 @@ class PoGstApprovalController extends Controller
         $rows = $spi->gstApprovals()->orderByDesc('id')->get();
         $names = $this->names($rows->flatMap(fn ($r) => [$r->requested_by, $r->requested_to])->all());
 
-        // The gate alongside, read live: the reason the approval exists at all.
         return $this->ok($rows->map(fn ($r) => $this->shapeRow($r, $names))->all(), 200, [
             'gst' => $spi->vendor_id
                 ? $this->svc->gstGate((int) $spi->vendor_id, $spi->document_type === 'international')
@@ -439,9 +364,6 @@ class PoGstApprovalController extends Controller
         ]);
     }
 
-    /* ══════════════════════════ HELPERS ══════════════════════════ */
-
-    /** @return array<int,string> user id => name */
     private function names(array $ids): array
     {
         return DB::table('users')->whereIn('id', array_filter($ids))->pluck('name', 'id')->all();
@@ -466,7 +388,6 @@ class PoGstApprovalController extends Controller
         ];
     }
 
-    /** The header the senior decides on — same keys for either subject. */
     private function subjectBlock($sub): array
     {
         if ($sub instanceof PurchaseOrder) {
@@ -487,9 +408,6 @@ class PoGstApprovalController extends Controller
             ];
         }
 
-        /* A Direct SPI has no order terms: transport, Incoterm, ports and the
-           extra charges all live on the PO. Null rather than absent, so the
-           screen keeps one shape and simply prints a dash. */
         return [
             'id' => $sub->id, 'code' => $sub->code, 'po_date' => $sub->invoice_date?->toDateString(), 'status' => $sub->trashed() ? 'deleted' : $sub->status,
             'po_type' => null, 'document_type' => $sub->document_type, 'link_type' => null,
@@ -497,7 +415,6 @@ class PoGstApprovalController extends Controller
             'mode_of_transport' => null, 'expected_delivery_date' => null,
             'delivery_location' => null, 'payment_type' => null,
             'inco_term' => null, 'port_of_loading' => null, 'port_of_discharge' => null,
-            // Derived, not stored: the server never splits GST, the caller does.
             'tax_mode' => (float) $sub->total_igst > 0 ? 'inter' : 'intra', 'physical_inspection' => null,
             'taxable_total' => (float) $sub->taxable_total, 'total_cgst' => (float) $sub->total_cgst,
             'total_sgst' => (float) $sub->total_sgst, 'total_igst' => (float) $sub->total_igst,
@@ -509,7 +426,6 @@ class PoGstApprovalController extends Controller
         ];
     }
 
-    /** Shipment / opportunity / procurement references, from either subject. */
     private function subjectRefs($sub): array
     {
         if ($sub instanceof PurchaseOrder) {
@@ -535,7 +451,6 @@ class PoGstApprovalController extends Controller
         ];
     }
 
-    /** Bell notification; a failed insert never undoes the request itself. */
     private function notify(int $userId, array $data): void
     {
         try {

@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/** Stage 04 · a document generated for the PO and tracked to signature. */
 class PurchaseOrderDocument extends Model
 {
     use BelongsToTenant, SoftDeletes;
@@ -19,10 +18,8 @@ class PurchaseOrderDocument extends Model
     public const STATUS_SIGNED  = 'signed';
     public const STATUSES       = [self::STATUS_PENDING, self::STATUS_SENT, self::STATUS_SIGNED];
     public const KINDS          = ['purchase_order', 'agreement', 'other'];
-    /** Which CLM library the row came from; null for the Purchase Order itself. */
     public const SOURCES        = ['trade', 'agreement'];
 
-    /** Mandatory by the library, or marked necessary on this PO. */
     public function isNeeded(): bool
     {
         return $this->is_required === 'yes' || $this->needed === 'yes';

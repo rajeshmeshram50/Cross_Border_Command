@@ -9,10 +9,12 @@ import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import { ciSort } from '../../utils/tableSort';
 import Tooltip from '../../components/ui/Tooltip';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import ReportingManagerDependencyModal from './exit/ReportingManagerDependencyModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY_EXIT_DAYS } from '../../utils/probation';
 
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -285,6 +287,7 @@ export default function HrExitManagement() {
     {
       header: 'Employee',
       accessorKey: 'name',
+      sortingFn: ciSort,
       // wrap: the exit-state caption sits on a second line under the name.
       /* PIXEL widths, not percentages.
          Percentages are a share of the table's width, so on any container
@@ -375,11 +378,12 @@ export default function HrExitManagement() {
       meta: { width: w(130, 108), wrap: true, align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118), align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: w(150, 124), align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  sortingFn: ciSort, meta: { width: w(140, 118), align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', sortingFn: ciSort, meta: { width: w(150, 124), align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
+      sortingFn: ciSort,
       meta: { width: w(140, 120), align: 'center' },
       /* Role names run long ("Software Developer", "Sales Intern") and the
          column is narrow — ChipCell ellipsises inside the pill and reveals
@@ -405,6 +409,7 @@ export default function HrExitManagement() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
+      sortingFn: ciSort,
       meta: { width: w(170, 146) },
       cell: info => {
         const e = info.row.original;
@@ -427,6 +432,7 @@ export default function HrExitManagement() {
     ...(tab === 'active' ? [] : ([{
       header: 'Exit Type',
       accessorKey: 'exitType',
+      sortingFn: ciSort,
       meta: { width: 170, wrap: true, align: 'center' },
       cell: (info: any) => {
         const t = String(info.getValue() || '').trim();
@@ -502,6 +508,7 @@ export default function HrExitManagement() {
     {
       header: 'Status',
       accessorKey: 'status',
+      sortingFn: ciSort,
       /* `wrap` opts this cell out of the table's default
          `overflow:hidden; text-overflow:ellipsis` (DataTable.css). Without it
          the "Exit In Progress" pill was wider than the column and got clipped,
@@ -2539,10 +2546,21 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      number off it. The pool belongs to ReportingManagerDependencyModal, which
      only mounts on the closure stage — so the expensive half now happens there
      and nowhere else. */
-  const loadDirectReports = useCallback(() => {
+  const loadDirectReports = useCallback((fresh = false) => {
     if (!employee) return;
-    getExitOverview(employee.id)
-      .then((b) => setDirectReportCount(Array.isArray(b?.direct_reports?.reports) ? b.direct_reports.reports.length : 0))
+    /* `fresh` goes straight to the endpoint and drops the memoised bundle.
+       Without it the reassignment's own refresh replayed the promise captured
+       when the wizard opened — so Complete Exit stayed disabled, still naming
+       reports that had just been moved, until the page was reloaded. The
+       bundle is cleared too, so nothing else serves that stale count either. */
+    if (fresh) exitOverviewRef.current = null;
+    const src = fresh
+      ? api.get(`/employees/${employee.id}/exit/direct-reports`, { params: { count_only: 1 } })
+          .then(r => r.data ?? {})
+          .catch(() => ({}))
+      : getExitOverview(employee.id).then((b) => b?.direct_reports ?? {});
+    src
+      .then((d: any) => setDirectReportCount(Array.isArray(d?.reports) ? d.reports.length : 0))
       .catch(() => setDirectReportCount(0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.id]);
@@ -2670,16 +2688,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
          warns about, arrived at by a different road. (QA #15) */
       if (noSettlementDue || !docsReleased) return 100;
       const total = exitTemplates.length;
-      /* No exit-document template matches this employee → there is nothing to
-         generate and nothing to sign, so the stage holds no work. Reads 100,
-         not 0: same reasoning as fnfNothingToSettle above, where a measure with
-         a zero denominator would otherwise sit at 0% forever.
-         This was the 0% in bug #81. It mattered because every completion gate
-         that mentions documents is written `exitTemplates.length > 0 && …`, so
-         with no templates the stage showed Pending while nothing blocked the
-         close — and once completion gates on all stages being Completed (see
-         completeExit), a permanent 0% here would deadlock the case instead. */
-      if (total === 0) return 100;
+      /* Documents ARE released (the switch is on) but no exit document is
+         available/configured for this employee — the HR asked for documents and
+         there are none, so the stage is genuinely unfinished: 0%, not 100
+         (#201). The stage already reads "In Progress" here, so completion was
+         blocked all along; this only stops the ring from contradicting that by
+         showing 100%. The escape is to turn the release switch OFF (nothing to
+         do → 100 / Completed via the !docsReleased + effStatusOf paths) — so
+         this does not deadlock the way the old 100 guarded against (that case
+         was !docsReleased, handled above and unchanged). */
+      if (total === 0) return 0;
       // Measured against the FINALISED ticked set — signing + the finalise step.
       // Before finalising, the stage is at most "in progress".
       if (docSetLoaded && !docFinalized) {
@@ -3421,6 +3439,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   return (
     <>
+    {/* One veil for every write this wizard makes — a stage save, a draft,
+        the settlement, or the final Complete Exit. Named per action so the
+        label says which one is running rather than a generic wait. */}
+    {!!employee && (stage1Saving || draftSaving || advancingStage || settleSaving || completing) && (
+      <FullPageLoader label={
+        completing ? 'Completing exit…'
+        : settleSaving ? 'Saving settlement…'
+        : draftSaving ? 'Saving draft…'
+        : 'Saving…'
+      } />
+    )}
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ep-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         <div className="ep-head">
@@ -5170,7 +5199,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       employeeId={employee?.id ?? null}
                       employeeName={employee?.name || 'This employee'}
                       onClose={() => {}}
-                      onResolved={() => { setRmReassigned(true); loadDirectReports(); }}
+                      onResolved={() => { setRmReassigned(true); loadDirectReports(true); }}
                     />
                   </div>
                 )}
@@ -5353,8 +5382,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       templateCode={genTpl?.code}
       employeeId={employee?.id ?? null}
       employeeName={employee?.name}
-      onSent={fetchRuns}
-      onGenerated={fetchGenerated}
+      /* fresh=true: both default to the memoised bundle, which still holds
+         the pre-send response, so the row kept showing Send for Signature. */
+      onSent={() => fetchRuns(true)}
+      onGenerated={() => fetchGenerated(true)}
     />
 
     <Modal isOpen={!!sendForTpl} toggle={() => !sending && setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">

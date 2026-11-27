@@ -21,11 +21,6 @@ use Illuminate\Validation\ValidationException;
 
 class HiringRequestController extends Controller
 {
-    /**
-     * Eager-loads used by every read endpoint so the SPA gets nested names
-     * (department.name, creator.name, …) without extra round-trips.
-     * Mirrors RecruitmentController::WITH.
-     */
     private const WITH = [
         'client:id,org_name',
         'branch:id,name',
@@ -33,66 +28,24 @@ class HiringRequestController extends Controller
         'department:id,name,code',
     ];
 
-    /**
-     * The hiring-request screen lives inside the recruitment module — there
-     * is no separate `hr.hiring_requests` slug, so permission checks reuse
-     * the recruitment module's row.
-     */
     private const MODULE_SLUG = 'hr.recruitment';
 
-    /** Whitelisted enums — keep in sync with the front-end form options. */
     private const EMPLOYMENT_TYPES   = ['Full-time', 'Part-time', 'Contract', 'Intern'];
     private const WORK_MODES         = ['Onsite', 'Remote', 'Hybrid', 'Flexible'];
     private const URGENCIES          = ['Low', 'Medium', 'High', 'Critical'];
     private const REQUEST_TYPES      = ['New Position', 'Replacement Hiring', 'Backfill', 'Expansion Hiring', 'Intern Requirement', 'Urgent Temporary Support'];
     private const STATUSES           = ['Draft', 'Submitted', 'Under Review', 'Approved', 'Sent Back', 'Rejected'];
 
-    /* Characters a job title / role may carry. (CBC #150)
-     *
-     * Was `[A-Za-z0-9 .,\-\/]` — letters, digits and four marks — which reads
-     * as "no special characters" but in practice refused ordinary job titles:
-     * "Sr. Engineer (R&D)", "Manager - Sales & Marketing", "Analyst, L&D",
-     * "Driver's Supervisor" all failed, and the error said only "No special
-     * characters", so there was nothing to tell the user which mark was the
-     * problem or that a title like theirs was never going to be accepted.
-     *
-     * Widened to the set already trusted on the qualification fields —
-     * & ( ) + apostrophes (straight and curly), % : ; and en/em dashes — so
-     * the two halves of the same form stop disagreeing about what a normal
-     * word looks like. Still no < > { } [ ] \ | " ` ~ = * # @ $ ^, which is
-     * what the rule is actually guarding against, and a separate rule
-     * requires at least one letter so punctuation alone cannot pass.
-     *
-     * Kept identical to TITLE_RE in HrRecruitment.tsx — the SPA validates
-     * first, and a client rule looser than the server's produces a 422 the
-     * form cannot attach to a field. */
     private const TITLE_REGEX = 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}]+$/u';
     private const HAS_LETTER  = 'regex:/[A-Za-z]/';
 
-    /* As TITLE_REGEX, plus '#' and square brackets — see the qualification
-     * rule below. Kept identical to QUAL_RE in HrRecruitment.tsx. */
     private const QUAL_REGEX = 'regex:/^[A-Za-z0-9 .,\/&()+\-\x27\x{2019}%:;\x{2013}\x{2014}#\[\]]+$/u';
-    /* A qualification needs a letter OR a digit, not a letter.
-     *
-     * The letters-only guard rejected "10+2" — the Higher Secondary
-     * qualification named that way on most Indian CVs, and one of the most
-     * common answers this field can be given. It is still enough to refuse
-     * punctuation on its own ("---", "###"), which is all the guard is for.
-     * (CBC #151) */
     private const HAS_ALNUM = 'regex:/[A-Za-z0-9]/';
-
-    /* ─────────────────────────────────────────────────────────────────
-     *  LIST / SHOW / NEXT-CODE
-     * ───────────────────────────────────────────────────────────────── */
 
     public function index(Request $request)
     {
         $this->authorize($request, 'can_view');
 
-        // No scheduler runs in this app, so expiry is applied lazily on read:
-        // a submitted request whose target join date has passed (and which was
-        // never turned into a recruitment) is auto-rejected before the list is
-        // built. Mirrors RecruitmentController::expireOverdue.
         $branchFilter = $request->integer('branch_id') ?: null;
         $this->autoRejectOverdue($request->user(), $branchFilter);
 
@@ -137,10 +90,6 @@ class HiringRequestController extends Controller
         ]);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  STORE / UPDATE / DESTROY
-     * ───────────────────────────────────────────────────────────────── */
-
     public function store(Request $request)
     {
         $this->authorize($request, 'can_add');
@@ -150,9 +99,6 @@ class HiringRequestController extends Controller
             $auth = $request->user();
             [$clientId, $branchId] = $this->resolveOwnership($request);
 
-            // Reject duplicates BEFORE allocating the next HRQ code so we
-            // don't burn a sequence number on a request that's about to be
-            // rejected. Surfaces inline on the `title` field.
             $this->guardDuplicate($data, $clientId, $branchId, null);
 
             $payload = array_merge($data, [
@@ -160,22 +106,12 @@ class HiringRequestController extends Controller
                 'branch_id'  => $branchId,
                 'created_by' => $auth?->id,
                 'code'       => $this->allocateCode($clientId, $branchId),
-                // Saved-as-draft rows arrive with status=Draft; submitted
-                // rows arrive with status=Submitted from the frontend.
                 'status'     => $data['status'] ?? 'Submitted',
-                // urgency is NOT NULL; a Save-as-Draft may omit it (empty →
-                // null after Laravel's string-to-null cast), so default it.
                 'urgency'    => $data['urgency'] ?? 'Medium',
             ]);
             $row = HiringRequest::create($payload);
             $row->load(self::WITH);
 
-            // Notify the creator's reporting manager — but only when the
-            // request is actually being SUBMITTED to HR. Save-as-Draft
-            // rows shouldn't email anyone (the requester is still
-            // working on it). Best-effort beyond the gate: a missing
-            // employee/manager link or an SMTP failure must not roll
-            // back the request itself.
             if ($row->status === 'Submitted') {
                 $this->notifyManager($row, $auth);
             }
@@ -184,17 +120,6 @@ class HiringRequestController extends Controller
         });
     }
 
-    /**
-     * Look up the creator's reporting manager and dispatch
-     * HiringRequestCreatedMail. Silent no-op if:
-     *   - the creator isn't linked to an Employee row (e.g. client_admin)
-     *   - the creator's Employee has no reporting_manager_id
-     *   - the manager has no usable email
-     *   - the platform emailNotif toggle is OFF
-     *
-     * Failures are logged but never re-thrown — the request was already
-     * saved before this is called.
-     */
     private function notifyManager(HiringRequest $hr, $auth): void
     {
         if (!$auth || !Settings::shouldSendMail()) return;
@@ -207,8 +132,6 @@ class HiringRequestController extends Controller
                 ->find($creatorEmp->reporting_manager_id);
             if (!$manager) return;
 
-            // Prefer Employee.email; fall back to linked User.email so a
-            // manager without an employee-row email still gets notified.
             $managerEmail = $manager->email ?: $manager->user?->email;
             if (!$managerEmail) {
                 Log::info('Hiring request manager mail skipped — no email', [
@@ -247,20 +170,11 @@ class HiringRequestController extends Controller
         $row = $this->resolveRow($request, (int) $id);
 
         $data = $this->validatePayload($request, $row->id);
-        // urgency is NOT NULL; never let an edit blank it out (e.g. resuming a
-        // draft where the field is still empty → null after the empty-string
-        // cast). Keep the row's current value when none is supplied.
         if (array_key_exists('urgency', $data) && empty($data['urgency'])) {
             $data['urgency'] = $row->urgency ?: 'Medium';
         }
-        // Block edits that would collide with another row's (title +
-        // department) within the same tenant, but ignore the row being
-        // updated itself.
         $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id);
 
-        // Capture the pre-update status so we can detect a Draft → Submitted
-        // transition and fire the manager-notification email exactly once
-        // (no spam on later edits of an already-submitted request).
         $previousStatus = $row->status;
         $row->update($data);
 
@@ -272,14 +186,6 @@ class HiringRequestController extends Controller
         return response()->json($row);
     }
 
-    /**
-     * Reject duplicates within the same tenant. The signature key is
-     * (title, department_id) — two requests with the exact same title for
-     * the same department are almost always an accidental double-submit.
-     *
-     * Skips when either field is missing (e.g. a half-baked draft) so the
-     * Save-as-Draft path stays usable.
-     */
     private function guardDuplicate(array $data, $clientId, $branchId, ?int $excludeId): void
     {
         $title = trim((string) ($data['title'] ?? ''));
@@ -315,28 +221,13 @@ class HiringRequestController extends Controller
         return response()->json(['message' => 'Hiring request removed.']);
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS — same shape as RecruitmentController
-     * ───────────────────────────────────────────────────────────────── */
-
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();
         if (!$user) abort(401, 'Authentication required');
-        // Tenant-level admins always pass.
         if ($user->isSuperAdmin())     return;
         if ($user->isClientAdmin())    return;
 
-        // Reporting managers get implicit access without needing an
-        // explicit Permission row. Anyone listed as the manager on at
-        // least one Employee record is the one who actually raises the
-        // hiring request for their direct reports, so making them go
-        // through the Permissions matrix first was just bookkeeping
-        // overhead. Two FK shapes to cover:
-        //   - reporting_manager_user_id → direct User FK (Client /
-        //     Branch users who aren't themselves onboarded as Employees)
-        //   - reporting_manager_id      → Employee FK (managers who ARE
-        //     onboarded; resolve via this user's own Employee row).
         $isReportingManager = \App\Models\Employee::query()
             ->where(function ($q) use ($user) {
                 $q->where('reporting_manager_user_id', $user->id)
@@ -394,8 +285,6 @@ class HiringRequestController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            // Every branch is an isolated peer — globals + client-level rows
-            // + own branch's rows only.
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
 
@@ -413,7 +302,6 @@ class HiringRequestController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    /** BranchSwitcher narrowing — see RecruitmentController for full notes. */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -424,13 +312,6 @@ class HiringRequestController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-    /**
-     * Auto-reject hiring requests whose target join date has passed. A request
-     * that was never acted on (still pending) and whose hire-by date is gone is
-     * no longer fulfillable, so it's flipped to Rejected. Drafts (not yet
-     * submitted), already-rejected rows, and requests already promoted into a
-     * recruitment are left untouched.
-     */
     private function autoRejectOverdue($user, ?int $branchFilter = null): void
     {
         $q = HiringRequest::query();
@@ -473,24 +354,14 @@ class HiringRequestController extends Controller
         }
     }
 
-  
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $isUpdate = $id !== null;
         $isDraft  = strtolower((string) $request->input('status')) === 'draft';
 
-        // Strict-mode = the user clicked Submit to HR. Draft mode relaxes
-        // every required field down to nullable so half-finished forms can
-        // be saved.
         $req = fn () => $isUpdate || $isDraft ? 'nullable' : 'required';
 
         return $request->validate([
-            // Section 1
-            // Reject special characters (@ # $ % ^ & * …). Only letters,
-            // numbers, spaces and basic title punctuation (- . , /) allowed —
-            // mirrors RecruitmentController's job_title rule so validation is
-            // consistent across both modules. nullable in draft/update mode
-            // skips the regex when the field is left blank.
             'title'             => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', self::TITLE_REGEX, self::HAS_LETTER],
             'job_role'          => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191', self::TITLE_REGEX, self::HAS_LETTER],
             'department_id'     => [$isUpdate || $isDraft ? 'nullable' : 'required', 'integer', 'exists:master_departments,id'],
@@ -498,55 +369,24 @@ class HiringRequestController extends Controller
             'requested_by_name' => 'nullable|string|max:150',
             'request_date'      => 'nullable|date',
 
-            // Section 2
             'openings'          => [$req(), 'integer', 'min:1', 'max:9999'],
             'employment_type'   => [$req(), Rule::in(self::EMPLOYMENT_TYPES)],
             'work_mode'         => [$req(), Rule::in(self::WORK_MODES)],
             'urgency'           => [$req(), Rule::in(self::URGENCIES)],
 
-            // Section 3
             'job_description'        => [$req(), 'string'],
             'daily_responsibilities' => 'nullable|string',
             'required_skills'        => [$req(), 'string', 'max:255'],
             'required_experience'    => [$req(), 'string', 'max:30'],
-            // Must hold at least one letter and only qualification-safe chars —
-            // rejects special-character junk (bug #32). Matches the candidate
-            // qualification validator.
-            /* Apostrophes, %, : and ; are ordinary in a qualification and were
-             * being rejected. (CBC #26)
-             *
-             * "Bachelor's degree", "B.Tech (CSE) - 60% aggregate" and
-             * "Specialisation: Finance" are all normal entries the old allowlist
-             * refused, with no way for the user to express them. The curly
-             * apostrophe and the en/em dashes are included because pasting from
-             * Word or a job portal produces them, and a paste that looks
-             * identical on screen must not fail where the typed form passes.
-             *
-             * Still an allowlist, deliberately: markup and shell characters
-             * stay rejected, which is what the rule is for. The companion
-             * /[A-Za-z]/ check still requires a real word, so punctuation alone
-             * cannot be saved. */
-            /* Qualifications carry two marks a job title does not: '#' for the
-             * C# / F# family, and square brackets, which HR uses to qualify a
-             * degree ("B.Tech [CSE]"). Both were refused, so a real
-             * qualification could not be typed and the message said only that
-             * special characters were not allowed. (CBC #151) */
             'required_qualification' => ['nullable', 'string', 'max:100', self::QUAL_REGEX, self::HAS_ALNUM],
             'preferred_profile'      => 'nullable|string|max:191',
 
-            // Section 4 — Business Justification was removed from the
-            // form. These columns stay nullable on the DB and we no
-            // longer require them on Submit either; existing rows
-            // keep whatever value they had.
             'request_type'           => ['nullable', Rule::in(self::REQUEST_TYPES)],
             'business_justification' => 'nullable|string',
             'hiring_need_reason'     => 'nullable|string',
             'current_team_gap'       => 'nullable|string',
             'what_if_not_filled'     => 'nullable|string',
 
-            // Optional, but a date in the past doesn't make sense for a
-            // future hire — backs up the picker's minDate guard so a
-            // crafted POST / legacy row can't smuggle one in.
             'target_join_date' => 'nullable|date|after_or_equal:today',
             'status'           => ['nullable', Rule::in(self::STATUSES)],
         ], [
@@ -555,7 +395,6 @@ class HiringRequestController extends Controller
         ]);
     }
 
-    /** Compute the next HRQ-### atomically inside the create transaction. */
     private function allocateCode($clientId, $branchId): string
     {
         $q = HiringRequest::query()->withTrashed()->lockForUpdate();
@@ -565,7 +404,6 @@ class HiringRequestController extends Controller
         return $this->buildNext($q->pluck('code'));
     }
 
-    /** Same logic without the row lock, for read-only previews. */
     private function peekNextCode($clientId, $branchId): string
     {
         $q = HiringRequest::query()->withTrashed();

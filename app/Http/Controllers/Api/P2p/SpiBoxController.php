@@ -17,7 +17,6 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class SpiBoxController extends Controller
@@ -51,9 +50,6 @@ class SpiBoxController extends Controller
 
             $boxRows = $spi->boxes()->with(['items', 'attachments'])->orderBy('box_code')->get();
 
-            /* supplier_invoice_item_id => uom_id, so each box item can carry
-               the unit of the quantity it holds. The id only; `uoms` below
-               holds the title. */
             $uomOfLine = collect($this->invoiceItemMap($boxRows))
                 ->mapWithKeys(fn ($l) => [(int) $l['supplier_invoice_item_id'] => $l['uom_id']]);
 
@@ -75,13 +71,8 @@ class SpiBoxController extends Controller
 
             return response()->json(['status' => true, 'data' => [
                 'boxes'           => $boxes,
-                /* What each box item IS, keyed by the supplier_invoice_item_id
-                   the items already carry. Additive: `boxes` keeps its exact
-                   shape, so no existing caller can be broken by it. */
                 'invoice_items'   => $this->invoiceItemMap($boxRows),
-                // id => unit, joined from invoice_items[].uom_id
                 'uoms'            => $this->uomMap($boxRows),
-                // id => flag, for the ids on boxes[].items[].flags
                 'flags'           => $this->flagMap($boxRows),
                 'packing_summary' => $rows,
                 'totals'          => $this->svc->packingTotals($rows) + ['boxes' => $boxes->count()],
@@ -92,22 +83,11 @@ class SpiBoxController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/{id}/boxes/{box} — one box, items and attachments.
-     *
-     * The same row index() returns, with the same `uom_id` on each item and
-     * the same `invoice_items` / `uoms` maps beside it, so a caller reading
-     * one box sees exactly what it would have seen in the list. What is left
-     * out is what belongs to the invoice rather than the box: the packing
-     * summary and the totals.
-     */
     public function show(Request $request, int $id, int $boxId)
     {
         $this->tenantUser($request);
         $spi = $this->findSpi($id);
 
-        /* Scoped through the invoice, not fetched by id and checked after:
-           a box id from another tenant's invoice must read as missing. */
         $box = $spi->boxes()->with(['items', 'attachments'])->whereKey($boxId)->first();
 
         if (!$box) {
@@ -132,7 +112,6 @@ class SpiBoxController extends Controller
             'box'           => $arr + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
             'invoice_items' => $this->invoiceItemMap($rows),
             'uoms'          => $this->uomMap($rows),
-            // id => flag, for the ids on box.items[].flags
             'flags'         => $this->flagMap($rows),
         ]], 200);
     }
@@ -379,10 +358,6 @@ class SpiBoxController extends Controller
             $spi->loadMissing([
                 'client:id,org_name',
                 'vendor:id,vendor_code,company_name,legal_name',
-                /* The three FOREIGN KEYS matter as much as the columns that
-                   print: a BelongsTo cannot resolve off a model whose key was
-                   not selected, and the label then shows a dash for a
-                   reference that exists. */
                 'purchaseOrder:id,code,po_date,procurement_request_code,created_at,shipment_order_id,proforma_invoice_id,lead_id',
             ]);
 
@@ -406,22 +381,12 @@ class SpiBoxController extends Controller
         }
     }
 
-    /* ─── LOCAL DEV PREVIEW — do NOT commit/push ──────────────────────────────
-       Renders the box sticker from synthetic data so the face can be tuned
-       without a real SPI/box or auth. Query params drive the variants:
-         ?cold=1&temp=2 to 8 °C   ?haz=3 (class; presence=hazardous)   ?fragile=1   ?nostack=1
-         ?condition=minor|major|severe|perfect   ?scenario=s1|s2|s3
-         ?refs=absent   (blanks every reference, party and location)
-       GET /api/p2p/spi/sticker-preview */
     public function stickerPreview(Request $request)
     {
-        // Local only — like /dev/mail-preview, so it can sit without auth.
         abort_unless(app()->environment('local'), 404);
 
         $absent = $request->query('refs') === 'absent';
         $cold   = $request->boolean('cold');
-        // haz carries the class directly (e.g. haz=3); its presence means
-        // hazardous. hazClass is still honoured as an alias.
         $hazCls = $request->filled('haz') ? (string) $request->query('haz')
                 : ($request->filled('hazClass') ? (string) $request->query('hazClass') : null);
         $haz    = $hazCls !== null;
@@ -520,50 +485,16 @@ class SpiBoxController extends Controller
         return response()->json(['status' => true, 'data' => $box->attachments()->get()], 200);
     }
 
-    /**
-     * supplier_invoice_item_id => what that line actually is.
-     *
-     * TWO units come back, and they are not the same fact:
-     *   uom      the string stored on the invoice line — what the screens
-     *            print today, and what was agreed with the supplier
-     *   uom_id   the product master's unit, with its title and short code
-     *            resolved — the canonical one
-     * They can disagree. The line's string is copied at invoicing and the
-     * master can be edited afterwards, so a caller that shows the line's value
-     * with the master's beside it can notice rather than guess.
-     *
-     * Two queries whatever the box count — the lines, then their products and
-     * units. No boxes costs none.
-     */
     private function invoiceItemMap($boxes): array
     {
         return $this->resolveLines($boxes)['items'];
     }
 
-    /**
-     * id => { title, short_code, unit_type } for every unit the boxes touch.
-     *
-     * Normalised out of invoice_items on purpose: a dozen lines on one
-     * invoice commonly share two or three units, and the id is what joins
-     * them. COALESCE(short_code, title) is the rule the PO-lines endpoint
-     * prints by (PurchaseOrderController:1456), so a caller rendering
-     * short_code with title as the fallback matches the existing screens.
-     */
     private function uomMap($boxes): array
     {
         return $this->resolveLines($boxes)['uoms'];
     }
 
-    /**
-     * The handling flags these boxes refer to, keyed by id.
-     *
-     * Box items store flags as an array of ids. Only the ids in hand are
-     * fetched: the master runs to dozens and a carton carries two, so
-     * shipping the whole table to name a couple of them is the wrong trade.
-     * Soft-deleted or disabled flags are still resolved — a box packed under
-     * a flag that has since been retired must still say what it was packed
-     * under.
-     */
     private function flagMap($boxes): array
     {
         $ids = collect($boxes)
@@ -582,14 +513,12 @@ class SpiBoxController extends Controller
                 'code'      => $f->code,
                 'flag_name' => $f->flag_name,
                 'purpose'   => $f->purpose,
-                /* none | warn | block — what the floor must do about it. */
                 'behaviour' => $f->behaviour,
                 'is_active' => (int) $f->status === 1,
             ])
             ->all();
     }
 
-    /** Both maps from one pass — memoised so a request resolves them once. */
     private array $linesCache = [];
 
     private function resolveLines($boxes): array
@@ -626,18 +555,12 @@ class SpiBoxController extends Controller
                 'hsn_code'       => $l->hsn_code,
                 'qty_spi'        => $l->qty_spi === null ? null : (float) $l->qty_spi,
 
-                /* The line's own unit column. NULL on every row in this
-                   database, kept so a caller can tell it was never set rather
-                   than assume the product's unit was the invoiced one. */
                 'uom'            => $l->uom,
 
                 'product_id'     => $l->product_id === null ? null : (int) $l->product_id,
                 'product_code'   => $l->product?->product_code,
                 'product_name'   => $l->product?->name ?? $l->product?->generic_name,
 
-                /* The id only. The unit itself is in the `uoms` object beside
-                   this one — several lines usually share a unit, and repeating
-                   its title on each of them is the same string three times. */
                 'uom_id'         => $l->product?->uom_id === null ? null : (int) $l->product->uom_id,
             ],
         ])->all();
@@ -671,8 +594,6 @@ class SpiBoxController extends Controller
             'photos.*.max'   => 'Each box photo must be 8 MB or smaller.',
         ]);
 
-        // See SupplierInvoiceController::storeAttachments — an empty disk
-        // name reaches store() as a TypeError rather than a clean failure.
         $disk  = config('filesystems.documents') ?: config('filesystems.default', 'public');
         $dir   = "p2p/spi/{$box->supplier_invoice_id}/boxes/{$box->id}";
         $saved = 0;
@@ -693,17 +614,6 @@ class SpiBoxController extends Controller
         return $saved;
     }
 
-    /**
-     * Handling symbols for the row beside the QR.
-     *
-     * Line art, not glyphs: DejaVu's snowflake and warning characters render
-     * at whatever weight the font gives them, which on a thermal head is
-     * either invisible or a blob. These are strokes at a fixed width, and
-     * they survive a scuffed label.
-     *
-     * Only what applies is returned, so the blade prints one tile, four, or
-     * no row at all.
-     */
     private function pictograms(array $flags): array
     {
         $out = [];
@@ -743,7 +653,6 @@ class SpiBoxController extends Controller
         return $out;
     }
 
-    /** dompdf takes SVG as an <img> data URI; inline <svg> is less reliable. */
     private function svg(string $body): string
     {
         $doc = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
@@ -753,19 +662,13 @@ class SpiBoxController extends Controller
         return 'data:image/svg+xml;base64,' . base64_encode($doc);
     }
 
-    /**
-     * Six arms at 60°, each with a forked tip and one pair of branches
-     * partway down — the shape a handler reads as "snowflake" rather than
-     * "asterisk". Computed, not hand-placed: at six-fold symmetry a point
-     * typed one unit out is visible as a wobble.
-     */
     private function icoSnowflake(): string
     {
         $cx = 50; $cy = 50;
-        $arm = 32;          // centre to tip
+        $arm = 32;
         $branchAt = [0.52, 0.80];
         $branchLen = 10;
-        $branchAngle = 52;  // degrees off the arm, pointing outward
+        $branchAngle = 52;
 
         $pt = function (float $deg, float $r) use ($cx, $cy) {
             $rad = deg2rad($deg);
@@ -785,8 +688,6 @@ class SpiBoxController extends Controller
             foreach ($branchAt as $f) {
                 $from = $pt($a, $arm * $f);
                 foreach ([$branchAngle, -$branchAngle] as $off) {
-                    // The branch grows OUT from the arm, so it is measured
-                    // from the branch point, not from the centre.
                     $rad = deg2rad($a + $off);
                     $out .= $line($from, [
                         $from[0] + $branchLen * cos($rad),
@@ -822,14 +723,6 @@ class SpiBoxController extends Controller
              . '</g>';
     }
 
-    /**
-     * Every business reference the carton is traced by, each with its date.
-     *
-     * Own column first, then the order: a Direct SPI carries its own shipment
-     * and procurement case and has no PO to read them from, and printing a
-     * dash for a carton that IS against a case loses the only reference the
-     * warehouse traces it by.
-     */
     private function refs(SupplierInvoice $spi, $po): array
     {
         $spi->loadMissing([
@@ -844,9 +737,6 @@ class SpiBoxController extends Controller
         ]);
 
         $shp  = $spi->shipmentOrder ?: $po?->shipmentOrder;
-        /* The order carries proforma_invoice_id and lead_id of its own, so it
-           is asked first; the shipment order answers for a Direct SPI, which
-           has no order to ask. */
         $pi   = $po?->proformaInvoice ?: $shp?->proformaInvoice;
         $lead = $po?->lead ?: $shp?->lead;
 
@@ -857,8 +747,6 @@ class SpiBoxController extends Controller
                 'code' => $spi->procurement_request_code ?? $po?->procurement_request_code,
                 'date' => $this->day($po?->created_at ?? $spi->created_at),
             ],
-            /* Inward Receipt Memo. Nothing in the system issues one yet, so it
-               prints blank rather than borrowing another document's number. */
             'irm'  => ['code' => null,                  'date' => null],
             'inv'  => ['code' => $spi->invoice_no,      'date' => $this->day($spi->invoice_date)],
             'pi'   => ['code' => $pi?->code,            'date' => $this->day($pi?->created_at)],
@@ -867,7 +755,6 @@ class SpiBoxController extends Controller
         ];
     }
 
-    /** Who the carton is for and who it came from. */
     private function parties(SupplierInvoice $spi, $po): array
     {
         $pi = ($spi->shipmentOrder ?: $po?->shipmentOrder)?->proformaInvoice;
@@ -909,9 +796,6 @@ class SpiBoxController extends Controller
             'refs'    => $this->refs($spi, $po),
             'parties' => $this->parties($spi, $po),
 
-            /* The prototype's face leads with the product and counts the
-               rest — distinct PRODUCTS, not lines: one product split over
-               two batches is still one thing in the box. */
             'productName'   => $items->first()?->invoiceItem?->product?->name
                             ?? $items->first()?->invoiceItem?->product?->generic_name,
             'moreProducts'  => max(0, $items->pluck('supplier_invoice_item_id')->unique()->count() - 1),
@@ -937,8 +821,6 @@ class SpiBoxController extends Controller
             'flags' => $flags = $this->boxFlags($box),
             'coldChain'   => $flags['cold'] ? 'Yes' . ($flags['temp'] ? ' (' . $flags['temp'] . ')' : '') : 'No',
             'hazardLabel' => $flags['hazardous'] . ' (Class: ' . ($flags['hazClass'] ?: 'N/A') . ')',
-            /* Only the symbols that APPLY — a carton with neither prints none,
-               one with both prints both. */
             'pictos'      => $this->pictograms($flags),
 
             'place' => $this->placement($put),
@@ -982,7 +864,6 @@ class SpiBoxController extends Controller
 
         $rows = $ids->isEmpty() ? collect() : DB::table('inventory_product_flags')
             ->whereIn('id', $ids)->get(['behaviour', 'code', 'flag_name']);
-        /* The hazard CLASS is the flag's own code — nothing else stores one. */
         $hazCode = $rows->firstWhere('behaviour', 'hazardous')?->code;
 
         $cold = $behaviours->contains('cold_chain') || $box->temp_min_c !== null || $box->temp_max_c !== null;
@@ -995,7 +876,6 @@ class SpiBoxController extends Controller
             : !$box->items->contains(fn ($i) => !$i->is_stackable);
 
         return [
-
             'storage'   => $cold ? ('COLD CHAIN' . ($temp ? ' / ' . $temp : '')) : 'AMBIENT / NORMAL STORAGE',
             'hazardous' => $behaviours->contains('hazardous') ? 'Yes' : 'No',
             'hazClass'  => $hazCode,
@@ -1092,9 +972,6 @@ class SpiBoxController extends Controller
             return (new QRCode(new QROptions([
                 'eccLevel'        => EccLevel::H,
                 'scale'           => 6,
-                // Small quiet zone: the QR then fills its box (bigger modules,
-                // visible edge ≈ image edge, so it bottom-aligns with the code).
-                // The white sticker + the cell's own padding give the rest.
                 'quietzoneSize'   => 1,
                 'outputInterface' => QRGdImagePNG::class,
                 'outputBase64'    => true,
@@ -1150,10 +1027,6 @@ class SpiBoxController extends Controller
             "{$p}items.*.is_stackable"             => ['nullable', 'boolean'],
             "{$p}items.*.remark"                   => ['nullable', Rule::in(SpiBoxItem::REMARKS)],
             "{$p}items.*.remark_note"              => ['nullable', 'string', 'max:500'],
-            /* Both shapes validate. The packing screen sends one list per
-               ITEM (the same list on each); a caller may instead send one on
-               the box. Either way the ids are checked here before boxFlagsFrom()
-               decides which to keep. */
             "{$p}flags"                            => ['nullable', 'array', 'max:20'],
             "{$p}flags.*"                          => ['integer', $flagExists],
             "{$p}items.*.flags"                    => ['nullable', 'array', 'max:20', function ($attribute, $value, $fail) {
@@ -1255,14 +1128,6 @@ class SpiBoxController extends Controller
             ->all();
     }
 
-    /**
-     * The carton's flags, from whichever shape the caller sent.
-     *
-     * A box-level `flags` wins outright. Otherwise the union of the items'
-     * copies — union rather than the first line's list, because nothing ever
-     * forced the copies to match and dropping a flag someone set is worse
-     * than carrying one they did not mean.
-     */
     private function boxFlagsFrom(array $data): array
     {
         if (array_key_exists('flags', $data) && is_array($data['flags'])) {
@@ -1279,9 +1144,6 @@ class SpiBoxController extends Controller
     private function writeItems(SpiBox $box, array $items): void
     {
         foreach ($items as $row) {
-            /* The box holds the flags now. Leaving them on the line as well
-               would be two copies free to drift, and the readers all ask the
-               box. */
             unset($row['flags']);
             $box->items()->create($row);
         }

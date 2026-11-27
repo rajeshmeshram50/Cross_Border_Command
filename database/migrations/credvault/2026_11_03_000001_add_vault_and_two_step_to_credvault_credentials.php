@@ -5,18 +5,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Normal and Critical Vault in one table.
- *
- *   vault            normal (CRD-0001 …) | critical (CCRD-0001 …) — each its own code series
- *   twofa_method     critical vault only: google (authenticator app) | email (a code sent by mail)
- *   twofa_email      the inbox the email codes go to
- *   twofa_linked_at  when the 2-step method was verified — set for either method
- *
- * In the Normal Vault 2-step is only recorded (twofa yes/no); it adds no unlock
- * step. Existing rows: risk critical → critical vault, recoded CCRD-; normal rows
- * lose any authenticator lock they had.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -42,7 +30,6 @@ return new class extends Migration
         DB::table('credvault_credentials')->where('vault', 'normal')
             ->update(['lock_admin' => false, 'lock_manager' => false, 'lock_otp' => false, 'totp_secret' => null, 'totp_linked_at' => null]);
 
-        // Critical rows take their own series, in the order they were added.
         foreach (DB::table('credvault_credentials')->where('vault', 'critical')->where('code', 'not like', 'CCRD-%')
                      ->orderBy('client_id')->orderBy('id')->get(['id', 'client_id']) as $row) {
             $last = DB::table('credvault_credentials')->where('client_id', $row->client_id)->where('code', 'like', 'CCRD-%')
@@ -55,7 +42,6 @@ return new class extends Migration
         if (DB::getDriverName() === 'pgsql') {
             DB::statement("alter table credvault_credentials add constraint credvault_cred_vault_check check (vault in ('normal','critical'))");
             DB::statement("alter table credvault_credentials add constraint credvault_cred_twofa_method_check check (twofa_method is null or twofa_method in ('google','email'))");
-            // A critical-vault row is always critical risk; a normal one never is.
             DB::statement("alter table credvault_credentials add constraint credvault_cred_vault_risk_check check ((vault = 'critical') = (risk = 'critical'))");
         }
     }

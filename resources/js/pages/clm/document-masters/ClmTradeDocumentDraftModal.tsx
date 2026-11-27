@@ -16,6 +16,10 @@ import HeaderFooterPanel, {
 import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, SHEET_W, contentTextLength, htmlTextLength, preCheckMax, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
 import CtcLivePreview from '../operations/CtcLivePreview';
 import { useOpsTheme } from '../operations/useOpsTheme';
+import { PARTY_BUYER_CONSIGNEE, PARTY_SUPPLIER, PARTY_SUPPLIER_GROUPS, expandParty } from './tradeDocParty';
+
+/** Supplier types a trade document can apply to today (the rest are shown disabled). */
+const TRADE_DOC_SUPPLIER_TYPES = new Set(['Supplier-Material / Goods']);
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Trade Documents Master → Draft New Trade Document (modal)
@@ -56,31 +60,8 @@ export type TdLib = {
 
 const DOC_TYPES = ['Declaration', 'Undertaking', 'Authorization', 'Bond', 'Certificate', 'Letter'] as const;
 
-const PARTY_BUYER_CONSIGNEE = [
-  { value: 'Buyer',     label: 'Customer',  icon: '👤' },
-  { value: 'Consignee', label: 'Consignee', icon: '🚚' },
-];
-// Supplier party types mirror the PO Type options (Material / Goods, FFD /
-// Transporter, Services) so a trade document's applicable supplier aligns with
-// how suppliers are classified on the Purchase Order.
-const PARTY_SUPPLIER = [
-  { value: 'Supplier-Material / Goods',  label: 'Material / Goods',  icon: '📦' },
-  { value: 'Supplier-FFD / Transporter', label: 'FFD / Transporter', icon: '🚛' },
-  { value: 'Supplier-Services',          label: 'Services',          icon: '🛠️' },
-];
-
-// Legacy supplier party values (from before the 5→3 option change) → their
-// closest current value, so an existing document's saved supplier selection
-// still reflects (checked) when re-opened in the edit form.
-const SUPPLIER_PARTY_ALIAS: Record<string, string> = {
-  'Supplier':                'Supplier-Material / Goods',
-  'Supplier-Material':       'Supplier-Material / Goods',
-  'Supplier-Logistic':       'Supplier-FFD / Transporter',
-  'Supplier-Tech':           'Supplier-Services',
-  'Supplier-Advisory':       'Supplier-Services',
-  'Supplier-Strategic Risk': 'Supplier-Services',
-};
-const normalizeParty = (v: string): string => SUPPLIER_PARTY_ALIAS[v] ?? v;
+// Applicable Party options (Customer / Consignee, and the Supplier types of the Supplier
+// Management Supplier Type list) and the legacy value mapping: see tradeDocParty.ts.
 
 const STEPS = [
   { key: 1, label: 'Document Basic Details', sub: 'Form fields & party selection' },
@@ -541,7 +522,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setTitle(existing.title ?? '');
       setDocType(existing.doc_type ?? DOC_TYPES[0]);
       setPurpose(existing.purpose ?? '');
-      setParties(new Set((existing.party ?? '').split(',').map(s => normalizeParty(s.trim())).filter(Boolean)));
+      setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean).flatMap(expandParty)));
       setRegulatory(existing.regulatory ?? 'less');
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');   // useCtcEditor seeds the editor from this
@@ -1040,17 +1021,33 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     ))}
                   </div>
                 </div>
-                <div className="tdw-party-row">
+                <div className="tdw-party-row tdw-party-row--top">
                   <div className="tdw-party-label">SUPPLIER</div>
-                  <div className="tdw-party-options">
-                    {PARTY_SUPPLIER.map(p => (
-                      <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
-                        title={hasBuyerParty ? 'A Customer/Consignee is selected — a document applies to either the Customer/Consignee side or the Supplier side, not both.' : undefined}
-                        style={hasBuyerParty ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
-                        <input type="checkbox" checked={parties.has(p.value)} disabled={hasBuyerParty} onChange={() => toggleParty(p.value)} />
-                        <span className="tdw-checkbox-emoji">{p.icon}</span>
-                        <span className="tdw-checkbox-label">{p.label}</span>
-                      </label>
+                  {/* Grouped like the Supplier Type dropdown: the top-level types, then each service group under its title. */}
+                  <div className="tdw-party-groups">
+                    {PARTY_SUPPLIER_GROUPS.map(g => (
+                      <div key={g.group ?? 'top'} className="tdw-party-group">
+                        {g.group && <div className="tdw-party-group-title">{g.group}</div>}
+                        <div className="tdw-party-options">
+                          {g.items.map(p => {
+                            /* Trade documents apply to Material / Goods suppliers only for now: every other
+                               supplier type is disabled. One already ticked on an older document can still be
+                               unticked, so the document can be corrected. */
+                            const typeOff = !TRADE_DOC_SUPPLIER_TYPES.has(p.value) && !parties.has(p.value);
+                            const off = hasBuyerParty || typeOff;
+                            return (
+                              <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
+                                title={hasBuyerParty ? 'A Customer/Consignee is selected — a document applies to either the Customer/Consignee side or the Supplier side, not both.'
+                                  : typeOff ? 'Trade documents apply to Material / Goods suppliers only' : undefined}
+                                style={off ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                                <input type="checkbox" checked={parties.has(p.value)} disabled={off} onChange={() => toggleParty(p.value)} />
+                                <span className="tdw-checkbox-emoji">{p.icon}</span>
+                                <span className="tdw-checkbox-label">{p.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1582,6 +1579,48 @@ const TDW_CSS = `
   text-transform: uppercase;
 }
 .tdw-party-options { display: inline-flex; flex-wrap: wrap; gap: 10px; }
+/* Supplier row: the Supplier Types in three soft panels (top-level types, then the two
+   service groups), the label at the top beside the first one. Inside every panel the options
+   sit on one even grid, so the columns line up from panel to panel and no option is left
+   hanging on a line of its own. */
+.tdw-party-row--top { align-items: start; }
+.tdw-party-row--top > .tdw-party-label { padding-top: 21px; }
+.tdw-party-groups { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tdw-party-group {
+  display: flex; flex-direction: column; gap: 9px; min-width: 0;
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(6,182,212,.16);
+  border-radius: 12px;
+  background: rgba(240,253,255,.6);
+}
+.tdw-party-group-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: #0e7490;
+}
+.tdw-party-group-title::before {
+  content: ''; flex: none; width: 3px; height: 11px; border-radius: 2px;
+  background: linear-gradient(180deg, #22d3ee, #0891b2);
+}
+.tdw-party-group-title::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, rgba(6,182,212,.28), rgba(6,182,212,0));
+}
+.tdw-party-groups .tdw-party-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: 8px;
+}
+.tdw-party-groups .tdw-checkbox {
+  min-width: 0;
+  padding: 7px 11px; gap: 7px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+.tdw-party-groups .tdw-checkbox input,
+.tdw-party-groups .tdw-checkbox-emoji { flex: none; }
+.tdw-party-groups .tdw-checkbox-emoji { font-size: 14px; }
+.tdw-party-groups .tdw-checkbox-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tdw-checkbox {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-radius: 10px;
@@ -1841,6 +1880,8 @@ const TDW_CSS = `
 [data-bs-theme="dark"] .tdw-reg-less { color: #86efac; background: rgba(34,197,94,.10); border-color: rgba(74,222,128,.30); }
 [data-bs-theme="dark"] .tdw-reg-less.is-on { background: rgba(34,197,94,.18); border-color: #22c55e; box-shadow: 0 6px 18px rgba(34,197,94,.22); }
 [data-bs-theme="dark"] .tdw-party-label { color: #cbd5e1; }
+[data-bs-theme="dark"] .tdw-party-group-title { color: #67e8f9; }
+[data-bs-theme="dark"] .tdw-party-group { background: rgba(8,145,178,.06); border-color: rgba(6,182,212,.18); }
 [data-bs-theme="dark"] .tdw-checkbox { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
 [data-bs-theme="dark"] .tdw-checkbox:hover { background: rgba(8,145,178,.10); border-color: rgba(103,232,249,.45); }
 [data-bs-theme="dark"] .tdw-checkbox.is-on { background: rgba(8,145,178,.22); border-color: #67e8f9; color: #cffafe; }
@@ -1875,6 +1916,8 @@ const TDW_CSS = `
   .tdw-step-line { display: none; }
   .tdw-grid-2 { grid-template-columns: minmax(0,1fr); }
   .tdw-party-row { grid-template-columns: 1fr; }
+  .tdw-party-row--top > .tdw-party-label { padding-top: 0; }
+  .tdw-party-groups .tdw-party-options { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .tdw-reg-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {

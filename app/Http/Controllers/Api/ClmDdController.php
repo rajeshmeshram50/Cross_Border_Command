@@ -33,7 +33,7 @@ class ClmDdController extends Controller
 
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
-         
+
             $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
             $q->where(function ($w) use ($like, $authIds) {
                 $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like);

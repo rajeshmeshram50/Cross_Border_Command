@@ -5,25 +5,6 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Salary structures + bank details for the AgroTech branch (client 1 / branch 3)
- * so payroll has something to run on. Designation-driven monthly gross:
- *
- *   Intern / Trainee ............ ₹5,000 (flat)
- *   Employee .................... ₹50k–60k   ┐
- *   Executive ................... ₹65k–75k   │ varied per person so no two
- *   Team Leader ................. ₹80k–90k   │ are identical, all inside the
- *   Head of Department (HOD) .... ₹92k–98k   │ 50k–100k band the brief gave.
- *   (no designation) ............ ₹55k–65k   ┘
- *
- * For every employee: PF kept ON (12% of basic, statutory cap), Professional
- * Tax fixed at ₹200 (a manual 'pt' line the engine honours over the slab), and
- * bank details filled (mode = bank) so payslips aren't held for missing bank.
- *
- * Idempotent: replaces the employee's existing structure(s) with one clean
- * active version. Skips anyone not onboarded (stage < 6).
- * Run:  php artisan db:seed --class=EmployeeSalarySeeder
- */
 class EmployeeSalarySeeder extends Seeder
 {
     private int $clientId = 1;
@@ -45,21 +26,18 @@ class EmployeeSalarySeeder extends Seeder
             return;
         }
 
-        // designation_id → [base gross, spread] (spread varied by employee id).
-        //   2 HOD · 3 Team Leader · 4 Executive · 5 Employee · 6 Intern/Trainee
         $bands = [
-            6 => [5000,  0],      // Intern / Trainee — flat 5,000
-            5 => [50000, 2000],   // Employee
-            4 => [65000, 2000],   // Executive
-            3 => [80000, 2000],   // Team Leader
-            2 => [92000, 1500],   // Head of Department
+            6 => [5000,  0],
+            5 => [50000, 2000],
+            4 => [65000, 2000],
+            3 => [80000, 2000],
+            2 => [92000, 1500],
         ];
-        $defaultBand = [55000, 2000]; // no / unknown designation
+        $defaultBand = [55000, 2000];
 
         $structs = 0; $banks = 0;
         foreach ($emps as $e) {
             [$base, $spread] = $bands[$e->designation_id] ?? $defaultBand;
-            // Vary within the band so people differ but stay ≤ ₹100k.
             $gross = $spread > 0 ? $base + (($e->id % 6) * $spread) : $base;
             $gross = (float) min($gross, 100000);
 
@@ -72,13 +50,10 @@ class EmployeeSalarySeeder extends Seeder
                 ['code' => 'hra',     'label' => 'House Rent Allowance',  'amount' => $hra],
                 ['code' => 'special', 'label' => 'Special Allowance',     'amount' => $special],
             ];
-            // ₹200 Professional Tax as a manual line — the engine takes this over
-            // the state slab, so every employee lands at exactly ₹200 (full month).
             $deductions = [
                 ['code' => 'pt', 'label' => 'Professional Tax', 'amount' => 200],
             ];
 
-            // Replace any existing structure(s) with one clean active version.
             DB::table('salary_structures')->where('employee_id', $e->id)->delete();
             DB::table('salary_structures')->insert([
                 'client_id'       => $this->clientId,
@@ -91,7 +66,7 @@ class EmployeeSalarySeeder extends Seeder
                 'deductions'      => json_encode($deductions),
                 'monthly_gross'   => $gross,
                 'monthly_ctc'     => $gross,
-                'pf_applicable'   => true,   // PF kept ON
+                'pf_applicable'   => true,
                 'esi_applicable'  => false,
                 'pt_applicable'   => true,
                 'approval_status' => 'approved',
@@ -103,12 +78,11 @@ class EmployeeSalarySeeder extends Seeder
             ]);
             $structs++;
 
-            // Employee-level flags PF eligibility + take-home routing depend on.
             $holder = trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: ($e->emp_code ?? 'Employee');
             DB::table('employees')->where('id', $e->id)->update([
                 'pf_eligible'          => true,
                 'pf_deduction'         => 'Yes',
-                'work_type'            => 'Full Time',           // isPfEligibleType → true
+                'work_type'            => 'Full Time',
                 'esi_applicable'       => 'No',
                 'annual_salary'        => round($gross * 12, 2),
                 'salary_frequency'     => 'monthly',

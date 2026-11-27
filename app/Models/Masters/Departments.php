@@ -27,9 +27,6 @@ class Departments extends Model
         'created_by',
     ];
 
-    /** Employees posted to this department — drives the list's headcount column.
-     *  Employee uses SoftDeletes, so withCount('employees') already excludes
-     *  deleted staff without any extra condition here. */
     public function employees(): HasMany
     {
         return $this->hasMany(Employee::class, 'department_id');

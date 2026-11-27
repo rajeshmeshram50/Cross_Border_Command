@@ -6,10 +6,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * CredVault · the record of one import, export or backup. The file itself is
- * never stored — it goes straight to the person who asked for it.
- */
 class Transfer extends Model
 {
     protected $table = 'credvault_transfers';
@@ -19,11 +15,9 @@ class Transfer extends Model
     public const KINDS    = ['import', 'export', 'backup'];
     public const PREFIXES = ['import' => 'IM', 'export' => 'EX', 'backup' => 'BK'];
 
-    /** As the history tables print them. */
     public const FORMAT_LABELS = ['xlsx' => 'Excel', 'xml' => 'Excel 2003', 'csv' => 'CSV', 'tsv' => 'TSV', 'txt' => 'TSV', 'json' => 'JSON', 'sample' => 'Sample'];
     public const SCOPE_LABELS  = ['mine' => 'My Vault', 'team' => 'Team Vault', 'all' => 'All vaults'];
 
-    /** Eloquent does not read the column default back after an insert; say it here too. */
     protected $attributes = ['status' => 'done'];
 
     protected $fillable = [

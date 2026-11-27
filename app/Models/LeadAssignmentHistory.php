@@ -5,15 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * One row per lead ownership event — see the
- * lead_assignment_histories migration for the column rationale.
- */
 class LeadAssignmentHistory extends Model
 {
     protected $table = 'lead_assignment_histories';
 
-    public $timestamps = false; // created_at only, stamped explicitly
+    public $timestamps = false;
 
     public const ACTION_GENERATED  = 'generated';
     public const ACTION_ASSIGNED   = 'assigned';

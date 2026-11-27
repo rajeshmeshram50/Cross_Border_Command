@@ -5,6 +5,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import DataTable, { ActionIcon, ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import FullPageLoader from '../../components/ui/FullPageLoader';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -25,6 +26,7 @@ import { SalaryVersionBadge } from '../../components/SalaryVersionBadge';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
+import { ciSort } from '../../utils/tableSort';
 /* Breakup rules live in one place now — onboarding Stage 1 edits the same CTC
    and the Revise Salary modal writes the same table, so a copy per screen is
    how the figures drift apart. */
@@ -470,7 +472,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     [mHolidayGroups],
   );
   const departmentOptions = useMemo(
-    () => mDepts.map(d => ({ value: String(d.id), label: d.name })),
+    () => mDepts
+      .filter(d => String(d.status ?? 'Active').toLowerCase() === 'active') // active only
+      .map(d => ({ value: String(d.id), label: d.name })),
     [mDepts],
   );
   // 'Director / CEO' is embodied by the Branch User (branch director) — it is
@@ -514,8 +518,12 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
     return null;
   }, [mLegalEntities, selectedBranchId]);
+  // Active only — the bulk master list carries Inactive rows (for the master
+  // manager), but a disabled country must not be pickable on the form.
   const countryOptions = useMemo(
-    () => mCountries.map(c => ({ value: String(c.id), label: c.name })),
+    () => mCountries
+      .filter(c => String(c.status ?? 'Active').toLowerCase() === 'active')
+      .map(c => ({ value: String(c.id), label: c.name })),
     [mCountries],
   );
   /* States are fetched for the country that was picked, not all of them.
@@ -535,12 +543,14 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     const id = String(countryId || '').trim();
     if (!id || statesInFlightRef.current.has(id)) return;
     statesInFlightRef.current.add(id);
-    api.get('/master/states', { params: { country_id: id, fields: 'id,name' } })
+    api.get('/master/states', { params: { country_id: id, fields: 'id,name,status' } })
       .then(r => {
         const list = Array.isArray(r.data) ? r.data : [];
         setStatesByCountry(prev => ({
           ...prev,
+          // Active only — a disabled state must not be pickable (same as country).
           [id]: [...list]
+            .filter((s: any) => String(s.status ?? 'Active').toLowerCase() === 'active')
             .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
             .map((s: any) => ({ value: String(s.id), label: s.name })),
         }));
@@ -654,7 +664,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       api.get('/master/bulk', {
         params: {
           keys: 'departments,designations,roles,overtime_rates,countries',
-          fields: 'id,name',
+          fields: 'id,name,status',
         },
       }).then(r => {
         const d = r.data?.data ?? {};
@@ -1069,6 +1079,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const [eCustomProbation, setECustomProbation] = useState('');
   const [eCustomNotice, setECustomNotice] = useState('');
   const [eLeavePlan, setELeavePlan] = useState('');
+  // Locked once the employee has leave on record — the plan can't be switched
+  // because their balances/history are tied to it.
+  const [eLeavePlanLocked, setELeavePlanLocked] = useState(false);
   const [leavePlanOptions, setLeavePlanOptions] = useState<Array<{ value: string; label: string }>>([]);
   /* Has the leave-plan list SETTLED (resolved or failed)? An empty list means
      two different things — "this tenant has no configured plans" and "the
@@ -1512,7 +1525,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setELegalEntity(''); setELegalEntityLabel(''); setELocation(''); setEReportingMgr(''); setSavedMgrOption(null);
     setEProbationPolicy(''); setENoticePeriod('');
     setECustomProbation(''); setECustomNotice('');
-    setELeavePlan(''); setEHolidayList('');
+    setELeavePlan(''); setELeavePlanLocked(false); setEHolidayList('');
     setEAttendanceTracking(true); setEShift('');
     setEWeeklyOff(''); setEAttendanceNumber('');
     setEOvertime(''); setEOvertimeApplicable('No'); setEExpensePolicy('');
@@ -2543,6 +2556,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       );
 
       if (raw.leave_plan !== undefined && raw.leave_plan !== null) setELeavePlan(raw.leave_plan);
+      setELeavePlanLocked(!!raw.has_leave_taken);
       if (raw.holiday_group_id) setEHolidayList(String(raw.holiday_group_id));
       else setEHolidayList('');
       if (raw.attendance_tracking !== undefined && raw.attendance_tracking !== null) setEAttendanceTracking(!!raw.attendance_tracking);
@@ -3696,6 +3710,9 @@ const STEP_SAFE_FIELDS = new Set([
       header: 'Employee',
       id: 'name',
       accessorFn: (r: EmployeeRow) => r.name,
+      // Sort names case-insensitively (QA #251) — the default put "Zoe" before
+      // "alice" because upper-case code points sort first.
+      sortingFn: ciSort,
       meta: { width: '14%' },
       cell: info => {
         const e = info.row.original;
@@ -3740,18 +3757,21 @@ const STEP_SAFE_FIELDS = new Set([
     {
       header: 'Department',
       accessorKey: 'department',
+      sortingFn: ciSort,
       meta: { width: '8%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
       header: 'Designation',
       accessorKey: 'designation',
+      sortingFn: ciSort,
       meta: { width: '9%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
+      sortingFn: ciSort,
       meta: { width: '8%', align: 'center' },
       /* Role names run long ("Software Development", "Training Coordinator")
          and the column is narrow — ChipCell ellipsises inside the pill and
@@ -3782,6 +3802,7 @@ const STEP_SAFE_FIELDS = new Set([
     {
       header: 'Manager',
       accessorKey: 'manager',
+      sortingFn: ciSort,
       meta: { width: '7%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
@@ -4206,23 +4227,8 @@ const STEP_SAFE_FIELDS = new Set([
       >
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', position: 'relative' }} aria-busy={generatingInvite}>
-          {generatingInvite && (
-            <div
-              role="status"
-              aria-live="polite"
-              style={{
-                position: 'absolute', inset: 0, zIndex: 5, borderRadius: 'inherit',
-                background: 'color-mix(in srgb, var(--vz-card-bg) 78%, transparent)',
-                backdropFilter: 'blur(1.5px)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-                cursor: 'progress',
-              }}
-            >
-              <div className="spinner-border" style={{ width: 38, height: 38, color: '#7c3aed' }} aria-hidden="true" />
-              <div className="fw-semibold" style={{ color: 'var(--vz-heading-color)', fontSize: 14 }}>Generating onboarding link…</div>
-              <div style={{ color: 'var(--vz-secondary-color)', fontSize: 12 }}>Please wait, this takes a few seconds.</div>
-            </div>
-          )}
+          {/* The house spinner, not a per-popup one (QA 258). */}
+          {generatingInvite && <FullPageLoader label="Generating onboarding link…" />}
           <div className="d-flex align-items-start justify-content-between" style={{ padding: '24px 28px 18px' }}>
             <div className="d-flex align-items-center gap-3">
               <div className="onb-header-icon d-flex align-items-center justify-content-center flex-shrink-0">
@@ -4727,6 +4733,15 @@ const STEP_SAFE_FIELDS = new Set([
           })()}
         </ModalBody>
       </Modal>
+
+      {/* A save on this wizard PUTs the whole employee — ~48 queries on the
+          server — so it is long enough to need more than a caption change on
+          one button. The veil also stops a second submit while the first is
+          in flight, which the step buttons alone did not: the stepper rail
+          and the close control stayed live. */}
+      {empOpen && saving && (
+        <FullPageLoader label={empMode === 'edit' ? 'Updating employee…' : 'Saving employee…'} />
+      )}
 
       <Modal
         isOpen={empOpen}
@@ -5416,15 +5431,20 @@ const STEP_SAFE_FIELDS = new Set([
                           value={eLeavePlan}
                           onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }}
                           options={leavePlanOptions}
-                          // Greyed shut without the Leave grant — the list is
-                          // never fetched in that case, so there is nothing to
-                          // open and nothing to assign.
-                          disabled={!leavePerm.canView}
+                          // Greyed shut without the Leave grant (the list is never
+                          // fetched then), or once the employee has leave on record
+                          // — the plan can't change because balances are tied to it.
+                          disabled={!leavePerm.canView || eLeavePlanLocked}
                           placeholder={!leavePerm.canView
                             ? 'Requires Leave module access'
                             : (leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave')}
                           invalid={!!eErrors.leave_plan}
                         />
+                        {eLeavePlanLocked && (
+                          <small className="text-muted d-flex align-items-center gap-1 mt-1">
+                            <i className="ri-lock-2-line" /> Leave plan is locked — this employee has already taken leave under it.
+                          </small>
+                        )}
                         {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                       </Col>
                       <Col md={4}>

@@ -8,17 +8,10 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * CredVault · "A credential was shared with you" — to the person, or to every
- * member of the team it was shared with. The details of the Share popup:
- * credential, permission and what it allows, access until, reason, who shared.
- * Never a secret — the credential opens in CredVault, where every view is logged.
- */
 class CredVaultShareMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    /** The Share popup's "What the recipient can do", per permission. */
     public const CAN = [
         'Sign in / autofill'    => ['use', 'view', 'copy', 'full'],
         'See the password'      => ['view', 'copy', 'full'],
@@ -34,10 +27,6 @@ class CredVaultShareMail extends Mailable
         'full' => ['Full Access', 'Edit, share and delete'],
     ];
 
-    /**
-     * @param array $d credential{code,name,type_label,group,detail,risk}, permission, until (d/m/Y|null),
-     *                 reason, shared_by{name,designation}, shared_at, team{name,members}|null, renewed, open_url
-     */
     public function __construct(public array $d, public ?string $recipientName = null, public array $branding = [])
     {
         $this->branding = array_filter($branding, fn ($v) => $v !== null);

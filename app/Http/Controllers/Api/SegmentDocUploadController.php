@@ -32,36 +32,18 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-
 class SegmentDocUploadController extends Controller
 {
-    /**
-     * Map the URL `{type}` segment to a concrete Eloquent class so the
-     * morph relation reads back consistently. Adding a fourth entity is
-     * a one-line change here + matching frontend mapping.
-     */
     private const TYPE_MAP = [
         'customer'  => Customer::class,
         'consignee' => Consignee::class,
         'supplier'  => Vendor::class,
-        // alias kept for backward compatibility with any callers that
-        // pass `vendor` instead of the user-facing rename.
         'vendor'    => Vendor::class,
-        // Products carry a single `segment_id` FK so QC reference rows
-        // can attach against the product's chosen segment, the same way
-        // the customer/consignee/vendor forms upload their KYC/DD/TL.
         'product'   => Product::class,
     ];
 
     private const CATEGORIES = ['kyc', 'dd', 'tl', 'td', 'qc'];
 
-    /**
-     * matchSegmentLibrary() results for the life of this request, keyed by
-     * (library, tenant, status column, segment). The controller is resolved
-     * per request, so the cache dies with it — no cross-request staleness.
-     *
-     * @var array<string,\Illuminate\Support\Collection>
-     */
     private array $segmentLibraryCache = [];
 
     public function index(Request $request, string $type, int $id): JsonResponse
@@ -77,8 +59,6 @@ class SegmentDocUploadController extends Controller
         }
         $rows = $q->orderBy('category')->orderBy('doc_code')->get();
 
-        // Bucket by category so the frontend can hand each Stage 3
-        // sub-tab its own slice without re-filtering on every render.
         $byCategory = [];
         foreach (self::CATEGORIES as $cat) {
             $byCategory[$cat] = [];
@@ -94,18 +74,6 @@ class SegmentDocUploadController extends Controller
         ]);
     }
 
-    /**
-     * KPI roll-up: per-category mandatory/optional counts. The Stage 3
-     * Evidence Vault renders these as cards across the top.
-     *
-     * Shape:
-     *   {
-     *     total: 12,
-     *     mandatory: 8,
-     *     optional: 4,
-     *     by_category: { kyc: {…}, dd: {…}, tl: {…}, td: {…}, qc: {…} }
-     *   }
-     */
     public function summary(Request $request, string $type, int $id): JsonResponse
     {
         $owner = $this->resolveOwner($request, $type, $id);
@@ -152,19 +120,8 @@ class SegmentDocUploadController extends Controller
             'doc_code'    => ['required', 'string', 'max:32'],
             'doc_name'    => ['required', 'string', 'max:255'],
             'requirement' => ['nullable', Rule::in(['M', 'O'])],
-            // Optional issue date from the upload popup. Capped at today: a
-            // document cannot have been granted in the future, and both upload
-            // dialogs cap their picker the same way.
             'issue_date'  => ['nullable', 'date', 'before_or_equal:today'],
-            // Optional expiry date from the upload popup's Yes/No toggle.
-            // Absent / null ⇒ the document carries no expiry. It must not
-            // predate the issue date when both are given — a licence cannot
-            // lapse before it was granted.
             'expiry_date' => ['nullable', 'date', 'after_or_equal:issue_date'],
-            // 2 MB cap + restricted to PDF / JPG / JPEG / PNG only — these all
-            // preview in-browser via the row's View action. Word (doc/docx)
-            // and spreadsheets are NOT accepted: browsers download Office
-            // files instead of showing them, which broke the View flow.
 
             'attachment'  => ['nullable', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ]);
@@ -173,10 +130,6 @@ class SegmentDocUploadController extends Controller
         $expiryDate  = $data['expiry_date'] ?? null;
         $issueDate   = $data['issue_date'] ?? null;
 
-        // Re-upload semantics: if a row already exists for the same
-        // (entity, category, doc_code) tuple, drop its previous file
-        // before pointing the row at the new path. The unique index
-        // would block a fresh insert otherwise.
         $existing = SegmentDocUpload::query()
             ->where('uploadable_type', get_class($owner))
             ->where('uploadable_id', $owner->id)
@@ -186,9 +139,6 @@ class SegmentDocUploadController extends Controller
 
         $file = $request->file('attachment');
 
-        /* No file and nothing on record = nothing to attach. Rejected in the
-         * same shape the validator would have used, so the frontend's field
-         * handling is unchanged. */
         if (!$file && !$existing) {
             return response()->json([
                 'message' => 'The attachment field is required.',
@@ -200,15 +150,9 @@ class SegmentDocUploadController extends Controller
         $name = $file?->getClientOriginalName();
 
         if ($existing) {
-            /* $path guard is load-bearing: on a dates-only re-upload it is null,
-             * and "null !== the stored path" is true — which would delete the
-             * very file the row is keeping. Only a REPLACEMENT file retires the
-             * old one. */
             if ($path && $existing->attachment_path && $existing->attachment_path !== $path) {
                 Storage::disk('public')->delete($existing->attachment_path);
             }
-            /* Dates-only correction: keep the file that is already on record
-             * rather than blanking the row's path and name. */
             $existing->update(array_filter([
                 'doc_name'         => $data['doc_name'],
                 'requirement'      => $requirement,
@@ -216,9 +160,6 @@ class SegmentDocUploadController extends Controller
                 'attachment_name'  => $name,
                 'uploaded_by'      => optional($request->user())->id,
             ], fn($v) => $v !== null) + [
-                // Outside the filter on purpose: null is a MEANINGFUL value for
-                // these two — it is how "this document has no expiry" is stored,
-                // so a filter that drops nulls could never clear one.
                 'issue_date'       => $issueDate,
                 'expiry_date'      => $expiryDate,
             ]);
@@ -248,25 +189,6 @@ class SegmentDocUploadController extends Controller
         ], 201);
     }
 
-    /**
-     * The freshly recomputed vault, for riding back on an upload response.
-     *
-     * Every Evidence Vault modal used to POST the file and then immediately GET
-     * the vault again, so one upload cost two round trips. The server work for
-     * the vault is small - measured at 6 ms median and 59 ms worst case across
-     * all 91 parties in this database - so folding it into the response the
-     * caller is already waiting for costs almost nothing and removes a whole
-     * request. That matters on the deployed server, where the per-request
-     * overhead dwarfs the handler itself.
-     *
-     * Safe to build from a POST: vault() reads branch scope from the OWNER row,
-     * not the request, and the only query parameter it looks at
-     * (scope_customer_id) is not sent by any of the three modals, so this
-     * payload is identical to the one the GET would have returned.
-     *
-     * Never fatal. If it cannot be built the key comes back null and the client
-     * falls back to its own reload, exactly as before.
-     */
     private function vaultPayloadFor(Request $request, string $type, int $id): ?array
     {
         try {
@@ -277,23 +199,10 @@ class SegmentDocUploadController extends Controller
         }
     }
 
-    /**
-     * GET /api/segment-uploads/download?url=<attachment_url>  (or ?path=<disk path>)
-     *
-     * Force-download a stored attachment THROUGH the backend. On the deployed
-     * server files live on Azure Blob (cross-origin, no CORS), so the browser
-     * can't fetch them client-side to force a save — it just opens them. This
-     * endpoint reads the file from the storage disk (Azure or local) and streams
-     * it back same-origin with a `Content-Disposition: attachment` header, so
-     * the download works everywhere. Tenant-scoped: the path must belong to a
-     * segment_doc_uploads row the caller's client owns.
-     */
     public function download(Request $request)
     {
         $user = $request->user();
 
-        // Resolve the disk-relative path. Accept either an explicit ?path= or a
-        // full ?url= (we slice out the segment_doc_uploads/... suffix).
         $path = ltrim((string) $request->query('path', ''), '/');
         if ($path === '') {
             $url = (string) $request->query('url', '');
@@ -302,20 +211,8 @@ class SegmentDocUploadController extends Controller
             }
         }
 
-        /* Drop any query string that rode along on the URL.
-         *
-         * `.+$` swallows it, so `…/kyc-001.png?sv=2021&sig=…` became part of
-         * the path, matched no stored row, and 404'd. The frontend then fell
-         * through to its last-resort `window.open`, which OPENS the file — the
-         * "Download opens the document instead of saving it" report.
-         *
-         * Only the server can produce this: locally the URL is a bare
-         * `/storage/…`, while on Azure it is an absolute blob URL that may
-         * carry a SAS token or a cache-buster. Stripping here costs nothing and
-         * removes a failure that cannot be reproduced on a dev box. */
         $path = explode('?', $path)[0];
 
-        // Hard guard against traversal / arbitrary reads — only our upload tree.
         if ($path === '' || str_contains($path, '..') || ! str_starts_with($path, 'segment_doc_uploads/')) {
             abort(404, 'File not found.');
         }
@@ -324,7 +221,6 @@ class SegmentDocUploadController extends Controller
         if (! $row) {
             abort(404, 'File not found.');
         }
-        // Tenant scope — non-super users can only pull their own client's files.
         if ($user && ! $user->isSuperAdmin() && $row->client_id && (int) $row->client_id !== (int) $user->client_id) {
             abort(403, 'You are not allowed to download this file.');
         }
@@ -336,55 +232,14 @@ class SegmentDocUploadController extends Controller
         return Storage::disk('public')->download($path, $name);
     }
 
-    /**
-     * GET /api/segment-uploads/{type}/{id}/vault
-     *
-     * Compose the Evidence Vault payload. Combines three sources:
-     *   1. The entity's segment(s)              → which rules apply
-     *   2. Each rule's doc_selections           → expected documents
-     *   3. segment_doc_uploads for the entity   → what's actually attached
-     *
-     * Returned shape mirrors VaultData on the frontend so the modal
-     * plugs in without further mapping:
-     *   {
-     *     total_documents, verified_signed, pending,
-     *     company_dd_count, owner_kyc_count, trade_license_count,
-     *     trade_documents_count, total_shipments,
-     *     company_dd: [{id,name,reference,authority,issue_date,expiry,attachment,attachment_url,status}, …],
-     *     owner_kyc: […], trade_licenses: […], trade_documents: […],
-     *     shipment_agreements: [],
-     *     last_updated
-     *   }
-     *
-     * Status semantics:
-     *   • An uploaded doc      → 'Verified'
-     *   • A doc the rule wants → 'Pending' (no upload yet)
-     *   • The shipment_agreements bucket is intentionally empty until
-     *     the per-shipment compliance matrix lands as its own table.
-     */
     public function vault(Request $request, string $type, int $id): JsonResponse
     {
         $owner = $this->resolveOwner($request, $type, $id);
         $cid   = (int) ($owner->client_id ?? 0);
 
-        // "Same as Customer" consignee — resolveOwner has already swapped
-        // $owner to the linked customer (so the vault shows the customer's
-        // docs), but the frontend needs to know to show a badge + block
-        // uploads (a direct upload to the consignee returns 409).
         $sameAsCustomer = $type === 'consignee'
             && (bool) optional(Consignee::find($id))->same_as_customer;
 
-        /* WHO the consignee mirrors, so the UI can send the user there.
-         *
-         * A mirrored consignee has no paperwork of its own — the vault answers
-         * with the customer's, and every write is refused (409 above). The
-         * honest thing to show is therefore not that list but a way over to the
-         * customer, and the caller cannot build that link itself: the consignee
-         * row carries the customer CODE for a header chip, not the id the
-         * customer vault needs to fetch with.
-         *
-         * $owner is already that customer — resolveOwner swapped it — so this
-         * costs one address lookup, and only on a mirrored consignee. */
         $mirrorCustomer = null;
         if ($sameAsCustomer && $owner instanceof Customer) {
             $addr = $owner->primaryAddress;
@@ -401,29 +256,11 @@ class SegmentDocUploadController extends Controller
             ];
         }
 
-        // 1. Resolve the entity's segment ids. Customer/Consignee
-        // store segment as a comma-joined name string; Vendor uses an
-        // FK column.
-        //
-        // Lead-scoped consignee vault: a consignee can be mapped to several
-        // customers, so its own `segment` string is the UNION of every mapped
-        // customer's segments. When the Sales Matrix opens a consignee's vault
-        // in a lead context it passes ?scope_customer_id=<lead's customer> so
-        // the checklist narrows to ONLY that customer's segment (the segment
-        // driving that lead) — not the consignee's full cross-customer union.
-        // Falls back to the union when the id is absent, not tenant-owned, or
-        // not actually mapped to this consignee.
         $scopeCustomer = $this->resolveScopeCustomer($request, $type, $id, $cid);
         $segmentIds = $scopeCustomer
             ? $this->resolveSegmentIds($scopeCustomer, 'customer', $cid)
             : $this->resolveSegmentIds($owner, $type, $cid);
 
-        // 2. Load each rule's doc_selections. A segment can now carry a Domestic
-        // AND an International rule, so pick the one matching the entity's trade
-        // type (India primary address → domestic, else international). Fall back
-        // to whatever rule the segment has when it lacks the matching type, so
-        // legacy entities (whose segments may only carry one typed rule) never
-        // lose their documents. One rule per segment either way.
         $docType = $this->resolveDocType($owner, $type);
         $rules = ClmSegmentRule::query()
             ->where('client_id', $cid)
@@ -434,10 +271,6 @@ class SegmentDocUploadController extends Controller
             ->filter()
             ->values();
 
-        /* Per-category union of (code => requirement). When the same
-         * code shows up under multiple selected segments, Mandatory
-         * wins over Optional (so the Vault renders the strictest
-         * requirement the user agreed to). */
         $unionByCat = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => [], 'qc' => []];
         foreach ($rules as $rule) {
             $sel = $rule->doc_selections ?? [];
@@ -446,15 +279,12 @@ class SegmentDocUploadController extends Controller
                 if (!is_array($entries)) continue;
                 foreach ($entries as $code => $req) {
                     $existing = $unionByCat[$cat][$code] ?? null;
-                    if ($existing === 'M') continue;             // already strictest
+                    if ($existing === 'M') continue;
                     $unionByCat[$cat][$code] = ($req === 'M') ? 'M' : ($existing ?? 'O');
                 }
             }
         }
 
-        // 3. Load master rows so the Vault can render reference/auth
-        // metadata next to each row. One query per category keeps the
-        // SQL count predictable even when 10+ segments are picked.
         $authMap = ClmAuthority::idNameMap($cid);
         $masters = [
             'kyc' => $this->fetchMasters(ClmKycDocument::class,    array_keys($unionByCat['kyc']), $cid, $authMap, $owner->branch_id ?? null),
@@ -464,15 +294,12 @@ class SegmentDocUploadController extends Controller
             'qc'  => $this->fetchMasters(ClmQcDocument::class,     array_keys($unionByCat['qc']),  $cid, $authMap, $owner->branch_id ?? null),
         ];
 
-        // 4. Pull the entity's actual uploads — group by category+code
-        // so each (cat, code) doc can lookup its upload in O(1).
         $uploads = SegmentDocUpload::query()
             ->where('uploadable_type', get_class($owner))
             ->where('uploadable_id', $owner->id)
             ->get()
             ->keyBy(fn($u) => $u->category . '::' . $u->doc_code);
 
-        // 5. Build per-bucket rows.
         $buildBucket = function (string $cat) use ($unionByCat, $masters, $uploads): array {
             $rows = [];
             $i = 0;
@@ -482,35 +309,19 @@ class SegmentDocUploadController extends Controller
                 $upload = $uploads->get($cat . '::' . $code);
                 $rows[] = [
                     'id'              => $upload?->id ?? $i,
-                    // Master library id — drives the vault's Send-for-Signature
-                    // launch for the Trade Documents bucket (null elsewhere).
                     'db_id'           => $master['id'] ?? null,
                     'name'            => $master['name'] ?? $code,
                     'reference'       => $master['code'] ?? $code,
                     'authority'       => $master['authority'] ?? null,
-                    // Was hard-coded null until segment_doc_uploads grew the
-                    // column; it now reports what the uploader entered.
                     'issue_date'      => optional($upload?->issue_date)->format('d-M-Y'),
-                    // Prefer the expiry the user picked at upload time; fall
-                    // back to the segment-rule master's generic validity text.
                     'expiry'          => optional($upload?->expiry_date)->format('d-M-Y')
                         ?? ($master['expiry'] ?? '—'),
-                    /* The UPLOADED expiry on its own, with no fallback.
-                     *
-                     * `expiry` above falls back to the segment-rule master's
-                     * validity text, which is free prose — "Lifetime", "2
-                     * years", "Varies". That is the right thing for the upload
-                     * popup, which uses it to decide whether to pre-tick "has
-                     * an expiry date", but it cannot be printed in a date
-                     * column. This key is the date or nothing. */
                     'expiry_date'     => optional($upload?->expiry_date)->format('d-M-Y'),
                     'attachment'      => $upload?->attachment_name,
                     'attachment_url'  => $upload?->attachment_url,
                     'status'          => $upload ? 'Verified' : 'Pending',
                     'requirement'     => $req,
                     'doc_code'        => $code,
-                    // Applicable-party CSV so the vault can party-filter the
-                    // Trade Documents tab to match the edit form.
                     'party'           => $master['party'] ?? null,
                 ];
             }
@@ -522,44 +333,12 @@ class SegmentDocUploadController extends Controller
         $trade_licenses  = $buildBucket('tl');
         $trade_documents = $buildBucket('td');
 
-        // CORE tally = Company DD + Owner KYC + Trade Licences, MANDATORY docs
-        // only (the Sales-Matrix CLM card's "X of Y documents" counter). The
-        // card tracks required-doc completion, so OPTIONAL docs are excluded —
-        // it reads "12 of 12" only when every MANDATORY doc is on file. Trade
-        // Documents were also dropped from the customer/consignee form, so they
-        // aren't in this count either. total_documents/verified_signed stay
-        // all-inclusive for the Evidence Vault (which still lists everything).
         $coreMandatory = collect(array_merge($company_dd, $owner_kyc, $trade_licenses))
             ->where('requirement', 'M');
         $coreVerified  = $coreMandatory->where('status', 'Verified')->count();
-        // ALL core docs (mandatory + OPTIONAL) — a segment rule that carries only
-        // OPTIONAL core docs still has a catalog, so the CLM card can show "X of Y
-        // documents" instead of the misleading "No segment rules set". This does
-        // NOT feed the mandatory-completion gate (which keeps using core_total).
         $coreCatalog         = collect(array_merge($company_dd, $owner_kyc, $trade_licenses));
         $coreCatalogVerified = $coreCatalog->where('status', 'Verified')->count();
 
-        /* tally=1 — the four numbers the CLM Details card needs, and nothing
-         * else.
-         *
-         * The Sales Matrix detail page opens two vaults on load purely to
-         * print "4 of 4 documents · 100%" on two cards. Everything below this
-         * line — every deal, its trade documents, its agreements, the shipment
-         * matrix — is built and then thrown away by that caller. Locally that
-         * waste is 30-43 queries against 4.5 ms of database time and nobody
-         * notices; on a deployment where each query is a network hop it was
-         * 5.3 s and 6.2 s, the two slowest requests on the page.
-         *
-         * The counts are already complete here: they come from the company
-         * DD, owner KYC and trade licence buckets alone, which is exactly what
-         * the card means by "core". Returning now skips the rest.
-         *
-         * Only the core_* keys are sent. The caller reads
-         * `core_total_documents ?? total_documents`, so with the core keys
-         * present the all-inclusive pair it falls back to is never consulted —
-         * and that pair cannot be produced without doing the very work this
-         * mode exists to avoid. Any caller that needs the full picture simply
-         * does not pass the flag. */
         if ($request->boolean('tally')) {
             return response()->json([
                 'data' => [
@@ -571,31 +350,9 @@ class SegmentDocUploadController extends Controller
             ]);
         }
 
-        /* docs=1 — the three STANDARD buckets, and nothing else.
-         *
-         * The lead-scoped Evidence Vault (My Workplace → CLM Details →
-         * Customer / Consignee Details) lists Due Diligence, KYC Documents and
-         * Trade License. That is the entire screen. Everything below this line
-         * — every deal, its trade documents and agreements, the shipment matrix
-         * — is built, serialised, sent, and dropped on the floor by that
-         * caller. With several consignees under one customer that whole cost is
-         * paid again on every tab switch, which is what made switching between
-         * them feel slow (QA #37).
-         *
-         * Same idea as tally=1 above, one step less severe: that mode answers
-         * with counts only, this one answers with the rows the vault renders.
-         * Opt-in, so every existing caller keeps the full response.
-         *
-         * The totals that MIX standard and per-deal documents (total_documents,
-         * verified_signed, pending, trade_documents_count, agreements_count)
-         * are deliberately absent rather than sent as standard-only figures —
-         * they cannot be computed without the work this mode exists to skip,
-         * and a half-figure under a familiar key is worse than no key at all.
-         */
         if ($request->boolean('docs')) {
             return response()->json([
                 'data' => [
-                    // The owner's segments by id — two can share a name (Less / High).
                     'segment_rows'           => $this->segmentRowsOf($type, $owner),
                     'party_contact'          => $this->partyContactOf($owner),
                     'same_as_customer'       => $sameAsCustomer,
@@ -615,62 +372,11 @@ class SegmentDocUploadController extends Controller
             ]);
         }
 
-        // Per-shipment matrix — each of the party's shipments with its buyer +
-        // consignee Trade Documents and Agreements (split by signature party).
-        // Pass the ORIGINAL route id ($id) for the shipment lookup. For a
-        // "same as customer" consignee, $owner was swapped to the linked
-        // Customer above, so $owner->id can't be trusted for the lead filter.
-        /* EVERY deal, then the shipment-linked subset.
-         * The document buckets and their ratios are applicable-based, so a deal
-         * that has a PI but no shipment order yet still carries its documents —
-         * previously those parties showed 0 in the vault while the Buyer Profile
-         * counted them. total_shipments and shipment_agreements stay strictly
-         * shipment-linked, so the Case-to-Case shipment UI is unchanged. */
         $deals     = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id, false, $sameAsCustomer);
         $shipments = array_values(array_filter($deals, fn($r) => !empty($r['has_shipment'])));
 
-        /* Rows the Case-to-Case tables render — AND the single source every
-         * Case-to-Case figure on this response is summed from.
-         *
-         * Case-to-Case is per TRANSACTION: a deal with no shipment order is not
-         * a transaction yet, so it neither renders a row nor counts towards
-         * trade_documents_count / agreements_count / total_documents /
-         * verified / pending. Product decision, 15 Sep — a "Not shipped" row
-         * showing in the vault was reported as wrong.
-         *
-         * This deliberately reverses the earlier direction (0f5dd8e0, and the
-         * 12 Sep buildShipmentAgreements change), which had widened these to
-         * every deal so that a party with a PI but no shipment order stopped
-         * reading 0 against a non-zero Buyer Profile cell. The Buyer Profile's
-         * td/agr columns are narrowed to shipment-linked leads in the same
-         * change, so the two still agree — which was the point of that work.
-         *
-         * Everything below reads $ctcRows, never $deals: one source is what
-         * keeps the tiles, the tab badge and the rows from disagreeing. */
         $ctcRows   = $shipments;
 
-        /* ring=1 — the counterparty completion ring on the CTC draft form, and
-         * nothing else.
-         *
-         * ClmCtcForm's useCpCompliance() opens this vault for every counter
-         * party on the Agreement Draft Workspace just to print "10/16 docs" in
-         * the card header. It reads five numbers: the two core_* counts, each
-         * deal's trade-doc and agreement ratio, and the vendor deals' td ratio.
-         * Every document array below — and the entire counting block that
-         * follows — is built, serialised, shipped and dropped by that caller.
-         * On the deployment the request measured 3.24 s, the slowest on the
-         * page by a wide margin (the three ?light=1 lookups beside it ran
-         * ~1.3 s each).
-         *
-         * NOT tally=1, which already exists directly above. tally answers with
-         * the core_* counts alone, and the ring adds the per-deal terms on top
-         * of them — dropping those changes the number the user sees. Checked
-         * across all 90 parties in this database: six of them differ, e.g.
-         * customer #10 reads 11/19 with the deals and 7/8 without. So this
-         * mode keeps the ratios and discards only what the ring never reads.
-         *
-         * The keys mirror the full response exactly, so computeCpComp() runs
-         * unchanged against either shape. */
         if ($request->boolean('ring')) {
             $ringDeals = in_array($type, ['supplier', 'vendor'], true) && $cid
                 ? $this->buildVendorDeals($owner, $cid, $company_dd, $owner_kyc, $trade_licenses, $trade_documents)['with_shipment']
@@ -692,62 +398,8 @@ class SegmentDocUploadController extends Controller
             ]);
         }
 
-        // ── Header KPIs ─────────────────────────────────────────────────────
-        // Customer/Consignee vaults have two document families:
-        //   • Standard  = Company DD + Owner KYC + Trade Licences (one-time docs)
-        //   • Case-to-Case = per-shipment Trade Documents + Agreements (per deal)
-        // Both feed Total Documents / Verified / Pending, and each Case-to-Case
-        // family gets its own KPI (Trade Documents, Total Agreements). Trade
-        // Documents are a per-deal doc here, so the standard 'td' bucket is NOT a
-        // KPI. Case-to-Case tallies come from each shipment's ratio, which
-        // already reflects the displayed set (buyer-only when Customer =
-        // Consignee).
-        //
-        // Supplier/vendor vaults model their per-deal docs differently (vendor
-        // deals, not $shipments) and DO use the standard 'td' bucket, so they
-        // keep the original all-inclusive standard tally.
-        // Top-level Agreements bucket. Vendors fill it in the else branch;
-        // customers/consignees fill it here from their OWN segment-applicable
-        // agreements (segment-driven, NOT shipment-gated), so the single-bucket
-        // Agreements popup matches the Buyer Profile's agr cell even when the
-        // party has applicable agreements but no shipment order yet (CBC #66).
         $agreements = [];
         if (in_array($type, ['customer', 'consignee'], true)) {
-            /* DEAL agreements only — nothing resolved from the party's own
-             * segment tags.
-             *
-             * An agreement belongs to a TRANSACTION, not to a company. A
-             * customer with three PIs is not a customer that owes the union of
-             * three deals' paperwork; each deal carries its own, and it is the
-             * PI's products that decide which. Listing the party's segment tags
-             * here answered a question nobody asked ("what could this company
-             * ever have to sign") and read as though all of it were outstanding
-             * on every deal.
-             *
-             * This DOES reverse CBC #66, which added the party-level rows so a
-             * party with no shipment order still showed something. Deliberate:
-             * with no deal there is nothing being traded, so there is nothing to
-             * sign yet — the same rule the Case-to-Case tab and the Sales Matrix
-             * resolver already follow. ClmBuyerProfileController's agr cell is
-             * changed in step, or the two screens disagree again.
-             *
-             * NOT de-duplicated by library id. An agreement required by two
-             * shipments is two obligations, signed separately on each deal —
-             * which is exactly what the Case-to-Case tab already shows on its
-             * own rows (1/1 on one shipment, 0/1 on the other). Collapsing them
-             * here made the header read "TOTAL AGREEMENTS 1" over a tab plainly
-             * listing two, and made the Buyer Profile's cell read 1/1 instead of
-             * 1 of 2. Rows are concatenated the same way the trade-document list
-             * beside them already is. */
-            /* Each row is stamped with the deal it came from.
-             *
-             * These lists are deliberately NOT de-duplicated across deals — the
-             * same library document required by two shipments is two separate
-             * obligations, signed once on each. Without the stamp the reader
-             * just saw the same title twice with nothing to tell the copies
-             * apart, which reads as a duplicate row rather than two pieces of
-             * work. The keys are additive (`$r + [...]`), so a row that already
-             * carries them keeps its own. */
             $dealTag = fn(array $s): array => [
                 'deal_shipment_id'    => $s['shipment_id'] ?? null,
                 'deal_opportunity_id' => $s['opportunity_id'] ?? null,
@@ -773,34 +425,10 @@ class SegmentDocUploadController extends Controller
             $c2cTd  = $c2c('trade_docs');
             $c2cAgr = $c2c('agreement');
 
-            /* The Trade Documents LIST, rebuilt from the same rows the count
-             * above is summed from.
-             *
-             * trade_documents_count came from the per-deal ratios while
-             * trade_documents stayed the standard 'td' bucket — and the DCP no
-             * longer stores doc_selections['td'], so that bucket is permanently empty.
-             * One response therefore said "1 document" and handed back an empty
-             * array, which the single-bucket popup rendered as "No documents in
-             * this bucket yet" under a non-zero cell (QA #3, #4, #9, #10).
-             * Agreements were already fixed this way (CBC #66, just above);
-             * this does the same for trade documents. Rows are concatenated
-             * WITHOUT de-duplicating across deals, because the count sums the
-             * per-deal ratios the same way — the same library document on two
-             * deals is two obligations. */
             $c2cTradeRows = [];
             foreach ($ctcRows as $s) {
                 $buyerRows = $s['trade_docs_buyer']     ?? [];
                 $consRows  = $s['trade_docs_consignee'] ?? [];
-                /* Same rule as the ratio in buildShipmentAgreements(), and it
-                   has to stay the same rule or the tile and the list below it
-                   disagree: a "Same as Customer" consignee is one company with
-                   the customer, so it shows the customer's trade documents as
-                   well as its own, minus the PI. A separate consignee shows
-                   only its own side.
-                 *
-                   Keyed on $sameAsCustomer — this consignee's own tick — not
-                   on the deal's buyer_is_consignee, for the reason set out in
-                   buildShipmentAgreements(). */
                 $sideRows = $type === 'consignee'
                     ? ($sameAsCustomer
                         ? array_merge(
@@ -814,9 +442,6 @@ class SegmentDocUploadController extends Controller
                     $k = ($r['db_id'] ?? 'x') . '|' . ($r['name'] ?? '');
                     if (isset($seenInDeal[$k])) continue;
                     $seenInDeal[$k] = true;
-                    // Stamped with its deal — see $dealTag above. De-duplication
-                    // is per deal only, so a document required on two deals
-                    // appears twice here, once under each.
                     $c2cTradeRows[] = $r + $dealTag($s);
                 }
             }
@@ -826,16 +451,6 @@ class SegmentDocUploadController extends Controller
             $stdVerified         = collect($stdRows)->where('status', 'Verified')->count();
             $stdPending          = count($stdRows) - $stdVerified;
 
-            /* Agreement figures come from the PARTY's own applicable set, not
-               from the shipment rows.
-             *
-             * $agreements above is already segment-driven for exactly this
-             * reason (CBC #66) - a party can have applicable agreements before
-             * any shipment order exists. The header card was left on the
-             * shipment tally, so a customer with 9 applicable agreements and 3
-             * signed showed "TOTAL AGREEMENTS 0" while the Buyer Profile listed
-             * 3/9 for the same customer. Trade documents stay shipment-based:
-             * they genuinely belong to a deal. */
             $agrTotal  = count($agreements);
             $agrSigned = collect($agreements)
                 ->filter(fn($a) => in_array($a['status'] ?? '', ['Signed', 'Verified'], true))
@@ -855,20 +470,8 @@ class SegmentDocUploadController extends Controller
             $pending             = collect($allRows)->where('status', 'Pending')->count();
             $tradeDocumentsCount = count($trade_documents);
 
-            // Vendor-level Agreements — the applicable agreement-library docs for
-            // the vendor's segments, overlaid with this vendor's signature status
-            // across ALL its deals (an agreement signed on any deal counts as
-            // done). Feeds the PO form's Supplier Legal Status "Agreements" card,
-            // mirroring how the standard buckets above expose verified-vs-total.
             $vendorSegIds  = $this->resolveSegmentIds($owner, 'vendor', $cid);
             $agreementLib  = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmAgreementLibrary::class, 'agr_status');
-            /* party_id is load-bearing: without it this loaded EVERY supplier's
-               agreement signature requests in the tenant, and overlaySupplierDocs
-               matches them to library documents by doc id alone. One supplier
-               signing an agreement therefore showed every other supplier in the
-               client as having signed it too — with that supplier's signed-on
-               date and a link to their signed PDF. Compliance data for the wrong
-               party, presented as fact. */
             $vendorAgrReqs = ClmSignatureRequest::where('client_id', $cid)
                 ->where('model_name', 'Vendor')
                 ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
@@ -878,11 +481,6 @@ class SegmentDocUploadController extends Controller
             $agreementsCount = count($agreements);
         }
 
-        /* Supplier Case-to-Case — one row per PURCHASE ORDER, split by whether
-           the PO carries a shipment. The PO is the case: its Stage 04 documents
-           are what the row opens, and one shipment can hold several POs.
-           buildVendorDeals still answers for the standard-document ratios, and
-           it is the whole list only for a supplier with no PO yet. */
         $vendorDeals = in_array($type, ['supplier', 'vendor'], true) && $cid
             ? $this->buildVendorDeals($owner, $cid, $company_dd, $owner_kyc, $trade_licenses, $trade_documents)
             : ['with_shipment' => [], 'without_shipment' => [], 'ratios' => null];
@@ -893,11 +491,6 @@ class SegmentDocUploadController extends Controller
                 $vendorDeals['with_shipment']    = $poDeals['with_shipment'];
                 $vendorDeals['without_shipment'] = $poDeals['without_shipment'];
             } else {
-                /* No purchase order means no case: this section is per deal, and
-                   a supplier with nothing ordered was listing every document its
-                   segments define as "not sent for signature · action needed"
-                   (CS-409). What a segment requires belongs to the DCP; what a
-                   deal requires appears once there is a deal. */
                 $vendorDeals['with_shipment']    = [];
                 $vendorDeals['without_shipment'] = [];
             }
@@ -907,7 +500,6 @@ class SegmentDocUploadController extends Controller
             'data' => [
                 'same_as_customer'       => $sameAsCustomer,
                 'mirror_customer'        => $mirrorCustomer,
-                // The owner's segments by id — two can share a name (Less / High).
                 'segment_rows'           => $this->segmentRowsOf($type, $owner),
                 'party_contact'          => $this->partyContactOf($owner),
                 'vendor_with_shipment'    => $vendorDeals['with_shipment'],
@@ -933,35 +525,11 @@ class SegmentDocUploadController extends Controller
                 'agreements'             => $agreements,
                 'shipment_agreements'    => $ctcRows,
                 'last_updated'           => optional($uploads->max('updated_at'))->format('d-M-Y'),
+                'last_updated_at'        => optional($uploads->max('updated_at'))->toIso8601String(),
             ],
         ]);
     }
 
-    /**
-     * Supplier Case-to-Case deals for the Evidence Vault. Walks the procurements
-     * where THIS vendor is the recorded supplier (procurement_products.vendor_id),
-     * then surfaces two views over those deals:
-     *   - with_shipment    → one row per shipment on those leads (SHP-xxx) +
-     *                        customer / consignee
-     *   - without_shipment → one row per procurement (PROC-xxx) whose lead has
-     *                        NO shipment yet. Strict either/or split: a deal
-     *                        whose lead already has a shipment appears only under
-     *                        with_shipment, never here (no overlap).
-     * Compliance ratios (KYC/DD/TL/TD) are the vendor's overall verified-vs-total
-     * (no per-shipment document tracking exists in the schema), so the same
-     * ratios ride on every row.
-     */
-    /**
-     * Case to Case, per purchase order: the Stage 04 trade documents and
-     * agreements of every PO raised on this supplier, with the status each one
-     * actually reached. A document marked "Not necessary" on the PO is left out
-     * — the deal is judged on what was asked for, nothing else.
-     *
-     * A PO linked to a shipment lands under With Shipment ID; a standalone PO
-     * under Without Shipment ID, matching how the PO list itself splits them.
-     *
-     * @return array{with_shipment: array, without_shipment: array}|null  null = this supplier has no PO yet
-     */
     private function buildPoDeals(Model $owner, int $cid, array $ratios): ?array
     {
         $pos = DB::table('p2p_purchase_orders')
@@ -973,7 +541,6 @@ class SegmentDocUploadController extends Controller
                 'procurement_request_code', 'document_type', 'grand_total', 'currency_code']);
         if ($pos->isEmpty()) return null;
 
-        // The shipment code and the customer live on the shipment order and the PI.
         $ships = DB::table('shipment_orders')
             ->whereIn('id', $pos->pluck('shipment_order_id')->filter()->unique()->all() ?: [0])
             ->pluck('shipment_code', 'id');
@@ -984,21 +551,12 @@ class SegmentDocUploadController extends Controller
         $docs = DB::table('p2p_purchase_order_documents')
             ->whereIn('purchase_order_id', $pos->pluck('id'))
             ->whereNull('deleted_at')
-            // The PO document is counted too, so a signed PO shows as evidence on its own row.
             ->orderBy('id')
             ->get()
             ->groupBy('purchase_order_id');
 
-        /* What the SUPPLIER sent back against each PO: their invoice, the e-way
-           bill, and any photo taken while unpacking a box. The vault is the one
-           place a buyer looks for "what paperwork exists on this order", and
-           until now it showed only what WE generated. */
         $spiDocs = $this->buildSpiDocs($pos->pluck('id')->all());
 
-        /* Where a document stands is decided by its signature request, not by the
-           row: a decline lands on the request, and Stage 04 re-reads it on every
-           open. This list did not, so a declined document went on reading
-           "Pending" here and offered to be sent rather than sent again. */
         $sigStates = DB::table('clm_signature_requests')
             ->whereIn('id', $docs->flatten(1)->pluck('signature_request_id')->filter()->unique()->all() ?: [0])
             ->pluck('status', 'id');
@@ -1009,9 +567,6 @@ class SegmentDocUploadController extends Controller
 
         foreach ($pos as $po) {
             $rows = ($docs[$po->id] ?? collect())
-                /* Only what Stage 04 marked Necessary. is_required is not read here:
-                   older rows carry it by default, which listed a Purchase Agreement
-                   nobody ever asked for. */
                 ->filter(fn ($d) => ($d->needed ?? 'no') === 'yes')
                 ->values();
 
@@ -1027,7 +582,6 @@ class SegmentDocUploadController extends Controller
             $poRow = [
                 'po_id'      => (int) $po->id,
                 'po_code'    => $po->code,
-                // Shown beside the PO id; a PO raised without one reads as N/A.
                 'procurement_id' => $po->procurement_request_code ?: null,
                 'po_date'    => $po->po_date,
                 'po_status'  => $po->status,
@@ -1035,18 +589,10 @@ class SegmentDocUploadController extends Controller
                 'currency'   => $po->currency_code,
                 'docs'       => $td,
                 'agreements' => $agr,
-                /* What the supplier sent back — their invoice, the e-way bill
-                   and any unpacking photo. Kept in its own list rather than
-                   merged into `docs`: nothing here is signed or required, so a
-                   signed/total ratio over it would be meaningless. */
                 'spi_docs'   => $spiDocs[$po->id] ?? [],
-                // Trade documents and agreements are counted apart, as the table shows them.
                 'ratios'     => array_merge($ratios, ['td' => $ratio($td), 'agr' => $ratio($agr)]),
             ];
 
-            /* One row per SHIPMENT, holding its purchase orders — a shipment can
-               carry several, and each PO opens its own Stage 04 paperwork. A PO
-               with no shipment groups under its procurement instead. */
             $shipCode = $po->shipment_order_id ? ($ships[$po->shipment_order_id] ?? null) : null;
             if ($shipCode) {
                 $key = 'S:' . $shipCode;
@@ -1066,16 +612,12 @@ class SegmentDocUploadController extends Controller
             }
         }
 
-        /* Each group also carries the union of its POs' documents, so the export,
-           the signature picker and the status tallies keep reading one list. */
         $finish = function (array $groups) use ($ratios): array {
             $out = [];
             $sr = 0;
             foreach ($groups as $g) {
                 $docs = array_merge(...array_map(fn ($r) => $r['docs'], $g['pos'])) ?: [];
                 $agrs = array_merge(...array_map(fn ($r) => $r['agreements'], $g['pos'])) ?: [];
-                // Supplier paperwork joins the union too, so the export and the
-                // shipment row read one list like everything else.
                 $spis = array_merge(...array_map(fn ($r) => $r['spi_docs'] ?? [], $g['pos'])) ?: [];
                 $signed = fn (array $set) => count(array_filter($set, fn ($r) => $r['status'] === 'Signed'));
                 $out[] = $g + [
@@ -1093,7 +635,6 @@ class SegmentDocUploadController extends Controller
             return $out;
         };
 
-        // Only the shipment side is grouped; the other is already one row per PO.
         $numbered = [];
         $sr = 0;
         foreach ($without as $row) $numbered[] = $row + ['sr' => ++$sr];
@@ -1103,12 +644,8 @@ class SegmentDocUploadController extends Controller
             : null;
     }
 
-    /** One Stage 04 document as the vault renders it. */
     private function shapePoDoc($d, ?string $poCode = null, ?string $sigState = null): array
     {
-        /* The signature request is the authority on where a document stands —
-           a decline, a recall or an expiry is recorded there and never on the
-           row. Only a completed request beats what the row says about signing. */
         $state = match ((string) $sigState) {
             'declined'   => 'declined',
             'recalled'   => 'recalled',
@@ -1127,14 +664,12 @@ class SegmentDocUploadController extends Controller
         };
         $sub = mb_strtolower((string) ($d->doc_sub ?? '') . ' ' . (string) ($d->doc_kind ?? '') . ' ' . (string) ($d->name ?? ''));
 
-        // The CLM library row behind it — what a signature envelope is built from.
         $lib = in_array((string) ($d->source_type ?? ''), ['trade', 'agreement'], true) ? (int) $d->source_id : null;
 
         return [
             'id'                   => (int) $d->id,
-            'db_id'                => $lib,                       // the library row: it can be sent for signature from here
+            'db_id'                => $lib,
             'po_id'                => (int) $d->purchase_order_id,
-            // The PO number: what names the Purchase Order in a signature envelope.
             'po_code'              => $poCode,
             'po_doc_id'            => (int) $d->id,
             'party'                => 'Vendor',
@@ -1152,31 +687,10 @@ class SegmentDocUploadController extends Controller
             'requirement'          => 'M',
             'certificate_url'      => null,
             'is_agreement'         => str_contains($sub, 'agreement'),
-            /* The Purchase Order is counted in this vault, but it is not
-               case-to-case paperwork — the gate on raising the next PO has to
-               tell them apart, and only this says which row it is. */
             'doc_kind'             => (string) ($d->doc_kind ?? ''),
         ];
     }
 
-    /**
-     * Supplier paperwork received against each purchase order, keyed by PO id.
-     *
-     * Three kinds, and all of them arrive AFTER the PO is out — which is why
-     * they were missing: everything else in this vault is something we
-     * generated and sent.
-     *
-     *   invoice   p2p_supplier_invoices.invoice_file_*
-     *   e-way     p2p_supplier_invoices.eway_file_*
-     *   photo     p2p_spi_box_attachments — taken while unpacking
-     *
-     * Two queries whatever the number of invoices or boxes. Nothing here is
-     * signed or required, so these rows carry no signature state and no
-     * requirement flag; a status is just whether the file is there.
-     *
-     * @param  int[] $poIds
-     * @return array<int, array<int, array<string, mixed>>>
-     */
     private function buildSpiDocs(array $poIds): array
     {
         if (!$poIds) return [];
@@ -1189,7 +703,6 @@ class SegmentDocUploadController extends Controller
                 'invoice_file_path', 'invoice_file_name', 'eway_no', 'eway_file_path', 'eway_file_name']);
         if ($invoices->isEmpty()) return [];
 
-        // Unpacking photos, reached through the boxes of those invoices.
         $photos = DB::table('p2p_spi_box_attachments as a')
             ->join('p2p_spi_boxes as b', 'b.id', '=', 'a.box_id')
             ->whereIn('b.supplier_invoice_id', $invoices->pluck('id'))
@@ -1205,13 +718,12 @@ class SegmentDocUploadController extends Controller
             'spi_code'       => $spi->code,
             'po_id'          => (int) $spi->purchase_order_id,
             'party'          => 'Supplier',
-            'kind'           => $kind,                    // invoice · eway · photo
+            'kind'           => $kind,
             'name'           => $name,
             'reference'      => $ref,
             'issue_date'     => $spi->invoice_date ? Carbon::parse($spi->invoice_date)->format('d-M-Y') : null,
             'attachment'     => $file,
             'attachment_url' => $path ? file_url($path) : null,
-            // Received or not — there is nothing to sign and nothing to require.
             'status'         => $path ? 'Received' : 'Awaited',
         ];
 
@@ -1243,9 +755,6 @@ class SegmentDocUploadController extends Controller
         $empty  = ['with_shipment' => [], 'without_shipment' => [], 'ratios' => $ratios];
         $supplierName = (string) ($owner->company_name ?? '');
 
-        // Procurements where THIS vendor is the recorded supplier on a product
-        // line (procurement_products.vendor_id). Real vendor⇄procurement link —
-        // a shared product no longer pulls in someone else's procurement.
         $procs = DB::table('procurements as pr')
             ->where('pr.client_id', $cid)
             ->whereExists(function ($q) use ($owner) {
@@ -1255,29 +764,18 @@ class SegmentDocUploadController extends Controller
             })
             ->get(['pr.id', 'pr.lead_id']);
 
-        // Doc LISTS are driven by the VENDOR's own SEGMENTS — resolved once and
-        // identical for every deal AND for a fresh vendor with no deal yet.
-        // Segment (not procurement) is what decides which docs apply, so compute
-        // these up-front, before the procurement check.
         $vendorSegIds = $this->resolveSegmentIds($owner, 'vendor', $cid);
         $tdLib  = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmTradeDocLibrary::class, 'status');
         $agrLib = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmAgreementLibrary::class, 'agr_status');
-        // Trade-Docs column ratio = signed-vs-total of the per-deal docs shown in
-        // the drill-down (not the DCP bucket, which is empty here).
         $tdRatio = fn(array $docs) => [
             'd' => collect($docs)->where('status', 'Signed')->count(),
             't' => count($docs),
         ];
 
-        // Fresh vendor — no procurement/shipment yet. The docs STILL come from
-        // the vendor's segment, so surface one "Without Shipment ID" row with the
-        // segment-based Trade Docs + Agreements (status overlaid client-side by
-        // db_id). Without this a freshly-added supplier showed an empty matrix
-        // even though its segment defines applicable documents.
         if ($procs->isEmpty()) {
             $docs = $this->overlaySupplierDocs($tdLib,  collect(), ClmSignatureRequest::DOC_TRADE);
             $agrs = $this->overlaySupplierDocs($agrLib, collect(), ClmSignatureRequest::DOC_AGREEMENT);
-            if (empty($docs) && empty($agrs)) return $empty;   // segment has no supplier docs at all
+            if (empty($docs) && empty($agrs)) return $empty;
             return [
                 'with_shipment'    => [],
                 'without_shipment' => [[
@@ -1294,7 +792,6 @@ class SegmentDocUploadController extends Controller
 
         $leadIds = $procs->pluck('lead_id')->filter()->unique()->values();
 
-        // Shipments for those leads (With Shipment ID view).
         $shipByLead = DB::table('shipment_orders')->whereIn('lead_id', $leadIds->all() ?: [0])
             ->where('client_id', $cid)->get(['id', 'lead_id', 'shipment_code'])->keyBy('lead_id');
 
@@ -1302,9 +799,6 @@ class SegmentDocUploadController extends Controller
         $custNames = DB::table('customers')->whereIn('id', $leads->pluck('customer_id')->filter()->unique()->all() ?: [0])->pluck('company_name', 'id');
         $consNames = DB::table('consignees')->whereIn('id', $leads->pluck('consignee_id')->filter()->unique()->all() ?: [0])->pluck('company_name', 'id');
 
-        // Per-deal STATUS is overlaid from this vendor's signature requests; the
-        // doc LISTS ($tdLib / $agrLib) were resolved up-front from the vendor's
-        // own segments since they're identical for every deal.
         $reqsByLead = ClmSignatureRequest::where('client_id', $cid)
             ->whereIn('lead_id', $leadIds->all() ?: [0])
             ->where('model_name', 'Vendor')
@@ -1344,15 +838,11 @@ class SegmentDocUploadController extends Controller
             ];
         }
 
-        // Without Shipment ID = procurement-stage ONLY: procurements whose lead
-        // does NOT yet have a shipment. A procurement that already became a
-        // shipment appears under With Shipment ID instead — strict either/or
-        // split, no overlap (a deal is in exactly one of the two views).
         $withoutShip = [];
         $sr = 0;
         foreach ($procs as $p) {
             $leadId = $p->lead_id ? (int) $p->lead_id : null;
-            if ($leadId !== null && $shipByLead->has($leadId)) continue;  // has a shipment → With Shipment only
+            if ($leadId !== null && $shipByLead->has($leadId)) continue;
             $docs   = $dealDocs($leadId);
             $withoutShip[] = [
                 'sr'             => ++$sr,
@@ -1367,49 +857,13 @@ class SegmentDocUploadController extends Controller
         return ['with_shipment' => $withShip, 'without_shipment' => $withoutShip, 'ratios' => $ratios];
     }
 
-    /**
-     * Build the per-shipment matrix for a party's Evidence Vault. Each row is
-     * one of the party's shipment-linked opportunities, carrying its Buyer +
-     * Consignee Trade Documents and Agreements — split by the signature
-     * request's party (Customer vs Consignee). KYC / DD / Trade-License ratios
-     * are the party's standard-doc progress (same across its shipments); the
-     * Trade-Docs / Agreement ratios are per-shipment from signature completion.
-     */
-    /** @param bool $shipmentLinkedOnly  false = every deal, shipment order or not.
-     *  The document buckets need ALL deals (a PI already carries applicable
-     *  documents); total_shipments / shipment_agreements still want only the
-     *  shipment-linked ones, so callers filter on the has_shipment flag. */
     private function buildShipmentAgreements(Model $owner, string $type, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, int $entityId, bool $shipmentLinkedOnly = true, ?bool $sameAsCustomer = null): array
     {
-        // Vendors aren't modelled as buyer/consignee shipments here.
         if (!in_array($type, ['customer', 'consignee'], true) || !$cid) return [];
 
-        /* Does THIS consignee hold the customer's documents?
-         *
-           The answer is the tick on the consignee form — "Same as Customer",
-           a statement that the two are one company, which is also what makes
-           resolveOwner serve the customer's standard buckets here and what
-           makes a direct upload 409. One decision, read from one place.
-         *
-           Deliberately NOT the per-deal `buyer_is_consignee` flag, which
-           answers a different question: whether the LEAD's mapped consignee
-           is the buyer. The two agree while a vault only ever shows deals
-           mapped to its own consignee, and disagree the moment it does not —
-           which is how a customer's Proforma Invoice once surfaced under a
-           consignee that was not that deal's consignee at all.
-         *
-           $entityId, not $owner->id: for a same-as-customer consignee
-           resolveOwner has already swapped $owner to the linked Customer. */
-        /* Passed in by vault(), which has already read the same tick for its own
-         * `same_as_customer` flag — one consignee row, read once. */
         $ownerIsSameAsCustomer = $sameAsCustomer ?? ($type === 'consignee'
             && (bool) optional(Consignee::find($entityId))->same_as_customer);
 
-        // Leads (opportunities) for this party that carry a shipment order.
-        // NOTE: use $entityId (the route id), NOT $owner->id — for a
-        // "same as customer" consignee, resolveOwner swaps $owner to the
-        // linked Customer, so $owner->id would be the customer's id and the
-        // consignee_id filter would miss this consignee's shipments.
         $leadQ = Lead::where('client_id', $cid);
         if ($type === 'customer') $leadQ->where('customer_id', $entityId);
         else                      $leadQ->where('consignee_id', $entityId);
@@ -1417,13 +871,6 @@ class SegmentDocUploadController extends Controller
         if ($leads->isEmpty()) return [];
 
         $leadIds = $leads->pluck('id')->all();
-        // Pull the actual shipment rows so the matrix can show the REAL
-        // shipment code (shipment_orders.shipment_code, e.g. "SHP-258")
-        // instead of a value fabricated from the lead id. Two maps:
-        //   $shipLeadIds    — presence set (lead has a shipment order at all)
-        //   $shipCodeByLead — lead_id ⇒ real SHP-NNN code (latest wins)
-        // Legacy rows created before the shipment_code column existed carry a
-        // NULL code; those fall back to the synthetic SHP-<lead_id> below.
         $shipLeadIds = [];
         $shipCodeByLead = [];
         ShipmentOrder::where('client_id', $cid)
@@ -1436,13 +883,11 @@ class SegmentDocUploadController extends Controller
                 if ($s->shipment_code) $shipCodeByLead[$lid] = $s->shipment_code;
             });
 
-        // Names for the buyer/consignee columns.
         $custIds = $leads->pluck('customer_id')->filter()->unique()->all();
         $consIds = $leads->pluck('consignee_id')->filter()->unique()->all();
         $custById = $custIds ? Customer::whereIn('id', $custIds)->get(['id', 'company_name'])->keyBy('id') : collect();
         $consById = $consIds ? Consignee::whereIn('id', $consIds)->get(['id', 'company_name', 'same_as_customer'])->keyBy('id') : collect();
 
-        // All signature requests across these leads, grouped by lead.
         $sigByLead = ClmSignatureRequest::where('client_id', $cid)
             ->whereIn('lead_id', $leadIds)
             ->whereIn('document_type', [ClmSignatureRequest::DOC_TRADE, ClmSignatureRequest::DOC_AGREEMENT])
@@ -1450,14 +895,11 @@ class SegmentDocUploadController extends Controller
             ->get()
             ->groupBy('lead_id');
 
-        // Standard-doc ratios (shared across the party's shipments).
         $ratioOf = fn(array $rows) => $this->ratio(collect($rows)->where('status', 'Verified')->count(), count($rows));
         $ddRatio  = $ratioOf($companyDd);
         $kycRatio = $ratioOf($ownerKyc);
         $tlRatio  = $ratioOf($tradeLicenses);
 
-        // Proforma Invoice of each shipment — surfaced as the FIRST Trade
-        // Document (and counted in the Trade-Docs ratio). Keyed by lead/opp.
         $piByLead = ProformaInvoice::where('client_id', $cid)
             ->whereIn('opp_id', $leadIds)
             ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
@@ -1465,25 +907,11 @@ class SegmentDocUploadController extends Controller
             ->get(['id', 'opp_id', 'code', 'status', 'emailed_at', 'created_at'])
             ->groupBy('opp_id');
 
-        // A PI reads as "Signed" only once its e-signature is COMPLETE — the same
-        // source of truth the Q/PI list uses (ClmSignatureRequest on the PI). The
-        // PI's own lifecycle column (sent/approved/…) does NOT imply a customer
-        // e-signature, so keying off it made an e-signed PI show "Pending" here.
-        // Map: pi_id ⇒ its completed signature request (carries completion date
-        // + the signed-document path so the vault can offer a "View" link).
-        // Also track an IN-PROGRESS (already-sent, not-yet-signed) PI signature
-        // so the vault can hide "Send" and offer "Remind" instead — otherwise the
-        // Send button stayed visible after sending and a re-click created a
-        // duplicate signature request.
-        $piSigReq    = [];   // pi_id ⇒ latest COMPLETED sig (Signed + View link)
-        $piActiveReq = [];   // pi_id ⇒ latest IN-PROGRESS sig (sent, remind-able)
-        $piLatestReq = [];   // pi_id ⇒ latest sig of ANY status (drives the tracker
-        //         + the display status incl. Declined/Recalled)
+        $piSigReq    = [];
+        $piActiveReq = [];
+        $piLatestReq = [];
         $piIds = $piByLead->flatten()->pluck('id')->all();
         if ($piIds) {
-            // ALL statuses (not just completed/inprogress) so a DECLINED or
-            // recalled PI still surfaces its signature request — the vault needs
-            // the request id to open the Signing Tracker and to read "Declined".
             ClmSignatureRequest::where('client_id', $cid)
                 ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
                 ->whereIn('trade_doc_id', $piIds)
@@ -1492,24 +920,19 @@ class SegmentDocUploadController extends Controller
                 ->each(function ($r) use (&$piSigReq, &$piActiveReq, &$piLatestReq) {
                     $pid = (int) $r->trade_doc_id;
                     $st  = strtolower((string) $r->status);
-                    $piLatestReq[$pid] = $r;                                 // ordered by id → latest wins
-                    if ($st === 'completed')  $piSigReq[$pid]    = $r;       // latest completed wins
-                    if ($st === 'inprogress') $piActiveReq[$pid] = $r;       // latest in-progress wins
+                    $piLatestReq[$pid] = $r;
+                    if ($st === 'completed')  $piSigReq[$pid]    = $r;
+                    if ($st === 'inprogress') $piActiveReq[$pid] = $r;
                 });
         }
 
-        /* Every deal's PI -> products -> segments chain, resolved once.
-         *
-         * applicableShipmentDocs() used to walk it per deal: re-read the PI the
-         * loop above has already loaded, then its items, then those products'
-         * segments, then the segment rows. Four queries a deal, all of them
-         * answerable in four queries for the whole response. */
         $dealCtx = $this->prefetchDealContext($cid, $piByLead, $piIds);
 
-        // A document whose party covers BOTH buyer and consignee is emitted into
-        // both lists; when merging the two sides for the ratio it must be counted
-        // once (else "0/3" when only 2 distinct agreements exist). Dedupe by
-        // library id (+ doc type), falling back to the name.
+        $needsByLead = [];
+        foreach (DB::table('clm_lead_doc_needs')->whereIn('lead_id', $leadIds)->get(['lead_id', 'doc_kind', 'doc_id', 'needed']) as $n) {
+            $needsByLead[(int) $n->lead_id][$n->doc_kind . ':' . $n->doc_id] = (bool) $n->needed;
+        }
+
         $dedupe = function (array $rows): array {
             $seen = [];
             $out = [];
@@ -1530,38 +953,25 @@ class SegmentDocUploadController extends Controller
             if ($shipmentLinkedOnly && !$hasShipment) continue;
             $reqs = $sigByLead->get($lid) ?? collect();
 
-            // List EVERY applicable trade-doc / agreement (per the lead's
-            // segment rules), with live signature status overlaid — so the
-            // vault shows not-yet-sent docs (Draft), in-flight sends (Pending)
-            // and signed docs (Signed) together, not just what was sent.
-            // $owner is the party whose vault this is - its own segments narrow
-            // the deal's list, so a consignee vault is not filtered by the
-            // customer's segments (and vice versa).
-            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs, $owner->segment ?? null, $dealCtx);
+            $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
+            $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
+
+            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs, $owner->segment ?? null, $dealCtx, $needsByLead[$lid] ?? [], $buyerIsConsignee);
             $tradeBuyer = $applicable['trade_docs_buyer'];
             $tradeCons  = $applicable['trade_docs_consignee'];
             $agrBuyer   = $applicable['agreements_buyer'];
             $agrCons    = $applicable['agreements_consignee'];
 
-            // Prepend this shipment's Proforma Invoice(s) as the FIRST Trade
-            // Document, then the other trade docs. It leads the side the current
-            // vault displays — the buyer side for the customer vault, the
-            // consignee side for the consignee vault (which uses forceParty). A
-            // finalised PI reads Signed; a draft Pending. sig_req_id 0 → no Remind.
             foreach (($piByLead->get($lid) ?? collect()) as $pi) {
                 $sigReq    = $piSigReq[(int) $pi->id] ?? null;
-                $activeReq = $piActiveReq[(int) $pi->id] ?? null;   // sent-but-unsigned
-                $latestReq = $piLatestReq[(int) $pi->id] ?? null;   // any status (latest)
+                $activeReq = $piActiveReq[(int) $pi->id] ?? null;
+                $latestReq = $piLatestReq[(int) $pi->id] ?? null;
                 $piSigned  = (bool) $sigReq;
                 $piDate    = $sigReq?->completed_at;
-                // Latest request drives the display status + the tracker id, so a
-                // declined PI reads "Declined" (until re-sent) and can be tracked.
                 $latestState = $latestReq ? strtolower((string) $latestReq->status) : null;
                 $piStatus = $piSigned ? 'Signed'
                     : (in_array($latestState, ['declined', 'rejected'], true) ? 'Declined'
                         : ($latestState === 'recalled' ? 'Recalled' : 'Pending'));
-                // Resolve the signed-document URL the same way trade docs do, so
-                // the vault can offer a "View" link on the signed PI.
                 $signedUrl = null;
                 if ($sigReq) {
                     $paths = is_array($sigReq->signed_document_paths) ? $sigReq->signed_document_paths : [];
@@ -1571,116 +981,24 @@ class SegmentDocUploadController extends Controller
                     }
                 }
                 $piRow = [
-                    // Non-zero once a signature request exists (completed OR still
-                    // in-progress) → the vault hides "Send" and shows "Remind",
-                    // so a sent PI can't be re-sent into a duplicate request.
                     'sig_req_id'  => $sigReq ? (int) $sigReq->id : ($activeReq ? (int) $activeReq->id : 0),
-                    // Frontend reads `signature_request_id` for the Signing
-                    // Tracker + Reminder gating (the legacy `sig_req_id` above is
-                    // kept for older callers). Set for ANY status so a declined /
-                    // in-progress / signed PI all open the tracker.
                     'signature_request_id' => $latestReq ? (int) $latestReq->id : null,
                     'sig_state'   => $latestState,
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
                     'status'      => $piStatus,
-                    // "Signed On" — the e-signature completion date; unsigned shows —.
                     'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d-M-Y') : '—',
                     'valid_upto'  => '—',
                     'signed_url'  => $signedUrl,
-                    // The PI's own id/code so the vault can offer the SAME
-                    // "Send for Signature" flow the Sales-Matrix Q/PI stage uses
-                    // (the /sales/proforma-invoices Zoho-sign path). Presence of
-                    // pi_id is what tells the frontend this row is the PI.
                     'pi_id'       => (int) $pi->id,
                     'pi_code'     => (string) ($pi->code ?: ('PI-' . $pi->id)),
                 ];
-                /* The PI is a BUYER-side document, so it goes on the buyer
-                   side and the party rules below decide who sees it.
-                 *
-                   It used to be pushed onto whichever side the vault was
-                   opened for, which put the customer's Proforma Invoice in a
-                   separate consignee's vault. A consignee is not a party to
-                   the PI — it is raised to the buyer, carries the buyer's
-                   commercial terms, and is signed by the buyer. Its own
-                   vault should hold the documents addressed to IT.
-                 *
-                   Filed on the buyer side, the existing selection does the
-                   rest without a special case: a separate consignee reads
-                   $tradeCons and no longer sees it, while a consignee that IS
-                   the customer reads the merged set and still does — because
-                   there the buyer and the consignee are one company and the
-                   PI genuinely is theirs. */
                 array_unshift($tradeBuyer, $piRow);
             }
 
-            $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
-            $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
-
-            /* Party marking decides who sees a document — NOT whether the two
-               parties happen to be one company.
-             *
-               A same-entity vault used to merge the buyer and consignee sides
-               into one list, with a strip to stop both-party documents being
-               counted twice. That put the customer's own papers — the Proforma
-               Invoice and every Buyer-only trade document — into the CONSIGNEE's
-               Evidence Vault (QA #7). The consignee is not a party to them, and
-               it being the same company does not make it one: the vault answers
-               "what does this party owe in THIS role", and the customer vault
-               already carries the buyer role.
-             *
-               So each side is now read on its own, exactly as AGREEMENTS have
-               been since the same problem was fixed for them. partyFlags() has
-               already done the separation: $tradeCons holds Consignee-marked and
-               Buyer+Consignee documents, $tradeBuyer the Buyer-marked and
-               Buyer+Consignee ones. Reading one side needs no de-duplication,
-               and the strip has to go with the merge — it existed only to stop
-               double counting, and on its own it would delete every both-party
-               document from the very list that must show it. */
-
-            /* The ratio must count exactly what the expanded panel displays.
-               Both vaults now show the same three tabs, so both count the same
-               way: the primary side alone when Customer = Consignee, otherwise
-               buyer + consignee de-duped (the "Both" documents counted once).
-
-               The consignee branch used to count `$tradeCons` only, matching the
-               old consignee-only panel. Left as-is it would report e.g. 1/5 over
-               a panel now listing 8 documents. */
             $primary = $type === 'consignee'
                 ? ['trade' => $tradeCons, 'agr' => $agrCons]
                 : ['trade' => $tradeBuyer, 'agr' => $agrBuyer];
-            /* One party, one combined set — counted ONCE.
-             * When Customer = Consignee this took the buyer side alone to avoid
-             * double-counting a both-parties document. It did avoid that, but it
-             * also dropped genuinely CONSIGNEE-only documents — which apply to
-             * the very same entity when the two are one. De-duplicating the
-             * union solves both: every applicable document appears exactly once,
-             * whichever side it was filed under. $primary is still the party
-             * whose vault this is, used below. */
-            /* The document's PARTY marking decides who sees it — not whether
-             * the two parties happen to be one company. An agreement marked
-             * Consignee stays on the consignee side even when the consignee is
-             * the customer; it is a consignee obligation either way, and the
-             * customer's vault should not carry it.
-             * $primary is this vault's own side. */
-            /* TRADE DOCS keep the old rule: one entity means one combined set,
-               de-duplicated. AGREEMENTS do not — an agreement marked Consignee
-               is the consignee's to sign, so it stays out of the customer's
-               vault even when the two are the same company (and the other way
-               round). Only agreements were reported; trade docs are untouched. */
-            /* "Same as Customer" ticked → one company → it holds the customer's
-           documents, exactly as it holds the customer's KYC and owners (the
-           consignee form clones those at save time, and resolveOwner serves
-           the customer's standard buckets for the same reason). Not ticked →
-           two different companies → the buyer's papers are not its business.
-         *
-           The PI is the one exception either way: it is raised to the buyer,
-           carries the buyer's commercial terms and is signed by the buyer, so
-           it stays on the buyer side and is filtered out of the merge rather
-           than moved.
-         *
-           De-duplicated because a Buyer+Consignee document is emitted into
-           both lists under the same id and must appear once. */
             $tradeAll = ($type === 'consignee' && $ownerIsSameAsCustomer)
                 ? $dedupe(array_merge(
                     array_values(array_filter($tradeBuyer, fn($r) => empty($r['pi_id']))),
@@ -1715,67 +1033,11 @@ class SegmentDocUploadController extends Controller
         return $rows;
     }
 
-    /** {ratio:"d/t", pct:int} helper for the shipment matrix donuts. */
     private function ratio(int $d, int $t): array
     {
         return ['ratio' => $d . '/' . $t, 'pct' => $t > 0 ? (int) round($d / $t * 100) : 0];
     }
 
-    /**
-     * Expand the signature requests of one document_type + party into per-doc
-     * rows for the Evidence Vault's expanded shipment view.
-     */
-    private function sigDocs($reqs, string $docType, string $party): array
-    {
-        $out = [];
-        foreach ($reqs as $r) {
-            if ($r->document_type !== $docType || $r->model_name !== $party) continue;
-            $names = is_array($r->document_names) && $r->document_names ? $r->document_names : [$r->request_name ?: 'Document'];
-            $status = match ($r->status) {
-                'completed'  => 'Signed',
-                'inprogress' => 'Pending',
-                'declined'   => 'Declined',
-                'recalled'   => 'Recalled',
-                'expired'    => 'Expired',
-                default      => 'Draft',
-            };
-            $sentAt = $r->metadata['sent_at'] ?? $r->created_at;
-            $paths = is_array($r->signed_document_paths) ? $r->signed_document_paths : [];
-            foreach ($names as $i => $name) {
-                $p = $paths[$i] ?? $paths[0] ?? null;
-                $signedUrl = $p['file_url'] ?? $p['url'] ?? null;
-                if (!$signedUrl && $r->signed_document_path) {
-                    $signedUrl = file_url($r->signed_document_path);
-                }
-                $out[] = [
-                    'sig_req_id'  => (int) $r->id,
-                    'name'        => (string) $name,
-                    'required'    => 'REQ',
-                    'status'      => $status,
-                    'uploaded_on' => $sentAt ? \Illuminate\Support\Carbon::parse($sentAt)->format('d-M-Y') : '—',
-                    'valid_upto'  => $r->expiry_date ? $r->expiry_date->format('d-M-Y') : '—',
-                    'signed_url'  => $signedUrl,
-                ];
-            }
-        }
-        return $out;
-    }
-
-    /**
-     * Resolve, for EVERY deal at once, the chain applicableShipmentDocs() needs:
-     * the live Proforma Invoice per lead, the product ids on each PI, each
-     * product's CLM segment, and the segment rows themselves.
-     *
-     * Four queries for the whole response instead of four per deal. The PI map
-     * is free — $piByLead is already loaded, ordered by id ascending under the
-     * identical filter (client, opp, not cancelled), so its last entry per lead
-     * IS the `orderByDesc('id')->first()` the per-deal query was fetching.
-     *
-     * @param  \Illuminate\Support\Collection  $piByLead  live PIs grouped by opp_id, id ASC
-     * @param  int[]                           $piIds     every PI id in that map
-     * @return array{prefetched:bool, pi:array<int,ProformaInvoice>, pi_products:array<int,int[]>,
-     *               segment_by_product:array<int,int>, segments:array<int,ClmSegment>}
-     */
     private function prefetchDealContext(int $cid, $piByLead, array $piIds): array
     {
         $ctx = [
@@ -1792,8 +1054,6 @@ class SegmentDocUploadController extends Controller
         }
         if (!$piIds) return $ctx;
 
-        // Ordered like ProformaInvoice::items(), so this map is a drop-in for the
-        // relation the per-deal path still uses on the quotation fallback.
         foreach (
             ProformaInvoiceItem::whereIn('proforma_invoice_id', $piIds)
                 ->whereNotNull('product_id')
@@ -1806,8 +1066,6 @@ class SegmentDocUploadController extends Controller
         $productIds = collect($ctx['pi_products'])->flatten()->unique()->values()->all();
         if (!$productIds) return $ctx;
 
-        // Same tenant + not-null-segment filter the per-deal query used; the
-        // soft-delete scope rides along on the model exactly as before.
         foreach (
             Product::where('client_id', $cid)
                 ->whereIn('id', $productIds)
@@ -1819,12 +1077,6 @@ class SegmentDocUploadController extends Controller
         $segmentIds = array_values(array_unique($ctx['segment_by_product']));
         if (!$segmentIds) return $ctx;
 
-        /* orderBy('id') where the per-deal query had none. Unordered reads are
-         * a known source of drift in this controller (see the QA #102 note in
-         * fetchMasters) and this order decides the order every trade document
-         * and agreement is listed in, so it is pinned rather than left to the
-         * plan. It matches what Postgres was already returning — the lists do
-         * not move — it just can no longer change underneath them. */
         foreach (ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->orderBy('id')->get() as $seg) {
             $ctx['segments'][(int) $seg->id] = $seg;
         }
@@ -1832,63 +1084,10 @@ class SegmentDocUploadController extends Controller
         return $ctx;
     }
 
-    /**
-     * Every APPLICABLE trade-doc + agreement for a shipment lead, split by
-     * party (buyer/consignee), with live signature status overlaid.
-     *
-     * Unlike sigDocs() — which only surfaces what was SENT — this lists the
-     * full set the segment rules make applicable, so the Evidence Vault shows
-     * not-yet-sent docs ("Draft"), in-flight sends ("Pending") and signed docs
-     * ("Signed") side by side. Mirrors the canonical applicable-doc resolver in
-     * ClmAgreementController::applicableForLead (used by the Sales Matrix Trade
-     * Documents / Agreements popups) — keep the two in step.
-     *
-     * Already-sent docs that are no longer in the applicable set (e.g. the
-     * segment list changed after a send) are appended as "orphans" so a signed
-     * document never vanishes from the archive.
-     *
-     * @param  \Illuminate\Support\Collection  $reqs  signature requests for this lead
-     * @return array{trade_docs_buyer:array,trade_docs_consignee:array,agreements_buyer:array,agreements_consignee:array}
-     */
-    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs, ?string $partySegments = null, array $ctx = []): array
+    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs, ?string $partySegments = null, array $ctx = [], array $needs = [], bool $buyerIsConsignee = false): array
     {
         $empty = ['trade_docs_buyer' => [], 'trade_docs_consignee' => [], 'agreements_buyer' => [], 'agreements_consignee' => []];
 
-        /* Segment list = products on the latest non-cancelled PI.
-         *
-         * The PI is what creates the obligation. Before it exists the deal
-         * has only been quoted, and a quotation is a proposal — nothing is
-         * owed yet, so nothing should be counted yet (QA #11/#12: "until PI
-         * is not created till then agreement and trade doc count should not
-         * be visible").
-         *
-         * This used to fall back to the latest quotation, which is why a
-         * PI-less lead reported agreements in the Evidence Vault while the
-         * Buyer Profile beside it — which has always read the PI alone —
-         * reported 0/0. Two screens, two sources, guaranteed to disagree.
-         * The vault now reads the same source the profile does.
-         *
-         * ClmAgreementController::applicableForLead deliberately KEEPS its
-         * quotation fallback: that drives the Sales Matrix send popup, where
-         * Segment Details are meant to populate as soon as products are
-         * quoted. That is a preview of what will be owed; this is a count of
-         * what is owed. Different questions, different sources.
-         *
-         * The one exception is the archive rule this method already honours:
-         * a document that has actually been sent must never vanish. Sending
-         * is gated on stage 6 (post-PI) so this should be unreachable, but if
-         * a lead somehow carries sends without a live PI the quotation still
-         * resolves the segments, because losing a signed agreement from the
-         * archive is far worse than showing a count a little early. */
-        /* $ctx is the caller's ONE-PASS resolution of the same chain for every
-         * deal in the response: live PI per lead, its product ids, each
-         * product's segment, and the segment rows. Walking it here per deal
-         * cost four queries a deal for data the caller could read in four
-         * queries total. `prefetched` says the caller did that work, which
-         * also makes the absence of a lead authoritative: $ctx['pi'] holds
-         * EVERY live PI across these leads, so a lead missing from it has none
-         * and the PI query below would only confirm that at the price of a
-         * round trip. See prefetchDealContext(). */
         $prefetched = !empty($ctx['prefetched']);
         $source = $ctx['pi'][(int) $lead->id] ?? null;
 
@@ -1909,9 +1108,6 @@ class SegmentDocUploadController extends Controller
         }
         if (!$source) return $empty;
 
-        /* The quotation fallback is the archive rule (a sent document must
-         * never vanish) and is unreachable for a normal deal, so it is not
-         * prefetched — it resolves its own chain the original way. */
         if ($fromPi && $prefetched) {
             $productIds = collect($ctx['pi_products'][(int) $source->id] ?? [])->filter()->unique();
             if ($productIds->isEmpty()) return $empty;
@@ -1923,14 +1119,6 @@ class SegmentDocUploadController extends Controller
                 ->flip();
             if ($segmentIds->isEmpty()) return $empty;
 
-            /* Filtered out of the prefetched map rather than mapped over the
-             * deal's own id list, so the segments keep the ORDER the single
-             * ClmSegment query returned them in — which is the order the
-             * per-deal query used to return, and therefore the order the
-             * vault's document lists have always been built in. Mapping over
-             * $segmentIds instead would order them by where their product
-             * happens to sit on the PI, silently reshuffling every document
-             * list in the response. */
             $segments = collect($ctx['segments'])
                 ->filter(fn($seg, $sid) => $segmentIds->has((int) $sid))
                 ->values();
@@ -1949,67 +1137,17 @@ class SegmentDocUploadController extends Controller
         }
         if ($segments->isEmpty()) return $empty;
 
-        /* Narrow the deal's segments down to the ones the PARTY itself is
-           registered under (QA #6/#7).
-         *
-         * The list above comes from the products on the PI, so a deal selling a
-         * product outside the customer's own segments pulled in that segment's
-         * agreements and the vault showed documents the customer has nothing to
-         * do with.
-         *
-         * The guard matters: a party with NO segments recorded is left
-         * unfiltered rather than emptied, because a blank segment field is far
-         * more likely to be unmaintained data than a genuine "applies to
-         * nothing" - and hiding a required agreement is worse than showing a
-         * spare one. Segment names are folded to lower case on both sides;
-         * casing drift between the two tables is a known source of 0/0. */
-        /* The vault OWNER's segments, passed in by the caller. Reading the
-           lead's customer here was wrong for a consignee vault: it filtered the
-           consignee's documents against the customer's segment list, which is a
-           different party and often a different list, so the consignee saw only
-           the PI. */
         $partySegRaw = $partySegments;
         $partySegs = array_values(array_filter(array_map(
             fn($x) => mb_strtolower(trim((string) $x)),
             explode(',', (string) $partySegRaw)
         )));
-        /* NOT narrowed to the party's own segments any more.
-         *
-         * A deal's required documents follow what is being TRADED — the
-         * products on the PI — not the segment tags sitting on the customer or
-         * consignee master. Intersecting the two hid documents the deal
-         * genuinely requires: C-010 trades Test Segment 30 goods while the
-         * customer record is tagged foods / Travel & Luggage, so the overlap
-         * was empty and the vault showed the PI alone — while the send modal
-         * and the Buyer Profile both counted four. Two sources agreeing, and
-         * the disagreeing one being the filter, is what settled it.
-         * The filter's own comment already held the principle: hiding a
-         * required document is worse than showing a spare one.
-         * $partySegments is kept in the signature (callers still pass it) so
-         * the party is still identified for the buyer/consignee split below. */
         unset($partySegs);
 
-        // Index signature requests by [docType][party] => [libId => request],
-        // newest first. The library id lives in trade_doc_ids (multi-doc sends)
-        // or the legacy trade_doc_id scalar. Party maps model_name → bucket.
         $sigIndex = [
             ClmSignatureRequest::DOC_TRADE     => ['Customer' => [], 'Consignee' => []],
             ClmSignatureRequest::DOC_AGREEMENT => ['Customer' => [], 'Consignee' => []],
         ];
-        /* …plus a PARTY-AGNOSTIC index of the same requests.
-         *
-         * A signature request belongs to the LEAD and the DOCUMENT, not to one
-         * side of the deal. `model_name` records the model the send was raised
-         * FROM, and a Sales-Matrix send is always raised from the lead's
-         * Customer — 'Consignee' is never written to that column. Bucketing
-         * strictly on it therefore filed every send under Customer, so the
-         * consignee's Evidence Vault reported its agreements as "Draft · 0/2"
-         * while the customer's vault reported "Signed · 2/2" for the very same
-         * documents on the very same shipment.
-         *
-         * The party-specific bucket still wins when one exists (so a genuine
-         * consignee-only send keeps its own status); this is only the fallback
-         * that stops an already-signed document reading as never sent. */
         $sigAny = [
             ClmSignatureRequest::DOC_TRADE     => [],
             ClmSignatureRequest::DOC_AGREEMENT => [],
@@ -2017,16 +1155,6 @@ class SegmentDocUploadController extends Controller
         foreach ($reqs->sortByDesc('id') as $r) {
             $party = $r->model_name === 'Consignee' ? 'Consignee' : 'Customer';
 
-            /* Which library each id belongs to.
-             *
-             * One envelope can now carry trade documents AND agreements, and
-             * `document_type` is a single column — trade document wins there
-             * when both are present. Filing every id under that one type left
-             * the agreement in a mixed send reading "Draft · never sent" while
-             * it sat in the signer's inbox next to the trade document.
-             * metadata.doc_kind_ids records the real split; requests written
-             * before that existed have none, and fall back to the old rule of
-             * one request, one kind. See ClmSignatureController::send(). */
             $meta     = is_array($r->metadata) ? $r->metadata : [];
             $kindIds  = is_array($meta['doc_kind_ids'] ?? null) ? $meta['doc_kind_ids'] : null;
             $byKind   = $kindIds ?: [
@@ -2041,15 +1169,14 @@ class SegmentDocUploadController extends Controller
                     $id = (int) $id;
                     if (!$id) continue;
                     if (!isset($sigIndex[$kind][$party][$id])) {
-                        $sigIndex[$kind][$party][$id] = $r;   // latest wins
+                        $sigIndex[$kind][$party][$id] = $r;
                     }
                     if (!isset($sigAny[$kind][$id])) {
-                        $sigAny[$kind][$id] = $r;             // latest wins
+                        $sigAny[$kind][$id] = $r;
                     }
                 }
             }
         }
-        /* Party bucket first, lead-level send as the fallback. */
         $sigFor = fn(string $docType, string $party, int $libId) =>
         $sigIndex[$docType][$party][$libId] ?? $sigAny[$docType][$libId] ?? null;
 
@@ -2059,33 +1186,12 @@ class SegmentDocUploadController extends Controller
         $agrCons = [];
         $seen = ['td' => ['Customer' => [], 'Consignee' => []], 'agr' => ['Customer' => [], 'Consignee' => []]];
 
-        /* clm_lead_doc_needs is deliberately NOT read here.
-         *
-         * The vault once hid anything the deal had not ticked Necessary in the
-         * Sales-Matrix popup. That rule was reversed below (necessity is a
-         * property of a document, not a reason to hide it) but the load stayed
-         * behind, and nothing has read $needs since — two queries per deal for
-         * an array that was thrown away, one of them a Schema::hasTable() that
-         * costs a pg_class lookup every time. On a ten-deal customer that was
-         * twenty round trips buying nothing. If per-deal necessity is ever
-         * surfaced again, load it ONCE for every lead in the response rather
-         * than per lead inside this method. */
-
         foreach ($segments as $seg) {
-            // Agreements applicable to this segment.
             foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
-                /* APPLICABLE-based, not Necessary-based.
-                 * This used to skip anything the deal had not ticked Necessary.
-                 * The Sales-Matrix popup itself lists every applicable document
-                 * and simply LABELS each one Necessary / Not necessary, so
-                 * dropping the un-ticked ones here made the vault show fewer
-                 * documents than the screen the tick came from — and left the
-                 * Buyer Profile (which counts applicable) disagreeing with both.
-                 * Necessity is a property of a document, not a reason to hide
-                 * it — the trade-doc pass below follows the same rule. */
+                if (($needs['agreement:' . $a->id] ?? null) !== true) continue;
                 [$forBuyer, $forCons] = $this->partyFlags($a->party);
+                if ($buyerIsConsignee && !($forBuyer && !$forCons)) continue;
                 $name = $a->title ?: $a->code;
-                // Trade docs + agreements are mandatory documents for the deal.
                 $req  = 'REQ';
                 if ($forBuyer && !isset($seen['agr']['Customer'][$a->id])) {
                     $seen['agr']['Customer'][$a->id] = true;
@@ -2099,12 +1205,11 @@ class SegmentDocUploadController extends Controller
                 }
             }
 
-            // Trade documents applicable to this segment.
             foreach ($this->matchSegmentLibrary(ClmTradeDocLibrary::query(), $cid, $seg, 'status') as $m) {
-                // Applicable-based, same as agreements above.
+                if (($needs['trade_doc:' . $m->id] ?? null) !== true) continue;
                 [$forBuyer, $forCons] = $this->partyFlags($m->party);
+                if ($buyerIsConsignee && !($forBuyer && !$forCons)) continue;
                 $name = $m->title ?: ($m->name ?: $m->code);
-                // Trade docs + agreements are mandatory documents for the deal.
                 $req  = 'REQ';
                 if ($forBuyer && !isset($seen['td']['Customer'][$m->id])) {
                     $seen['td']['Customer'][$m->id] = true;
@@ -2119,12 +1224,6 @@ class SegmentDocUploadController extends Controller
             }
         }
 
-        // Only the documents the lead's segments actually make applicable are
-        // shown — matching the canonical Sales-Matrix resolver
-        // (ClmAgreementController::applicableForLead). We intentionally do NOT
-        // append "orphan" sends (agreements/trade-docs sent under a different or
-        // earlier segment context): those surfaced as wrong/additional rows that
-        // don't belong to this shipment's segment.
         return [
             'trade_docs_buyer'      => $tdBuyer,
             'trade_docs_consignee'  => $tdCons,
@@ -2133,31 +1232,12 @@ class SegmentDocUploadController extends Controller
         ];
     }
 
-    /**
-     * Match a CLM library (agreements / trade docs) to one segment the same way
-     * applicableForLead does: regulatory tier + segment CSV (LIKE-anchored on
-     * comma boundaries) + active status. $statusCol is the library's active
-     * flag ('agr_status' ⇒ 'Active', 'status' ⇒ 'active').
-     */
     private function matchSegmentLibrary($query, int $cid, $seg, string $statusCol)
     {
         $name = $seg->name;
         $code = $seg->code;
         $statusVal = $statusCol === 'agr_status' ? 'Active' : 'active';
 
-        /* Memoised per (library, tenant, status column, segment) for this
-         * request — the answer depends on nothing else.
-         *
-         * The Evidence Vault runs this twice for every segment of every deal,
-         * and a party's deals overwhelmingly repeat the same handful of
-         * segments: a ten-deal customer was re-running the same two
-         * LOWER()/LIKE scans 92 times for ~13 distinct answers. The scans are
-         * the single most expensive thing in the response (no index can serve
-         * a leading-wildcard LIKE), so repeating them is the whole cost.
-         *
-         * Keyed on the segment ID because that is what the WHERE is built
-         * from; a segment with no id (never the case for a persisted
-         * ClmSegment) falls through uncached rather than colliding on 0. */
         $key = $seg->id ?? null;
         $cacheKey = $key === null ? null
             : get_class($query->getModel()) . '|' . $cid . '|' . $statusCol . '|' . (int) $key;
@@ -2167,12 +1247,6 @@ class SegmentDocUploadController extends Controller
 
         $rows = $query->where('client_id', $cid)
             ->where('regulatory', $seg->regulatory_status)
-            /* LOWER() on both sides. Postgres LIKE is case-sensitive, so a
-               segment stored as "Foods" never matched a library row written
-               "foods" - the vault then showed 0/0 while the Buyer Profile,
-               which compares in PHP with mb_strtolower, listed the same doc.
-               Casing drift between the two screens is what made the counts
-               disagree; both now fold case before comparing. */
             ->where(function ($q) use ($name, $code) {
                 foreach ([$name, $code] as $needle) {
                     $n = mb_strtolower(trim((string) $needle));
@@ -2195,99 +1269,18 @@ class SegmentDocUploadController extends Controller
         return $rows;
     }
 
-    /**
-     * Parse a doc's applicable-party CSV ("Buyer,Consignee") into buyer/
-     * consignee flags for the customer/consignee Case-to-Case section.
-     *
-     * A blank party stays universal (applies to both, so it's never hidden).
-     * But a doc that NAMES parties yet none is Buyer/Consignee (e.g.
-     * "Supplier-Material / Goods") is supplier/other-only — not applicable
-     * here — so BOTH flags return false and the caller drops the row (the
-     * callers only emit a row when forBuyer or forConsignee is true). Mirrors
-     * ClmAgreementController::partyForBuyerConsignee().
-     *
-     * @return array{0:bool,1:bool} [forBuyer, forConsignee]
-     */
     private function partyFlags(?string $party): array
     {
         $tokens = array_filter(array_map(
             fn($t) => strtolower(trim($t)),
             explode(',', (string) $party)
         ));
-        // Unclassified (blank party) → applies to both.
         if (empty($tokens)) return [true, true];
         $forBuyer     = in_array('buyer', $tokens, true);
         $forConsignee = in_array('consignee', $tokens, true);
         return [$forBuyer, $forConsignee];
     }
 
-    /**
-     * Customer / Consignee top-level Agreements bucket — the agreements applicable
-     * to the ENTITY'S OWN segments (segment-driven, exactly like the Buyer
-     * Profile's agr cell), overlaid with this entity's COMPLETED agreement
-     * e-signatures. Unlike buildShipmentAgreements() this is NOT gated on a
-     * shipment order existing, so a party with applicable agreements but no
-     * shipment still lists them (CBC #66: popup read "0 of 0" while the profile
-     * cell read N). The customer counts every segment agreement; the consignee is
-     * party-filtered to the consignee side — matching ClmBuyerProfileController.
-     *
-     * @param  int[]  $segmentIds  the entity's resolved segment ids
-     * @return array<int,array<string,mixed>>  VaultDoc-shaped rows (name + status)
-     */
-    private function buildEntityAgreements(int $cid, string $type, int $entityId, array $segmentIds): array
-    {
-        if (!in_array($type, ['customer', 'consignee'], true) || !$cid || empty($segmentIds)) return [];
-
-        $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->get();
-        if ($segments->isEmpty()) return [];
-
-        // Completed agreement e-signatures for THIS entity → set of signed lib ids.
-        $modelName = $type === 'consignee' ? 'Consignee' : 'Customer';
-        $signed = [];
-        foreach (
-            ClmSignatureRequest::where('client_id', $cid)
-                ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
-                ->where('status', 'completed')
-                ->where('model_name', $modelName)
-                ->where('party_id', $entityId)
-                ->get(['trade_doc_ids']) as $sr
-        ) {
-            foreach ((is_array($sr->trade_doc_ids) ? $sr->trade_doc_ids : []) as $aid) {
-                $signed[(int) $aid] = true;
-            }
-        }
-
-        $rows = [];
-        $seen = [];
-        foreach ($segments as $seg) {
-            foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
-                $aid = (int) $a->id;
-                if (isset($seen[$aid])) continue;
-                /* Each vault lists its OWN side. The customer path used to list
-                 * every segment agreement, so a Consignee-marked one surfaced in
-                 * the customer's vault — and when the consignee IS the customer
-                 * that read as the same company being asked twice. The party
-                 * marking decides who owes a document; the entity relationship
-                 * does not change it. */
-                [$forBuyer, $forCons] = $this->partyFlags($a->party);
-                if (!($type === 'consignee' ? $forCons : $forBuyer)) continue;
-                $seen[$aid] = true;
-                $rows[] = [
-                    'db_id'     => $aid,
-                    'name'      => $a->title ?: $a->code,
-                    'authority' => null,
-                    'status'    => isset($signed[$aid]) ? 'Signed' : 'Pending',
-                ];
-            }
-        }
-        return $rows;
-    }
-
-    /**
-     * One Evidence-Vault shipment-doc row for an applicable library doc. With
-     * no signature request the doc is "Draft" (not yet sent); otherwise the
-     * Zoho status maps to Signed / Pending / Declined / Recalled / Expired.
-     */
     private function shipmentDocRow(string $name, string $required, ?ClmSignatureRequest $req, ?int $libId = null, ?string $docType = null): array
     {
         if (!$req) {
@@ -2312,7 +1305,6 @@ class SegmentDocUploadController extends Controller
             'expired'    => 'Expired',
             default      => 'Draft',
         };
-        // "Signed On" shows the completion date — only meaningful once signed.
         $signedOn = $status === 'Signed' && $req->completed_at
             ? \Illuminate\Support\Carbon::parse($req->completed_at)->format('d-M-Y')
             : '—';
@@ -2335,36 +1327,16 @@ class SegmentDocUploadController extends Controller
         ];
     }
 
-    /**
-     * True when a library doc's applicable-party CSV targets a SUPPLIER (any
-     * Supplier-* sub-type), or names no party at all (applies to everyone).
-     * Mirrors the /clm/trade-doc-library/for-party/supplier filter the supplier
-     * form uses, so the deal drill-down shows the same docs the form would.
-     */
     private function supplierApplicable(?string $party): bool
     {
         $tokens = array_filter(array_map(fn($t) => strtolower(trim($t)), explode(',', (string) $party)));
-        if (empty($tokens)) return true;                    // no party → all parties
+        if (empty($tokens)) return true;
         foreach ($tokens as $t) {
             if ($t === 'supplier' || str_starts_with($t, 'supplier')) return true;
         }
         return false;
     }
 
-    /**
-     * The Supplier Trade Documents OR Agreements applicable to a vendor —
-     * resolved from the vendor's OWN segments (the segments it's onboarded for,
-     * via resolveSegmentIds) → Supplier-party library rows. Segment-driven, NOT
-     * product- or customer-PI-driven: the vendor's products are validated to its
-     * segment anyway, and a stale product mapping must not drive the vault. Same
-     * set for every one of the vendor's deals; per-deal signature status is
-     * overlaid separately (see overlaySupplierDocs). Returns deduped library rows
-     * (empty ⇒ no segment, or no Supplier-applicable library row).
-     *
-     * @param  array   $segIds     the vendor's segment ids (resolveSegmentIds)
-     * @param  string  $libClass   ClmTradeDocLibrary::class | ClmAgreementLibrary::class
-     * @param  string  $statusCol  'status' (trade docs) | 'agr_status' (agreements)
-     */
     private function vendorSupplierLibrary(int $cid, array $segIds, string $libClass, string $statusCol): \Illuminate\Support\Collection
     {
         if (empty($segIds)) return collect();
@@ -2384,33 +1356,10 @@ class SegmentDocUploadController extends Controller
         return $docs;
     }
 
-    /**
-     * Overlay this vendor's live Zoho trade-doc signature status (its requests on
-     * ONE deal's lead) onto the vendor's applicable trade-doc library rows,
-     * producing VaultDoc-shaped rows for the deal drill-down. A doc not yet sent
-     * on this deal reads "Pending" with a Send action; once sent/signed the row
-     * tracks the request. So the doc LIST is the vendor's (same per deal) while
-     * the STATUS is per-deal. Shape matches VaultDoc so the existing
-     * DealDocsSubTable + VaultRowActions render it unchanged.
-     *
-     * @param  \Illuminate\Support\Collection  $libDocs  library rows (from vendorSupplierLibrary)
-     * @param  \Illuminate\Support\Collection  $reqs     this vendor's sig-requests on this lead
-     * @param  string  $docType  DOC_TRADE | DOC_AGREEMENT — which signature kind to overlay
-     */
-    /**
-     * @param int|null $partyId When given, only signature requests belonging to
-     *        THIS supplier are overlaid. The caller's query should already be
-     *        scoped — this is the second lock, because the index below matches
-     *        on document id alone and would otherwise attribute one supplier's
-     *        signature to every supplier sharing that document.
-     *        Left null by the lead-scoped callers, whose boundary is the deal
-     *        (lead_id), not the party.
-     */
     private function overlaySupplierDocs(\Illuminate\Support\Collection $libDocs, $reqs, string $docType = ClmSignatureRequest::DOC_TRADE, ?int $partyId = null): array
     {
         if ($libDocs->isEmpty()) return [];
 
-        // library id => latest Vendor signature request (of this doc type) on this lead.
         $sigIndex = [];
         foreach ($reqs->sortByDesc('id') as $r) {
             if ($r->model_name !== 'Vendor' || $r->document_type !== $docType) continue;
@@ -2442,7 +1391,7 @@ class SegmentDocUploadController extends Controller
             }
             $rows[] = [
                 'id'                   => $sig ? (int) $sig->id : (int) $m->id,
-                'db_id'                => (int) $m->id,                 // library id → Send-for-Signature
+                'db_id'                => (int) $m->id,
                 'party'                => $m->party,
                 'signature_request_id' => $sig ? (int) $sig->id : null,
                 'sig_state'            => $sig?->status,
@@ -2462,34 +1411,10 @@ class SegmentDocUploadController extends Controller
         return $rows;
     }
 
-    /**
-     * Returns the MANDATORY documents (per the owner's DCP segment rules)
-     * that have NOT yet been uploaded. Reuses the same segment-rule → upload
-     * matching the Vault uses, so it stays in lock-step with what the user
-     * sees in the Evidence Vault. Each entry: ['category','doc_code','name'].
-     * Empty array ⇒ the party is complete (or has no segment / no mandatory
-     * rules). Powers the "can't create a PI until the customer & consignee
-     * have submitted their required documents" guard in
-     * ProformaInvoiceController.
-     *
-     * @param  Model  $owner  a Customer or Consignee model
-     * @param  string $type   'customer' | 'consignee'
-     * @param  Customer|null $scopeCustomer  the customer driving the deal —
-     *         narrows a CONSIGNEE's checklist to that customer's segment.
-     */
     public function missingMandatoryDocs(Model $owner, string $type, ?Customer $scopeCustomer = null): array
     {
         $cid = (int) ($owner->client_id ?? 0);
 
-        /* Lead-scoped consignee checklist — the SAME narrowing vault() does
-         * with ?scope_customer_id. A consignee's own `segment` string is the
-         * UNION of every customer it's mapped to, so without this the PI gate
-         * demanded documents for segments belonging to OTHER customers —
-         * documents the Evidence Vault never listed and the user had no way to
-         * satisfy from this lead. The vault showed "complete" while the PI was
-         * blocked. Scoping to the deal's customer puts the gate and the vault
-         * back in lock-step. Falls back to the union when no customer is given
-         * or the consignee isn't actually mapped to it. */
         $useScope = $type === 'consignee'
             && $scopeCustomer
             && $this->consigneeMappedToCustomer($cid, (int) $owner->id, (int) $scopeCustomer->id);
@@ -2499,9 +1424,6 @@ class SegmentDocUploadController extends Controller
             : $this->resolveSegmentIds($owner, $type, $cid);
         if (empty($segmentIds)) return [];
 
-        // Match the entity's trade type (with a fallback to any rule) exactly
-        // like vault() — otherwise the PI "required docs submitted" gate would
-        // count the wrong document set for a domestic/international entity.
         $docType = $this->resolveDocType($owner, $type);
         $rules = ClmSegmentRule::query()
             ->where('client_id', $cid)
@@ -2512,7 +1434,6 @@ class SegmentDocUploadController extends Controller
             ->filter()
             ->values();
 
-        // Per-category union of (code => requirement), Mandatory wins.
         $unionByCat = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => [], 'qc' => []];
         foreach ($rules as $rule) {
             $sel = $rule->doc_selections ?? [];
@@ -2526,7 +1447,6 @@ class SegmentDocUploadController extends Controller
             }
         }
 
-        // Which mandatory (cat, code) pairs are NOT uploaded?
         $uploads = SegmentDocUpload::query()
             ->where('uploadable_type', get_class($owner))
             ->where('uploadable_id', $owner->id)
@@ -2544,7 +1464,6 @@ class SegmentDocUploadController extends Controller
         }
         if (empty($missingCodesByCat)) return [];
 
-        // Resolve human names for the missing docs (best-effort).
         $masterClass = [
             'kyc' => ClmKycDocument::class,
             'dd' => ClmDdDocument::class,
@@ -2583,31 +1502,6 @@ class SegmentDocUploadController extends Controller
         return response()->json(['data' => ['id' => $uploadId], 'message' => 'Deleted']);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * Helpers
-     * ────────────────────────────────────────────────────────────── */
-
-    /**
-     * Resolve `{type}/{id}` to a tenant-scoped entity. Throws 404 if the
-     * type isn't supported or the user can't see this record.
-     *
-     * Same-as-customer read-through: when the resolved row is a Consignee
-     * with `same_as_customer = true` and the caller is performing a READ
-     * (`$action === 'view'`), we transparently swap to the linked Customer
-     * so the consignee's Stage 3 Evidence Vault — segment-rule uploads
-     * across all five categories (kyc/dd/tl/td/qc) — surfaces the
-     * customer's documents instead of the consignee's empty bucket.
-     * Writes ('edit') intentionally do NOT swap: the UI locks Stage 3
-     * editing while the toggle is on, so attempting a store/destroy here
-     * is a programming error that should fail loudly against the
-     * consignee's own row (not silently mutate the customer's uploads).
-     */
-    /**
-     * The owner's segments by id (code / name / regulatory_status) for the
-     * vault header chip. A supplier keeps its multi-select set in the
-     * vendor_segments pivot (scalar segment_id = the first one); customers
-     * and consignees resolve through SegmentGuard.
-     */
     private function segmentRowsOf(string $type, $owner): array
     {
         if (in_array($type, ['customer', 'consignee'], true)) {
@@ -2621,13 +1515,6 @@ class SegmentDocUploadController extends Controller
         return [];
     }
 
-    /**
-     * A supplier's signing contact for the vault's Send-for-Signature preview:
-     * primary address contact, then the vendor's primary_email — the same
-     * resolution PoDocumentService::supplierContact uses at send time, so the
-     * recipient shown is the one Zoho gets. Callers opening the vault do not
-     * all carry an email, which left the preview on "—" (QA #139).
-     */
     private function partyContactOf($owner): ?array
     {
         if (!$owner instanceof \App\Models\Vendor) return null;
@@ -2648,10 +1535,7 @@ class SegmentDocUploadController extends Controller
         if (!$user) {
             abort(401);
         }
-        /** @var Model $row */
         $row = $class::query()->findOrFail($id);
-        // Same client_id check pattern Customer/Consignee/Vendor controllers
-        // already use. Cross-tenant access reports as 404 (no info leak).
         if ($user->client_id && (int) ($row->client_id ?? 0) !== (int) $user->client_id) {
             abort(404);
         }
@@ -2663,12 +1547,6 @@ class SegmentDocUploadController extends Controller
                     return $linked;
                 }
             } else {
-                // Defense-in-depth: the consignee's own segment_doc_uploads
-                // bucket must stay empty while same_as_customer is on, or
-                // the reads (which transparently swap to the customer)
-                // would silently orphan the writes. The UI hides the
-                // upload buttons under this flag — a 409 here only fires
-                // against direct/legacy API callers.
                 abort(response()->json([
                     'message' => 'This consignee is flagged Same as Customer. Manage uploads on the linked customer instead.',
                 ], 409));
@@ -2678,41 +1556,11 @@ class SegmentDocUploadController extends Controller
         return $row;
     }
 
-    /**
-     * Resolve the owning entity's segment ids regardless of where each
-     * model stores them. Customer/Consignee carry a comma-joined name
-     * string; Vendor uses an FK column. Returns an empty array when
-     * nothing's set — the caller renders an empty vault rather than
-     * 500'ing.
-     */
-    /**
-     * The entity's trade type — India (primary address) → domestic, any other
-     * country → international. Decides which of a segment's two document-type
-     * rules (Domestic / International) the Evidence Vault applies.
-     *
-     * Customer/Consignee addresses store the country NAME directly; Vendor
-     * addresses store a `country_id` FK, so resolve that through the relation.
-     * No address (or unresolved country) → international, mirroring the forms'
-     * `isDomesticCountry(unset) === false`.
-     */
     private function resolveDocType(Model $owner, string $type): string
     {
-        // Shared with the PO submit gate, which blocks on the same paperwork.
         return app(\App\Services\SegmentDocScope::class)->docType($owner, $type);
     }
 
-    /**
-     * Lead-scoped consignee vault helper. Returns the customer whose segment
-     * should drive a consignee's document checklist, or null to fall back to
-     * the consignee's own (cross-customer union) segment.
-     *
-     * Only honoured for `consignee` vaults that carry a `scope_customer_id`
-     * query param. The customer must be tenant-owned AND actually mapped to
-     * this consignee (via the consignee_customer pivot) — otherwise the scope
-     * is ignored, so a stray/foreign id can never narrow or leak a vault.
-     * $id is the ORIGINAL route consignee id (resolveOwner may have swapped
-     * $owner to the linked customer for a "same as customer" consignee).
-     */
     private function resolveScopeCustomer(Request $request, string $type, int $id, int $cid): ?Customer
     {
         if ($type !== 'consignee' || !$cid) return null;
@@ -2725,12 +1573,6 @@ class SegmentDocUploadController extends Controller
         return $this->consigneeMappedToCustomer($cid, $id, $scopeId) ? $customer : null;
     }
 
-    /**
-     * Is this consignee actually mapped to this customer (consignee_customer
-     * pivot), within the tenant? Guards both the vault's ?scope_customer_id
-     * and missingMandatoryDocs' $scopeCustomer, so a stray or foreign id can
-     * never narrow a checklist to a segment the party isn't entitled to.
-     */
     private function consigneeMappedToCustomer(int $cid, int $consigneeId, int $customerId): bool
     {
         if (!$cid || !$consigneeId || !$customerId) return false;
@@ -2743,69 +1585,29 @@ class SegmentDocUploadController extends Controller
 
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array
     {
-        // Shared with the PO submit gate, which blocks on the same paperwork.
         return app(\App\Services\SegmentDocScope::class)->segmentIds($owner, $type);
     }
 
-    /**
-     * Pull master rows for a category, keyed by their code so the
-     * Vault row builder can look them up in O(1). Returns each row's
-     * useful display attributes (name, authority, expiry…) without
-     * leaking internal ids the frontend doesn't need.
-     */
     private function fetchMasters(string $modelClass, array $codes, int $cid, ?array $authMap = null, ?int $branchId = null): array
     {
         if (empty($codes)) return [];
-        /* orderBy('id') is load-bearing, not tidiness (QA #102).
-         *
-         * The KYC / DD / TL / QC catalogues each hold TWO rows for codes
-         * ...-001 to ...-020, seeded on different dates with DIFFERENT names
-         * (KYC-020 is both "Digital Signature Certificate" and "Latest ITR").
-         * The loop below keys by code, so with no ORDER BY whichever row the
-         * database happened to return last silently won — and Postgres is free
-         * to change that between plans. The Evidence Vault therefore listed a
-         * different document for the same rule from one load to the next, while
-         * the Document Control Panel (which does order by id) showed the first.
-         *
-         * Ordering by id and keeping the FIRST occurrence makes the vault
-         * deterministic AND agree with the DCP. It does not fix the underlying
-         * duplication — that is a data cleanup, and which set to keep is not
-         * this function's call — but it stops the same rule rendering as two
-         * different documents. */
-        // Codes restart per branch: take the owner's branch catalogue, then client-level rows.
         $rows = \App\Support\SegmentGuard::branchCatalogue($modelClass::query(), $cid, $codes, $branchId)->get();
-        // Document masters store the issuing authority by id (comma-joined for
-        // multi-authority docs) — resolve to current names so the Evidence
-        // Vault shows the authority name, not a raw id. Unknown tokens (e.g. a
-        // Trade Document's free-text counter party) pass through unchanged.
-        /* Resolved once by the caller when it is fetching several categories —
-         * the vault reads five, and each one re-read the whole authority table
-         * to build an identical map. */
         $authMap ??= ClmAuthority::idNameMap($cid);
         $byCode = [];
         foreach ($rows as $r) {
-            // First row per code wins (see the orderBy note above) — a later
-            // duplicate must not overwrite it.
             if (isset($byCode[$r->code])) continue;
             $attrs = $r->getAttributes();
             $byCode[$r->code] = [
-                // Master row primary key. For the Trade Documents bucket this
-                // is the clm_trade_doc_library.id the Send-for-Signature flow
-                // needs; harmless metadata for the other categories.
                 'id'        => $r->id,
                 'code'      => $r->code,
                 'name'      => $r->name ?? ($attrs['title'] ?? $r->code),
                 'authority' => ClmAuthority::displayNames($attrs['authority'] ?? null, $authMap),
                 'expiry'    => $attrs['expiry'] ?? ($attrs['validity'] ?? null),
-                // Applicable-party CSV (e.g. "Buyer, Consignee"). Only the
-                // Trade Document master carries it; lets the Evidence Vault
-                // mirror the edit form's party filter.
                 'party'     => $attrs['party'] ?? null,
             ];
         }
         return $byCode;
     }
-
 
     private function storeUpload($file, string $type, int $ownerId, string $category, string $docCode): string
     {

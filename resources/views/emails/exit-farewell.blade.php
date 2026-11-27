@@ -12,7 +12,6 @@
 </head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;color:#1e293b;">
 
-{{-- Hidden pre-header --}}
 <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f4f5f7;">
   {{ $employeeName }} will be leaving {{ $orgName }} on {{ $lastWorkingDay }}.
 </div>
@@ -25,12 +24,7 @@
 <tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 10px 40px rgba(15,23,42,0.08);">
 
-  {{-- ── Brand header ─────────────────────────────────────────── --}}
   <tr><td style="padding:34px 32px 18px;text-align:center;border-bottom:1px solid #e9e5fb;position:relative;">
-    {{-- Decorative top-right corner (layered purple + navy triangles). Built as
-         an inline SVG data-URI; clipped by the card's rounded corner + overflow.
-         (Some clients e.g. Gmail strip absolute-positioned / data images — it's
-         purely decorative, so the email still reads fine without it.) --}}
     @php
       $cornerSvg = "<svg xmlns='http://www.w3.org/2000/svg' width='118' height='118' viewBox='0 0 118 118'>"
                  . "<polygon points='26,0 118,0 118,92' fill='#c4b5fd'/>"
@@ -57,14 +51,12 @@
     @endif
   </td></tr>
 
-  {{-- ── Title ────────────────────────────────────────────────── --}}
   <tr><td style="padding:34px 40px 6px;text-align:center;">
     <h1 style="margin:0;font-size:28px;line-height:1.3;font-weight:800;color:#1e293b;">
       Thank You for Being<br/>a Part of Our Journey
     </h1>
   </td></tr>
 
-  {{-- ── Circular people-exit icon ────────────────────────────── --}}
   <tr><td style="padding:24px 32px 8px;text-align:center;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
            style="width:88px;height:88px;border:2px solid #e7e1fb;border-radius:50%;">
@@ -74,7 +66,6 @@
     </table>
   </td></tr>
 
-  {{-- ── Body copy ────────────────────────────────────────────── --}}
   <tr><td style="padding:18px 44px 6px;">
     <p style="margin:0 0 22px;font-size:16px;color:#334155;line-height:1.6;">{{ $introLine }}</p>
     <p style="margin:0 0 22px;font-size:16px;color:#334155;line-height:1.7;">
@@ -89,7 +80,6 @@
     </p>
   </td></tr>
 
-  {{-- ── Dark footer (contact) ────────────────────────────────── --}}
   <tr><td style="padding:0;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0f172a;">
       <tr>

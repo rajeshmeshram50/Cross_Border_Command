@@ -3,21 +3,9 @@ import { Modal, ModalBody, ModalFooter, Form, Row, Button, Spinner } from 'react
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { getMasterConfig, masterEndpoint, type FieldDef } from './masterConfigs';
-import { MasterFormStyles } from './masterFormKit';
+import { MasterFormStyles, MasterSavingLock } from './masterFormKit';
 import { renderField } from './MasterPage';
 
-/**
- * Reusable "Add <master>" modal — renders the EXACT same form the dedicated
- * /master/{slug} page uses (same header, same `renderField` field rendering,
- * same master-modal CSS), so a quick-add from another screen (e.g. the Supplier
- * wizard's "+" buttons) is literally the master's own form, not a re-creation.
- *
- * Scoped to the simple lookup masters surfaced as quick-adds (text / select /
- * textarea / number fields). It does not handle file uploads, sublists, or
- * auto-gen codes — those masters aren't offered as inline quick-adds.
- */
-
-// Identifier-style fields keep their exact casing (mirrors MasterPage.handleSave).
 const SKIP_CAPITALIZE = new Set([
   'code', 'iso_code', 'state_code', 'short_code', 'hsn_code',
   'gstin', 'pan', 'tan', 'cin', 'iec', 'ifsc_code', 'swift_code', 'ad_code',
@@ -34,18 +22,37 @@ export function MasterRecordModal({
   slug,
   onClose,
   onSaved,
+  defaults,
+  variant,
 }: {
   slug: string;
   onClose: () => void;
   onSaved: (row: Record<string, unknown>) => void;
+  defaults?: Record<string, string>;
+  /** 'teal': the Master page's own Add form (same header, card and footer).
+      The caller loads its styles (master.css, warehouse-master.css,
+      p2p-common.css). Omitted, the form keeps its original look. */
+  variant?: 'teal';
 }) {
   const cfg = getMasterConfig(slug);
   const toast = useToast();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [radioValues, setRadioValues] = useState<Record<string, string>>({});
+  const [radioValues, setRadioValues] = useState<Record<string, string>>(() => ({ ...(defaults ?? {}) }));
   const [saving, setSaving] = useState(false);
 
   if (!cfg) return null;
+  const firstOpt = (name: string): string => {
+    const src = cfg.fields.find(ff => ff.n === name);
+    const o = src?.opts?.[0];
+    return o == null ? '' : String(typeof o === 'string' ? o : o.value);
+  };
+  const isShown = (f: FieldDef): boolean => {
+    if (!f.showWhen) return true;
+    const cur = String(radioValues[f.showWhen.field] ?? defaults?.[f.showWhen.field] ?? firstOpt(f.showWhen.field));
+    const need = Array.isArray(f.showWhen.equals) ? f.showWhen.equals.map(String) : [String(f.showWhen.equals)];
+    return need.includes(cur);
+  };
+  const shownFields = cfg.fields.filter(isShown);
   const singular = cfg.titleSingular || cfg.title;
   const clearFieldError = (name: string) =>
     setFieldErrors(prev => { if (!prev[name]) return prev; const n = { ...prev }; delete n[name]; return n; });
@@ -54,9 +61,8 @@ export function MasterRecordModal({
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
 
-    // Client-side required check (server still validates).
     const errs: Record<string, string> = {};
-    for (const f of cfg.fields) {
+    for (const f of shownFields) {
       if (f.sec || !f.n || f.t === 'sublist' || f.t === 'file' || f.auto) continue;
       if (f.r && String(fd.get(f.n) ?? '').trim() === '') errs[f.n] = `${f.l} is required`;
     }
@@ -70,6 +76,7 @@ export function MasterRecordModal({
     const payload: Record<string, unknown> = {};
     for (const f of cfg.fields as FieldDef[]) {
       if (f.sec || !f.n || f.t === 'sublist' || f.t === 'file' || f.auto) continue;
+      if (!isShown(f)) { payload[f.n] = null; continue; }
       const raw = fd.get(f.n);
       if (f.t === 'number') {
         payload[f.n] = raw == null || raw === '' ? null : Number(raw);
@@ -99,19 +106,74 @@ export function MasterRecordModal({
     }
   };
 
+  const fields = shownFields.map((f, i) =>
+    renderField(f, i, defaults ?? null, false, {}, () => 'name', fieldErrors, clearFieldError, 12, [], {}, () => {}, {}, radioValues, (name, value) => setRadioValues(prev => ({ ...prev, [name]: value }))),
+  );
+
+  if (variant === 'teal') {
+    return (
+      <>
+        <MasterFormStyles />
+        <Modal
+          isOpen
+          toggle={() => { /* explicit Cancel only */ }}
+          centered
+          modalClassName="master-modal mp-tealf"
+          contentClassName="whm-addmdl mp-tealf-content"
+          backdropClassName="mp-tealf-backdrop"
+          backdrop="static"
+          keyboard={false}
+          zIndex={1200}
+        >
+          <div className="spi-mdl-head">
+            <div className="spi-mdl-head-left">
+              <div className="spi-mdl-head-ico"><i className={cfg.icon} style={{ fontSize: 20 }} /></div>
+              <div className="min-w-0">
+                <div className="spi-mdl-title">Add {singular}</div>
+                <div className="spi-mdl-sub">Fill in the details to register a new {singular.toLowerCase()}</div>
+              </div>
+            </div>
+            <button type="button" className="spi-mdl-x" onClick={onClose} disabled={saving} aria-label="Close">
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+          </div>
+          <Form onSubmit={handleSave} noValidate>
+            <ModalBody className="mp-tealf-body">
+              <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+                <div className="whm-card">
+                  <Row className="g-2">{fields}</Row>
+                </div>
+              </fieldset>
+            </ModalBody>
+            <div className="spi-mdl-foot">
+              <span className="whm-footnote"><i className="ri-information-line" style={{ fontSize: 15, color: '#0891b2' }} /> Fields marked * are required</span>
+              <div className="spi-mdl-foot-btns">
+                <button type="button" className="spi-mdl-cancel" disabled={saving} onClick={onClose}>Cancel</button>
+                <button type="submit" className="spi-mdl-confirm" disabled={saving} aria-busy={saving || undefined}>
+                  {saving ? <span className="spi-mdl-spin" aria-hidden /> : <i className="ri-check-line" style={{ fontSize: 16 }} />}
+                  {saving ? 'Saving...' : `Save ${singular}`}
+                </button>
+              </div>
+            </div>
+          </Form>
+          {saving && <MasterSavingLock label={`Saving ${singular.toLowerCase()}…`} />}
+        </Modal>
+      </>
+    );
+  }
+
   return (
     <>
       <MasterFormStyles />
       <Modal
         isOpen
-        toggle={() => { /* explicit Cancel only */ }}
+        toggle={() => {}}
         centered
         modalClassName="master-modal"
         backdrop="static"
         keyboard={false}
         zIndex={1200}
       >
-        {/* Header — same layered gradient + frosted icon badge as the master page. */}
         <div
           className="position-relative overflow-hidden"
           style={{ background: 'linear-gradient(135deg, #2b3a85 0%, #405189 28%, #5562c4 55%, #6e7eee 78%, #8b6fe8 100%)', padding: '22px 24px' }}
@@ -131,14 +193,10 @@ export function MasterRecordModal({
 
         <Form onSubmit={handleSave} noValidate>
           <ModalBody className="px-4 py-3">
-            <Row className="g-2">
-              {cfg.fields.map((f, i) =>
-                renderField(f, i, null, false, {}, () => 'name', fieldErrors, clearFieldError, 12, [], {}, () => {}, {}, radioValues, (name, value) => setRadioValues(prev => ({ ...prev, [name]: value }))),
-              )}
-            </Row>
+            <Row className="g-2">{fields}</Row>
           </ModalBody>
           <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-end gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-            <button type="button" className="master-modal-cancel" onClick={onClose}>
+            <button type="button" className="master-modal-cancel" onClick={onClose} disabled={saving}>
               <i className="ri-close-line align-middle me-1" />Cancel
             </button>
             <Button type="submit" disabled={saving} className="master-modal-save waves-effect waves-light" style={{ fontSize: 14 }}>
@@ -146,6 +204,7 @@ export function MasterRecordModal({
             </Button>
           </ModalFooter>
         </Form>
+        {saving && <MasterSavingLock label={`Saving ${singular.toLowerCase()}…`} />}
       </Modal>
     </>
   );

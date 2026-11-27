@@ -1,38 +1,8 @@
 @php
-  /**
-   * CLM Trade Document → Zoho Sign render target (CBC).
-   *
-   * Header + footer are now driven by the document's saved page-shell
-   * config (`header_config` / `footer_config` JSON on
-   * clm_trade_doc_library — see [[HeaderFooterPanel.tsx]]). Whatever the
-   * user configured in Stage 2 of the draft renders verbatim here.
-   * Falls back to a minimal client-name header / company-line footer
-   * for legacy rows that pre-date those columns.
-   *
-   * Inputs:
-   *   - $document         (ClmTradeDocLibrary)  draft row (code, name, title, content)
-   *   - $party            (Model)               Customer | Consignee | Vendor
-   *   - $modelName        (string)              'Customer' | 'Consignee' | 'Vendor'
-   *   - $processedHtml    (string)              placeholder-replaced HTML body
-   *   - $signers          (array)               list of {name, email, order}
-   *   - $generatedDate    (string)              'd/m/Y'
-   *   - $requestId        (string)              UUID stamped in the footer
-   *   - $client           (Client|null)         tenant fallback for branding
-   *   - $headerConfig     (array)               saved HeaderConfig JSON
-   *   - $footerConfig     (array)               saved FooterConfig JSON
-   *   - $headerLogoBase64 (string)              pre-resolved base64 logo (or '')
-   *
-   * The signature placeholders in $processedHtml come pre-replaced with a
-   * styled .sig-box scaffold; Zoho overlays the signer's real signature
-   * on top via the x/y/page coords sent in the submit payload.
-   */
 
   $documentTitle = $document->title ?? $document->name ?? 'Document';
   $clientName = trim((string) ($client->org_name ?? 'Cross Border Command'));
 
-  // ── Resolve header zone from saved config, with sensible fallbacks ──
-  // For legacy rows (no header_config saved) we keep a minimal text-only
-  // header so the PDF still has a recognisable brand line.
   $hcfg = is_array($headerConfig ?? null) ? $headerConfig : [];
   $headerTitle = (string) ($hcfg['title'] ?? $clientName);
   $headerSubtitle = (string) ($hcfg['subtitle'] ?? '');
@@ -43,44 +13,18 @@
   $headerShowTitle = array_key_exists('show_title', $hcfg) ? (bool) $hcfg['show_title'] : true;
   $headerLogoHeight = (int) ($hcfg['logo_height'] ?? 62);
 
-  /* Left/right page margin, chosen per document (page_config.margin_x).
-     Clamped: dompdf will happily accept 0 or 300 and produce a document whose
-     text runs into the footer band or collapses to a ribbon. 25px is what every
-     document used before this became configurable, so an unset value keeps
-     rendering exactly as it did. */
   $pcfg = is_array($pageConfig ?? null) ? $pageConfig : [];
   $marginX = (int) max(10, min(60, $pcfg['margin_x'] ?? 25));
-  // Independent sides, as the editor's ruler sets them. margin_x stays the
-  // fallback so documents saved before the ruler existed render unchanged.
   $marginL = (int) max(10, min(60, $pcfg['margin_left'] ?? $marginX));
   $marginR = (int) max(10, min(60, $pcfg['margin_right'] ?? $marginX));
-  /* Place the logo and the title block where the draft editor actually put
-   * them.
-   *
-   * This used to ignore title_pos entirely and key a fixed 45/55 split off
-   * `logo_pos.x <= 50`, on the grounds that dompdf cannot do free positioning.
-   * It cannot — but it can do a two-cell table whose SPLIT and per-cell
-   * alignment are computed from the two positions, which honours the drag far
-   * more closely than a constant did. The editor already snaps an item in the
-   * outer thirds to that edge, so left / centre / right per cell is the whole
-   * vocabulary that has to survive.
-   *
-   * Before this, dragging the company name changed nothing in the PDF and the
-   * two views disagreed about where the header sat (QA #11).
-   */
   $logoX  = isset($hcfg['logo_pos']['x'])  ? (float) $hcfg['logo_pos']['x']  : 10.0;
   $titleX = isset($hcfg['title_pos']['x']) ? (float) $hcfg['title_pos']['x'] : 88.0;
   $logoX  = max(0.0, min(100.0, $logoX));
   $titleX = max(0.0, min(100.0, $titleX));
-  // Whichever sits further left takes the first cell.
   $logoOnLeft = $logoX <= $titleX;
   $firstX  = $logoOnLeft ? $logoX  : $titleX;
   $secondX = $logoOnLeft ? $titleX : $logoX;
-  /* Split at the midpoint between them, clamped so neither cell collapses to
-     nothing when the two are dragged on top of each other. */
   $splitPct = max(25.0, min(75.0, ($firstX + $secondX) / 2));
-  /* Alignment is measured INSIDE the cell the item landed in, not across the
-     whole band — an item at 55% is at the left of a cell that starts at 50%. */
   $alignIn = function (float $x, float $start, float $end): string {
     $span = max(1.0, $end - $start);
     $rel  = ($x - $start) / $span * 100.0;
@@ -92,14 +36,10 @@
   $secondAlign = $alignIn($secondX, $splitPct, 100.0);
   $logoAlign   = $logoOnLeft ? $firstAlign  : $secondAlign;
   $titleAlign  = $logoOnLeft ? $secondAlign : $firstAlign;
-  // .brand-logo is display:block, so its own margins do the aligning.
   $logoMargin  = $logoAlign === 'right' ? '0 0 0 auto' : ($logoAlign === 'center' ? '0 auto' : '0');
-  // Map HeaderFooterPanel's 'space-between' legacy value to right-align
-  // so the title block doesn't ghost off the page on those older rows.
   if ($headerAlign === 'space-between')
     $headerAlign = 'right';
 
-  // ── Resolve footer zone ──
   $fcfg = is_array($footerConfig ?? null) ? $footerConfig : [];
   $footerText = (string) ($fcfg['text'] ?? $clientName);
   $footerAlign = (string) ($fcfg['align'] ?? 'center');
@@ -109,31 +49,6 @@
   $pageNumberAlign = (string) ($fcfg['page_number_align'] ?? 'right');
   $pageNumberFormat = (string) ($fcfg['page_number_format'] ?? 'Page N of M');
 
-  /* Promote each table's first row into a <thead> when it doesn't already have
-   * one. dompdf renders a <thead> as a table-header-group: it repeats on every
-   * page the table spans AND is never stranded alone at the bottom of a page —
-   * fixing "table header on one page, its rows on the next". Tables that already
-   * declare a <thead> are left untouched. Non-greedy match grabs one <tr>. */
-  /* Box-drawing, arrows and block shapes get their own font.
-   *
-   * dompdf maps Times New Roman to its built-in `times`, one of the core-14
-   * PDF fonts — Latin-1 only. Anything outside that comes out as "?", which is
-   * what happened to the flow charts drawn with │ ├ └ ─ once the document font
-   * moved from DejaVu Sans to Times New Roman: DejaVu carries those glyphs and
-   * times does not.
-   *
-   * dompdf picks ONE font per element and does no per-glyph fallback, so
-   * listing DejaVu in the font stack would change nothing — times resolves and
-   * that is the end of it. The characters have to be wrapped so the run itself
-   * asks for a font that has them.
-   *
-   * Only the ranges that actually matter are wrapped, and only in TEXT: the
-   * outer match walks between tags so an attribute value can never be rewritten.
-   *   2190-21FF  arrows
-   *   2500-257F  box drawing
-   *   2580-259F  block elements
-   *   25A0-25FF  geometric shapes
-   */
   if (!empty($processedHtml) && preg_match('/[\x{2190}-\x{21FF}\x{2500}-\x{25FF}]/u', $processedHtml)) {
     $processedHtml = preg_replace_callback('/>([^<]+)</u', function ($m) {
       $text = preg_replace(
@@ -145,21 +60,6 @@
     }, $processedHtml);
   }
 
-  /* Column widths → percentages on the first row's cells.
-   *
-   * TipTap's column resizing stores its widths in <colgroup><col style="width:
-   * NNpx">. dompdf's support for <col> is thin — it lays the table out on the
-   * cells and largely ignores the group — so a table the author had sized in
-   * the editor came out with even columns in the PDF.
-   *
-   * Percentages, not the original px: the PDF table is width:100% inside a
-   * fixed page, so a px width copied straight across would be a width for a
-   * different-sized table. The ratio is what the author actually chose.
-   * Written onto the first row because with table-layout:fixed that row
-   * decides the column widths for the whole table.
-   *
-   * Runs BEFORE the <thead> promotion below, while the first <tr> is still
-   * where the colgroup can be matched against it. */
   if (!empty($processedHtml) && stripos($processedHtml, '<colgroup') !== false) {
     $processedHtml = preg_replace_callback('/(<table\b[^>]*>)(.*?)(<\/table>)/is', function ($m) {
       $inner = $m[2];
@@ -176,7 +76,7 @@
       }
       $total = array_sum($widths);
       if ($total <= 0)
-        return $m[0];   // nothing was ever resized
+        return $m[0];
 
       $done = false;
       $newInner = preg_replace_callback('/<tr\b[^>]*>.*?<\/tr>/is', function ($rm) use (&$done, $widths, $total) {
@@ -184,7 +84,6 @@
         $done = true;
         $i = 0;
         return preg_replace_callback('/<(td|th)\b([^>]*)>/i', function ($cm) use (&$i, $widths, $total) {
-          /* A merged cell covers several columns, so its width is their sum. */
           $span = preg_match('/colspan\s*=\s*"?(\d+)"?/i', $cm[2], $sp) ? max(1, (int) $sp[1]) : 1;
           $px = 0.0;
           for ($k = 0; $k < $span; $k++) $px += $widths[$i + $k] ?? 0.0;
@@ -204,39 +103,18 @@
         }, $rm[0]);
       }, $inner);
 
-      /* Drop the <colgroup> now that its widths live on the cells.
-       *
-       * dompdf half-supports <col>: enough to take it into account, not enough
-       * to lay a table out from it — so leaving it in place next to real cell
-       * widths gave two sources of truth and dompdf went with neither, which
-       * is why the PDF kept showing even columns while the editor showed the
-       * dragged ones. The cells are the source dompdf actually honours with
-       * table-layout: fixed, so the group has nothing left to say. */
       $newInner = preg_replace('/<colgroup\b[^>]*>.*?<\/colgroup>/is', '', $newInner, 1);
 
       return $m[1] . $newInner . $m[3];
     }, $processedHtml);
   }
 
-
-  if (!empty($processedHtml) && stripos($processedHtml, '<table') !== false) {
+if (!empty($processedHtml) && stripos($processedHtml, '<table') !== false) {
     $processedHtml = preg_replace_callback('/(<table\b[^>]*>)(.*?)(<\/table>)/is', function ($m) {
       if (stripos($m[2], '<thead') !== false)
-        return $m[0];   // already grouped
+        return $m[0];
       $inner = $m[2];
 
-      /* <caption> and <colgroup> must stay AHEAD of <thead> — that is the order
-       * HTML defines, and dompdf builds its frame tree straight off the parsed
-       * DOM. Lift them out before promoting the first row and put them back in
-       * front of it.
-       *
-       * Without this the rebuilt table came out as
-       *     <table><thead>...</thead><colgroup>...</colgroup><tbody>...
-       * and dompdf lost the table parent for every cell after the misplaced
-       * colgroup — "Parent table not found for table cell", the error the Live
-       * Preview showed. It only ever bit tables with NO explicit <thead>, and
-       * TipTap emits exactly that shape (colgroup, then tbody, header row as
-       * <th> inside it), so it surfaced the moment Insert Table existed. */
       $lead = '';
       if (preg_match('/^\s*(?:<caption\b.*?<\/caption>\s*)?(?:<colgroup\b.*?<\/colgroup>\s*)?/is', $inner, $lm)
           && trim($lm[0]) !== '') {
@@ -247,8 +125,6 @@
       if (!preg_match('/<tr\b[^>]*>.*?<\/tr>/is', $inner, $tr))
         return $m[0];
       $rest = preg_replace('/<tr\b[^>]*>.*?<\/tr>/is', '', $inner, 1);
-      /* A one-row table leaves <tbody></tbody> behind; dompdf reflows an empty
-       * row group as a frame that still expects children. */
       $rest = preg_replace('/<tbody\b[^>]*>\s*<\/tbody>/is', '', $rest);
 
       return $m[1] . $lead . '<thead>' . $tr[0] . '</thead>' . $rest . $m[3];
@@ -259,19 +135,11 @@
 <html>
 
 <head>
-  {{-- Declare UTF-8 so dompdf decodes multi-byte characters (em-dash "—",
-  curly quotes, en-dash, bullet, ₹, etc.) instead of reading each byte
-  separately and rendering "???". Without this the approver's PDF showed
-  "Supplier ??? v2" where the draft had "Supplier — v2". --}}
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
   <meta charset="utf-8" />
   <title>Document Archive - {{ $modelName }}</title>
   <style>
-    /* PAGE MARGINS — proper left/right padding */
     @page {
-      /* Reserve a taller bottom band. dompdf overflows tall TABLE rows past
-           the bottom margin, so the extra clearance (plus the opaque footer
-           band painted in the page_text script) keeps content off the footer. */
       margin-bottom: 22px;
       margin-top: 25px;
       margin-left:
@@ -282,9 +150,6 @@
         px;
     }
 
-    /* FOOTER — fixed at the bottom of every page. Background / colour
-         come from the saved footer_config so a tenant whose footer band
-         was configured dark renders correctly on every page. */
     .pdf-footer {
       position: fixed;
       bottom: 0;
@@ -300,10 +165,6 @@
         {{ $footerColor }}
       ;
       z-index: 1000;
-      /* DejaVu Sans is dompdf's bundled FULL-UNICODE font — it renders every
-           character exactly as typed (em-dash "—", curly quotes, ₹ / € / £,
-           bullets, accents, etc.). Arial/Helvetica are core PDF fonts limited to
-           WinAnsi, so symbols like ₹ dropped to "?". Keep Arial as a fallback. */
       font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
       font-size: 11px;
     }
@@ -320,10 +181,6 @@
 
     body {
       margin: 0;
-      /* DejaVu Sans is dompdf's bundled FULL-UNICODE font — it renders every
-           character exactly as typed (em-dash "—", curly quotes, ₹ / € / £,
-           bullets, accents, etc.). Arial/Helvetica are core PDF fonts limited to
-           WinAnsi, so symbols like ₹ dropped to "?". Keep Arial as a fallback. */
       font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
       font-size: 11px;
       line-height: 15px;
@@ -334,8 +191,6 @@
       page-break-inside: avoid;
     }
 
-    /* Explicit break emitted by the editor's Page Break button. The div is
-         zero-height and invisible in print; only the instruction matters. */
     .document-content div.page-break,
     .document-content div[data-page-break] {
       page-break-after: always;
@@ -351,7 +206,6 @@
       width: 100%;
     }
 
-    /* HEADER — driven by header_config */
     .page-header {
       margin-bottom: 12px;
       padding: 10px 14px;
@@ -374,16 +228,6 @@
       padding: 0;
     }
 
-    /* The configured height must be emitted on ONE line, and as `height`.
-       Two bugs lived here:
-       1. The value was split across lines, so Blade rendered
-          "max-height: 62 px;" — a space between the number and the unit makes
-          the declaration invalid, and dompdf drops it silently. The size set
-          in the draft therefore never reached the PDF at all.
-       2. Even valid, max-height could not drive the size: a wide logo hits
-          max-width first and its height then follows the aspect ratio, so
-          changing logo_height moved nothing. `height` sets it outright and
-          max-width stays only as an overflow guard. */
     .brand-logo {
       display: block;
       height: {{ max(24, min(200, $headerLogoHeight)) }}px;
@@ -404,26 +248,17 @@
       margin-top: 2px;
     }
 
-    /* DOCUMENT SECTION */
     .document-section {
       padding: 0 5px;
       margin: 0 0 20px 0;
     }
 
     .document-content {
-      /* Times New Roman is the agreement's house face. dompdf maps it to its
-         built-in `times` metrics; the trailing serif catches anything it
-         cannot resolve so a clause never drops back to the sans body font.
-         Kept in step with the .ctcte-pageview rule in CtcRichEditor.tsx — if
-         these two differ, the editor's page breaks stop matching the PDF's. */
       font-family: 'Times New Roman', Times, serif;
       padding: 18px 20px;
       border-radius: 4px;
       word-wrap: break-word;
       page-break-inside: auto;
-      /* Proportional line-height (NOT the body's fixed 15px) so larger fonts
-           in inserted clause content get a proportional line box and don't
-           overlap — the fixed 15px line box clipped/overlapped bigger text. */
       line-height: 1.5;
     }
 
@@ -432,17 +267,6 @@
       line-height: 1.5;
     }
 
-    /* Text highlight. Nothing here styled <mark> at all, so it fell through to
-     * dompdf's own default (background: yellow; color: black) — which carries
-     * no `display`, and dompdf then laid the element out as a BLOCK. Inside a
-     * centred paragraph that put the highlight on the far left as a solid bar
-     * of colour with the text it was supposed to sit behind centred separately
-     * beside it.
-     * `display: inline` puts it back in the text flow. The colour itself is
-     * left alone: the editor writes the chosen shade inline on the element, so
-     * background stays unset here rather than overriding the author's pick, and
-     * `color: inherit` stops dompdf's default black from recolouring text that
-     * was deliberately given another colour. */
     .document-content mark {
       display: inline;
       color: inherit;
@@ -452,34 +276,6 @@
       line-height: 1.5;
     }
 
-    /* Nested list markers — 1. → a. → i. for ordered, disc → circle → square
-       for bullets.
-       These have to be declared, not left to the renderer. The editor styles
-       its own nesting (see .tdw-editor in ClmTradeDocumentDraftModal and the
-       matching block in CtcRichEditor), but this stylesheet only ever set list
-       MARGINS — so dompdf fell back to its default `decimal` at every depth.
-       The result was a draft showing "a. b. c." for its sub-points and a
-       preview and PDF showing "1. 2. 3." for the same content. Both the live
-       preview and the download render through this one blade, so the two
-       reports of that mismatch are the same missing rule.
-       Third level added on top: without an `ol ol ol` rule the numbering
-       restarted at decimal on the deepest level, in the editor as well.
-
-       NO :not() HERE — dompdf 3.1.5 does not implement that pseudo-class. Its
-       stylesheet parser handles `not` only as a media-query operator, so a
-       selector containing :not() is dropped without warning and the rule never
-       applies. An earlier version of this block used
-       `ol:not([data-legal])` to keep clear of the legal lists and simply did
-       nothing at all: the preview and PDF went on numbering sub-points 1. 2. 3.
-       while the editor showed a. b. c.
-
-       Plain descendant selectors instead. The ol[data-legal] rules below still
-       win on specificity — an attribute selector outranks an element, so
-       `ol[data-legal] ol` (0,2,2) beats `ol ol` (0,1,2) and even `ol ol ol`
-       (0,1,3) — so the counter-based 1.1.1 numbering is untouched.
-
-       list-style-type is INHERITED, which is why each depth must be stated: an
-       unstated third level silently keeps its parent's marker. */
     .document-content ol          { list-style: decimal outside; }
     .document-content ol ol       { list-style: lower-alpha outside; }
     .document-content ol ol ol    { list-style: lower-roman outside; }
@@ -487,15 +283,6 @@
     .document-content ul ul       { list-style: circle outside; }
     .document-content ul ul ul    { list-style: square outside; }
 
-    /* Sub points — clause numbering (1 / 1.1 / 1.1.1).
-     *
-     * The editor writes data-legal on the outer <ol> (LegalList in
-     * CtcRichEditor.tsx) and numbers the items with CSS counters. The same
-     * rule has to exist here or the PDF would show the list with no numbers at
-     * all, since the marker is drawn entirely by ::before.
-     * counters(legal, ".") — with the S — is what walks the whole nesting and
-     * prints 1.1.1; counter() would print only the innermost level.
-     * Keep in step with the .ctcte-content block in CtcRichEditor.tsx. */
     .document-content ol[data-legal],
     .document-content ol[data-legal] ol {
       counter-reset: legal;
@@ -519,9 +306,6 @@
       font-weight: bold;
     }
 
-    /* Number and text on one line — a list item's content is a <p>, and a block
-       <p> pushes the :before marker onto a line of its own. Kept in step with
-       the .ctcte-content rule in CtcRichEditor.tsx. */
     .document-content ol[data-legal] li > p {
       display: inline;
       margin: 0;
@@ -531,10 +315,6 @@
       display: block;
     }
 
-    /* Inserted Clause-Library / rich content uses <div>-per-line and <br>
-         (contentEditable output). dompdf gives those NO spacing/line-height of
-         their own, so lines ran together and overlapped in the PDF (CBC-438).
-         Give every block the same proportional line box + paragraph gap as <p>. */
     .document-content div {
       margin: 0 0 8px 0;
       line-height: 1.5;
@@ -545,12 +325,6 @@
       line-height: 1.5;
     }
 
-    /* Headings need an explicit line-height + capped size — without it dompdf's
-         default (tight) box overlaps a wrapped clause name / heading. */
-    /* Headings name the font explicitly, matching the .ctcte-pageview rule in
-       CtcRichEditor.tsx. The body font is inherited from .document-content, but
-       an element-level h1/h2/h3 rule elsewhere in this sheet would beat an
-       inherited value — so it is stated rather than relied on. */
     .document-content h1,
     .document-content h2,
     .document-content h3 {
@@ -560,8 +334,6 @@
       font-family: 'Times New Roman', Times, serif;
     }
 
-    /* Everything else an agreement is written with — a table cell or a list
-       item that fell back to the sans body font read as a different document. */
     .document-content td,
     .document-content th,
     .document-content li,
@@ -582,22 +354,12 @@
       font-size: 15px;
     }
 
-    /* table-layout:fixed keeps columns at an even width so a long/unbreakable
-         string in one cell can't blow the column out past the page (dompdf has
-         no auto-wrap for such tokens). word-wrap is the legacy property name
-         dompdf actually honours — overflow-wrap/word-break are kept for parity
-         with the on-screen editor. */
     .document-content table {
       width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
     }
 
-    /* NO forced cell border here: a bordered table carries its border inline
-         (the Insert-Table modal writes border:1px on each cell, now preserved by
-         TipTap), while clause / layout tables stay clean. Forcing a border here
-         boxed up every clause table in the PDF even though the editor showed it
-         borderless (CBC — clause content broken in PDF). */
     .document-content table td,
     .document-content table th {
       padding: 6px 8px;
@@ -607,11 +369,6 @@
       word-break: break-word;
     }
 
-    /* Let a tall table row SPLIT across the page boundary instead of jumping
-         whole to the next page (leaving a big gap) or being clipped so its text
-         is lost. dompdf 3.x paginates inside rows/cells when nothing forces them
-         to stay together — make that explicit for the body tables. The header
-         row is kept intact (short, single line) and repeats on each page. */
     .document-content table,
     .document-content tbody,
     .document-content tr,
@@ -620,17 +377,10 @@
       page-break-inside: auto;
     }
 
-    /* Header repeats on EVERY page the table spans, so a table split across
-         pages always shows its column headers with the rows — never a header on
-         one page and the body on the next. */
     .document-content thead {
       display: table-header-group;
     }
 
-    /* Keep the header row intact AND glued to the body that follows, so it's
-         never stranded alone at the bottom of a page. The same "don't break right
-         after me" rule is applied to a plain first row for tables that use a
-         styled first <tr> as the header instead of a real <thead>. */
     .document-content thead tr {
       page-break-inside: avoid;
       page-break-after: avoid;
@@ -645,31 +395,12 @@
       max-width: 100%;
     }
 
-    /* Indent per level — must be stated as PADDING, and must reset it.
-     *
-     * dompdf's own default sheet gives ul and ol `padding-left: 40px`. Setting
-     * only a left MARGIN here added to that instead of replacing it, so every
-     * level indented 24 + 40 = 64px against the editor's 26px. Nesting
-     * compounds it, which is why sub-points looked progressively more wrong the
-     * deeper they went — level 3 sat ~114px further right in the PDF than in
-     * the draft.
-     *
-     * 1.6em with a zero left margin is exactly what .tdw-editor and
-     * .agw-editor use, so a list occupies the same width in all three. Keep
-     * them in step — the marker sits inside this padding
-     * (list-style-position: outside), so shrinking it clips the numbering. */
     .document-content ul,
     .document-content ol {
       margin: 0 0 8px 0;
       padding-left: 1.6em;
     }
 
-    /* Clause Library bodies routinely arrive wrapped in a <pre> (monospace
-         signature blocks, dashed rules) or a <pre><code> (TipTap code block).
-         dompdf gives <pre> white-space:pre + NO line-height, so long lines run
-         off the page edge and the tight leading makes lines OVERLAP (CBC-438).
-         pre-wrap keeps the authored line breaks but lets long lines wrap at the
-         page width, and the explicit line-height stops the overlap. */
     .document-content pre,
     .document-content pre code {
       white-space: pre-wrap;
@@ -697,12 +428,6 @@
       margin-bottom: 25px;
     }
 
-    /* Cell padding for the document body's tables. The DOCX → HTML converter
-       used to stamp "padding:6px 8px;vertical-align:top" on every cell — on a
-       table-heavy import that was over a quarter of the whole document, and of
-       the 1,000,000-character budget it has to fit in. Said once here; a cell
-       from an older import still carries its own inline copy, which sets
-       exactly the same values. */
     .content-wrapper td,
     .content-wrapper th {
       padding: 6px 8px;
@@ -714,19 +439,6 @@
       page-break-after: avoid;
     }
 
-    /* SIGNATURE BOX — visual scaffolding for the signature placeholders
-       * in the draft body. Zoho overlays the real signature widget at the
-       * (x, y) coords sent in the submit payload; this box just shows the
-       * signer WHERE the widget will land in the rendered output.
-       *
-       * `position: relative` anchors the absolutely-positioned .sig-marker
-       * to the box's top-left corner. Without this the marker would sit
-       * inside the centred text flow (text-align: center) and PDF.js
-       * would report its baseline at roughly (box_left + 60pt) instead
-       * of (box_left), pushing the Zoho field to the right of the box.
-       * That was the "Vendor signature lands above and to the right"
-       * bug — Customer drafts happened to use a left-aligned context so
-       * the centre-shift was zero, masking the issue. */
     .sig-box {
       display: inline-block;
       width: 220px;
@@ -743,12 +455,6 @@
       position: relative;
     }
 
-    /* Detection marker — rendered at 0.5pt in near-white so it sits in
-       * the PDF text stream (where PDF.js can find it from the send modal)
-       * without being visible to humans. Absolute positioning pins the
-       * marker text to the box's top-left corner so its detected
-       * (x, y) is the box's top-left regardless of how the surrounding
-       * draft paragraph is aligned. */
     .sig-marker {
       font-size: 0.5pt;
       color: #fefefe;
@@ -762,18 +468,9 @@
 </head>
 
 <body>
-  {{-- FOOTER + page number are painted via dompdf page_text scripts at
-  the bottom of the file — both stamps share one baseline Y, so
-  they always sit on the same line regardless of body length.
-  The previous `position: fixed; bottom: 0` approach drifted
-  upward on short documents because dompdf falls back to natural
-  flow when the body doesn't fill a page. --}}
 
-  {{-- HEADER — driven by header_config, no hardcoded brand block. --}}
   <div class="content-wrapper main-content first-page-fix">
     <div class="page-header">
-      {{-- Two cells whose widths and alignment come from the draft editor's
-           logo_pos / title_pos, so the header prints where it was dragged. --}}
       <table>
         <tr>
           @if ($logoOnLeft)
@@ -785,10 +482,6 @@
             </td>
             <td style="width: {{ round(100 - $splitPct, 2) }}%; text-align: {{ $titleAlign }};">
               @if ($headerShowTitle)
-                {{-- The cell's text-align POSITIONS this block (from title_pos);
-                     the inline-block's own align is the header's Align setting,
-                     which is what lines up a multi-line title/subtitle. Two
-                     separate jobs the editor also does separately. --}}
                 <div style="display: inline-block; text-align: {{ $headerAlign }};">
                   <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
                   @if ($headerSubtitle !== '')
@@ -800,10 +493,6 @@
           @else
             <td style="width: {{ round($splitPct, 2) }}%; text-align: {{ $titleAlign }};">
               @if ($headerShowTitle)
-                {{-- The cell's text-align POSITIONS this block (from title_pos);
-                     the inline-block's own align is the header's Align setting,
-                     which is what lines up a multi-line title/subtitle. Two
-                     separate jobs the editor also does separately. --}}
                 <div style="display: inline-block; text-align: {{ $headerAlign }};">
                   <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
                   @if ($headerSubtitle !== '')
@@ -823,30 +512,13 @@
       </table>
     </div>
 
-    {{-- DOCUMENT BODY — comes from the trade-doc draft with the
-    {{customer.*}} / {{consignee.*}} / {{supplier.*}} tokens
-    already swapped for real data + signature scaffolding. --}}
     <div class="document-section">
       <div class="document-content">
-        {{-- PdfHighlight: moves text-highlight colour onto the text itself so
-             dompdf draws it behind the words in centred / right-aligned lines. --}}
         {!! \App\Support\PdfHighlight::fix($processedHtml) !!}
       </div>
     </div>
   </div>
 
-  {{-- Footer-text + page-number stamps. Both are painted via dompdf
-  `page_text()` at the SAME baseline Y so they always line up
-  regardless of how short the body is. The earlier approach used
-  a `position: fixed; bottom: 0` `<div class="pdf-footer">` for
-    the text, but dompdf renders that in NATURAL FLOW when the
-    body doesn't fill the page — pushing the footer text high up
-    while the page_text page-number remained at the bottom edge,
-    producing a big vertical gap on short documents.
-
-    Both stamps live on every page. Margins (28pt from edges) +
-    a shared baseline Y produce the customer/consignee/vendor
-    layout you've already seen for trade-doc sends. --}}
     <script type="text/php">
       if (isset($pdf)) {
         $font  = $fontMetrics->get_font("helvetica", "normal");
@@ -857,14 +529,6 @@
         $pageHeight  = $pdf->get_height();
         $sideMargin  = 28;
 
-        // ── Opaque footer band (EVERY page) ──
-        // dompdf lets a tall table row spill past the @page bottom margin and
-        // onto the footer. Paint a solid band (the footer's own background
-        // colour) across the bottom of EVERY page BEFORE the text so any spill
-        // is covered and the footer always reads cleanly. Height (48pt) sits
-        // inside the 92px @page reservation, so it never hides real body
-        // content. page_script (not a direct draw) is required so the band
-        // repeats on every page, not just the last one.
         $fb = ltrim("{{ $footerBg }}", "#");
         if (strlen($fb) === 3) { $fb = $fb[0].$fb[0].$fb[1].$fb[1].$fb[2].$fb[2]; }
         if (strlen($fb) !== 6) { $fb = "ffffff"; }
@@ -876,15 +540,8 @@
           . '$pdf->filled_rectangle(0, $h - $bandH, $w, $bandH, array(' . $bandR . ', ' . $bandG . ', ' . $bandB . '));'
           . '$pdf->line(0, $h - $bandH, $w, $h - $bandH, array(0.90, 0.91, 0.93), 0.75);'
         );
-        // Footer baseline — 28pt above the page bottom edge, matching the
-        // Proforma Invoice footer (proforma-invoice.blade.php draws its
-        // "Page X of Y" at get_height() - 28) so CTC, customer, consignee &
-        // supplier docs all share the PI's footer position. Sits well inside
-        // the @page { margin-bottom: 70px } reservation so it never overlaps
-        // body content.
         $y           = $pdf->get_height() - 28;
 
-        // ── Footer text (footer.text) ──
         $footerText  = "{!! addslashes($footerText) !!}";
         $footerAlign = "{{ $footerAlign }}";
         if ($footerText !== "") {
@@ -896,29 +553,20 @@
         }
 
         @if ($showPageNumber)
-          // ── Page number (show_page_number + page_number_format) ──
           $pnAlign  = "{{ $pageNumberAlign }}";
           $pnFormat = "{{ $pageNumberFormat }}";
 
-          // Match HeaderFooterPanel's format options 1:1.
           $pnText = $pnFormat === "N"           ? "{PAGE_NUM}"
                   : ($pnFormat === "Page N"     ? "Page {PAGE_NUM}"
                   : ($pnFormat === "N / M"      ? "{PAGE_NUM} / {PAGE_COUNT}"
                   :                                "Page {PAGE_NUM} of {PAGE_COUNT}"));
 
-          // Measure the RENDERED text, not the literal {PAGE_NUM}/{PAGE_COUNT}
-          // tokens: dompdf swaps those for real digits at paint time, so a
-          // token-width measurement is far too wide and a right-aligned number
-          // starts too far left — ending up mid-page instead of flush right.
           $pnSample = str_replace(array("{PAGE_NUM}", "{PAGE_COUNT}"), array("1", "1"), $pnText);
           $pnw = $fontMetrics->getTextWidth($pnSample, $font, $size);
           if ($pnAlign === "left")        $px = $sideMargin;
           elseif ($pnAlign === "right")   $px = $pageWidth - $pnw - $sideMargin;
           else                            $px = ($pageWidth - $pnw) / 2;
 
-          // If footer text + page number both land on the same cell
-          // (e.g. both centre-aligned), nudge the page number rightwards
-          // so they don't overlap into an unreadable smear.
           if ($pnAlign === $footerAlign && $footerText !== "") {
             if ($pnAlign === "center") $px = ($pageWidth - $pnw) / 2 + ($fontMetrics->getTextWidth($footerText, $font, $size) / 2) + 12;
             elseif ($pnAlign === "left") $px = $sideMargin + $fontMetrics->getTextWidth($footerText, $font, $size) + 12;

@@ -8,16 +8,6 @@ use App\Services\LogoDarkVariantGenerator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Backfill the dark-mode "-dark.png" logo variant for every client + branch
- * logo. These variants are normally generated at upload time, so tenants whose
- * logos predate that feature fall back to a white pill behind the logo in dark
- * mode (looks like a glaring white box). This regenerates them in bulk.
- *
- *   php artisan logos:backfill-dark           # only logos missing a variant
- *   php artisan logos:backfill-dark --force   # regenerate all (e.g. after a
- *                                             # generator tweak)
- */
 class BackfillLogoDarkVariants extends Command
 {
     protected $signature = 'logos:backfill-dark {--force : Regenerate even when a -dark variant already exists}';
@@ -36,7 +26,7 @@ class BackfillLogoDarkVariants extends Command
             $rel = $this->relativePath($stored);
             $ext = strtolower(pathinfo($rel, PATHINFO_EXTENSION));
             if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true)) {
-                return; // svg/gif have no raster dark variant
+                return;
             }
             $darkPath = preg_replace('/\.(png|jpe?g|webp)$/i', '-dark.png', $rel);
             if (!$this->option('force') && $disk->exists($darkPath)) {
@@ -67,8 +57,6 @@ class BackfillLogoDarkVariants extends Command
         return self::SUCCESS;
     }
 
-    /** Mirror of the controllers' helper: normalise a stored logo value to a
-     *  path relative to the public disk (strips host + leading "storage/"). */
     private function relativePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {

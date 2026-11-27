@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-
 class VendorProductMapping extends Model
 {
     use SoftDeletes;
@@ -14,10 +13,13 @@ class VendorProductMapping extends Model
     protected $fillable = [
         'vendor_id', 'product_id', 'created_by',
         'batch_serial_lot',
+        'origin', 'currency_code', 'exchange_rate', 'inr_amount',
         'purchase_price', 'gst_percentage', 'gst_amount', 'total_amount',
     ];
 
     protected $casts = [
+        'exchange_rate'  => 'decimal:4',
+        'inr_amount'     => 'decimal:2',
         'purchase_price' => 'decimal:2',
         'gst_percentage' => 'decimal:2',
         'gst_amount'     => 'decimal:2',

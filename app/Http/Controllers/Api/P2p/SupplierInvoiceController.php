@@ -19,26 +19,13 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-/**
- * P2P · Supplier Purchase Invoice — /api/p2p/spi
- *
- * Stage 01 creates a draft; Stage 02 saves the items. Boxes (Stage 03) and
- * put-away (Stage 04) have their own controllers.
- *
- * Tenant scoping comes from the global BelongsToTenant scope (set by the
- * `tenant` middleware); client_id / branch_id / created_by are always taken
- * from the authenticated user, never from the request body.
- */
 class SupplierInvoiceController extends Controller
 {
-    /* The PO service owns orderedByPiItem(), which is where PI quantity is
-       counted for both documents. */
     public function __construct(
         private SupplierInvoiceService $svc,
         private PurchaseOrderService $poSvc,
     ) {}
 
-    /** Writes need a tenant: a super admin has no client to raise an invoice under. */
     private function tenantUser(Request $request)
     {
         $user = $request->user();
@@ -47,14 +34,6 @@ class SupplierInvoiceController extends Controller
         return $user;
     }
 
-    /**
-     * The invoice, or a 404 that says so in words.
-     *
-     * findOrFail() throws ModelNotFoundException, which renders as "No query
-     * results for model [App\Models\P2p\SupplierInvoice] 200" with the stack
-     * trace attached — true, and no use to whoever is reading it. The id is
-     * quoted back, so a wrong variable in a request is obvious at a glance.
-     */
     private function findSpi(int $id): SupplierInvoice
     {
         $spi = SupplierInvoice::find($id);
@@ -68,9 +47,6 @@ class SupplierInvoiceController extends Controller
         return $spi;
     }
 
-    /* ══════════════════════════ LOOKUPS ══════════════════════════ */
-
-    /** GET /p2p/spi/next-code — preview only; nothing is written until Stage 01 is saved. */
     public function nextCode(Request $request)
     {
         try {
@@ -92,10 +68,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/orders/{po}/lines — PO lines to prefill Stage 02, each with
-     * what is still uninvoiced so the same line is not billed twice.
-     */
     public function poLines(Request $request, int $po)
     {
         try {
@@ -105,19 +77,14 @@ class SupplierInvoiceController extends Controller
             $order = PurchaseOrder::findOrFail($po);
             $open  = $this->svc->openQtyByPoItem($po, $request->integer('exclude_spi') ?: null);
 
-            // p2p_purchase_order_items has no deleted_at — it is hard-deleted.
             $lines = DB::table('p2p_purchase_order_items')
                 ->where('purchase_order_id', $po)
                 ->orderBy('line_no')
                 ->get()
                 ->map(function ($l) use ($open) {
                     $ordered = (float) $l->quantity;
-                    // ordered - billed, which goes negative once a line is
-                    // over-supplied. Split below so nothing downstream has to
-                    // reason about a negative quantity.
                     $balance = (float) ($open[$l->id] ?? $ordered);
                     $billed  = round($ordered - $balance, 3);
-                    // One method decides what a negative balance means.
                     $split   = $this->svc->splitBalance($balance);
 
                     return [
@@ -126,20 +93,9 @@ class SupplierInvoiceController extends Controller
                         'product_id'  => $l->product_id,
                         'description' => $l->description,
 
-                        // What the order asked for, once. Reference only — a
-                        // second invoice that worked from this would re-claim
-                        // quantity the first one already covered.
                         'qty_po'      => $ordered,
-                        // What every OTHER invoice on this PO has taken.
                         'qty_billed'  => $billed,
 
-                        /* What THIS invoice may still bill, and how far earlier
-                           invoices already went past the order. qty_over is
-                           deliberately not called extra_qty: that name is taken
-                           by the invoice item, where it means what THAT invoice
-                           billed over — an over-supply caused by SPI 2 is not
-                           something SPI 3 did. Context for a tooltip, not a
-                           column. */
                         'qty_open'    => $split['open'],
                         'qty_over'    => $split['over'],
                         'closed'      => $split['closed'],
@@ -164,9 +120,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /* ══════════════════════════ LIST AND DETAIL ══════════════════════════ */
-
-    /** GET /p2p/spi — the list, filtered by the four flavours. */
     public function index(Request $request)
     {
         try {
@@ -174,9 +127,6 @@ class SupplierInvoiceController extends Controller
 
             $this->tenantUser($request);
 
-            /* A mistyped filter used to be ignored in silence — ?po_mode=withpo
-               returned every row rather than an error, which reads as a bug in the
-               tab rather than a typo in the URL. */
             $f = $request->validate([
                 'po_mode'       => ['nullable', Rule::in(['with_po', 'without_po'])],
                 'shipment_mode' => ['nullable', Rule::in(['with_shipment', 'without_shipment'])],
@@ -189,35 +139,16 @@ class SupplierInvoiceController extends Controller
                 'per_page'      => ['nullable', 'integer', 'min:1', 'max:100'],
             ]);
 
-            /* Every column is table-qualified: the search joins out to the purchase
-               order, and `po` carries its own status, vendor_id and code — unqualified
-               names would be an ambiguous reference, which Postgres refuses. */
             $t = 'p2p_supplier_invoices';
 
-            /* The screen-wide filters go on a bare query first. The counts run off
-               a clone of THAT: cloning the list query instead drags its withCount
-               subqueries and its `table.*` into the aggregate, which Postgres
-               rejects for not being in a GROUP BY. */
             $base = SupplierInvoice::query();
 
             if (!empty($f['status']))    $base->where("$t.status", $f['status']);
             if (!empty($f['vendor_id'])) $base->where("$t.vendor_id", $f['vendor_id']);
-            /* The same expression the row prints as spi_date. Filtering on
-               invoice_date alone hid every Stage 01 draft, which has none yet:
-               the row showed 29 Oct and a range covering 29 Oct could not find
-               it. Cast to date so the `to` bound includes that whole day. */
             $spiDate = "COALESCE($t.invoice_date, $t.created_at)::date";
             if (!empty($f['from']))      $base->whereRaw("$spiDate >= ?", [$f['from']]);
             if (!empty($f['to']))        $base->whereRaw("$spiDate <= ?", [$f['to']]);
 
-            /* The search goes on the base, so the tab numbers and the rows under
-               them agree: a tab reading 60 over a list of 3 is the tab lying.
-               Still applied BEFORE the tab itself — each tab has to show its own
-               figure, not the selected one's.
-
-               It must also run before withCount below: applySearch ends in
-               ->select('p2p_supplier_invoices.*'), and select() REPLACES the
-               column list rather than adding to it. */
             if ($term = trim((string) ($f['q'] ?? ''))) {
                 $this->applySearch($base, $term);
             }
@@ -227,31 +158,16 @@ class SupplierInvoiceController extends Controller
             $q = $base->with([
                 'vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category',
                 'vendor.riskLevel:id,name',
-                // po_date was read by listRow but never selected, so the PO DATE
-                // column came back blank on every row.
                 'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,proforma_invoice_id,'
                     . 'procurement_request_code,physical_inspection,inspection_status,zoho_status,'
                     . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
                 'warehouse:id,code,wh_name,wh_type',
             ])
-                /* The row's Payment Requests button shows a count and a ready-to-pay
-                   note. Subqueries, so a page of 10 rows costs two extra queries
-                   rather than twenty. */
                 ->withCount(['paymentRequests as pending_payment_requests' =>
                     fn ($r) => $r->where('status', PoPaymentRequest::STATUS_PENDING)])
-                // The constants, not literals: the column stores them lowercase and
-                // 'Approved' silently matched nothing.
                 ->withSum(['paymentRequests as approved_unpaid_amount' =>
                     fn ($r) => $r->where('status', PoPaymentRequest::STATUS_APPROVED)],
                     DB::raw('GREATEST(approved_amount - paid_amount, 0)'))
-                /* Is the FLOOR finished — every packed box physically on a shelf.
-                   A different fact from status/stage_completed, which is a person
-                   pressing Submit. Both matter and they are not the same: an
-                   invoice can be fully put away and still unsigned, and until now
-                   nothing in a list could show that.
-                   Subqueries on the one list query, like the two above, so a page
-                   of ten rows costs two extra queries rather than twenty. Derived
-                   every time rather than stored, so it cannot drift. */
                 ->withCount([
                     'boxes as boxes_total',
                     'putaways as boxes_placed' => fn ($r) => $r->where('status', SpiPutaway::PLACED),
@@ -262,7 +178,6 @@ class SupplierInvoiceController extends Controller
 
             $page = $q->orderByDesc("$t.id")->paginate((int) ($f['per_page'] ?? 10));
             $rows = collect($page->items());
-            // Shipment and opportunity codes for the whole page in two queries.
             $refs = $this->linkRefs($rows);
 
             DB::commit();
@@ -275,8 +190,6 @@ class SupplierInvoiceController extends Controller
                     'page'      => $page->currentPage(),
                     'per_page'  => $page->perPage(),
                     'total'     => $page->total(),
-                    // useServerList, shared with the PO list, needs this to know
-                    // whether there is a next page.
                     'last_page' => $page->lastPage(),
                 ],
             ]);
@@ -286,7 +199,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /** GET /p2p/spi/{id} — one invoice with its items and the packing summary. */
     public function show(Request $request, int $id)
     {
         try {
@@ -295,9 +207,6 @@ class SupplierInvoiceController extends Controller
             $this->tenantUser($request);
             $spi = $this->findSpi($id);
 
-            /* Every stage in one call — the detail screen renders all four, and
-               three round trips to paint one page is three chances to show a
-               half-loaded invoice. */
             $spi->load([
                 'items',
                 'vendor:id,vendor_code,company_name',
@@ -305,8 +214,6 @@ class SupplierInvoiceController extends Controller
                 'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,procurement_request_code,'
                     . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
                 'purchaseOrder.shipmentOrder:id,shipment_code',
-                /* A Direct SPI has no order to read its shipment through, so the
-                   header lost its Shipment ID and PI number on reopen. */
                 'shipmentOrder:id,shipment_code,proforma_invoice_id,created_at',
                 'shipmentOrder.proformaInvoice:id,code',
                 'boxes.items',
@@ -323,14 +230,11 @@ class SupplierInvoiceController extends Controller
                 'invoice'        => $spi,
                 'owns_zoho_bill' => $spi->ownsZohoBill(),
 
-                // Stage 02 — ordered against billed.
                 'match' => $this->matchSummary($spi),
 
-                // Stage 03 — packed against pending, per line and in total.
                 'packing_summary' => $packing,
                 'packing_totals'  => $this->svc->packingTotals($packing) + ['boxes' => $spi->boxes->count()],
 
-                // Stage 04 — where each box is, and what it still owes.
                 'putaway' => [
                     'mode'     => $full ? 'full' : 'summary',
                     'placed'   => $spi->putaways->whereNotNull('confirmed_at')->count(),
@@ -351,9 +255,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /* ══════════════════════════ STAGE 01 ══════════════════════════ */
-
-    /** POST /p2p/spi — the first write of the whole flow. Opening the form writes nothing. */
     public function store(Request $request)
     {
         try {
@@ -362,10 +263,6 @@ class SupplierInvoiceController extends Controller
             $user = $this->tenantUser($request);
             $data = $this->validateHeader($request, $user, null);
 
-            /* CS-937 — an order whose every line is already billed has nothing
-               left to invoice. The chooser locks it; this is the same rule for
-               a request that did not come through the chooser. The tenant
-               scope on PurchaseOrder also refuses another client's order. */
             if (!empty($data['purchase_order_id'])) {
                 $po = PurchaseOrder::find((int) $data['purchase_order_id']);
                 if (!$po) {
@@ -382,14 +279,6 @@ class SupplierInvoiceController extends Controller
 
             $spi = SupplierInvoice::create($data + [
                 'code'            => $this->svc->nextCode((int) $user->client_id, (int) $user->branch_id),
-                /* A DIRECT SPI is only a draft row at this point: the setup modal
-                   has it, but Stage 01 itself — the invoice details, the
-                   validation, the GST gate — has not been answered yet. Marking
-                   it 1 here sent anyone who closed and reopened straight to
-                   Stage 02. updateStage1() is what earns the 1.
-
-                   An invoice raised against an ORDER keeps the old behaviour:
-                   choosing the purchase order IS its Stage 01. */
                 'stage_completed' => empty($data['purchase_order_id']) ? 0 : 1,
                 'status'          => SupplierInvoice::STATUS_DRAFT,
                 'created_by'      => $user->id,
@@ -397,8 +286,6 @@ class SupplierInvoiceController extends Controller
 
             $this->svc->log($spi, 'created', ['new_value' => $spi->code]);
 
-            /* Columns the caller did not send are absent from a freshly created
-               model, so the response shape changed with the payload. */
             $spi->refresh();
 
             DB::commit();
@@ -410,7 +297,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /** PUT /p2p/spi/{id}/stage-1 — editable while the invoice is still a draft. */
     public function updateStage1(Request $request, int $id)
     {
         try {
@@ -428,7 +314,6 @@ class SupplierInvoiceController extends Controller
 
             $data = $this->validateHeader($request, $user, $spi);
 
-            // Re-pointing at a different PO after items exist would orphan the match.
             if (
                 array_key_exists('purchase_order_id', $data)
                 && (int) $data['purchase_order_id'] !== (int) $spi->purchase_order_id
@@ -441,17 +326,6 @@ class SupplierInvoiceController extends Controller
                 ], 422));
             }
 
-            /* The supplier stays open until this invoice goes to a senior; a
-               pending or approved request fixes it. Same guard the purchase
-               order carries (PurchaseOrderController), and for the same
-               reason: the senior approved THIS supplier's overdue filing, so
-               a swap afterwards leaves the approval vouching for a risk
-               nobody looked at.
-
-               document_type is locked with it. gstGate() returns 'clear'
-               outright for an international document, so a domestic ->
-               international flip would step around the approval without the
-               supplier moving at all. */
             $sentToSenior = $spi->gstApprovals()
                 ->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])
                 ->exists();
@@ -470,18 +344,10 @@ class SupplierInvoiceController extends Controller
                 ], 422));
             }
 
-            /* What the supplier still owes before Stage 01 counts as answered.
-               The fields are saved either way — an invoice records goods that
-               have already arrived, so refusing the save would only mean the
-               delivery goes unrecorded. The stage is withheld instead, and the
-               reasons come back with it. */
             $blockers = $this->stage1Blockers($spi, $data, $user);
 
             $spi->forceFill($data + [
                 'updated_by' => $user->id,
-                /* max(), so a later stage never falls back — and so an invoice
-                   already past Stage 01 is not dragged to 0 by a supplier whose
-                   paperwork lapsed after the fact. */
                 'stage_completed' => max($blockers ? 0 : 1, (int) $spi->stage_completed),
             ])->save();
             $this->svc->log($spi, 'stage1_saved');
@@ -492,7 +358,6 @@ class SupplierInvoiceController extends Controller
             return response()->json([
                 'status' => true,
                 'data'   => $spi,
-                // Empty when Stage 01 is complete; each entry has code + message.
                 'blockers' => $blockers,
             ], 200);
         } catch (\Throwable $e) {
@@ -501,19 +366,8 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /* ══════════════════════════ STAGE 02 ══════════════════════════ */
-
-    /**
-     * PUT /p2p/spi/{id}/items — the whole grid saves at once.
-     *
-     * Never row by row: the header totals are rolled up from the lines in the
-     * same transaction, so a partial save would leave the two disagreeing.
-     */
     public function updateItems(Request $request, int $id)
     {
-        // Named out here so the catch can clean them up — the files land on
-        // disk before the transaction opens, and a failed save must not leave
-        // an orphan behind.
         $files = [];
 
         try {
@@ -529,24 +383,12 @@ class SupplierInvoiceController extends Controller
                 ], 422));
             }
 
-            // The supplier's invoice number, date and e-way details are part of
-            // this screen, not Stage 01 — so they save with the grid.
             $header = $this->validateInvoiceDetails($request, $user, $spi);
 
-            /* The grid does its own arithmetic and posts the result; the server
-               stores it. Only description, qty_po and pi_item_id are filled in
-               here, and those are snapshots of the order rather than calculations. */
             $data = $request->validate([
                 'items'              => ['required', 'array', 'min:1'],
-                /* Which existing line each row IS. Optional: a payload without
-                   ids still matches by position, as it always did. Sent, it is
-                   what stops a reordered grid from rewriting rows in place —
-                   Stage 03 boxes point at these ids. */
                 'items.*.id'         => ['nullable', 'integer'],
                 'items.*.po_item_id' => ['nullable', 'integer'],
-                /* A Direct SPI has no PO line to take this from, so the caller
-                   names the PI line it is billing. Ignored when there is a PO:
-                   the order is the authority there. */
                 'items.*.pi_item_id' => ['nullable', 'integer'],
                 'items.*.product_id' => ['required', 'integer'],
                 'items.*.qty_spi'    => ['required', 'numeric', 'gt:0'],
@@ -560,16 +402,12 @@ class SupplierInvoiceController extends Controller
                 'items.*.igst_amount'    => ['nullable', 'numeric', 'min:0'],
                 'items.*.line_total'     => ['required', 'numeric', 'min:0'],
 
-                // The TOTALS row, also computed by the grid.
                 'taxable_total' => ['required', 'numeric', 'min:0'],
                 'total_cgst'    => ['nullable', 'numeric', 'min:0'],
                 'total_sgst'    => ['nullable', 'numeric', 'min:0'],
                 'total_igst'    => ['nullable', 'numeric', 'min:0'],
                 'grand_total'   => ['required', 'numeric', 'min:0'],
 
-                /* The attachments ride along with the save, so Stage 02 is one
-                   request. Send the whole thing as multipart when there are files;
-                   plain JSON still works when there are none. */
                 'invoice_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
                 'eway_file'    => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
             ], [
@@ -579,24 +417,12 @@ class SupplierInvoiceController extends Controller
                 'eway_file.max'      => 'The e-way bill may not be larger than 10 MB.',
             ]);
 
-            /* CS-1140 — refused before anything is written, uploads included. */
             if (!$spi->purchase_order_id) {
                 $this->guardSupplierSegments($spi, $data['items'], (int) $user->client_id);
             }
 
-            // On disk now; the catch deletes them again if the write fails.
             $files = $this->storeAttachments($request, $spi);
 
-            /* The file each upload REPLACES, read before the model is filled.
-             *
-             * One invoice and one e-way bill per SPI — a single column each, so
-             * a second upload simply overwrites the first. What it did not do
-             * was remove the first from disk: every re-upload left a file nobody
-             * can reach, and SPI 1 had eight of them against two live paths.
-             *
-             * Deleted AFTER the commit, never before. A rollback leaves the old
-             * path as the live one, and a file deleted on the way to a failed
-             * save is a document lost for nothing. */
             $superseded = [];
             foreach (['invoice', 'eway'] as $kind) {
                 $new = $files["{$kind}_file_path"] ?? null;
@@ -604,8 +430,6 @@ class SupplierInvoiceController extends Controller
                 if ($new && $old && $old !== $new) $superseded["{$kind}_file_path"] = $old;
             }
 
-            // An international supplier charges no Indian GST: the four tax columns
-            // stay NULL, which is a different fact from "charged at zero rate".
             $rows = $this->priceLines(
                 $data['items'],
                 $spi->isInternational(),
@@ -613,11 +437,8 @@ class SupplierInvoiceController extends Controller
                 $spi->id,
             );
 
-            // Over-supply is accepted, not refused — the goods arrived. It comes
-            // back as a warning beside the saved invoice.
             $warnings = $this->overBillWarnings($spi, $rows);
 
-            // The TOTALS row the grid calculated, stored as sent.
             $totals = [
                 'taxable_total' => $data['taxable_total'],
                 'total_cgst'    => $spi->isInternational() ? 0 : ($data['total_cgst'] ?? 0),
@@ -637,23 +458,14 @@ class SupplierInvoiceController extends Controller
                 }
             }
 
-            // rollUp: false — the grid owns the arithmetic, so recomputing here
-            // would overwrite the figures the user actually saw with our own.
             $spi = $this->svc->saveItems($spi, $rows, false);
-            /* A boxed line that grew has quantity to pack again, so Stage 03
-               is no longer done. */
             $this->svc->normaliseBoxScenarios($spi);
             $this->svc->syncPackingStage($spi);
 
-            /* No packing summary here: nothing is packed at Stage 02, so it would
-               be a row of zeros. What this stage owns is the MATCH — what the PO
-               ordered against what the supplier billed. The packing figures belong
-               to Stage 03 and have their own endpoint. */
             $spi->load('items');
 
             DB::commit();
 
-            // The replaced files, now that the new paths are safely stored.
             $this->removeFiles($superseded);
 
             return response()->json(['status' => true, 'data' => [
@@ -665,10 +477,6 @@ class SupplierInvoiceController extends Controller
             DB::rollBack();
             $this->removeFiles($files);
 
-            /* A validation failure is an answer, not a fault — only the rest
-               earns a line. Logged here because the rethrow below reaches the
-               caller as a bare "Server Error" once APP_DEBUG is off, which
-               leaves nothing to act on. */
             if (!$e instanceof \Illuminate\Http\Exceptions\HttpResponseException
                 && !$e instanceof \Illuminate\Validation\ValidationException) {
                 Log::error('SPI items save failed', [
@@ -685,19 +493,15 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /** Best effort: a file left behind after a rolled-back save is an orphan. */
     private function removeFiles(array $files): void
     {
         foreach ($files as $key => $path) {
             if (!str_ends_with($key, '_path') || !$path) continue;
             $disk = config('filesystems.documents') ?: config('filesystems.default', 'public');
-            try { Storage::disk($disk)->delete($path); } catch (\Throwable) { /* nothing to do */ }
+            try { Storage::disk($disk)->delete($path); } catch (\Throwable) { }
         }
     }
 
-    /* ══════════════════════════ CLOSE ══════════════════════════ */
-
-    /** PUT /p2p/spi/{id}/submit — refuses while quantity is still unpacked. */
     public function submit(Request $request, int $id)
     {
         try {
@@ -723,17 +527,6 @@ class SupplierInvoiceController extends Controller
                 ], 422));
             }
 
-            /* Every box has to actually be somewhere.
-             *
-             * This call is what closes Stage 04, and until now it only checked
-             * PACKING — so an invoice could be submitted with a box that had
-             * never been allocated a shelf. The progress block already computed
-             * "complete: false" and then nothing acted on it.
-             *
-             * A box left behind this way is invisible afterwards: its stage is
-             * finished, so no screen lists it as outstanding, and if it was
-             * assigned its shelf stays reserved for a put-away nobody will
-             * finish. */
             $unplaced = SpiBox::where('supplier_invoice_id', $spi->id)
                 ->whereDoesntHave('putaway', fn ($q) => $q->where('status', SpiPutaway::PLACED))
                 ->orderBy('box_code')
@@ -768,7 +561,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /** DELETE /p2p/spi/{id} — soft delete, refused once goods have moved on. */
     public function destroy(Request $request, int $id)
     {
         try {
@@ -784,7 +576,6 @@ class SupplierInvoiceController extends Controller
                 ], 422));
             }
 
-            // Every line gives its quantity back to the PO before the invoice goes.
             foreach ($spi->items as $item) {
                 $this->svc->syncFulfilment($item, SpiPoFulfilment::EVENT_CANCELLED, (float) $item->qty_spi);
             }
@@ -802,18 +593,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/{id}/payment-requests — the Payment Requests History popup.
-     *
-     * Two summaries sit on that screen and they measure different things:
-     *
-     *   invoice  what THIS invoice claims — base, GST, grand total
-     *   requests what has been requested, approved and paid against it
-     *
-     * The ceiling and the balance still belong to the PURCHASE ORDER; an SPI
-     * amount is the supplier's claim, not a ledger. So `po` is returned
-     * alongside, and that is the figure a new request is validated against.
-     */
     public function paymentRequests(Request $request, int $id)
     {
         try {
@@ -826,23 +605,8 @@ class SupplierInvoiceController extends Controller
             $rows = PoPaymentRequest::where('supplier_invoice_id', $spi->id)
                 ->orderBy('id')->get();
 
-            /* The CONSTANT, not a literal.
-             *
-             * The column stores 'approved' / 'pending' in lower case; this
-             * compared against 'Approved' and matched nothing, so awaiting,
-             * approved_amount and ready_to_pay were all returned as 0 on every
-             * invoice. Invisible on screen because the panel adds the figures
-             * up from the request rows itself — the summary it was given was
-             * simply never used. */
             $approved = $rows->where('status', PoPaymentRequest::STATUS_APPROVED);
-            /* The approver and raiser of each request as { id, name, role } —
-               the PO list shape. The rows carry only ids. */
             $people = $this->requestPeople($rows->pluck('requested_by')->merge($rows->pluck('requested_to'))->all());
-            /* What each request was raised against. Every request here
-               shares THIS invoice, and a PO-backed one shares its order
-               too, so the block is built once rather than per row. The
-               inbox shows PO -> SPI for a PO-backed SPI; this makes the
-               invoice's own list say the same. */
             $raisedAgainst = [
                 'link_type' => $po ? (($spi->shipment_order_id || $po->shipment_order_id) ? 'with_shipment' : 'without_shipment') : 'direct_spi',
                 'po'  => $po ? ['id' => $po->id, 'code' => $po->code, 'date' => $po->po_date] : null,
@@ -860,24 +624,17 @@ class SupplierInvoiceController extends Controller
                 'spi' => [
                     'id' => $spi->id,
                     'code' => $spi->code,
-                    'base_amount'  => (float) $spi->taxable_total,   // without GST
+                    'base_amount'  => (float) $spi->taxable_total,
                     'gst_amount'   => $gst,
-                    'grand_total'  => (float) $spi->grand_total,     // with GST
-                    /* The deduction, so a reopened popup can show what was
-                       saved rather than starting blank. Cut on taxable_total,
-                       not grand_total - TDS is not deducted on GST. */
+                    'grand_total'  => (float) $spi->grand_total,
                     'tds_percentage' => (float) $spi->tds_percentage,
                     'tds_amount'     => $tds,
                     'tds_saved'      => (bool) $spi->tds_updated_at,
-                    /* Settled once money has moved: changing it then would
-                       rewrite what was already paid against. */
                     'tds_locked'     => $tdsLock !== null,
                     'tds_locked_by'  => $tdsLock,
                     'tds_applies'    => !$spi->isInternational(),
                     'net_payable'    => $net,
                     'paid_amount'  => $paid,
-                    /* Net of the deduction. This was grand_total - paid, which
-                       overstated the balance by the whole TDS. */
                     'balance'      => round($net - $paid, 2),
                 ],
 
@@ -887,16 +644,9 @@ class SupplierInvoiceController extends Controller
                     'awaiting'         => round((float) $rows->where('status', PoPaymentRequest::STATUS_PENDING)->sum('requested_amount'), 2),
                     'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
                     'paid_amount'      => $paid,
-                    // Approved but not yet released — what the Make Payment button owes.
                     'ready_to_pay'     => round((float) $approved->sum(fn($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
                 ],
 
-                /* The real ceiling for a PO-backed invoice: a request against
-                   it is checked against the ORDER's balance, not the
-                   invoice's. A Direct SPI has no order, so it is its own
-                   ceiling — see `ledger` below, which says which of the two
-                   is in force rather than leaving the caller to infer it
-                   from a null. */
                 'po' => $po ? [
                     'id' => $po->id,
                     'code' => $po->code,
@@ -907,11 +657,6 @@ class SupplierInvoiceController extends Controller
                     'balance_amount' => (float) $po->balance_amount,
                 ] : null,
 
-                /* Whichever document the money is actually measured against.
-                   The screen reads this and does not care which it is; the
-                   `source` says so for anything that does. TDS comes off the
-                   taxable base, so net_payable is grand_total - tds_amount
-                   on both sides — the same arithmetic saveTds() caps. */
                 'ledger' => $po ? [
                     'source'         => 'purchase_order',
                     'code'           => $po->code,
@@ -926,18 +671,13 @@ class SupplierInvoiceController extends Controller
                     'source'         => 'supplier_invoice',
                     'code'           => $spi->code,
                     'grand_total'    => (float) $spi->grand_total,
-                    /* The deduction and what settled it, so the popup can show
-                       what was saved and grey the field when it is fixed. */
                     'tds_percentage' => (float) $spi->tds_percentage,
                     'tds_amount'     => (float) $spi->tds_amount,
                     'tds_saved'      => (bool) $spi->tds_updated_at,
                     'tds_locked'     => $tdsLock !== null,
-                    /* 'payment' | 'approval' | null — which of the two fixed it. */
                     'tds_locked_by'  => $tdsLock,
                     'tds_applies'    => !$spi->isInternational(),
                     'net_payable'    => round((float) $spi->grand_total - (float) $spi->tds_amount, 2),
-                    /* Null until the first payment: the ledger has not been
-                       opened, which is not the same as a zero balance. */
                     'paid_amount'    => $spi->paid_amount === null ? null : (float) $spi->paid_amount,
                     'balance_amount' => $spi->balance_amount === null
                         ? round((float) $spi->grand_total - (float) $spi->tds_amount, 2)
@@ -953,7 +693,6 @@ class SupplierInvoiceController extends Controller
                     'requested_by'     => ['id' => $r->requested_by, 'name' => $people[$r->requested_by]['name'] ?? null, 'role' => $people[$r->requested_by]['role'] ?? null],
                     'requested_to'     => ['id' => $r->requested_to, 'name' => $people[$r->requested_to]['name'] ?? null, 'role' => $people[$r->requested_to]['role'] ?? null],
                     'requested_at'     => $r->requested_at,
-                    /* Same block on every row; the UI reads it per request. */
                     'raised_against'   => $raisedAgainst,
                     'status'           => $r->status,
                     'approved_amount'  => $r->approved_amount !== null ? (float) $r->approved_amount : null,
@@ -969,14 +708,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /* ══════════════════════════ ZOHO ══════════════════════════ */
-
-    /**
-     * POST /p2p/spi/{id}/zoho-sync
-     *   With-PO SPI  → runs the PO's whole chain (PO → bill → payments). If the
-     *                  PO was never synced, this is where it gets created.
-     *   Direct SPI   → creates the invoice's own bill and posts its payments.
-     */
     public function zohoSync(Request $request, int $id)
     {
         try {
@@ -988,7 +719,6 @@ class SupplierInvoiceController extends Controller
 
             try {
                 if (!$spi->ownsZohoBill()) {
-                    // The bill belongs to the PO — sync it end to end (creating it if missing).
                     $po = $spi->purchaseOrder;
                     if (!$po) {
                         abort(response()->json(['status' => false, 'message' => 'This invoice has no purchase order to sync.'], 422));
@@ -1004,7 +734,6 @@ class SupplierInvoiceController extends Controller
                     $message = 'Synced to Zoho Books — ' . implode(', ', $parts) . '.';
                 }
             } catch (\RuntimeException $e) {
-                // Zoho saying no is an answer, not a server failure.
                 abort(response()->json(['status' => false, 'message' => $e->getMessage()], 422));
             }
 
@@ -1017,18 +746,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/{id}/summary — everything the Temporary Putaway Summary shows.
-     *
-     * One call for the whole dialog: the header pills, the eight analytics
-     * tiles, the three trading parties, the PI/PO/SPI references, the
-     * per-box placement and the per-box contents.
-     *
-     * Read-only, and it reads ROWS. The screen used to compute its zones and
-     * racks from the invoice number, so it drew a full allocation for an
-     * invoice whose boxes had never been scanned; this answers from
-     * p2p_spi_putaways and returns nulls where nothing has been placed.
-     */
     public function summary(Request $request, int $id)
     {
         try {
@@ -1046,14 +763,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/{id}/packed-boxes — every box of this invoice, fully resolved.
-     *
-     * The packing screen reads /boxes, which returns the rows it edits. This is
-     * the same boxes for a READER: products named, flags named, the put-away
-     * location, the attachments and the sticker state, with the dimensions and
-     * weights as measured.
-     */
     public function packedBoxes(Request $request, int $id)
     {
         try {
@@ -1061,9 +770,6 @@ class SupplierInvoiceController extends Controller
 
             $this->tenantUser($request);
 
-            /* Paged and filtered on the server. An invoice can hold a hundred
-               boxes and a box carries its products and attachments, so the
-               whole list is far more than a screen of ten rows needs. */
             $opts = $request->validate([
                 'bucket'   => ['nullable', 'in:all,ship,inv,damaged,mismatch'],
                 'handling' => ['nullable', 'in:haz,non_haz,cold'],
@@ -1083,16 +789,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /**
-     * GET /p2p/spi/{id}/evidence-vault — every document filed against this invoice.
-     *
-     * Grouped as the dialog reads: the purchase order, the invoice's own
-     * uploads, the trade documents and agreements, and the packing evidence.
-     * Read-only — the vault gathers paperwork produced elsewhere.
-     *
-     * The SUPPLIER's vault (KYC, DD, licences) is a different endpoint keyed on
-     * the vendor: /segment-uploads/supplier/{id}/vault.
-     */
     public function evidenceVault(Request $request, int $id)
     {
         try {
@@ -1110,7 +806,6 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /** GET /p2p/spi/{id}/zoho-tracker — says WHY there is no bill, rather than showing an empty state. */
     public function zohoTracker(Request $request, int $id)
     {
         try {
@@ -1154,36 +849,16 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /* ══════════════════════════ HELPERS ══════════════════════════ */
-
-    /**
-     * One row of the list, flat.
-     *
-     * The shipment, the procurement case and the money are read from the
-     * invoice FIRST and from the purchase order only as a fallback: a Direct
-     * SPI carries its own, a PO-backed one leaves them null so the order
-     * stays the one authority.
-     *
-     * PO number and type still reach through the order alone — a Direct SPI
-     * has neither, so they stay null and the UI shows a dash. The opportunity
-     * falls back to the shipment's PI, so a Direct SPI with a shipment has one.
-     */
     private function listRow(SupplierInvoice $s, array $refs = ['ship' => [], 'opp' => []]): array
     {
         $po = $s->purchaseOrder;
 
-        // Own column first, then the order's.
         $shipId = $s->shipment_order_id ?? $po?->shipment_order_id;
         $ship   = $shipId ? ($refs['ship'][$shipId] ?? null) : null;
-        // The opportunity code lives on the proforma invoice: the order's, else
-        // the shipment's — a Direct SPI with a shipment reaches it that way.
         $piId   = $po?->proforma_invoice_id ?? $ship->proforma_invoice_id ?? null;
         $opp    = $piId ? ($refs['opp'][$piId] ?? null) : null;
         $day  = fn ($d) => $d ? substr((string) $d, 0, 10) : null;
 
-        /* Counts come from withCount on the list query; null on any caller that
-           did not ask for them, so the frontend can tell "not loaded" from
-           "nothing placed" instead of reading 0 as complete. */
         $boxes  = $s->boxes_total  ?? null;
         $placed = $s->boxes_placed ?? null;
 
@@ -1191,14 +866,10 @@ class SupplierInvoiceController extends Controller
             'id'          => $s->id,
             'boxes_total'       => $boxes,
             'boxes_placed'      => $placed,
-            // The floor is done. Null when the counts were not loaded, and
-            // false for an invoice with no boxes — nothing packed is not done.
             'putaway_complete'  => ($boxes === null || $placed === null)
                 ? null
                 : ($boxes > 0 && $placed >= $boxes),
             'spi_number'  => $s->code,
-            // A draft has no supplier invoice date until Stage 02, so the
-            // column would read blank for the whole of Stage 01.
             'spi_date'    => $day($s->invoice_date ?: $s->created_at),
             'invoice_no'  => $s->invoice_no,
 
@@ -1207,14 +878,11 @@ class SupplierInvoiceController extends Controller
             'po_date'     => $day($po?->po_date),
             'po_type'     => $po?->po_type,
             'document_type'       => $s->document_type,
-            // Drives the Physical Inspection badge under the PO number.
             'physical_inspection' => $po?->physical_inspection,
             'inspection_status'   => $po?->physical_inspection === 'yes'
                 ? ($po->inspection_status ?: 'pending')
                 : 'not_applicable',
 
-            // Real references, not raw ids: the opportunity code lives on the
-            // proforma invoice, and the row used to print lead_id (a number).
             'shipment_id'      => $ship->shipment_code ?? null,
             'shipment_date'    => $day($ship->created_at ?? null),
             'opportunity_id'   => $opp->opp_code ?? null,
@@ -1224,42 +892,24 @@ class SupplierInvoiceController extends Controller
             'supplier'    => [
                 'id'            => $s->vendor?->id,
                 'code'          => $s->vendor?->vendor_code,
-                // Company name first - the name the supplier is known by in the
-                // Supplier master and everywhere else in the SPI; the legal
-                // name is only the fallback for a supplier saved without one.
                 'name'          => $s->vendor?->company_name ?: $s->vendor?->legal_name,
                 'risk_level_id' => $s->vendor?->risk_level_id,
-                // The Risk Alert column prints the level's name, not its id.
                 'risk'          => $s->vendor?->riskLevel?->name,
                 'category'      => $s->vendor?->supplier_category,
             ],
 
             'expected_delivery_date' => $day($po?->expected_delivery_date),
 
-            /* A Direct SPI owns its own Zoho bill; one against a PO is billed
-               through that order, so it shows the order's state. */
             'zoho_status' => $s->isStandalone() ? $s->zoho_status : $po?->zoho_status,
 
-            // From the subqueries on the list, so the Payment Requests button
-            // has its count and its ready-to-pay note without a call per row.
             'pending_payment_requests' => (int) ($s->pending_payment_requests ?? 0),
             'approved_unpaid_amount'   => round((float) ($s->approved_unpaid_amount ?? 0), 2),
 
-            /* Money lives on the PO: an SPI amount is the supplier's claim, it
-               is not what the balance is measured against. A Direct SPI has no
-               order, so the invoice IS the ceiling and these came back null —
-               leaving the payment screen nothing to compute against.
-
-               TDS is cut on the taxable total, not on the grand total, and is
-               already stored that way; what is subtracted here is the amount. */
             'total_po_amount'    => (float) ($po ? $po->grand_total : $s->grand_total),
             'net_payable_amount' => $po
                 ? round((float) $po->grand_total - (float) $po->tds_amount, 2)
                 : round((float) $s->grand_total - (float) $s->tds_amount, 2),
             'total_paid_amount'  => (float) ($po ? $po->paid_amount : $s->paid_amount),
-            /* Derived for a Direct SPI rather than read: balance_amount is null
-               until a payment opens the ledger, and a blank balance on an
-               unpaid invoice reads as missing data, not as nothing paid. */
             'balance_amount'     => $po
                 ? (float) $po->balance_amount
                 : round((float) $s->grand_total - (float) $s->tds_amount - (float) $s->paid_amount, 2),
@@ -1267,11 +917,8 @@ class SupplierInvoiceController extends Controller
 
             'warehouse'   => $s->warehouse ? [
                 'id'      => $s->warehouse->id,
-                // The Inventory master's own columns: a stored per-branch code,
-                // and a type of 'own' / 'tpl'.
                 'code'    => $s->warehouse->code,
                 'name'    => $s->warehouse->wh_name,
-                // Drives the OWN / 3PL badge. Read from the master, never stored.
                 'is_own'  => $s->warehouse->wh_type === 'own',
             ] : null,
 
@@ -1281,31 +928,14 @@ class SupplierInvoiceController extends Controller
         ];
     }
 
-    /**
-     * The counts on the list's two rows of tabs. Four aggregates in one query
-     * rather than four round trips — the global tenant scope still applies.
-     */
-    /** The top tab: with a purchase order, or a Direct SPI that has none. */
     private function applyPoMode($q, ?string $mode): void
     {
         if ($mode === 'with_po')    $q->whereNotNull('p2p_supplier_invoices.purchase_order_id');
         if ($mode === 'without_po') $q->whereNull('p2p_supplier_invoices.purchase_order_id');
     }
 
-    /**
-     * The sub-tab. The shipment hangs off the PO, so this has to reach through
-     * it — and a Direct SPI has no PO at all.
-     *
-     * whereHas(PO where shipment IS NULL) dropped every Direct SPI from BOTH
-     * sub-tabs, because the relation itself was absent. whereDoesntHave(PO
-     * WITH a shipment) is the correct complement: no PO also means no shipment.
-     */
     private function applyShipmentMode($q, ?string $mode): void
     {
-        /* Either place the link can live. Going through the order alone meant
-           no Direct SPI could ever appear under "With Shipment ID", however
-           plainly it carried one. Table-qualified: applySearch joins a `po`
-           and an `sh` alias, and a bare shipment_order_id is ambiguous. */
         if ($mode === 'with_shipment') {
             $q->where(fn ($w) => $w
                 ->whereNotNull('p2p_supplier_invoices.shipment_order_id')
@@ -1317,23 +947,11 @@ class SupplierInvoiceController extends Controller
         }
     }
 
-    /**
-     * Shipment and opportunity references for a whole page, in two queries.
-     *
-     * The opportunity code lives on the proforma invoice, not on the lead — the
-     * row used to print the raw lead_id (a number like 7) where the screen
-     * wants OPP-0004. Same logic the PO list uses, so both read alike.
-     *
-     * @return array{ship: array<int,object>, opp: array<int,object>}
-     */
     private function linkRefs($rows): array
     {
         $rows = collect($rows);
         $pos  = $rows->map(fn ($s) => $s->purchaseOrder)->filter();
 
-        /* A Direct SPI carries its own shipment id; a PO-backed invoice leaves
-           the column null so the order stays the one authority. Both sources
-           go into the same lookup. */
         $shipIds = $rows->pluck('shipment_order_id')
             ->merge($pos->pluck('shipment_order_id'))
             ->filter()->unique()->all();
@@ -1342,8 +960,6 @@ class SupplierInvoiceController extends Controller
             ->whereIn('id', $shipIds ?: [0])
             ->get(['id', 'shipment_code', 'proforma_invoice_id', 'created_at'])->keyBy('id');
 
-        // The order's PI, plus the shipment's PI for a Direct SPI, which has
-        // no order to carry one.
         $piIds = $pos->pluck('proforma_invoice_id')
             ->merge($ship->pluck('proforma_invoice_id'))
             ->filter()->unique()->all();
@@ -1355,24 +971,8 @@ class SupplierInvoiceController extends Controller
         return ['ship' => $ship, 'opp' => $opp];
     }
 
-    /**
-     * The tab numbers.
-     *
-     * Counted from the query as it stands BEFORE the tab is applied, but AFTER
-     * the search and the screen-wide status / supplier / date filters — so each
-     * tab shows its own figure, and every figure describes the rows a search
-     * has left behind.
-     *
-     * $base may therefore carry applySearch's left joins. They are all
-     * many-to-one (po, vendor, shipment, lead), so COUNT(*) is unaffected.
-     *
-     * The sub-tab counts are taken WITHIN the selected top tab, because the
-     * screen nests them under it. With the Direct-SPI fix in
-     * applyShipmentMode(), the two sub-tabs now add up to their parent.
-     */
     private function tabCounts($base, ?string $poMode = null): array
     {
-        // One pass for the top row of tabs.
         $r = (clone $base)->select(DB::raw(
             'COUNT(*) AS all_spi,
              COUNT(p2p_supplier_invoices.purchase_order_id) AS with_po,
@@ -1380,126 +980,68 @@ class SupplierInvoiceController extends Controller
              COUNT(DISTINCT p2p_supplier_invoices.purchase_order_id) AS distinct_po'
         ))->reorder()->first();
 
-        /* The sub-tabs sit UNDER the selected top tab, so they are counted
-           within it — before, they always counted every SPI and the two never
-           added up to their parent. */
         $scoped = clone $base;
         $this->applyPoMode($scoped, $poMode);
         $scopedTotal = (clone $scoped)->count();
 
-        /* Through applyShipmentMode, not a copy of its predicate: the count
-           and the rows under it have to agree, and the copy that drifts is
-           the one that makes a tab lie. */
         $shipQ = clone $scoped;
         $this->applyShipmentMode($shipQ, 'with_shipment');
         $withShipment = $shipQ->count();
 
         return [
-            // Two names for one figure: `all_spi` reads alongside the other
-            // tabs, `total_spi` is what the header chip calls it.
             'all_spi'          => (int) $r->all_spi,
             'total_spi'        => (int) $r->all_spi,
             'with_po'          => (int) $r->with_po,
-            // Likewise — the tab reads "Without Purchase Order SPI (Direct SPI)".
             'direct_spi'       => (int) $r->direct_spi,
             'without_po'       => (int) $r->direct_spi,
-            // How many ORDERS are represented, not how many invoices: several
-            // SPIs can sit under one PO.
             'distinct_po'      => (int) $r->distinct_po,
-            // Within the selected top tab, so the two add up to it.
             'with_shipment'    => $withShipment,
             'without_shipment' => $scopedTotal - $withShipment,
         ];
     }
 
-    /**
-     * The list's one search box: "Search SPI, supplier, PO or status…".
-     *
-     * Every chip on the row is searchable, which is why this joins out to the
-     * purchase order and from there to the shipment, opportunity and supplier —
-     * those columns are deliberately NOT copied onto the invoice, so the search
-     * has to reach them. All joins are LEFT, because a standalone invoice has
-     * no PO and must still match on its own code or supplier.
-     *
-     * One query with an OR group rather than several whereHas subqueries: a
-     * subquery per column would run the list once per searchable field.
-     */
     private function applySearch($q, string $term): void
     {
         $like = '%' . $term . '%';
 
         $q->leftJoin('p2p_purchase_orders as po', 'po.id', '=', 'p2p_supplier_invoices.purchase_order_id')
             ->leftJoin('vendors as v', 'v.id', '=', 'p2p_supplier_invoices.vendor_id')
-            // COALESCE, so a Direct SPI's own shipment code is searchable too.
             ->leftJoin('shipment_orders as sh', fn ($j) => $j->whereRaw(
                 'sh.id = COALESCE(p2p_supplier_invoices.shipment_order_id, po.shipment_order_id)'))
-            /* The proforma invoice, not the lead: linkRefs() prints the code from
-               pi.opp_code, and a search has to look where the row read it. */
             ->leftJoin('proforma_invoices as pfi', 'pfi.id', '=', 'po.proforma_invoice_id')
-            // The Risk Alert and Warehouse columns print these, so they search too.
             ->leftJoin('master_risk_levels as rl', 'rl.id', '=', 'v.risk_level_id')
             ->leftJoin('inventory_warehouses as wh', 'wh.id', '=', 'p2p_supplier_invoices.warehouse_id')
             ->select('p2p_supplier_invoices.*')
             ->where(function ($w) use ($like, $term) {
-                $w->where('p2p_supplier_invoices.code', 'ilike', $like)                 // SPI/2026-27/001
-                    ->orWhere('p2p_supplier_invoices.invoice_no', 'ilike', $like)       // the supplier's own number
+                $w->where('p2p_supplier_invoices.code', 'ilike', $like)
+                    ->orWhere('p2p_supplier_invoices.invoice_no', 'ilike', $like)
                     ->orWhere('p2p_supplier_invoices.status', 'ilike', $like)
-                    ->orWhere('p2p_supplier_invoices.document_type', 'ilike', $like)    // domestic / international
-                    ->orWhere('po.code', 'ilike', $like)                                // PO/2026-27/016
-                    ->orWhere('po.po_type', 'ilike', $like)                             // material_goods …
-                    ->orWhere('po.procurement_request_code', 'ilike', $like)            // PROC-001
+                    ->orWhere('p2p_supplier_invoices.document_type', 'ilike', $like)
+                    ->orWhere('po.code', 'ilike', $like)
+                    ->orWhere('po.po_type', 'ilike', $like)
+                    ->orWhere('po.procurement_request_code', 'ilike', $like)
                     ->orWhere('p2p_supplier_invoices.procurement_request_code', 'ilike', $like)
-                    ->orWhere('sh.shipment_code', 'ilike', $like)                       // SHP-001
-                    ->orWhere('pfi.opp_code', 'ilike', $like)                           // OPP-001
-                    // Legal name first, the order listRow prints them in.
+                    ->orWhere('sh.shipment_code', 'ilike', $like)
+                    ->orWhere('pfi.opp_code', 'ilike', $like)
                     ->orWhere('v.legal_name', 'ilike', $like)
                     ->orWhere('v.company_name', 'ilike', $like)
                     ->orWhere('v.vendor_code', 'ilike', $like)
-                    ->orWhere('rl.name', 'ilike', $like)                                // High / Low
+                    ->orWhere('rl.name', 'ilike', $like)
                     ->orWhere('wh.wh_name', 'ilike', $like)
                     ->orWhere('wh.code', 'ilike', $like);
 
-                /* The warehouse badge reads "Own" or "Third Party"; the column
-                   holds 'own' / 'tpl'. "own" must match whole, or every term
-                   containing it would pull in all own-warehouse invoices. */
                 $t = strtolower(trim($term));
                 if ($t === 'own') $w->orWhere('wh.wh_type', 'own');
                 if (in_array($t, ['3pl', 'tpl'], true) || (strlen($t) >= 4 && str_contains('third party', $t))) {
                     $w->orWhere('wh.wh_type', 'tpl');
                 }
 
-                /* The prototype lets you search the WORDS "direct spi without
-                   po" to pull up every standalone invoice — there is no column
-                   holding that phrase, so it is matched here instead.
-                   Four characters at least: the test is substring-of-the-phrase,
-                   so 'po' and 'spi' would otherwise drag every standalone invoice
-                   into an ordinary code search, and they appear in every PO code
-                   and every invoice code there is. */
                 if (strlen($term) >= 4 && str_contains('direct spi without po', strtolower($term))) {
                     $w->orWhereNull('p2p_supplier_invoices.purchase_order_id');
                 }
             });
     }
 
-    /**
-     * Why a DIRECT SPI's Stage 01 is not finished yet.
-     *
-     * The same compliance a purchase order is held to at submit, asked here
-     * instead: the supplier's GST position, the senior approval an overdue
-     * return needs, and paperwork that has run out.
-     *
-     * The fields are saved either way. An invoice records goods that have
-     * already arrived, so refusing the save would only mean the delivery goes
-     * unrecorded — the stage is withheld instead, which stops the wizard
-     * without losing anyone's work.
-     *
-     * Only for a Direct SPI. An invoice raised against an ORDER inherits that
-     * order's clearance: the PO was refused at submit unless all of this
-     * passed, so asking again would hold up an invoice for goods a cleared
-     * order already brought in.
-     *
-     * @return array<int,array{code:string,message:string}>
-     */
     private function stage1Blockers(SupplierInvoice $spi, array $data, $user): array
     {
         if (!empty($data['purchase_order_id'])) return [];
@@ -1516,9 +1058,6 @@ class SupplierInvoiceController extends Controller
                 . PurchaseOrderService::GST_STALE_MONTHS
                 . ' months — refresh it on the supplier record.'];
         } elseif ($gst['gate'] === 'approval_required') {
-            /* The approval that counts is the one raised against THIS invoice.
-               A different invoice's approval covers a different claim, even
-               for the same supplier. */
             $approval = $spi->gstApprovals()->latest('id')->first();
             if ($approval?->status !== PoGstApproval::STATUS_APPROVED) {
                 $out[] = ['code' => 'gst_approval', 'message' => match ($approval?->status) {
@@ -1545,66 +1084,18 @@ class SupplierInvoiceController extends Controller
         return $out;
     }
 
-    /**
-     * Stage 01 asks only who the invoice is from and, if any, which order it is
-     * against. The supplier's own invoice number, date and attachments belong
-     * to Stage 02 — so the draft (and its id) exist from the first save, and
-     * the frontend never has to hold a half-filled form in memory.
-     */
     private function validateHeader(Request $request, $user, ?SupplierInvoice $spi): array
     {
         return $request->validate([
-            // Nullable: the prototype offers "Without Purchase Order", where
-            // the supplier is picked directly instead of inherited.
             'purchase_order_id' => ['nullable', 'integer'],
             'vendor_id'         => ['required', 'integer'],
 
-            /* ── Direct SPI setup, steps 01 and 02 ──────────────────────
-             * Only a Direct SPI sends these. A PO-backed invoice leaves them
-             * out and goes on reading the order's own columns, so there is
-             * never a second copy of the same fact to keep in step.
-             *
-             * Step 01 is answerable with "All Other's (Without Shipment ID)",
-             * which is a real answer and not a skipped question — hence
-             * nullable rather than required_if.
-             *
-             * Tenant-scoped the same way warehouse_id is: an id with no scope
-             * behind it accepts another client's row. Shipment orders are
-             * client-wide, so client_id alone is the right fence here. */
-            /* No deleted_at clause: shipment_orders does not soft-delete,
-               and filtering on a column that is not there throws. */
             'shipment_order_id' => ['nullable', 'integer', Rule::exists('shipment_orders', 'id')
                 ->where(fn ($q) => $q->where('client_id', $user->client_id))],
 
-            /* NOT fenced to `procurements` yet, deliberately. Step 02 of the
-               Direct SPI setup is not wired, so an id arriving today is a
-               placeholder and an exists rule would refuse an otherwise
-               complete invoice. Restore the tenant scope — the same one
-               shipment_order_id carries above — once real ids are sent. */
             'procurement_request_id' => ['nullable', 'integer'],
-            // 30, as the purchase order validates it. Stored beside the id
-            // because it is what the lists search and the sticker prints.
             'procurement_request_code' => ['nullable', 'string', 'max:30'],
-            // Decides whether the tax section renders at all, so it is asked
-            // up front rather than discovered at Stage 02.
             'document_type'     => ['required', Rule::in(SupplierInvoice::DOC_TYPES)],
-            /* Must be a warehouse THIS INVOICE'S BRANCH can see.
-             *
-             * It was ['nullable','integer'] with no foreign key behind it, so
-             * any number stuck — including an id belonging to another client,
-             * or to the old master table the relation used to read.
-             *
-             * Client alone is not enough. A warehouse is branch-wise, and so is
-             * everything under it: scoping only to the company let a branch-6
-             * invoice be saved against a branch-7 warehouse, and putaway would
-             * then hunt for zones in a building the invoice's branch does not
-             * own. A null branch_id is a client-wide site and belongs to every
-             * branch, which is the same rule the Inventory masters read by
-             * (BaseInventoryController::scopeTenant).
-             *
-             * On create the invoice does not exist yet, so the branch is the
-             * one it is about to be filed under — tenantUser() refuses a user
-             * without one, so this is never null. */
             'warehouse_id'      => ['nullable', 'integer', Rule::exists('inventory_warehouses', 'id')
                 ->where(fn ($q) => $q
                     ->where('client_id', $user->client_id)
@@ -1614,15 +1105,8 @@ class SupplierInvoiceController extends Controller
         ]);
     }
 
-    /**
-     * The Stage 02 header — the supplier's own invoice, saved alongside the
-     * item grid because they are one screen and one decision.
-     */
     private function validateInvoiceDetails(Request $request, $user, SupplierInvoice $spi): array
     {
-        /* The supplier cannot bill before the order was placed. A Direct SPI
-           has no purchase order; when it bills a shipment's PI, it cannot be
-           dated before that PI. */
         $poDate = $spi->purchase_order_id
             ? optional($spi->purchaseOrder)->po_date?->toDateString()
             : null;
@@ -1656,23 +1140,6 @@ class SupplierInvoiceController extends Controller
         ]);
     }
 
-    /**
-     * Our own warehouse allocates rack and shelf; a third party is summary
-     * only. Read from the master, never from a column here that could
-     * contradict the warehouse it points at.
-     */
-    /**
-     * Ours or a third party's — it decides whether Stage 4 runs the full
-     * rack-and-shelf put-away or the 3PL summary.
-     *
-     * Read from inventory_warehouses, where the column holds 'own' / 'tpl'. It
-     * used to ask master_warehouse_master for the string 'Own Warehouse',
-     * which was wrong twice over once the Inventory masters landed: the wrong
-     * table, and a value the new one cannot contain.
-     *
-     * No warehouse chosen yet still means TRUE — the screen must offer the
-     * full flow until someone says otherwise, not quietly fall to summary.
-     */
     private function isOwnWarehouse(?int $warehouseId): bool
     {
         if (!$warehouseId) return true;
@@ -1680,18 +1147,10 @@ class SupplierInvoiceController extends Controller
         return DB::table('inventory_warehouses')->where('id', $warehouseId)->value('wh_type') === 'own';
     }
 
-    /**
-     * The TOTALS row of the 3-way match grid: ordered against billed, and the
-     * two sides of the gap. Every figure is a sum of columns already loaded —
-     * no query, and nothing stored.
-     */
     private function matchSummary(SupplierInvoice $spi): array
     {
         $items = $spi->items;
 
-        /* Ordered means the purchase order where there is one and the proforma
-           invoice where there is not, so a Direct SPI is measured against
-           something. qty_po stays for the screens already reading it. */
         $ordered = $items->sum(fn ($i) => (float) ($i->qty_po ?? $i->qty_pi ?? 0));
 
         return [
@@ -1699,40 +1158,12 @@ class SupplierInvoiceController extends Controller
             'qty_po'      => round((float) $items->sum('qty_po'), 3),
             'qty_ordered' => round($ordered, 3),
             'qty_spi'     => round((float) $items->sum('qty_spi'), 3),
-            // missing_qty is the accessor, extra_qty the column — only one of
-            // the pair is ever non-zero on a given line.
             'missing_qty' => round((float) $items->sum('missing_qty'), 3),
             'extra_qty'   => round((float) $items->sum('extra_qty'), 3),
             'matched'     => $items->every(fn($i) => $i->missing_qty <= 0.001 && (float) $i->extra_qty <= 0.001),
         ];
     }
 
-    /**
-     * Move any attached invoice / e-way file onto the public disk and return
-     * the four columns to write. Empty when the request carried no files —
-     * Stage 02 is one call whether or not there are attachments.
-     *
-     * ONE FILE EACH, by the shape of the table: `invoice_file_path` and
-     * `eway_file_path` are single columns, and the rules accept a single file
-     * rather than a list. A new upload therefore replaces the old one; the
-     * caller removes what it replaced once the save has committed.
-     */
-    /**
-     * PUT /p2p/spi/{id}/stage-3 — packing is finished.
-     *
-     * Stage 3 is the one stage whose work happens over MANY requests (a box
-     * at a time), so unlike stages 1 and 2 there is no natural save to hang
-     * the stamp on. Hanging it on the box save instead would be wrong twice:
-     * saving box 3 of 10 does not finish the stage, and deleting a box would
-     * then have to walk the stamp back.
-     *
-     * The completeness rule is enforced HERE and not only in the wizard: the
-     * browser's check is a courtesy, this is the one that holds when the call
-     * arrives from anywhere else.
-     *
-     * max(), never a plain 3 — a re-visit from stage 4 must not demote an
-     * invoice that is already further along.
-     */
     public function completeStage3(Request $request, int $id)
     {
         $user = $this->tenantUser($request);
@@ -1741,8 +1172,6 @@ class SupplierInvoiceController extends Controller
         $rows   = $this->svc->packingSummary($spi->id);
         $totals = $this->svc->packingTotals($rows);
 
-        // An invoice with no lines is not "fully packed", it is empty —
-        // every() is true over nothing, so say so before trusting it.
         if (!$rows) {
             abort(response()->json([
                 'status'  => false,
@@ -1768,12 +1197,6 @@ class SupplierInvoiceController extends Controller
             ], 422));
         }
 
-        /* The chosen warehouse must be able to hold the boxes just packed —
-           a cold-chain or hazardous box needs a zone that allows it, and the
-           warehouse was picked at Stage 01 before any box had a flag. Blocked
-           here (not only when the warehouse is edited) because the move into
-           putaway is the last point before it is fixed. Third Party (null) has
-           no zones and takes a summary putaway, so it is never checked. */
         $missing = app(\App\Services\Inventory\WarehouseCapabilityService::class)
             ->missingFor($spi->id, $spi->warehouse_id ? (int) $spi->warehouse_id : null);
         if ($missing) {
@@ -1786,9 +1209,6 @@ class SupplierInvoiceController extends Controller
             ], 422));
         }
 
-        /* The box saves already moved the column — this endpoint exists so
-           Next has something to await and something to be refused by, not
-           because the stamp depends on it. Same rule either way. */
         if ($this->svc->syncPackingStage($spi) === 3 && !$spi->wasRecentlyCreated) {
             $spi->forceFill(['updated_by' => $user->id])->save();
             $this->svc->log($spi, 'packed', ['stage' => 3]);
@@ -1802,19 +1222,12 @@ class SupplierInvoiceController extends Controller
         $dir  = "p2p/spi/{$spi->id}";
         $data = [];
 
-        // Never empty: store() does array_key_exists() on this and a null
-        // disk is a TypeError, which no guard below would catch.
         $disk = config('filesystems.documents') ?: config('filesystems.default', 'public');
 
         foreach (['invoice' => 'invoice_file', 'eway' => 'eway_file'] as $kind => $field) {
             $f = $request->file($field);
             if (!$f) continue;
 
-            /* The upload has to have arrived before it can be stored. An
-               unwritable PHP temp directory or a body over post_max_size hands
-               back an UploadedFile that is not valid, and store() answers that
-               with a FileException — which the caller sees as "Server Error"
-               and nothing else. The box-photo path already checks this. */
             if (!$f->isValid()) {
                 abort(response()->json([
                     'status'  => false,
@@ -1824,9 +1237,6 @@ class SupplierInvoiceController extends Controller
 
             $path = $f->store($dir, $disk);
 
-            /* The documents disk carries 'throw' => false, so a refused write
-               comes back as FALSE instead of raising. Stored as-is it left a
-               saved invoice pointing at no file at all; say so instead. */
             if (!$path) {
                 abort(response()->json([
                     'status'  => false,
@@ -1841,35 +1251,6 @@ class SupplierInvoiceController extends Controller
         return $data;
     }
 
-    /**
-     * Take the grid's figures as posted and add the two things it cannot know:
-     * the PO line's own quantity and description, snapshotted onto the invoice
-     * line so a later PO revision cannot rewrite what was billed.
-     *
-     * The amounts are NOT recomputed here — the frontend owns that arithmetic
-     * and this stores the result. The cost of that split is that the server
-     * cannot tell a wrong total from a right one, so a crafted request is
-     * accepted as sent.
-     */
-    /**
-     * @param int|null $spiId The invoice being saved, excluded from the open
-     *                        calculation so its own old quantity is not counted
-     *                        against the line it is replacing.
-     */
-    /**
-     * CS-1140 — a Direct SPI bills only what its supplier deals in.
-     *
-     * A PO-backed invoice takes its products from the order, which was held to
-     * this rule when it was raised (PurchaseOrderController). A Direct one picks
-     * them here, so the same rule applies here: the product's segment must be
-     * one of the supplier's, or the product must be mapped to the supplier
-     * directly. The grid already locks such products in its picker, but a line
-     * picked before the supplier was changed in Stage 01 kept its product, and
-     * nothing on the server looked.
-     *
-     * Products are read within the tenant, so another client's product id is
-     * refused as "not found" instead of being billed.
-     */
     private function guardSupplierSegments(SupplierInvoice $spi, array $items, int $clientId): void
     {
         $vendorId = (int) $spi->vendor_id;
@@ -1922,14 +1303,8 @@ class SupplierInvoiceController extends Controller
             ->whereIn('id', collect($items)->pluck('po_item_id')->filter())
             ->get()->keyBy('id');
 
-        /* extra_qty is worked out here rather than taken from the payload: the
-           browser can only see its own grid, and whether a line is over depends
-           on every OTHER invoice on the order. It stays a SNAPSHOT — correct at
-           save time, and not revisited when a sibling invoice later changes. */
         $open = $poId ? $this->svc->openQtyByPoItem($poId, $spiId) : [];
 
-        /* The two joins were here all along, selecting nothing: hsn_code and
-           uom were in the table and never once written. */
         $products = DB::table('products as p')
             ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
             ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
@@ -1938,43 +1313,26 @@ class SupplierInvoiceController extends Controller
                 'h.hsn_code', DB::raw('COALESCE(u.short_code, u.title) AS uom')])
             ->keyBy('id');
 
-        /* What the proforma invoice ordered on each line this bills. The match
-           panel has a qty_po for a PO-backed invoice and had nothing at all
-           for a Direct SPI, which answers to a PI instead. */
         $piQty = DB::table('proforma_invoice_items')
             ->whereIn('id', collect($items)->pluck('pi_item_id')->filter())
             ->pluck('quantity', 'id');
 
         return collect($items)->map(function ($r) use ($international, $poLines, $products, $open, $piQty) {
-            // ?? null: a Direct SPI grid sends no po_item_id key at all.
             $po   = ($r['po_item_id'] ?? null) ? ($poLines[$r['po_item_id']] ?? null) : null;
             $prod = $products[$r['product_id']] ?? null;
 
-            /* How much of THIS line goes past what the order still had open.
-               No PO behind it (a standalone invoice) means nothing to exceed,
-               and the payload's own figure is the fallback when the open
-               quantity could not be read. */
             $extra = $po && array_key_exists($r['po_item_id'], $open)
                 ? $this->svc->splitBalance((float) $open[$r['po_item_id']] - (float) $r['qty_spi'])['over']
                 : (float) ($r['extra_qty'] ?? 0);
 
             return [
-                // Stripped before the write; saveItems() matches on it.
                 'id'          => $r['id'] ?? null,
                 'po_item_id'  => $r['po_item_id'] ?? null,
-                /* Snapshots of the order, not calculations — except that a
-                   Direct SPI has no order line, so its PI link comes from the
-                   caller instead. */
                 'pi_item_id'  => $po->pi_item_id ?? ($r['pi_item_id'] ?? null),
                 'product_id'  => $r['product_id'],
-                /* Product name/code resolved from the master here, so the SPI
-                   form no longer loads the whole product catalogue just to label
-                   its own saved lines (CS-937). */
                 'product_name' => $prod->name ?? null,
                 'product_code' => $prod->product_code ?? null,
                 'description' => $po->description ?? $prod->description ?? $prod->name ?? null,
-                /* From the product master, not the payload: the grid shows them
-                   but they are the product's own facts, not the supplier's. */
                 'hsn_code'    => $prod->hsn_code ?? null,
                 'uom'         => $prod->uom ?? null,
                 'qty_po'      => $po ? (float) $po->quantity : null,
@@ -1985,8 +1343,6 @@ class SupplierInvoiceController extends Controller
                 'extra_qty' => $extra,
 
                 'taxable_amount' => (float) $r['taxable_amount'],
-                // NULL, not 0, on an international invoice: a foreign supplier
-                // charges no Indian GST. "Does not apply" is not "zero rate".
                 'gst_pct'        => $international ? null : ($r['gst_pct'] ?? null),
                 'cgst_amount'    => $international ? null : ($r['cgst_amount'] ?? null),
                 'sgst_amount'    => $international ? null : ($r['sgst_amount'] ?? null),
@@ -1996,25 +1352,10 @@ class SupplierInvoiceController extends Controller
         })->all();
     }
 
-    /**
-     * Billing past what the PO ordered WARNS, it does not block.
-     *
-     * A supplier really does ship 40 bags against an order for 36, and
-     * refusing the invoice would mean refusing to record what arrived. The
-     * excess is kept on the line as extra_qty and surfaced here so the
-     * approver sees it — blocking would make that column unreachable.
-     *
-     * @return array<int,string> one message per over-billed line
-     */
     private function overBillWarnings(SupplierInvoice $spi, array $rows): array
     {
         $out = [];
 
-        /* A Direct SPI answers to the proforma invoice instead of an order.
-           Warned, never refused — the same judgement the PO side makes, that
-           the goods have arrived and an invoice recording them is a fact, not
-           a request. Its own lines are excluded so an edit is not read as a
-           second claim. */
         if ($spi->isStandalone()) {
             $piIds = collect($rows)->pluck('pi_item_id')->filter()->unique()->all();
             if (!$piIds) return [];
@@ -2054,13 +1395,6 @@ class SupplierInvoiceController extends Controller
         return $out;
     }
 
-    /**
-     * id => ['name' => ?, 'role' => ?] for a set of user ids.
-     *
-     * The same lookup PoPaymentRequestController::names() does — department and
-     * designation joined off the user's employee row — kept here so this
-     * endpoint does not reach into that controller for it.
-     */
     private function requestPeople(array $ids): array
     {
         $ids = array_values(array_unique(array_filter($ids)));

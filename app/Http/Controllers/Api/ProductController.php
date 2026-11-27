@@ -14,7 +14,6 @@ use App\Models\Masters\PackagingMaterial;
 use App\Models\Masters\Segments;
 use App\Models\Masters\Uom;
 use App\Models\Product;
-use App\Models\ProductQcRecord;
 use App\Models\ProductVendorMap;
 use App\Models\User;
 use App\Models\Vendor;
@@ -27,36 +26,11 @@ use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
-    /* ──────────────────────────────────────────────────────────────────
-     * Tenant scoping
-     *
-     * Products are a SHARED branch catalog: branch users AND employees both see
-     * globals + client-level + their own branch's rows (sibling branches stay
-     * hidden). This intentionally OVERRIDES the peer-isolated employee default
-     * in MasterVisibility (where an employee would see only rows they created) —
-     * a product master that hides the branch's catalog from staff isn't useful.
-     * Other user types still fall through to MasterVisibility. Editing remains
-     * gated by hierarchicalDenial, so staff can VIEW but not modify branch-owned
-     * products.
-     * ────────────────────────────────────────────────────────────── */
     private function applyScope($query, Request $request, bool $applyBranchFilter = false)
     {
-        // $applyBranchFilter is opt-in (true only on the LIST endpoint): the
-        // BranchSwitcher injects ?branch_id= on every GET incl. show/update,
-        // but only the list should narrow by it — resolving a single product
-        // by id must not 404 just because a different branch is being viewed.
         $branchFilter = $applyBranchFilter ? ($request->integer('branch_id') ?: null) : null;
         $user = $request->user();
 
-        // Products are a SHARED branch catalog — EVERY employee (not only HODs)
-        // sees the whole branch's rows: globals + client-level + their own
-        // branch's products, so a product the branch/Director/teammate created is
-        // visible to all staff in that branch. Sibling branches stay hidden
-        // (branch_id segregation). This deliberately OVERRIDES MasterVisibility's
-        // peer-isolated employee default (which would show only self-created
-        // rows). Editing is still gated by editDenial()/hierarchicalDenial() —
-        // staff can VIEW but not modify products they don't own (HODs manage the
-        // whole branch catalog).
         if ($user && ($user->user_type ?? null) === 'employee') {
             MasterVisibility::applyBranchScope($query, $user);
             return $query;
@@ -77,7 +51,6 @@ class ProductController extends Controller
                     ->orWhere('generic_name', 'ilike', $like)
                     ->orWhereHas('hsn', fn($h) => $h->where('hsn_code', 'ilike', $like));
 
-
                 if (preg_match('/^[A-Za-z]*[\s\-]*0*(\d{1,6})$/', $q, $m)) {
                     foreach ([1, 2, 3, 4] as $pad) {
                         $w->orWhere('product_code', 'ilike', '%-' . str_pad($m[1], $pad, '0', STR_PAD_LEFT));
@@ -95,7 +68,6 @@ class ProductController extends Controller
             }
         }
 
-        // Vendor deep-link (/products?vendor_id=…) — one specific supplier.
         if ($vendorId = $request->query('vendor_id')) {
             $query->whereHas('vendorMaps', fn($w) => $w->where('vendor_id', $vendorId));
         }
@@ -121,9 +93,6 @@ class ProductController extends Controller
         ));
 
         $inRelation('segment',   ['name'],                 $list('segment'));
-        /* The toolbar's single-select segment is a SEPARATE condition from the
-         * sidebar's multi-select — folding them into one IN list would turn an
-         * AND into an OR and widen the result instead of narrowing it. */
         if ($segmentEq = $request->query('segment_eq')) {
             $query->whereHas('segment', fn($w) => $w->where('name', $segmentEq));
         }
@@ -143,7 +112,6 @@ class ProductController extends Controller
             }
         }
 
-        // Mapped supplier company names (product_vendor_maps.vendor_name).
         if ($vendors = $list('vendor')) {
             $query->whereHas('vendorMaps', fn($w) => $w->whereIn('vendor_name', $vendors));
         }
@@ -160,18 +128,14 @@ class ProductController extends Controller
             if ($wantsHaz) {
                 $query->where($isHaz);
             } else {
-                // NULL never satisfies a NOT-ilike in SQL, so spell it out —
-                // otherwise every product with no haz_type would vanish.
                 $query->where(fn($w) => $w->whereNull('haz_type')->orWhereNot($isHaz));
             }
         }
 
-        // Product owner — the dropdown's values are users.id (created_by).
         if ($owners = $list('owner')) {
             $query->whereIn('created_by', array_map('intval', $owners));
         }
 
-        // Inclusive created-at window; either side may be omitted.
         if ($from = $request->query('created_from')) {
             $query->whereDate('created_at', '>=', $from);
         }
@@ -179,19 +143,12 @@ class ProductController extends Controller
             $query->whereDate('created_at', '<=', $to);
         }
 
-        /* Relative creation windows from the filter drawer ("Last 7 days",
-         * "Last 30 days", …). Several can be ticked at once, so the windows OR
-         * together inside one group — otherwise they would cancel each other
-         * out and return nothing. 'older' (everything before the 90-day
-         * cut-off) is still honoured here, though the drawer no longer offers
-         * it as a row. */
         if ($buckets = $list('created_bucket')) {
             $cut = fn(int $days) => now()->subDays($days - 1)->toDateString();
 
             $query->where(function ($outer) use ($buckets, $cut) {
                 foreach ($buckets as $bucket) {
                     $outer->orWhere(function ($w) use ($bucket, $cut) {
-                        // "Custom" row: last:<n> days, typed in the drawer.
                         if (preg_match('/^last:(\d{1,4})$/', (string) $bucket, $m) && (int) $m[1] > 0) {
                             $w->whereDate('created_at', '>=', $cut((int) $m[1]));
                             return;
@@ -202,7 +159,6 @@ class ProductController extends Controller
                             'last_30' => $w->whereDate('created_at', '>=', $cut(30)),
                             'last_90' => $w->whereDate('created_at', '>=', $cut(90)),
                             'older'   => $w->whereDate('created_at', '<',  $cut(90)),
-                            // Unknown key: match nothing rather than everything.
                             default   => $w->whereRaw('1 = 0'),
                         };
                     });
@@ -213,10 +169,6 @@ class ProductController extends Controller
         return $query;
     }
 
-    /**
-     * The Active / Inactive tabs split on SUPPLIER MAPPING, not on the status
-     * column: "Supplier Mapped Products" vs "Zero Supplier Products".
-     */
     private function applySupplierTab($query, Request $request)
     {
         return match (strtolower((string) $request->query('supplier', ''))) {
@@ -260,7 +212,6 @@ class ProductController extends Controller
 
     private function issuedDocumentCodes(Product $product, ?int $clientId): array
     {
-
         $codes = function ($query, string $table, string $idColumn, bool $softDeletes) use ($clientId) {
             return $query
                 ->join($table, "{$table}.id", '=', $idColumn)
@@ -285,14 +236,9 @@ class ProductController extends Controller
                 'proforma_invoice_items.proforma_invoice_id',
                 false,
             ),
-            /* The Supplier Purchase Invoice module was removed, so nothing can
-               hold a product that way any more. The key stays and answers empty
-               rather than going, because the UI and the GST lock both read it
-               by name and an absent key would read as an error, not as none. */
             'spi' => collect(),
         ];
     }
-
 
     private function gstLockDocuments(Product $product, ?int $clientId, ?array $documents = null): array
     {
@@ -305,14 +251,6 @@ class ProductController extends Controller
         ]));
     }
 
-    /**
-     * Refuse a GST % change on a product that is already on a PO / SPI.
-     * Returns the message to show, or null when the change is allowed.
-     *
-     * Only a real CHANGE is blocked — a re-save that submits the same gst_id
-     * (which every Sales-step save does) passes straight through, and so does
-     * the first mapping on a product that has no rate yet.
-     */
     private function gstChangeDenial(Product $product, array $data, ?int $clientId): ?string
     {
         if (!array_key_exists('gst_id', $data)) {
@@ -325,44 +263,35 @@ class ProductController extends Controller
         }
 
         $docs = $this->gstLockDocuments($product, $clientId);
-        if (empty($docs)) {
-            return null;
+        if (!empty($docs)) {
+            return 'GST % cannot be changed — this product is already used in '
+                . implode(' and ', $docs)
+                . '. The tax on that document was calculated from the current rate.';
         }
 
-        return 'GST % cannot be changed — this product is already used in '
-            . implode(' and ', $docs)
-            . '. The tax on that document was calculated from the current rate.';
+        $suppliers = ProductVendorMap::where('product_id', $product->id)
+            ->where(fn ($q) => $q->whereNull('origin')->orWhere('origin', '!=', \App\Support\SupplierPricing::INTERNATIONAL))
+            ->orderBy('id')
+            ->pluck('vendor_name')
+            ->filter()
+            ->values();
+        if ($suppliers->isNotEmpty()) {
+            $named = $suppliers->take(2)->implode(', ')
+                . ($suppliers->count() > 2 ? ' and ' . ($suppliers->count() - 2) . ' more' : '');
+
+            return "GST % cannot be changed — {$named} " . ($suppliers->count() === 1 ? 'is' : 'are')
+                . ' mapped to this product at the current rate. Unmap '
+                . ($suppliers->count() === 1 ? 'it' : 'them') . ' first.';
+        }
+
+        return null;
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * Department information wall (read-side masking)
-     *
-     * Products carry BOTH a selling price (base_price / total_price / GST) and
-     * the sourcing side (vendor maps: who the supplier is + the purchase
-     * price). Two departments must never see the other half:
-     *   - PURCHASE department → selling price is hidden. They source; they
-     *     must not know the margin / what the product is sold for.
-     *   - SALES department    → vendor details are hidden. They quote; they
-     *     must not know who the supplier is or the purchase cost.
-     *
-     * This applies to EVERY employee in that department, the HOD included.
-     * Only cross-department accounts (branch_user / client_* / super_admin)
-     * carry no department and therefore see everything. It is READ-ONLY
-     * masking: the columns still store the data, the same GET endpoints just
-     * return a conditional shape depending on who is asking. Writes are not
-     * blocked here.
-     * ────────────────────────────────────────────────────────────── */
+    // Price fields hidden from Purchase. gst_id / gst_percentage are NOT here:
+    // Purchase maps the GST and must see it round-trip (it drives the supplier
+    // GST calc) — only the money (price, amount, total, markup) stays hidden.
+    private const SELLING_FIELDS = ['base_price', 'gst_amount', 'total_price', 'mark_bottom'];
 
-    /** Selling-price fields hidden from the Purchase department. */
-    private const SELLING_FIELDS = ['base_price', 'gst_id', 'gst_amount', 'total_price', 'mark_bottom'];
-
-    /**
-     * Which product field groups must be stripped from responses for the
-     * caller, keyed by group. Only employees carry a department; every other
-     * account type sees the full payload.
-     *
-     * @return array{selling: bool, vendor: bool}
-     */
     private function departmentHiddenGroups(Request $request): array
     {
         $hide = ['selling' => false, 'vendor' => false];
@@ -385,13 +314,6 @@ class ProductController extends Controller
         return $hide;
     }
 
-    /**
-     * Apply the department mask to a product's array form. Selling-price fields
-     * are nulled (the key stays so the SPA form still binds); the vendor list
-     * is emptied so the Sales side sees "no suppliers" rather than the rows.
-     *
-     * @param array{selling: bool, vendor: bool} $hide
-     */
     private function maskProductArray(array $payload, array $hide): array
     {
         if ($hide['selling']) {
@@ -400,18 +322,9 @@ class ProductController extends Controller
                     $payload[$field] = null;
                 }
             }
-            // The selling-GST relation (gst_id → gst_percentage) is part of the
-            // price picture — drop it too so the rate can't be reverse-read.
-            unset($payload['gst_percentage']);
+            // gst_percentage stays: Purchase maps the GST and needs the rate back.
         }
         if ($hide['vendor']) {
-            // Empty (not removed) so callers iterating vendor_maps still get a
-            // valid array; the Sales side simply sees zero supplier *rows*.
-            // BUT keep the bare count — the product card shows "N Suppliers"
-            // (and its Active/Zero-supplier tabs key off it). Sales is allowed
-            // to know HOW MANY suppliers a product has, just not who they are
-            // or the purchase price, so surface the count separately before the
-            // identifying rows are dropped.
             if (\array_key_exists('vendor_maps', $payload)) {
                 $payload['vendor_count'] = \count($payload['vendor_maps']);
                 $payload['vendor_maps'] = [];
@@ -422,17 +335,6 @@ class ProductController extends Controller
 
     private function nextProductCode(?int $clientId, ?int $branchId): string
     {
-        // Scan every code this BRANCH owns and pick the true numeric max.
-        // Codes are per-branch sequential — each branch restarts at P-01 so a
-        // new branch doesn't inherit another branch's running count (bug: a
-        // product created under Branch 2 was handed P-15 because the counter
-        // was client-wide). Matches the branch-scoped CLM/vendor code counters
-        // and the (client_id, branch_id, product_code) unique index.
-        //
-        // Previously this used orderByDesc('id')->value which returns the
-        // MOST-RECENTLY-INSERTED code, not the highest one. We also pull from
-        // withTrashed so soft-deleted rows don't release their code back into
-        // the pool, matching how vendors and customers handle theirs.
         $q = Product::withTrashed();
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
@@ -444,34 +346,16 @@ class ProductController extends Controller
                 $max = max($max, (int) $m[1]);
             }
         }
-        // 3-digit padding: P-001, P-002, …, P-999. Codes beyond 999 fall back
-        // to natural width (P-1000) — str_pad won't truncate. The screens print
-        // every code through formatProductCode(), so older P-81 rows read P-081.
         return 'P-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /products
-     * Query params: status, q, per_page
-     * ────────────────────────────────────────────────────────────── */
     public function index(Request $request)
     {
-        // Lightweight mode for pickers (e.g. the supplier "Map Product" popup).
-        // The full listing eager-loads 10 relations — including two hasMany
-        // (`vendorMaps`, `qcRecords`) that fan out across every row — which made
-        // a 500-row fetch take ~5s. A picker only needs id / code / name / HSN /
-        // segment / base price / GST %, so `?lite=1` loads just the three
-        // belongsTo relations those fields come from and drops the rest.
         $lite = $request->boolean('lite');
 
         $query = Product::query()->with(
             $lite
                 ? [
-                    // Full belongsTo loads (no column restriction) — the picker
-                    // only needs these three relations, but restricting columns
-                    // risks a wrong column name per table (e.g. clm_segments has
-                    // no `title`), so load them whole. The real win is dropping
-                    // the heavy hasMany relations below.
                     'hsn',
                     'segment',
                     'gstPercentage',
@@ -489,45 +373,25 @@ class ProductController extends Controller
                 ]
         );
 
-        $query = $this->applyScope($query, $request, true); // opt-in BranchSwitcher narrowing
+        $query = $this->applyScope($query, $request, true);
 
-        // Every narrowing the Products page can apply, shared verbatim with
-        // stats() so the tab badges and the rows always agree.
         $query = $this->applyListFilters($query, $request);
 
-        /* Tab badges ride along with the rows. They are counted BEFORE the
-         * supplier tab narrows the query — each badge has to keep reporting
-         * its own total while the other tab is open — and shipping them here
-         * saves the page a second round trip to stats() on every filter
-         * change. stats() stays for callers that only want the numbers. */
-        /* The vendor-map tab badges are for the Products page only. A `lite`
-           lookup (e.g. the SPI form's product picker) never shows them, so the
-           two has/doesntHave COUNT subqueries are skipped there (CS-937). */
         $mappedCount = $lite ? 0 : (clone $query)->has('vendorMaps')->count();
         $zeroCount   = $lite ? 0 : (clone $query)->doesntHave('vendorMaps')->count();
 
         $query = $this->applySupplierTab($query, $request);
 
-        /* Sorting. 'recent' (the default) keeps the historical newest-first
-         * order. Price sorts use total_price — the figure the card prints.
-         * The UI also offers "rating", which has no column behind it; it
-         * falls through to the default rather than silently doing nothing
-         * different from price. */
         match ($request->query('sort')) {
             'price-asc'  => $query->orderBy('total_price'),
             'price-desc' => $query->orderByDesc('total_price'),
             default      => $query->orderByDesc('id'),
         };
 
-        /* Page size is capped: the page asks for 12 by default, but a crafted
-         * per_page=100000 would eager-load ten relations across every row and
-         * hand the tenant a multi-second query. */
         $perPage = max(1, min((int) $request->query('per_page', 24), 200));
 
         $products = $query->paginate($perPage);
 
-        // Department information wall — Purchase hides selling price, Sales hides
-        // vendor details. Transform each row into its masked array form.
         $hide = $this->departmentHiddenGroups($request);
         if ($hide['selling'] || $hide['vendor']) {
             $products->setCollection(
@@ -540,9 +404,6 @@ class ProductController extends Controller
         ]);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /products/{id}
-     * ────────────────────────────────────────────────────────────── */
     public function show(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)
@@ -560,24 +421,6 @@ class ProductController extends Controller
             ])
             ->findOrFail($id);
 
-        /* Embed the QC reference uploads inline. AddProductModal previously
-         * fired GET /segment-uploads/product/{id}?category=qc as a second
-         * round-trip on edit-mode open; on `php artisan serve` that single-
-         * threaded server made the call pay the full Laravel boot tax
-         * (~500ms). Bundling collapses 2 round-trips into 1 — same proven
-         * pattern shipped for Customer / Consignee / Vendor.
-         *
-         * SegmentDocUploadController reads the category filter from
-         * $request->query('category'), so we set it on the query bag before
-         * delegating. Wrapped in try/catch so a failure here (e.g. fresh
-         * product with no uploads returning empty) cannot break show().
-         *
-         * Backwards-compat shape: we append `segment_uploads` to the
-         * product's array form rather than wrapping in {data, segment_uploads}.
-         * Other GET callers (ProductView, AddProductModal) read fields
-         * directly off res.data (e.g. res.data.name, res.data.qc_records)
-         * and the new top-level key is additive — nothing else breaks.
-         */
         $segmentUploads = $this->safeDelegate(function () use ($request, $id) {
             $request->query->set('category', 'qc');
             return (new SegmentDocUploadController())->index($request, 'product', $id);
@@ -589,11 +432,6 @@ class ProductController extends Controller
         return response()->json($payload);
     }
 
-    /**
-     * Run a delegated controller call and unwrap its JSON response,
-     * returning `null` on any failure. Caller decides how to default
-     * the missing key.
-     */
     private function safeDelegate(\Closure $call): ?array
     {
         try {
@@ -606,11 +444,6 @@ class ProductController extends Controller
         }
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * POST /products/step/core
-     * Create-or-update the Core info. Returns the product with its id so
-     * subsequent step calls can target it.
-     * ────────────────────────────────────────────────────────────── */
     public function storeCore(Request $request)
     {
         foreach (['description', 'confidential_info'] as $textField) {
@@ -624,14 +457,7 @@ class ProductController extends Controller
             'id'                    => 'nullable|integer|exists:products,id',
             'name'                  => 'required|string|max:100',
             'generic_name'          => 'nullable|string|max:255',
-            // Cap description at INPUT. The column is TEXT, but an uncapped
-            // description let a ~934 KB paste through, which the PI/PO PDFs chunk
-            // into ~8k table rows and blow dompdf's memory (2 GB OOM). 10000 chars
-            // is very generous for a real description, yet bounded for the
-            // renderers (~85 rows). Fix the source, not the templates.
             'description'           => 'nullable|string|max:10000',
-            // A line on the PO and on its PDF, not a description — so bounded
-            // like a name rather than left open by the `text` column (QA #18).
             'brand'                 => 'nullable|string|max:255',
             'segment_id'            => 'nullable|integer',
             'haz_type'              => 'nullable|string|max:20',
@@ -644,37 +470,22 @@ class ProductController extends Controller
             'cold_chain'            => 'nullable|boolean',
             'cold_chain_temp_min'   => 'nullable|required_if_accepted:cold_chain|numeric|between:-100,100',
             'cold_chain_temp_max'   => 'nullable|required_if_accepted:cold_chain|numeric|between:-100,100|gte:cold_chain_temp_min',
-            // GST is mapped at creation time now: a new product is only committed
-            // once its GST % is chosen (the "Map GST" popup that opens on Save &
-            // Next). Persisted here so the product is never listed without a GST.
-            // Still nullable so an edit-mode core re-save (which omits it) leaves
-            // the existing gst_id untouched. The Sales step recomputes gst_amount.
             'gst_id'                => 'nullable|integer',
 
-            // Image inputs — see the doc block above for the upload contract:
-            //   primary_image          existing path the client wants to keep
-            //   primary_image_file     new file replacing the primary
-            //   secondary_images[]     existing paths to keep
-            //   secondary_image_files[] new files to append
             'primary_image'         => 'nullable|string|max:500',
-            // Product primary & secondary images are PNG / JPG only — PDFs and
-            // every other format are rejected. Use a supporting attachment
-            // (product_attachment_file below) for spec sheets / PDFs instead.
             'primary_image_file'    => 'nullable|file|mimes:jpg,jpeg,png|max:2048',
             'secondary_images'      => 'nullable|array',
             'secondary_images.*'    => 'nullable|string|max:500',
             'secondary_image_files'   => 'nullable|array|max:10',
             'secondary_image_files.*' => 'file|mimes:jpg,jpeg,png|max:2048',
-            // Product-level supporting attachment — a single document that may be
-            // ANY type (PDF / Word / Excel / PPT / image / text). Same two-input
-            // contract as the primary image:
-            //   product_attachment       existing path the client wants to keep
-            //   product_attachment_file  new file replacing it
             'product_attachment'      => 'nullable|string|max:500',
-            // Supported formats only — PDF, Word, images. Excel/PPT/CSV/TXT are
-            // intentionally rejected (a spreadsheet isn't a valid product doc).
             'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,jpg,jpeg,png,gif,webp|max:10240',
         ]);
+
+        if (!isset($data['id']) && empty($data['gst_id'])) {
+            $msg = 'GST is mandatory. Select a GST rate from the GST Master before saving the product.';
+            return response()->json(['message' => $msg, 'errors' => ['gst_id' => [$msg]]], 422);
+        }
 
         $product = isset($data['id'])
             ? $this->applyScope(Product::query(), $request)->findOrFail($data['id'])
@@ -683,9 +494,6 @@ class ProductController extends Controller
             $denial = $this->editDenial($request->user(), $product, 'edit');
             if ($denial) return response()->json(['message' => $denial], 403);
 
-            // The Core step carries gst_id too (it is mapped at creation), so
-            // the PO/SPI lock has to hold here as well — otherwise the rate
-            // could be changed from Stage 1 while Stage 2 refuses it.
             if ($gstDenial = $this->gstChangeDenial($product, $data, $request->user()?->client_id)) {
                 return response()->json([
                     'message' => $gstDenial,
@@ -707,24 +515,12 @@ class ProductController extends Controller
             $data['cold_chain_temp_max'] = null;
         }
 
-        // Apply scalar fields first (everything except the image inputs which
-        // need extra handling).
         $product->fill(
             collect($data)
                 ->except(['id', 'primary_image', 'primary_image_file', 'secondary_images', 'secondary_image_files', 'product_attachment', 'product_attachment_file'])
                 ->toArray()
         );
 
-        /* ── Primary image ─────────────────────────────────────────────
-         * Three possible cases:
-         *   1. A new file is uploaded → save it, delete the previous one.
-         *   2. No new file, but `primary_image` is sent as a string → keep
-         *      what we already had (or update to a new path if it differs).
-         *      Empty string explicitly clears the image.
-         *   3. Nothing about primary_image in the payload → leave column
-         *      untouched (lets clients PATCH only the fields they care
-         *      about).
-         * ──────────────────────────────────────────────────────────── */
         if ($request->hasFile('primary_image_file')) {
             if ($product->primary_image && !str_starts_with((string) $product->primary_image, 'blob:')) {
                 Storage::disk('public')->delete($this->relativePath($product->primary_image));
@@ -732,8 +528,6 @@ class ProductController extends Controller
             $product->primary_image = $this->storeFileWithName($request->file('primary_image_file'), 'products/images');
         } elseif ($request->has('primary_image')) {
             $newPath = $data['primary_image'] ?: null;
-            // Reject any `blob:` value an older client might still be sending —
-            // these are browser-only URLs that can't be resolved on the server.
             if ($newPath !== null && str_starts_with($newPath, 'blob:')) {
                 $newPath = null;
             }
@@ -746,35 +540,18 @@ class ProductController extends Controller
             $product->primary_image = $newPath;
         }
 
-        /* ── Secondary images ──────────────────────────────────────────
-         * The client tells us which existing paths to KEEP via
-         * `secondary_images[]`. Anything previously on the row that's
-         * missing from that list gets deleted from disk. Then any newly
-         * uploaded files in `secondary_image_files[]` are stored and
-         * appended.
-         *
-         * If the client sends neither key, the column is left alone.
-         * ──────────────────────────────────────────────────────────── */
         $hasKeptList   = $request->has('secondary_images');
         $hasNewFiles   = $request->hasFile('secondary_image_files');
-        // The client sets this whenever it is submitting the full secondary set
-        // (add or edit). It lets us tell "user removed the last image" (empty
-        // array → FormData omits the key) apart from "payload didn't mention
-        // secondary images at all", so a cleared gallery actually persists.
         $forceReplace  = $request->boolean('secondary_images_replace');
         if ($hasKeptList || $hasNewFiles || $forceReplace) {
             $kept = ($hasKeptList || $forceReplace)
                 ? (array) ($data['secondary_images'] ?? [])
                 : (array) ($product->secondary_images ?? []);
-            // Drop blanks and any `blob:` URLs that older clients might still
-            // send — those don't resolve on the server.
             $kept = array_values(array_filter(
                 $kept,
                 fn($v) => is_string($v) && $v !== '' && !str_starts_with($v, 'blob:')
             ));
 
-            // Drop files the user removed (skip blob: entries, nothing to
-            // unlink from disk since they were never real files).
             $previous = is_array($product->secondary_images) ? $product->secondary_images : [];
             foreach ($previous as $old) {
                 if (!is_string($old) || $old === '' || str_starts_with($old, 'blob:')) continue;
@@ -783,7 +560,6 @@ class ProductController extends Controller
                 }
             }
 
-            // Save newly uploaded files
             $appended = [];
             foreach ((array) $request->file('secondary_image_files', []) as $file) {
                 if ($file) {
@@ -794,13 +570,6 @@ class ProductController extends Controller
             $product->secondary_images = array_values(array_merge($kept, $appended));
         }
 
-        /* ── Product attachment ────────────────────────────────────────
-         * Same three cases as the primary image (see above):
-         *   1. New file uploaded → store it (any doc type), delete the old.
-         *   2. No new file but `product_attachment` sent as a string → keep
-         *      it (or update to a differing path). Empty string clears it.
-         *   3. Key absent entirely → leave the column untouched.
-         * ──────────────────────────────────────────────────────────── */
         if ($request->hasFile('product_attachment_file')) {
             if ($product->product_attachment && !str_starts_with((string) $product->product_attachment, 'blob:')) {
                 Storage::disk('public')->delete($this->relativePath($product->product_attachment));
@@ -820,7 +589,6 @@ class ProductController extends Controller
             $product->product_attachment = $newPath;
         }
 
-        // Mark step 1 (Core) complete only if it wasn't beyond already.
         $product->step_completed = max((int)($product->step_completed ?? 0), 1);
 
         $product->save();
@@ -830,11 +598,6 @@ class ProductController extends Controller
         );
     }
 
-    /**
-     * Normalise a stored value (legacy `/storage/...` URL or already-relative
-     * disk path) into the relative path that `Storage::disk('public')` works
-     * with. Lifted from the ClientController helper of the same name.
-     */
     private function relativePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
@@ -848,14 +611,6 @@ class ProductController extends Controller
         return $stored;
     }
 
-    /**
-     * Store an uploaded file with a collision-safe prefix that still
-     * encodes the original filename, so the SPA can show "PAN Card.pdf"
-     * instead of a hex string after edit-load. Format:
-     *   {dir}/{rand}__{sanitized-original}.{ext}
-     * The frontend strips everything up to and including the "__" when
-     * surfacing the display name. Mirrors VendorController::absorbFile.
-     */
     private function storeFileWithName($file, string $dir): string
     {
         $ext = $file->getClientOriginalExtension() ?: 'bin';
@@ -869,9 +624,6 @@ class ProductController extends Controller
         return $file->storeAs($dir, $name, 'public');
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * PUT /products/{id}/step/sales
-     * ────────────────────────────────────────────────────────────── */
     public function storeSales(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
@@ -895,22 +647,12 @@ class ProductController extends Controller
         }
 
         $product->fill($data);
-        // The product form was simplified to two stages (Core → Sales); the
-        // Quality step that used to flip 'draft' → 'inactive' is gone, so Sales
-        // is now the final data step. Promote a fresh draft to 'inactive' here
-        // so a completed product surfaces as a ready (zero-supplier) row.
-        // Mapping a supplier later promotes it to 'active' (see storeVendors).
         $product->step_completed = max((int)$product->step_completed, 2);
         if ($product->status === 'draft') {
             $product->status = 'inactive';
         }
         $product->save();
 
-        // A supplier's GST is locked to the product's GST, so a change here must
-        // cascade to every already-mapped supplier — otherwise they keep the
-        // stale rate captured at map time (bug: supplier GST didn't update after
-        // the product GST changed). Recompute each map's %/amount/total from its
-        // own purchase price and mirror onto the vendor side.
         $gstPct = (float) (optional(GstPercentage::find($product->gst_id))->percentage ?? 0);
         DB::transaction(function () use ($product, $gstPct) {
             foreach ($product->vendorMaps()->get() as $map) {
@@ -942,10 +684,6 @@ class ProductController extends Controller
         );
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * PUT /products/{id}/step/quality
-     * Also replaces QC records (full sync).
-     * ────────────────────────────────────────────────────────────── */
     public function storeQuality(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
@@ -959,8 +697,6 @@ class ProductController extends Controller
             'length_cm'                   => 'nullable|numeric|min:0',
             'width_cm'                    => 'nullable|numeric|min:0',
             'height_cm'                   => 'nullable|numeric|min:0',
-            // Inventory tracking — all optional. Captured on the Quality
-            // tab and surfaced on the Product Detail view's Inventory block.
             'batch_no'                    => 'nullable|string|max:100',
             'serial_no'                   => 'nullable|string|max:100',
             'cat_no'                      => 'nullable|string|max:100',
@@ -978,32 +714,16 @@ class ProductController extends Controller
         DB::transaction(function () use ($product, $data, $request) {
             $product->fill(collect($data)->except('qc_records')->toArray());
 
-            // Step 1 fully complete when Quality is saved — flip status to inactive
-            // so the row appears in the Inactive tab (still needs vendor mapping).
             $product->step_completed = max((int)$product->step_completed, 3);
             if ($product->status === 'draft') {
                 $product->status = 'inactive';
             }
             $product->save();
 
-            // Replace QC list — persist each row, swapping `attachment_file`
-            // (a real uploaded file when the user picked one) for the
-            // public-disk storage path so the frontend can render a working
-            // link via resolveFileUrl(). Without this, `attachment_path` was
-            // just the original filename, which 404'd and the SPA fallback
-            // routed the user to the products overview instead of the file.
             $product->qcRecords()->delete();
             foreach ($data['qc_records'] ?? [] as $idx => $qc) {
                 $row = collect($qc)->except(['attachment_file'])->toArray();
 
-                /* Only trust an `attachment_path` value that actually
-                 * looks like a path under our storage tree. If the
-                 * client (legacy or otherwise) sent a bare basename
-                 * like "Bhuvan.jpg", drop it before persisting —
-                 * otherwise file_url() resolves to /storage/Bhuvan.jpg
-                 * locally or .../cbc-saas/Bhuvan.jpg on Azure, both of
-                 * which point at non-existent blobs. The path must
-                 * either be empty/null or live under products/qc/. */
                 $clientPath = $row['attachment_path'] ?? null;
                 if ($clientPath !== null && $clientPath !== '' && !str_starts_with((string) $clientPath, 'products/qc/')) {
                     $row['attachment_path'] = null;
@@ -1022,39 +742,10 @@ class ProductController extends Controller
         );
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /products/{id}/vendor-maps
-     * Vendor mappings for a product — powers the Sales Matrix Stage 3
-     * "Vendor Count" popup. Returns the inline product_vendor_maps rows
-     * (vendor identity + purchase / gst / total amounts); the UI flags the
-     * lowest-total row as L1 (best price).
-     * ────────────────────────────────────────────────────────────── */
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /products/{id}/usage
-     * Where this product is referenced outside its own record, so the edit
-     * UI can decide whether a segment change is safe.
-     *
-     * Today that means the Sales Matrix product directory (lead_products).
-     * The rule the UI applies: a lead that has already been tied to a
-     * customer BLOCKS the change — quotations/PIs price off the segment, so
-     * moving it under a live customer would rewrite what was quoted. A lead
-     * with no customer yet is reported but does not block.
-     *
-     * It also reports purchase orders and supplier purchase invoices holding
-     * the product. Those block outright: a PO/SPI is an issued document and
-     * its lines were priced and compliance-checked under the segment the
-     * product had at the time, so there is no in-app way to make a change
-     * safe after the fact.
-     *
-     * Shaped as a general "usage" report rather than a yes/no so further
-     * blockers can be added here without another round-trip.
-     * ────────────────────────────────────────────────────────────── */
     public function usage(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
 
-        // client_id comes from the token, never the request — a product id
-        // alone must not expose another tenant's leads.
         $clientId = $request->user()->client_id;
 
         $rows = LeadProduct::query()
@@ -1080,14 +771,18 @@ class ProductController extends Controller
             'customer_name' => $r->customer_name ?: $r->sender_company,
         ])->values();
 
-        /* One pass over the issued documents, shared by BOTH locks below and by
-         * the save-time guard (gstChangeDenial → gstLockDocuments), so the
-         * answer the UI gets and the answer the save gives can't drift apart. */
         $docs         = $this->issuedDocumentCodes($product, $clientId);
         $poCodes      = $docs['po'];
         $piCodes      = $docs['pi'];
         $spiCodes     = $docs['spi'];
         $gstLockCodes = $this->gstLockDocuments($product, $clientId, $docs);
+
+        $gstLockSuppliers = ProductVendorMap::where('product_id', $product->id)
+            ->where(fn ($q) => $q->whereNull('origin')->orWhere('origin', '!=', \App\Support\SupplierPricing::INTERNATIONAL))
+            ->orderBy('id')
+            ->pluck('vendor_name')
+            ->filter()
+            ->values();
 
         return response()->json([
             'status' => true,
@@ -1098,8 +793,6 @@ class ProductController extends Controller
                 'po_codes'         => $poCodes,
                 'pi_codes'         => $piCodes,
                 'spi_codes'        => $spiCodes,
-                // The one to name in the UI: most recent of each, null when
-                // the product has never been on that document type.
                 'latest_po_code'   => $poCodes->first(),
                 'latest_pi_code'   => $piCodes->first(),
                 'latest_spi_code'  => $spiCodes->first(),
@@ -1107,14 +800,9 @@ class ProductController extends Controller
                 'segment_locked' => $leads->contains('has_customer', true)
                     || $poCodes->isNotEmpty() || $spiCodes->isNotEmpty(),
 
-                /* GST % lock — the segment lock's "issued document" rule plus
-                 * Proforma Invoices: a PI line stores its own tax_pct taken
-                 * from the product's rate, so changing the rate afterwards
-                 * would disagree with a document already sent to the customer.
-                 * (The segment lock reaches PIs the other way round, through
-                 * blocking_leads, which is why its own flag stays as it was.) */
                 'gst_lock_codes' => $gstLockCodes,
-                'gst_locked'     => !empty($gstLockCodes),
+                'gst_lock_suppliers' => $gstLockSuppliers,
+                'gst_locked'     => !empty($gstLockCodes) || $gstLockSuppliers->isNotEmpty(),
             ],
         ]);
     }
@@ -1123,8 +811,6 @@ class ProductController extends Controller
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
 
-        // Department information wall — the Sales department must never see who
-        // the supplier is or the purchase price, so return an empty vendor list.
         if ($this->departmentHiddenGroups($request)['vendor']) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
@@ -1137,15 +823,6 @@ class ProductController extends Controller
         ]);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * PATCH /products/{id}/vendor-maps/{mapId}
-     * Inline-edit a single mapping's purchase price. GST amount and total
-     * are recomputed server-side from the row's existing GST %, and the
-     * change is mirrored onto vendor_product_mappings (the vendor side's
-     * source of truth). Kept separate from storeVendors — which replaces
-     * the whole list — so a price tweak can't wipe the other columns the
-     * detail-page DTO doesn't carry (website, email, remarks, …).
-     * ────────────────────────────────────────────────────────────── */
     public function updateVendorMapPrice(Request $request, int $id, int $mapId)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
@@ -1160,17 +837,21 @@ class ProductController extends Controller
         ]);
 
         $price = round((float) $data['purchase_price'], 2);
-        $gstPct = (float) ($map->gst_percentage ?? 0);
-        $gstAmt = round($price * $gstPct / 100, 2);
-        $total  = round($price + $gstAmt, 2);
+        $intl  = $map->origin === \App\Support\SupplierPricing::INTERNATIONAL;
 
-        DB::transaction(function () use ($map, $price, $gstAmt, $total) {
+        $gstPct = $intl ? 0.0 : (float) ($map->gst_percentage ?? 0);
+        $gstAmt = $intl ? 0.0 : round($price * $gstPct / 100, 2);
+        $total  = round($price + $gstAmt, 2);
+        $rate   = (float) ($map->exchange_rate ?? 0);
+        $inr    = $intl && $rate > 0 ? round($price * $rate, 2) : null;
+
+        DB::transaction(function () use ($map, $price, $gstAmt, $total, $inr) {
             $map->purchase_price = $price;
             $map->gst_amount     = $gstAmt;
             $map->total_amount   = $total;
+            $map->inr_amount     = $inr;
             $map->save();
 
-            // Mirror onto the vendor side so both tables stay in sync.
             if ($map->vendor_id) {
                 \App\Models\VendorProductMapping::where('vendor_id', $map->vendor_id)
                     ->where('product_id', $map->product_id)
@@ -1178,6 +859,7 @@ class ProductController extends Controller
                         'purchase_price' => $price,
                         'gst_amount'     => $gstAmt,
                         'total_amount'   => $total,
+                        'inr_amount'     => $inr,
                     ]);
             }
         });
@@ -1190,13 +872,6 @@ class ProductController extends Controller
         );
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * DELETE /products/{id}/vendor-maps/{mapId}
-     * Unmap a single supplier from the product. Kept separate from
-     * storeVendors (full-list replace) so both the Product-Detail-View list
-     * and the Edit-form list can delete one row and stay in sync — the
-     * vendor side (vendor_product_mappings) is cleared to match.
-     * ────────────────────────────────────────────────────────────── */
     public function destroyVendorMap(Request $request, int $id, int $mapId)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
@@ -1207,8 +882,6 @@ class ProductController extends Controller
         $map = ProductVendorMap::where('product_id', $product->id)->findOrFail($mapId);
 
         DB::transaction(function () use ($map) {
-            // Mirror-delete the vendor side so a supplier removed here also
-            // drops off the vendor's mapped-products list.
             if ($map->vendor_id) {
                 \App\Models\VendorProductMapping::where('vendor_id', $map->vendor_id)
                     ->where('product_id', $map->product_id)
@@ -1225,13 +898,6 @@ class ProductController extends Controller
         );
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * PUT /products/{id}/step/vendors
-     * Final step. Saves vendor mappings; a non-empty list activates the
-     * product. The list is a full replace and MAY be empty — unmapping the
-     * last supplier is allowed and drops the product back to the same
-     * "ready, zero-supplier" state the Sales step leaves behind.
-     * ────────────────────────────────────────────────────────────── */
     public function storeVendors(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
@@ -1240,10 +906,6 @@ class ProductController extends Controller
         }
 
         $data = $request->validate([
-            // `present`, not `required` — an empty array is the legitimate
-            // payload for "the last supplier was removed". Under `required`
-            // Laravel rejects [] as empty, which made that removal impossible
-            // to persist from either supplier list.
             'vendors'                    => 'present|array',
             'vendors.*.vendor_id'        => 'nullable|integer|exists:vendors,id',
             'vendors.*.vendor_code'      => 'nullable|string|max:50',
@@ -1254,6 +916,9 @@ class ProductController extends Controller
             'vendors.*.email'            => 'nullable|email|max:255',
             'vendors.*.designation'      => 'nullable|string|max:100',
             'vendors.*.attachment_path'  => 'nullable|string|max:500',
+            'vendors.*.origin'           => ['nullable', \Illuminate\Validation\Rule::in(\App\Support\SupplierPricing::ORIGINS)],
+            'vendors.*.currency'         => 'nullable|string|size:3|alpha',
+            'vendors.*.exchange_rate'    => 'nullable|numeric|gt:0|max:'.\App\Support\SupplierPricing::MAX_RATE,
             'vendors.*.purchase_price'   => 'nullable|numeric|min:0',
             'vendors.*.gst_percentage'   => 'nullable|numeric|min:0',
             'vendors.*.gst_amount'       => 'nullable|numeric|min:0',
@@ -1262,11 +927,6 @@ class ProductController extends Controller
             'vendors.*.remarks'          => 'nullable|string',
         ]);
 
-        // Segment gate — a supplier can only be mapped to a product in the SAME
-        // segment. The product's segment must be one the supplier deals in
-        // (vendor_segments pivot + the scalar segment_id). Enforced here so a
-        // direct API call can't bypass the frontend validation. Skipped when the
-        // product has no segment (nothing to match against).
         if ($product->segment_id) {
             $prodSeg   = (int) $product->segment_id;
             $vendorIds = array_values(array_filter(array_map(fn($v) => $v['vendor_id'] ?? null, $data['vendors'])));
@@ -1293,32 +953,42 @@ class ProductController extends Controller
             }
         }
 
-        // Supplier GST is locked to the PRODUCT's GST — derive it server-side so
-        // a stale/hand-crafted payload can't persist a mismatched rate (the
-        // frontend already mirrors this, but the DB is the source of truth).
         $gstPct = (float) (optional(GstPercentage::find($product->gst_id))->percentage ?? 0);
 
         DB::transaction(function () use ($product, $data, $request, $gstPct) {
             $userId = $request->user()?->id;
 
-            // Replace the product's vendor list.
             $product->vendorMaps()->delete();
 
-            // Track which vendors this product is now mapped to so we
-            // can mirror the link onto vendor_product_mappings (the
-            // vendor side's source of truth). Any vendor that the
-            // product used to be linked to but is no longer listed
-            // gets its corresponding row dropped, keeping the two
-            // tables in sync.
             $nowMappedVendorIds = [];
 
             foreach ($data['vendors'] as $v) {
-                // Force the GST to the product's current rate + recompute the
-                // amount/total from this row's own purchase price.
                 $price = (float) ($v['purchase_price'] ?? 0);
-                $v['gst_percentage'] = $gstPct;
-                $v['gst_amount']     = round($price * $gstPct / 100, 2);
-                $v['total_amount']   = round($price + $v['gst_amount'], 2);
+
+                if (($v['origin'] ?? null) === \App\Support\SupplierPricing::INTERNATIONAL) {
+                    $amounts = \App\Support\SupplierPricing::international(
+                        $price,
+                        (string) ($v['currency'] ?? 'USD'),
+                        (float) ($v['exchange_rate'] ?? 0),
+                    );
+                    \App\Support\SupplierPricing::assertFits($amounts, 'vendors.');
+                    $v['origin']         = $amounts['origin'];
+                    $v['currency_code']  = $amounts['currency_code'];
+                    $v['exchange_rate']  = $amounts['exchange_rate'];
+                    $v['inr_amount']     = $amounts['inr_amount'];
+                    $v['gst_percentage'] = 0;
+                    $v['gst_amount']     = 0;
+                    $v['total_amount']   = $amounts['total_amount'];
+                } else {
+                    $v['origin']         = \App\Support\SupplierPricing::DOMESTIC;
+                    $v['currency_code']  = null;
+                    $v['exchange_rate']  = null;
+                    $v['inr_amount']     = null;
+                    $v['gst_percentage'] = $gstPct;
+                    $v['gst_amount']     = round($price * $gstPct / 100, 2);
+                    $v['total_amount']   = round($price + $v['gst_amount'], 2);
+                }
+                unset($v['currency']);
 
                 $product->vendorMaps()->create($v);
 
@@ -1326,12 +996,13 @@ class ProductController extends Controller
                 if (!$vendorId) continue;
                 $nowMappedVendorIds[] = (int) $vendorId;
 
-                // Mirror onto the vendor side. updateOrCreate so a
-                // second save doesn't duplicate the row when the same
-                // (vendor, product) pair is re-saved on this product.
                 \App\Models\VendorProductMapping::updateOrCreate(
                     ['vendor_id' => $vendorId, 'product_id' => $product->id],
                     [
+                        'origin'         => $v['origin']         ?? null,
+                        'currency_code'  => $v['currency_code']  ?? null,
+                        'exchange_rate'  => $v['exchange_rate']  ?? null,
+                        'inr_amount'     => $v['inr_amount']     ?? null,
                         'purchase_price' => $v['purchase_price'] ?? 0,
                         'gst_percentage' => $v['gst_percentage'] ?? 0,
                         'gst_amount'     => $v['gst_amount']     ?? 0,
@@ -1340,10 +1011,6 @@ class ProductController extends Controller
                     ]
                 );
 
-                // Auto-activate the vendor as soon as it has at least
-                // one product linked to it — same end-state the
-                // vendor wizard reaches after Step 4. Use existing
-                // step_completed if the vendor was further along.
                 $vendor = \App\Models\Vendor::find($vendorId);
                 if ($vendor) {
                     $vendor->step_completed = max((int) $vendor->step_completed, 4);
@@ -1354,9 +1021,6 @@ class ProductController extends Controller
                 }
             }
 
-            // Drop stale mirror rows on the vendor side — any vendor
-            // that USED to be mapped to this product but isn't in the
-            // current submit.
             \App\Models\VendorProductMapping::where('product_id', $product->id)
                 ->when(!empty($nowMappedVendorIds), fn($q) => $q->whereNotIn('vendor_id', $nowMappedVendorIds))
                 ->delete();
@@ -1375,9 +1039,6 @@ class ProductController extends Controller
         );
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * DELETE /products/{id}
-     * ────────────────────────────────────────────────────────────── */
     public function destroy(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
@@ -1388,24 +1049,8 @@ class ProductController extends Controller
         return response()->json(['deleted' => true]);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /products/stats
-     * Counts for header chips on the Products page.
-     * ────────────────────────────────────────────────────────────── */
     public function stats(Request $request)
     {
-        /* Counts for the two header tabs. They describe the WHOLE filtered
-         * catalogue, not the page on screen, so they cannot be derived from
-         * the paginated rows — hence a second, cheap COUNT-only query.
-         *
-         * The split is by SUPPLIER MAPPING, matching the tab labels
-         * ("Supplier Mapped Products" / "Zero Supplier Products") and what
-         * Products.tsx used to compute client-side from the full fetch. It is
-         * deliberately NOT the status column: an `active` product with no
-         * supplier belongs under "Zero Supplier Products".
-         *
-         * Every filter except the tab itself is applied, so ticking a sidebar
-         * filter moves BOTH badges rather than only the visible list. */
         $query = $this->applyScope(Product::query(), $request, true);
         $query = $this->applyListFilters($query, $request);
 
@@ -1413,26 +1058,12 @@ class ProductController extends Controller
         $zero   = (clone $query)->doesntHave('vendorMaps')->count();
 
         return response()->json([
-            'active'   => $mapped,   // "Supplier Mapped Products" tab
-            'inactive' => $zero,     // "Zero Supplier Products" tab
+            'active'   => $mapped,
+            'inactive' => $zero,
             'total'    => $mapped + $zero,
         ]);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /products/owners
-     *
-     * Returns the list of users eligible to own a product, scoped to
-     * what the caller is allowed to see:
-     *   - branch_user/employee: only branch_user + employee rows in their
-     *     own branch (every branch is an isolated peer).
-     *   - Anyone else (client_admin, client_user, super_admin): an
-     *     empty list — they don't use this filter UI.
-     *
-     * The frontend's Product Owner filter consumes this directly; rows
-     * are typed as {id, name, branch_id, branch_name} so the dropdown can
-     * group / label by branch.
-     * ────────────────────────────────────────────────────────────── */
     public function owners(Request $request)
     {
         $user = $request->user();
@@ -1440,13 +1071,11 @@ class ProductController extends Controller
             return response()->json(['data' => []]);
         }
 
-        // No branch context → nothing to scope by, so return empty.
         $myBranch = $user->branch_id ? Branch::find($user->branch_id) : null;
         if (!$myBranch) {
             return response()->json(['data' => []]);
         }
 
-        // Lock the dropdown to only the caller's own branch users.
         $q = User::query()
             ->where('client_id', $user->client_id)
             ->whereIn('user_type', ['branch_user', 'employee'])
@@ -1464,54 +1093,13 @@ class ProductController extends Controller
         return response()->json(['data' => $rows]);
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /products/master-bundle
-     *
-     * Bundle every master dropdown the Add Product / Edit Product modal
-     * needs into ONE response. Replaces 8 separate round-trips:
-     *   /master/segments, /master/haz_class, /master/uom, /master/hsn_codes,
-     *   /master/conditions, /master/packaging_material, /master/gst_percentage,
-     *   /vendors?per_page=500
-     *
-     * Each list is projected to the minimum columns the form actually reads,
-     * and filtered to status = 'active' server-side (the modal was previously
-     * filtering client-side after downloading inactive rows it never showed).
-     *
-     * Tenant scope is applied to vendors via Vendor::forUser($user) so the
-     * dropdown matches the user's existing /vendors index visibility.
-     * ────────────────────────────────────────────────────────────── */
     public function masterBundle(Request $request)
     {
         $user = $request->user();
 
-        // Server-side cache (5-min TTL, per-user key).
-        //
-        // Per-user keying — vendors are tenant-scoped via Vendor::forUser($user)
-        // so we MUST NOT share a single cache entry across users (different
-        // clients/branches see different vendor lists). The masters themselves
-        // are global, but the cost of keeping them inside the per-user entry
-        // is tiny (~3KB) and avoids juggling two cache layers.
-        //
-        // Invalidation — the frontend busts the matching sessionStorage key
-        // on inline master add (see productBundleCache.ts), and reopening
-        // the modal after the 5-min TTL also picks up changes made elsewhere.
-        // No cross-controller invalidation needed for the Product module to
-        // stay self-contained.
         $cacheKey = MasterBundleCache::key('product:master-bundle', $user?->id);
 
         $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
-            // Helper — pulls active rows with a fixed column projection.
-            // The status column is enum('Active','Inactive') on the master_*
-            // tables but lowercase 'active'/'inactive' on clm_segments, so
-            // we compare case-insensitively to handle both shapes without
-            // touching the DB.
-            //
-            // Tenant scope — every master here has a `client_id` column, so
-            // we apply MasterVisibility::applyReadScope to match the gate
-            // /master/{slug} uses (MasterController::list). Without this a
-            // client_admin of Client A would see Client B's tenant-scoped
-            // master rows (segments, hsn_codes, etc.). Per-user cache key
-            // is a second line of defence.
             $active = function (string $modelClass, array $cols) use ($user) {
                 return $modelClass::query()
                     ->whereRaw('LOWER(status) = ?', ['active'])
@@ -1523,12 +1111,10 @@ class ProductController extends Controller
             $vendors = Vendor::query()
                 ->forUser($user)
                 ->with([
-                    'primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email,designation',
+                    'primaryAddress:id,vendor_id,country_id,state_id,state_code,city,contact_name,contact_no,email,designation',
                     'primaryAddress.state:id,name',
-                    'vendorType:id,name',
-                    // Segments the supplier deals in — used to gate product↔supplier
-                    // mapping (a supplier can only be mapped to a product in the
-                    // same segment).
+                    'primaryAddress.country:id,name',
+                    'vendorType:id,name,kind',
                     'segments:id',
                 ])
                 ->orderByDesc('id')
@@ -1541,16 +1127,21 @@ class ProductController extends Controller
                     'primary_email'  => $v->primary_email,
                     'status'         => $v->status,
                     'vendor_type_name' => optional($v->vendorType)->name,
-                    // Every segment this supplier is tagged with (pivot rows + the
-                    // scalar first-segment), so the frontend can enforce the match.
+                    'vendor_type_kind' => optional($v->vendorType)->kind,
                     'segment_ids'    => array_values(array_unique(array_filter(array_merge(
                         [$v->segment_id ? (int) $v->segment_id : null],
                         $v->segments->pluck('id')->map(fn($x) => (int) $x)->all(),
                     )))),
-                    // Supplier's state — name (from the state relation) with the
-                    // 2-letter state_code as a fallback when the relation is empty.
                     'state'          => optional(optional($v->primaryAddress)->state)->name
                         ?? (optional($v->primaryAddress)->state_code ?: null),
+                    'country'        => optional(optional($v->primaryAddress)->country)->name,
+                    'city'           => optional($v->primaryAddress)->city,
+                    'origin'         => \App\Support\SupplierPricing::originOf(
+                        optional(optional($v->primaryAddress)->country)->name,
+                    ),
+                    'currency'       => \App\Support\SupplierPricing::currencyFor(
+                        optional(optional($v->primaryAddress)->country)->name,
+                    ),
                     'primary_address' => $v->primaryAddress ? [
                         'contact_name' => $v->primaryAddress->contact_name,
                         'contact_no'   => $v->primaryAddress->contact_no,
@@ -1560,12 +1151,6 @@ class ProductController extends Controller
                 ])
                 ->values();
 
-            // Column projections match the REAL DB schema:
-            //   • Segments uses `name` (clm_segments). The model exposes a
-            //     `title` accessor (appends => ['title']) that reads from
-            //     `name`, so the JSON response still surfaces `title` for
-            //     the frontend — we just need to SELECT the real `name`.
-            //   • Every other master uses its own native columns directly.
             return [
                 'segments'           => $active(Segments::class,          ['id', 'name', 'regulatory_status']),
                 'haz_class'          => $active(HazClass::class,          ['id', 'name']),

@@ -20,6 +20,7 @@ import {
   type InventoryLookups, type Rack, type RackTab,
 } from './rack-data';
 import type { Zone, ZoneWarehouse } from '../zone/zone-data';
+import MasterBackButton from '../../../components/ui/MasterBackButton';
 
 const RackQrModal = lazy(() => import('./RackQrModal'));
 const AddRackModal = lazy(() => import('./AddRackModal'));
@@ -236,6 +237,7 @@ export default function RackMaster() {
             </div>
           </div>
         </div>
+        <MasterBackButton />
         <button type="button" className="spi-head-btn" onClick={() => setFormFor('new')}>
           <IcoPlus /> Add Rack
         </button>

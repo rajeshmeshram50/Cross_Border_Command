@@ -11,6 +11,8 @@ import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
 import RowsPerPageSelect from '../../../components/ui/RowsPerPageSelect';
+import { clmBottomReserve } from '../shared/clmShared';
+import { PopName } from '../shared/clmCommon';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Case to Case Contracts.
@@ -342,9 +344,25 @@ export default function ClmCaseToCasePage() {
     finally { setCertId(null); }
   };
 
+  /* Search text for one row: every column the table shows (QA #112). Dates are
+     included both as displayed ("25-Nov-2026") and as the API sends them
+     ("25 Nov 2026"), so either way of typing a date finds the row. CP Signed
+     Date mirrors the cell's own fallback (signed rows show the CTC date). */
+  const haystack = (c: CtcContract) => {
+    const cpS = c.cpSignedDate !== '—' ? c.cpSignedDate : (c.status === 'signed' ? c.date : '');
+    const dates = [c.date, c.effDate, c.endDate, cpS].filter(d => d && d !== '—').flatMap(d => [d, dashDate(d)]);
+    return [
+      c.id, c.title, c.type, c.org, c.createdBy,
+      ...c.cp, ...(c.cpLabeled ?? []),
+      AP_CFG[c.approval]?.label ?? '', S_CFG[c.status]?.label ?? '',
+      ...dates,
+    ].join(' | ').toLowerCase();
+  };
+  const matches = (c: CtcContract, q: string) => haystack(c).includes(q);
+
   const counts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const f = q ? rows.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : rows;
+    const f = q ? rows.filter(c => matches(c, q)) : rows;
     return {
       all: f.length,
       signed: f.filter(c => c.status === 'signed').length,
@@ -355,7 +373,7 @@ export default function ClmCaseToCasePage() {
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let f = q ? rows.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : rows;
+    let f = q ? rows.filter(c => matches(c, q)) : rows;
     return tab === 'all' ? f : f.filter(c => c.status === tab);
   }, [search, tab, rows]);
 
@@ -374,7 +392,9 @@ export default function ClmCaseToCasePage() {
       // Leave room at the bottom for the layout footer + the scroll container's
       // padding — with only a 24px gap the card overshot the main-content scroll
       // area and the pagination footer landed at the fold (cut off).
-      const fh = Math.max(240, window.innerHeight - top - 56);
+      /* Measured app footer + 8px gap. clmBottomReserve also counts a 1px card
+         border; here the measured element IS the card, so that pixel comes off. */
+      const fh = Math.max(240, window.innerHeight - top - (clmBottomReserve() - 1));
       setFillH(prev => (prev === fh ? prev : fh));
 
       // Dynamic rows-per-page — fit as many rows as the card height allows so
@@ -648,7 +668,7 @@ export default function ClmCaseToCasePage() {
               </table>
               {!loading && slice.length === 0 && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', position: 'sticky', left: 0 }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 12px rgba(109,40,217,.12)' }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
+                  <div style={{ width: 52, height: 52, borderRadius: 14, background: t.dark ? 'rgba(139,92,246,.16)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', border: t.dark ? '1px solid rgba(167,139,250,.32)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: t.dark ? '0 4px 14px rgba(139,92,246,.22)' : '0 4px 12px rgba(109,40,217,.12)' }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: t.textStrong, marginBottom: 6 }}>{search.trim() ? 'No Matching Contracts' : 'No Contracts Found'}</div>
                   <div style={{ fontSize: 11, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>{search.trim() ? 'No results match the current search.' : <>Click <b>+ Create CTC Agreement</b> to add one.</>}</div>
                 </div>
@@ -698,12 +718,12 @@ export default function ClmCaseToCasePage() {
       {cpOpen && (
         <>
           <div onClick={() => setCpOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: 'var(--font-sans)' }}>
+          <div style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', overflowX: 'hidden', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: 'var(--font-sans)' }}>
             <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9', padding: '4px 8px 7px' }}>Counterparties ({cpOpen.names.length})</div>
             {cpOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, background: i % 2 ? (t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF') : 'transparent' }}>
                 <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(name)}</span></div>
-                <Tooltip label={name}><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span></Tooltip>
+                <span style={{ fontSize: 11, fontWeight: 600, color: t.text }}><PopName text={name} /></span>
               </div>
             ))}
           </div>
@@ -919,7 +939,15 @@ const CTC_CSS = `
   border-color: transparent;
   box-shadow: none;
 }
-[data-bs-theme="dark"] .ctc-tabrail > button.active { color: #fff; border-color: transparent; }
+/* The dark rule above sets every tab transparent, and at equal specificity it
+   came later, so it erased the selected tab's violet fill - the active tab
+   showed as a dark box. Restated here so the selection is the solid gradient. */
+[data-bs-theme="dark"] .ctc-tabrail > button.active {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
+  background-origin: border-box;
+  box-shadow: 0 6px 16px -5px rgba(124,58,237,.6);
+}
 [data-bs-theme="dark"] .ctc-tab-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.30); }
 /* Recessed, not 90% white: on a dark page a near-white disc is the brightest
    thing on screen and the eye goes to the counter instead of the data. */

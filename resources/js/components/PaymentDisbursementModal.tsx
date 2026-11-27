@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect } from './ui/MasterSelect';
+import FullPageLoader from './ui/FullPageLoader';
+import DataTable, { type DataTableColumn } from './ui/DataTable';
 
 /**
  * "Proceed to Pay" disbursement flow:
@@ -57,11 +59,13 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
   }, [open]);
 
   /* Active employees for the "ran the payroll" dropdown — loaded once the modal
-     opens so the list is ready by the time the approval step is reached. */
+     opens so the list is ready by the time the approval step is reached.
+     `onboarded` as well as `enabled`: a half-onboarded row is not inactive, so
+     enabled alone still listed people who cannot have run anything (QA #165). */
   useEffect(() => {
     if (!open) return;
     let live = true;
-    api.get('/employees', { params: { view: 'list', enabled: 1, per_page: 1000 } })
+    api.get('/employees', { params: { view: 'list', enabled: 1, onboarded: 1, per_page: 1000 } })
       .then(res => {
         if (!live) return;
         const rows = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
@@ -69,7 +73,11 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
           const nm = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
           // code → the badge pill shown FIRST, label → the name after it.
           return {
-            value: String(e.emp_code ?? e.id),
+            /* The employee ID. It used to be the emp_code, which is what the
+               server stores the operator BY — a code is a label, not a key,
+               and it is unique per client only. `code` below still drives the
+               badge, so the dropdown looks exactly the same. */
+            value: String(e.id),
             code: e.emp_code ? String(e.emp_code) : undefined,
             label: nm,
           };
@@ -230,6 +238,20 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         [data-bs-theme="dark"] .pdm-modal .pdm-acc-purple { background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important; }
         [data-bs-theme="dark"] .pdm-modal .pdm-acc-green  { background: rgba(16,185,129,0.20) !important; color: #6ee7b7 !important; }
         [data-bs-theme="dark"] .pdm-modal .pdm-acc-amber  { background: rgba(245,158,11,0.20) !important; color: #fcd34d !important; }
+        /* The shared DataTable brings its own card chrome; inside the popup that
+           reads as a card-in-a-card and the two headers fight. Flatten it so it
+           sits flush under the popup header. Scoped to .pdm-dt-wrap, so no other
+           screen's DataTable is affected. */
+        .pdm-dt-wrap .dt-root { border: 0 !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important; }
+        /* Raising rows-per-page scrolls the body internally — the column header
+           stays stuck and the pager stays on screen below it. */
+        .pdm-dt-wrap .dt-scroll { max-height: 54vh; overflow-y: auto; }
+        /* Header + tabs use the shared HRMS skin (className="hr-dt" on the
+           DataTable) — same as the Batch Payment popup and Expense Management —
+           so no per-popup header/tab overrides here. */
+        /* Footer sits on the popup's own surface so it matches the body in both
+           light and dark — no lavender strip under the table. */
+        .pdm-modal .pdm-foot { background: transparent; border-top: 1px solid var(--vz-border-color); }
       `}</style>
       <div onClick={e => e.stopPropagation()} className="pdm-modal" style={{ background: 'var(--shim-card-bg,#fff)', color: 'var(--vz-body-color)', borderRadius: 18, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', width: '100%', maxWidth: maxW, maxHeight: 'calc(100vh - 32px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {children}
@@ -245,13 +267,41 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         <div className="d-flex gap-3 flex-wrap">
           <ModeCard icon="ri-mail-send-line" tint="#ece6ff" fg="#5a3fd1" title="Cheque / Letter" sub="Print payment advice" disabled={busy} onClick={choose} />
         </div>
-        {busy && <div className="text-center mt-3 text-muted" style={{ fontSize: 12.5 }}><i className="ri-loader-4-line" /> Preparing…</div>}
+        {/* The house veil, over the popup rather than a line inside it: the
+            prepare blocks the whole flow, so the popup should not look usable. */}
+        {busy && <FullPageLoader label="Preparing payment advice…" />}
       </div>
     </>, 560);
   }
 
   // ── STEP: ADVICE / BATCH ──
   if (step === 'advice' && payment) {
+    const sheetLabel = TABS.find(t => t.key === tab)?.label;
+    const adviceColumns: DataTableColumn<AdviceRow>[] = [
+      {
+        accessorKey: 'name', header: 'Employee',
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <div className="d-flex align-items-center gap-2">
+              <span className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{ width: 30, height: 30, fontSize: 11, background: ACCENTS[row.index % ACCENTS.length] }}>{(r.name || 'NA').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}</span>
+              <div><div className="fw-semibold">{r.name}</div><div className="text-muted" style={{ fontSize: 11 }}>{r.department || r.emp_code}</div></div>
+            </div>
+          );
+        },
+      },
+      { accessorKey: 'bank', header: 'Bank', cell: ({ row }) => row.original.bank || <span className="text-danger">— Missing —</span> },
+      { accessorKey: 'account', header: 'Account', cell: ({ row }) => <span className="font-monospace" style={{ fontSize: 12 }}>{row.original.account || '–'}</span> },
+      { accessorKey: 'ifsc', header: 'IFSC', cell: ({ row }) => <span className="font-monospace" style={{ fontSize: 12 }}>{row.original.ifsc || '–'}</span> },
+      { accessorKey: 'amount', header: 'Amount', meta: { align: 'right' }, cell: ({ row }) => <span className="fw-bold" style={{ color: '#108548' }}>₹{fmtINR(row.original.amount)}</span> },
+      {
+        accessorKey: 'status', header: 'Status', meta: { align: 'center' },
+        cell: ({ row }) => {
+          const ready = row.original.status === 'Ready';
+          return <span className="badge rounded-pill" style={ready ? { background: '#eef2f6', color: '#5b6478' } : { background: '#fde7e3', color: '#b1401d' }}>{row.original.status}</span>;
+        },
+      },
+    ];
     return shell(<>
       <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div className="d-flex align-items-center gap-2">
@@ -264,55 +314,29 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         <button type="button" className="btn btn-sm" onClick={onClose}><i className="ri-close-line" style={{ fontSize: 18 }} /></button>
       </div>
 
-      <div className="pdm-tabs" style={{ padding: '0 22px', borderBottom: '1px solid var(--vz-border-color)', display: 'flex', gap: 4 }}>
-        {TABS.map(t => (
-          <button key={t.key} type="button" className="pdm-tab" data-active={tab === t.key}
-            onClick={() => { setTab(t.key); setExportOpen(false); }}>
-            <i className={`${t.icon} me-1`} />{t.label}
-            <span className="pdm-tab-count">{tabCounts[t.key]}</span>
-          </button>
-        ))}
+      {/* House table component: proper tabbed toolbar with counts, built-in
+          Sr No (serial), and a 10-per-page pager. */}
+      <div className="pdm-dt-wrap" style={{ flex: 1, minHeight: 0 }}>
+        <DataTable
+          data={tabRows}
+          columns={adviceColumns}
+          className="hr-dt"
+          serial
+          accent="violet"
+          searchable
+          searchPlaceholder="Search name, bank, account…"
+          tabs={TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon, count: tabCounts[t.key] }))}
+          activeTab={tab}
+          onTabChange={(k) => { setTab(k as BankGroup); setExportOpen(false); }}
+          subtitle={<span>{sheetLabel} total: <b style={{ color: '#108548' }}>₹{fmtINR(tabTotal)}</b> · {tabReady} ready{tabHeld > 0 ? ` · ${tabHeld} held` : ''}</span>}
+          pageSize={10}
+          emptyMessage={`No employees on the ${sheetLabel} sheet this cycle.`}
+        />
       </div>
 
-      <div style={{ padding: '8px 22px', background: 'var(--vz-secondary-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--vz-border-color)' }}>
-        <span className="fw-semibold" style={{ fontSize: 13 }}>{TABS.find(t => t.key === tab)?.label} total: <span style={{ color: '#108548' }}>₹{fmtINR(tabTotal)}</span> · Employees: {tabReady}{tabHeld > 0 ? ` · ${tabHeld} held` : ''}</span>
-        <span className="badge rounded-pill pdm-badge-green" style={{ background: '#d6f4e3', color: '#108548' }}>{tabReady} ready</span>
-      </div>
-
-      <div style={{ overflowY: 'auto', flex: 1 }}>
-        <table className="table align-middle table-nowrap mb-0" style={{ fontSize: 13 }}>
-          <thead className="table-light pdm-sticky-head">
-            <tr><th className="ps-3">Employee</th><th>Bank</th><th>Account</th><th>IFSC</th><th className="text-end">Amount</th><th className="text-center pe-3">Status</th></tr>
-          </thead>
-          <tbody>
-            {tabRows.map((r, i) => (
-              <tr key={r.payslip_id}>
-                <td className="ps-3">
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{ width: 30, height: 30, fontSize: 11, background: ACCENTS[i % ACCENTS.length] }}>{(r.name || 'NA').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}</span>
-                    <div><div className="fw-semibold">{r.name}</div><div className="text-muted" style={{ fontSize: 11 }}>{r.department || r.emp_code}</div></div>
-                  </div>
-                </td>
-                <td>{r.bank || <span className="text-danger">— Missing —</span>}</td>
-                <td className="font-monospace" style={{ fontSize: 12 }}>{r.account || '–'}</td>
-                <td className="font-monospace" style={{ fontSize: 12 }}>{r.ifsc || '–'}</td>
-                <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{fmtINR(r.amount)}</td>
-                <td className="text-center pe-3"><span className={`badge rounded-pill ${r.status === 'Ready' ? 'pdm-badge-neutral' : 'pdm-badge-red'}`} style={r.status === 'Ready' ? { background: '#eef2f6', color: '#5b6478' } : { background: '#fde7e3', color: '#b1401d' }}>{r.status}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {tabRows.length === 0 && (
-          <div className="text-center text-muted" style={{ padding: '34px 20px', fontSize: 12.5 }}>
-            <i className="ri-inbox-line d-block mb-1" style={{ fontSize: 22, opacity: 0.5 }} />
-            No employees on the {TABS.find(t => t.key === tab)?.label} sheet this cycle.
-          </div>
-        )}
-      </div>
-
-      <div style={{ padding: '12px 22px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div className="pdm-foot" style={{ padding: '12px 22px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative' }}>
-          <button type="button" className="btn btn-light btn-sm fw-semibold" onClick={() => setExportOpen(o => !o)}>
+          <button type="button" className="btn btn-light fw-semibold d-inline-flex align-items-center" style={{ height: 40, fontSize: 12.5, padding: '0 12px', borderRadius: 12 }} onClick={() => setExportOpen(o => !o)}>
             <i className="ri-download-2-line me-1" /> Export <i className="ri-arrow-down-s-line ms-1" />
           </button>
           {exportOpen && (
@@ -330,10 +354,10 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
             </>
           )}
         </div>
-        <button type="button" className="btn btn-sm fw-semibold ms-auto text-white" disabled={busy || readyRows.length === 0}
-          style={{ background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)', border: 'none', opacity: busy || readyRows.length === 0 ? 0.6 : 1, padding: '8px 16px' }}
+        <button type="button" className="btn fw-semibold ms-auto text-white d-inline-flex align-items-center justify-content-center gap-1" disabled={busy || readyRows.length === 0}
+          style={{ height: 40, fontSize: 12.5, fontWeight: 700, background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)', border: 'none', borderRadius: 12, opacity: busy || readyRows.length === 0 ? 0.6 : 1, padding: '0 14px' }}
           onClick={() => setStep('approval')}>
-          <i className="ri-shield-check-line me-1" /> Approve &amp; Submit to Bank
+          <i className="ri-shield-check-line" /> Approve &amp; Submit to Bank
         </button>
       </div>
     </>, 920);
@@ -370,17 +394,20 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
           <i className="ri-alert-line me-1" /> Payment will only execute after this form is submitted.
         </div>
 
-        <div className="d-flex gap-2 align-items-center">
+        <div className="d-flex gap-2 align-items-center justify-content-center">
           <button type="button" className="btn btn-light flex-shrink-0 d-inline-flex align-items-center justify-content-center"
-            style={{ height: 40, fontSize: 13, fontWeight: 600, padding: '0 18px' }}
+            style={{ height: 40, fontSize: 12.5, fontWeight: 600, padding: '0 14px', borderRadius: 12 }}
             onClick={() => setStep('advice')} disabled={busy}>Back</button>
-          <button type="button" className="btn text-white flex-grow-1 d-inline-flex align-items-center justify-content-center gap-1"
+          <button type="button" className="btn text-white d-inline-flex align-items-center justify-content-center gap-1"
             disabled={busy || !canSubmit}
-            style={{ height: 40, fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg,#047857,#10b981)', border: 'none', opacity: (busy || !canSubmit) ? 0.6 : 1 }}
+            style={{ height: 40, fontSize: 12.5, fontWeight: 700, background: 'linear-gradient(135deg,#047857,#10b981)', border: 'none', borderRadius: 12, padding: '0 16px', opacity: (busy || !canSubmit) ? 0.6 : 1 }}
             onClick={submitApproval}>
             {busy ? <i className="ri-loader-4-line" /> : <i className="ri-check-double-line" />} Confirm &amp; Approve Payment
           </button>
         </div>
+        {/* Same house loader as the prepare step — the approve + initiate round
+            trip blocks the whole popup, so it should not look usable. */}
+        {busy && <FullPageLoader label="Submitting payment to bank…" />}
       </div>
     </>, 520);
   }

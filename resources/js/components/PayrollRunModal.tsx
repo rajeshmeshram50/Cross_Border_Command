@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Col, Row } from 'reactstrap';
 import { useScrollLock } from '../hooks/useScrollLock';
+import FullPageLoader from './ui/FullPageLoader';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface PayrollRunActionChip {
@@ -357,6 +358,13 @@ export default function PayrollRunModal({
   const resolvedCount     = issues.filter(i => resolvedIds.has(i.id)).length;
   const remainingCount    = totalIssues - resolvedCount;
   const blockingRemaining = blocking.filter(i => !resolvedIds.has(i.id)).length;
+  /* Nothing is standing in the way of paying this cycle. The dialog opened
+     on the pre-flight phase unconditionally, so a cycle with 0 blocking and
+     0 warnings still announced "Payroll Execution Blocked" and offered
+     Re-run Payroll as its only action — the screen contradicted the three
+     counters directly beneath it, and the way forward was to re-run a run
+     that had already succeeded. */
+  const preflightClear = blockingRemaining === 0 && warnings.length === 0;
   const allClear          = remainingCount === 0;
   const resolvedPct       = totalIssues ? Math.round((resolvedCount / totalIssues) * 100) : 100;
 
@@ -474,8 +482,8 @@ export default function PayrollRunModal({
           {/* Header */}
           <div className="prm-header">
             <div className="d-flex align-items-start gap-3 flex-grow-1">
-              <span className="prm-warn-icon">
-                <i className="ri-alert-fill" />
+              <span className={preflightClear ? 'prm-warn-icon prm-warn-icon--ok' : 'prm-warn-icon'}>
+                <i className={preflightClear ? 'ri-checkbox-circle-fill' : 'ri-alert-fill'} />
               </span>
               <div className="flex-grow-1 min-w-0">
                 {/* The cycle is named in the heading. Without it the dialog gave
@@ -484,15 +492,23 @@ export default function PayrollRunModal({
                     cycle strip where the selected month is not the current one,
                     so there was nothing on screen to check against. */}
                 <h5 className="mb-1 fw-bold" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
-                  Payroll Execution Blocked
+                  {preflightClear ? 'Pre-flight Clear' : 'Payroll Execution Blocked'}
                   {cycleLabel && (
                     <span className="fw-semibold" style={{ color: 'var(--vz-secondary-color)' }}> — {cycleLabel}</span>
                   )}
                 </h5>
                 <div style={{ fontSize: 12 }}>
-                  <span className="fw-semibold" style={{ color: '#b1401d' }}>{blocking.length} blocking issue{blocking.length === 1 ? '' : 's'} must be resolved</span>
-                  <span className="text-muted"> · </span>
-                  <span className="fw-semibold" style={{ color: '#a06f00' }}>{warnings.length} warning{warnings.length === 1 ? '' : 's'} detected</span>
+                  {preflightClear ? (
+                    <span className="fw-semibold" style={{ color: '#108548' }}>
+                      No blocking issues and no warnings — this cycle is ready to pay
+                    </span>
+                  ) : (
+                    <>
+                      <span className="fw-semibold" style={{ color: '#b1401d' }}>{blocking.length} blocking issue{blocking.length === 1 ? '' : 's'} must be resolved</span>
+                      <span className="text-muted"> · </span>
+                      <span className="fw-semibold" style={{ color: '#a06f00' }}>{warnings.length} warning{warnings.length === 1 ? '' : 's'} detected</span>
+                    </>
+                  )}
                 </div>
               </div>
               <button type="button" className="prm-close" onClick={onClose} aria-label="Close">
@@ -747,6 +763,25 @@ export default function PayrollRunModal({
                   ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" /> Re-running…</>
                   : <><i className="ri-play-circle-line me-1" /> Re-run Payroll</>}
               </button>
+              {/* A re-run rewrites the whole cycle — nothing else on the page
+                  may be touched while it runs (QA 254). */}
+              {reRunning && <FullPageLoader label="Re-running payroll…" />}
+              {/* The cycle is already priced and nothing is blocking it, so the
+                  next step is paying — not re-running. Re-run stays beside it
+                  because regenerating after a correction is still legitimate;
+                  it is simply no longer the only door out of this dialog. */}
+              {preflightClear && (
+                <button
+                  type="button"
+                  className="prm-btn prm-btn--go"
+                  onClick={() => setPhase('success')}
+                  disabled={loading || reRunning}
+                  style={(loading || reRunning) ? { opacity: 0.5, cursor: 'wait' } : undefined}
+                >
+                  <i className="ri-bank-card-line me-1" /> Continue to Pay
+                  <i className="ri-arrow-right-s-line ms-1" />
+                </button>
+              )}
             </div>
           </div>
         </>,
@@ -1422,6 +1457,15 @@ function PayrollRunStyles() {
         color: var(--vz-body-color);
         transition: all .15s ease;
       }
+      /* Pre-flight clear: the header stops shouting, and the way forward
+         gets the emphasis the re-run button used to hold alone. */
+      .prm-warn-icon--ok { background: rgba(16,133,72,0.12) !important; color: #108548 !important; }
+      .prm-btn--go {
+        background: linear-gradient(135deg,#0ab39c 0%,#078b78 100%);
+        color: #fff; border: 0; font-weight: 700;
+        box-shadow: 0 8px 18px rgba(10,179,156,0.30);
+      }
+      .prm-btn--go:hover:not(:disabled) { filter: brightness(1.05); }
       .prm-btn--ghost-red {
         border-color: #f5c0b5; color: #b1401d; background: var(--vz-card-bg);
       }

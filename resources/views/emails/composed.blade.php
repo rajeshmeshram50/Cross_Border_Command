@@ -12,7 +12,6 @@
 </head>
 <body style="margin:0;padding:0;background-color:#f3f4f6;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#111827;">
 
-{{-- Preheader --}}
 <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f3f4f6;">
   {{ $subjectLine ?: 'A new message' }}
 </div>
@@ -22,7 +21,6 @@
 
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(17,24,39,0.06);">
 
-  {{-- Header — sending org wordmark --}}
   @php($_parts = explode(' ', $orgName, 2))
   @php($brandMain = strtoupper($_parts[0] ?? $orgName))
   @php($brandSub  = strtoupper(trim($_parts[1] ?? '')))
@@ -39,26 +37,22 @@
     @endif
   </td></tr>
 
-  {{-- Subject --}}
   <tr><td style="padding:22px 32px 4px;">
     <h1 style="margin:0;font-size:20px;font-weight:800;color:#111827;letter-spacing:-0.3px;line-height:1.3;">{{ $subjectLine ?: 'Message' }}</h1>
   </td></tr>
 
-  {{-- Greeting --}}
   <tr><td style="padding:10px 32px 0;">
     <p style="margin:0;font-size:14px;color:#374151;line-height:1.7;">
       Hi <span style="color:#b45309;font-weight:700;">{{ $recipientName }}</span>,
     </p>
   </td></tr>
 
-  {{-- Body (user-composed) --}}
   <tr><td style="padding:14px 32px 18px;">
     <div style="font-size:14px;color:#374151;line-height:1.75;">
       {!! $bodyHtml !!}
     </div>
   </td></tr>
 
-  {{-- Footer --}}
   <tr><td style="padding:14px 32px 22px;text-align:center;border-top:1px solid #f3f4f6;">
     @if($senderName)
     <p style="margin:12px 0 6px;font-size:12px;color:#6b7280;line-height:1.6;">

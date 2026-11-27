@@ -153,8 +153,35 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged, onCon
     ? (signed ? (sum?.inspection_note_files ?? []).map(toProof) : noteFiles.map((n) => n.proof))
     : (lineById(id)?.proof_files ?? []).map(toProof));
 
-  const setVerdict = (id: number, verdict: Verdict) =>
-    run(`v:${id}`, () => poInspectionApi.markLine(poId, id, { verdict }));
+  /* A verdict shows the moment it is clicked and saves in the background. It
+     used to wait on the round trip, and `run` dropped the click outright while
+     any other save was in flight — so a remark took two or three clicks to
+     stick. Each line keeps its own pending pick; only the newest request for a
+     line may settle it, and only that line is taken from the reply, so a slow
+     reply for one line never rolls back a pick made on another. */
+  const [pendingVerdict, setPendingVerdict] = useState<Record<number, Verdict>>({});
+  const verdictSeq = useRef<Record<number, number>>({});
+  const savingVerdicts = Object.keys(pendingVerdict).length > 0;
+
+  const setVerdict = (id: number, verdict: Verdict) => {
+    const seq = (verdictSeq.current[id] ?? 0) + 1;
+    verdictSeq.current[id] = seq;
+    setPendingVerdict((cur) => ({ ...cur, [id]: verdict }));
+    const settle = () => {
+      if (verdictSeq.current[id] !== seq) return;
+      setPendingVerdict((cur) => { const next = { ...cur }; delete next[id]; return next; });
+    };
+    poInspectionApi.markLine(poId, id, { verdict })
+      .then((s) => {
+        if (verdictSeq.current[id] !== seq) return;
+        const saved = s.lines.find((x) => x.purchase_order_item_id === id);
+        setSum((cur) => (cur && saved
+          ? { ...s, lines: cur.lines.map((x) => (x.purchase_order_item_id === id ? saved : x)) }
+          : s));
+      })
+      .catch(fail)
+      .finally(settle);
+  };
 
   const addFiles = (id: number, e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files ? Array.from(e.target.files) : [];
@@ -215,7 +242,7 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged, onCon
   };
 
   const noteFull = noteFiles.length >= MAX_PROOF;
-  const marked = lines.filter((l) => l.verdict).length;
+  const marked = lines.filter((l) => pendingVerdict[l.purchase_order_item_id] ?? l.verdict).length;
   const withProof = lines.filter((l) => l.proof_files.length).length;
   const allMarked = lines.length > 0 && marked === lines.length;
 
@@ -360,12 +387,13 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged, onCon
                 )}
                 {lines.map((l, i) => {
                   const id = l.purchase_order_item_id;
+                  const verdict = pendingVerdict[id] ?? l.verdict;
                   const tag = VERDICTS.find((v) => v.k === l.verdict);
                   const files = filesOf(id);
                   const n = files.length;
                   const full = n >= MAX_PROOF;
                   return (
-                    <tr key={id} className={`pins-tr${l.verdict ? ' is-' + l.verdict : ''}`}>
+                    <tr key={id} className={`pins-tr${verdict ? ' is-' + verdict : ''}`}>
                       <td className="pins-td-sr">{i + 1}</td>
                       <td>
                         <div className="pins-prod__nm">{l.product_name ?? '—'}</div>
@@ -392,9 +420,10 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged, onCon
                               <button
                                 type="button"
                                 key={v.k}
-                                disabled={busy === `v:${id}` || deciding}
-                                className={`pins-seg__b pins-seg__b--${v.k}${l.verdict === v.k ? ' is-on' : ''}`}
-                                onClick={() => { if (l.verdict !== v.k) void setVerdict(id, v.k); }}
+                                disabled={deciding}
+                                aria-pressed={verdict === v.k}
+                                className={`pins-seg__b pins-seg__b--${v.k}${verdict === v.k ? ' is-on' : ''}`}
+                                onClick={() => { if (verdict !== v.k) setVerdict(id, v.k); }}
                               >
                                 {v.ico}<span>{v.t}</span>
                               </button>
@@ -519,8 +548,8 @@ export default function PhysicalInspectionModal({ row, onClose, onChanged, onCon
                 <button
                   type="button"
                   className="spi-mdl-confirm"
-                  disabled={!allMarked || deciding}
-                  title={allMarked ? 'Record the inspection sign-off' : 'Mark every line Correct, Damaged or Mismatched before signing off'}
+                  disabled={!allMarked || savingVerdicts || deciding}
+                  title={savingVerdicts ? 'Saving the inspection remarks…' : allMarked ? 'Record the inspection sign-off' : 'Mark every line Correct, Damaged or Mismatched before signing off'}
                   onClick={submit}
                 >
                   {busy === 'sign' ? 'Submitting…' : 'Submit Inspection'}

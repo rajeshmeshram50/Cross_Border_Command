@@ -3,16 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Backfill module + permissions for the new `master.expense_category` master.
- *
- * Without this, existing admins who already had "all permissions" on every
- * master would not see the new menu item, because their permissions map has
- * no row for module_id = master.expense_category. Mirrors the pattern in
- * 2026_05_01_000004_seed_missing_master_modules.php — copies each user's
- * flag set from a peer master under the same parent (master.asset_categories,
- * which lives under master.operations).
- */
 return new class extends Migration
 {
     public function up(): void

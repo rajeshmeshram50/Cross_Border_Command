@@ -11,13 +11,31 @@ export interface ViewDrawerProps {
   credentialId: number;
   onClose: () => void;
   onChanged?: () => void;
-  onEdit?: (id: number) => void;
+  /** `detail` is the drawer's own copy (same GET, still fresh) so the edit form can skip fetching it again. */
+  onEdit?: (id: number, detail?: CredentialDetail) => void;
   onShare?: (id: number) => void;
   source?: ViewSource;
   fieldLabels?: boolean;
 }
 
 type Tab = 'overview' | 'details' | 'access' | 'activity';
+
+/** How long the drawer's loaded detail may be handed to the edit form instead of a second GET. */
+const REUSE_MS = 120_000;
+
+/**
+ * Only hand the drawer's copy to the edit form when the server would still give the same answer:
+ * loaded recently, and — for a protected (Critical) credential — its unlock window has not ended
+ * (or it opens directly, with no expiry). Otherwise the form fetches it fresh, exactly as before.
+ */
+function reusable(d: CredentialDetail, loadedAt: number): boolean {
+  if (Date.now() - loadedAt >= REUSE_MS) return false;
+  if (d.locked) return false;
+  if (!d.protected) return true;
+  const u = d.unlock;
+  if (u?.state !== 'open') return false;
+  return !u.expires_at || new Date(u.expires_at).getTime() - Date.now() > 30_000;
+}
 
 const I = {
   launch: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3',
@@ -66,10 +84,12 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const [acts, setActs] = useState<{ rows: AuditEvent[]; meta: PageMeta | null; loading: boolean }>({ rows: [], meta: null, loading: true });
   const [binAsk, setBinAsk] = useState(false);
   const [launchAsk, setLaunchAsk] = useState(false);
+  const [dlKey, setDlKey] = useState<string | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const viewed = useRef(false);
   const actSeq = useRef(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const loadedAt = useRef(0);
 
   const loadActivity = useCallback(async (page = 1) => {
     const seq = ++actSeq.current;
@@ -86,6 +106,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   const load = useCallback(async () => {
     try {
       const c = await api.show(credentialId);
+      loadedAt.current = Date.now();
       setD(c);
       setFailed(null);
       if (!c.locked) {
@@ -134,11 +155,9 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       <CvPortal onClose={onClose}>
         <div className="vd-ov is-open">
           <div className="vd-scrim" />
-          <aside className="vd" role="dialog" aria-label="Loading credential">
-            <div className="vd-body"><div className="vd-pane"><table style={{ width: '100%' }}><tbody>
-              {Array.from({ length: 8 }, (_, i) => <tr key={i} className="cv-shimrow"><td><i style={{ width: `${50 + (i * 11) % 45}%` }} /></td></tr>)}
-            </tbody></table></div></div>
-          </aside>
+          <div role="status" aria-live="polite" className="cv-lock vd-loading">
+            <div className="cv-lock__box"><span className="cv-lock__spin" />Opening credential…</div>
+          </div>
         </div>
       </CvPortal>
     );
@@ -204,8 +223,13 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
   };
   const launch = () => { if (launchRisky) setLaunchAsk(true); else openLaunch(); };
   const download = async (key: string) => {
-    try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not open the file', errMsg(e)); }
+    if (dlKey) return;
+    setDlKey(key);
+    try { await api.attachment(d.id, key); loadActivity(1); } catch (e) { toast.error('Could not download the file', errMsg(e)); }
+    finally { setDlKey(null); }
   };
+  // Download icon, or a spinner while that file is downloading.
+  const dlIcon = (key: string) => (dlKey === key ? <span className="cp-spin cp-spin--sm vd-dl-spin" /> : <Svg icon={IC.download} size={13} />);
 
   const copyBtn = (fn: () => void, label?: string) => <button type="button" data-h40="skip" className="vd-ic" title={fieldLabels && label ? `Copy ${label}` : 'Copy'} onClick={fn}><Svg icon="copy" size={13} /></button>;
   const revealBtn = (key: string, allowed: boolean) => (
@@ -251,7 +275,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
       return (
         <>
           <b>{v}</b>
-          {f.attachment_key && <button type="button" data-h40="skip" className="vd-ic" title="Open" onClick={() => download(f.attachment_key!)}><Svg icon="eye" size={13} /></button>}
+          {f.attachment_key && <button type="button" data-h40="skip" className="vd-ic" title={dlKey === f.attachment_key ? 'Downloading…' : 'Download'} disabled={!!dlKey} aria-busy={dlKey === f.attachment_key || undefined} onClick={() => download(f.attachment_key!)}>{dlIcon(f.attachment_key)}</button>}
         </>
       );
     }
@@ -412,7 +436,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
                     <div key={f.key} className={`crd-att__f crd-att__f--${k}`}>
                       <span className="crd-att__fi">{k.toUpperCase()}</span>
                       <div><b title={f.name}>{f.name}</b><small>{bytes(f.size)}{f.at ? ` · ${fmtDay(f.at)}` : ''}</small></div>
-                      <button type="button" data-h40="skip" className="crd-att__b" title="Open" onClick={() => download(f.key)}><Svg icon="eye" size={13} /></button>
+                      <button type="button" data-h40="skip" className="crd-att__b" title={dlKey === f.key ? 'Downloading…' : 'Download'} aria-label={`Download ${f.name}`} disabled={!!dlKey} aria-busy={dlKey === f.key || undefined} onClick={() => download(f.key)}>{dlIcon(f.key)}</button>
                     </div>
                   );
                 }) : <i className="vd-dash">No files attached — edit the credential to add proof</i>}
@@ -506,7 +530,7 @@ export default function ViewDrawer({ credentialId, onClose, onChanged, onEdit, o
                 <div className="vd-ft__a">
                   <button type="button" className="mapsup-footer__btn mapsup-footer__btn--ghost vd-fb" data-h40="skip" onClick={close}>Close</button>
                   {can?.edit && onEdit && (
-                    <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary vd-fb" data-h40="skip" onClick={() => onEdit(d.id)}>
+                    <button type="button" className="mapsup-footer__btn mapsup-footer__btn--primary vd-fb" data-h40="skip" onClick={() => onEdit(d.id, reusable(d, loadedAt.current) ? d : undefined)}>
                       <Svg icon={I.edit} size={13} />Edit Credential
                     </button>
                   )}
