@@ -628,7 +628,6 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
             { key: 'Pending',   label: 'Pending',    icon: 'ri-time-line',            count: leaveCounts.Pending },
             { key: 'Approved',  label: 'Approved',   icon: 'ri-checkbox-circle-line', count: leaveCounts.Approved },
             { key: 'Rejected',  label: 'Rejected',   icon: 'ri-close-circle-line',    count: leaveCounts.Rejected },
-            { key: 'Cancelled', label: 'Cancelled',  icon: 'ri-forbid-line',          count: leaveCounts.Cancelled },
           ]}
           activeTab={leaveTab}
           onTabChange={k => setLeaveTab(k as typeof leaveTab)}

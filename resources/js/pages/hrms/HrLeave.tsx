@@ -726,7 +726,9 @@ export default function HrLeave() {
     {
       header: 'Type',
       accessorKey: 'typeName',
-      meta: { width: '9%', align: 'center' },
+      // wrap: opt out of the cell's default ellipsis so the full type pill shows
+      // ("Public Holiday" was clipped to "Public Holiday…" even with space).
+      meta: { width: '10%', align: 'center', wrap: true },
       cell: info => {
         const t = TYPE_TONE[info.row.original.type];
         return (
@@ -1115,7 +1117,6 @@ export default function HrLeave() {
                 { key: 'Pending',   label: 'Pending',    icon: 'ri-time-line',            count: counts.tabs.Pending },
                 { key: 'Approved',  label: 'Approved',   icon: 'ri-checkbox-circle-line', count: counts.tabs.Approved },
                 { key: 'Rejected',  label: 'Rejected',   icon: 'ri-close-circle-line',    count: counts.tabs.Rejected },
-                { key: 'Cancelled', label: 'Cancelled',  icon: 'ri-forbid-line',          count: counts.tabs.Cancelled },
               ]}
               activeTab={status}
               onTabChange={k => setStatus(k as typeof status)}
