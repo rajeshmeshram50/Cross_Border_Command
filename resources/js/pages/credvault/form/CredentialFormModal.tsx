@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { cvApi, rowHints, type CredentialDetail, type CredentialRow, type TypeDef } from '../cvApi';
+import { cvApi, recentDetail, rowHints, type CredentialDetail, type CredentialRow, type TypeDef } from '../cvApi';
 import { CvPortal, ShimCredForm, Svg, cap, errMsg, useCvMeta } from '../shared';
 import { typeColor } from './formHelpers';
 import CredentialForm from './CredentialForm';
@@ -111,9 +111,11 @@ export default function CredentialFormModal({ credentialId, initialType, critica
   useEffect(() => {
     if (!credentialId || previewRow) return;
     setFailed(null);
-    if (initialDetail && initialDetail.id === credentialId) {
-      if (initialDetail.can && !initialDetail.can.edit) setFailed('Only the owner, a Vault Admin or someone with Full Access can edit this credential.');
-      else { setDetail(initialDetail); setTypeKey(initialDetail.type); }
+    // Detail handed in, or fetched moments ago by the view drawer this Edit was clicked from.
+    const ready = initialDetail && initialDetail.id === credentialId ? initialDetail : recentDetail(credentialId);
+    if (ready) {
+      if (ready.can && !ready.can.edit) setFailed('Only the owner, a Vault Admin or someone with Full Access can edit this credential.');
+      else { setDetail(ready); setTypeKey(ready.type); }
       return;
     }
     let on = true;

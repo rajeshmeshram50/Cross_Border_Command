@@ -13,6 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import logoFallback from '../assets/images/igc-logo.png';
 import NotificationsDrawer, { useUnreadNotifications } from '../../components/NotificationsDrawer';
 import { getMenuIcon as getLucide } from '../../layouts/menuIcons';
+import { prefetchRoute, startIdlePrefetch } from '../../utils/routePrefetch';
 
 type Leaf = { id: string; label: string; icon?: string };
 
@@ -230,6 +231,8 @@ export default function IdimsHeader() {
 
   const [openDD, setOpenDD] = useState<DD | null>(null);
   const [ddAnchor, setDdAnchor] = useState<{ left: number; top: number } | null>(null);
+  // CredVault menu opened: fetch its pages in idle time (one by one, skipped on slow/save-data networks).
+  useEffect(() => { if (openDD === 'cv') startIdlePrefetch(Object.values(CV_LEAF_PATH)); }, [openDD]);
 
   const anchorDd = useCallback((el: HTMLDivElement | null) => {
     if (!el) return;
@@ -590,7 +593,10 @@ export default function IdimsHeader() {
         style={{ '--ac': accent } as React.CSSProperties}
         aria-disabled={!enabled}
         title={enabled ? undefined : 'You don’t have permission for this module'}
-        onClick={() => { if (enabled) go(path); }}>
+        onClick={() => { if (enabled) go(path); }}
+        // CredVault: start downloading the page on hover so it opens at once on click.
+        onMouseEnter={kind === 'cv' && enabled ? () => prefetchRoute(path) : undefined}
+        onFocus={kind === 'cv' && enabled ? () => prefetchRoute(path) : undefined}>
         <span className="idims-dd-item-ico" style={{ background: bg, color: accent }}>
           <Icon size={16} strokeWidth={2} />
         </span>
@@ -640,7 +646,9 @@ export default function IdimsHeader() {
               const Icon = getLucide(q.icon);
               return (
                 <button key={q.label} type="button" className="c2c-paybtn p2pj-actbtn" disabled={!enabled}
-                  onClick={() => { if (enabled) go(q.path); }}>
+                  onClick={() => { if (enabled) go(q.path); }}
+                  onMouseEnter={enabled ? () => prefetchRoute(q.path) : undefined}
+                  onFocus={enabled ? () => prefetchRoute(q.path) : undefined}>
                   <span className="c2c-paybtn-ico"><Icon size={12} strokeWidth={2.3} color="#fff" /></span>
                   <span className="c2c-paybtn-label">{q.label}</span>
                 </button>

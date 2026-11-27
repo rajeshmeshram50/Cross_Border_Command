@@ -285,6 +285,22 @@ function rememberRows<R extends { data?: CredentialRow[] }>(r: R): R {
   return r;
 }
 
+/* The last full detail fetched for each credential id, with when it arrived. When
+   Edit is clicked from the view drawer, the form reuses the detail the drawer just
+   loaded instead of waiting on the same request again. Dropped on any write to it. */
+const recentDetails = new Map<number, { d: CredentialDetail; at: number }>();
+const DETAIL_REUSE_MS = 30_000;
+const forgetDetail = <R,>(id: number, p: Promise<R>): Promise<R> => { recentDetails.delete(id); return p.finally(() => recentDetails.delete(id)); };
+/** The detail fetched for `id` in the last 30 s, if any — read-only, never fetches. */
+export const recentDetail = (id: number): CredentialDetail | undefined => {
+  const hit = recentDetails.get(id);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > DETAIL_REUSE_MS) { recentDetails.delete(id); return undefined; }
+  // Critical / locked credentials change state through approvals and OTP: always fetch those fresh.
+  if (hit.d.locked || hit.d.protected) return undefined;
+  return hit.d;
+};
+
 const vaultPath = (critical: boolean) => (critical ? '/critical-vault' : '/normal-vault');
 
 export const cvApi = {
@@ -303,23 +319,23 @@ export const cvApi = {
   list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', { ...q, tz: viewerTz() }).then(rememberRows),
   vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, { ...q, tz: viewerTz() }).then(rememberRows),
   nextCode: (critical = false) => get<{ data: { next_code: string } }>(`${vaultPath(critical)}/credentials/next-code`).then(r => r.data.next_code),
-  show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => r.data),
+  show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => { recentDetails.set(id, { d: r.data, at: Date.now() }); return r.data; }),
   // `light`: the server answers with just id / code / name / vault / type / scope / risk / updated_at
   // (+ health on update) instead of rebuilding the full detail — for callers that reload their list anyway.
   create: (body: Loose | FormData, critical = false, light = false) => send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials${light ? '?light=1' : ''}`, body),
-  update: (id: number, body: Loose | FormData, critical = false, light = false) => (body instanceof FormData
+  update: (id: number, body: Loose | FormData, critical = false, light = false) => forgetDetail(id, body instanceof FormData
     ? send<{ data: CredentialDetail; message: string }>('post', `${vaultPath(critical)}/credentials/${id}${light ? '?light=1' : ''}`, body)
     : send<{ data: CredentialDetail; message: string }>('put', `${vaultPath(critical)}/credentials/${id}${light ? '?light=1' : ''}`, body)),
-  remove: (id: number, critical = false) => send<{ message: string; data: { id: number; purges_at?: string; removed_share?: boolean } }>('delete', `${vaultPath(critical)}/credentials/${id}`),
+  remove: (id: number, critical = false) => forgetDetail(id, send<{ message: string; data: { id: number; purges_at?: string; removed_share?: boolean } }>('delete', `${vaultPath(critical)}/credentials/${id}`)),
   reveal: (id: number, action: 'reveal' | 'copy', field?: string) => send<{ data: { field: string; label: string; value: string; hide_after_seconds: number; clear_clipboard_after: number } }>('post', `/credentials/${id}/reveal`, { action, field }).then(r => r.data),
   event: (id: number, action: 'view' | 'launch' | 'copy', field?: string) => send('post', `/credentials/${id}/events`, { action, field }),
   activity: (id: number, page = 1) => get<{ data: AuditEvent[]; meta: PageMeta }>(`/credentials/${id}/activity`, { page }),
   attachment: (id: number, key: string) => download('get', `/credentials/${id}/attachments/${key}`),
 
   recipients: (q?: string) => get<{ data: { users: Loose[]; teams: Loose[] } }>('/share-recipients', { q }).then(r => r.data),
-  share: (id: number, body: Loose) => send<{ data: ShareRow & { mail?: ShareMail }; message: string }>('post', `/credentials/${id}/shares`, body),
+  share: (id: number, body: Loose) => forgetDetail(id, send<{ data: ShareRow & { mail?: ShareMail }; message: string }>('post', `/credentials/${id}/shares`, body)),
   sharedByMe: (q: Q) => get<ListResponse<ShareRow>>('/shares', q),
-  revoke: (shareId: number) => send<{ data: ShareRow; message: string }>('delete', `/shares/${shareId}`),
+  revoke: (shareId: number) => { recentDetails.clear(); return send<{ data: ShareRow; message: string }>('delete', `/shares/${shareId}`).finally(() => recentDetails.clear()); },
 
   departments: (q?: string) => get<{ data: Loose }>('/team/departments', { q }).then(r => r.data),
   department: (id: number) => get<{ data: Loose }>(`/team/departments/${id}`).then(r => r.data),
