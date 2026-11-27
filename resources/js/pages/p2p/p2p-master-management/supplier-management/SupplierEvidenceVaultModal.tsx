@@ -771,7 +771,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 <div className="cev-header-title">
                   <span className="sev-hd-code">{supplier.id}</span>
                   <span className="sev-hd-dash" aria-hidden>—</span>
-                  <span className="sev-hd-nm">{supplier.company}</span>
+                  {/* Long names cut at 50 characters; the full name is in the tooltip. */}
+                  {(() => {
+                    const nm = String(supplier.company ?? '');
+                    return nm.length > 50
+                      ? <Tooltip label={nm}><span className="sev-hd-nm">{nm.slice(0, 50).trimEnd()}…</span></Tooltip>
+                      : <span className="sev-hd-nm">{nm}</span>;
+                  })()}
                 </div>
 
                 {(() => {
