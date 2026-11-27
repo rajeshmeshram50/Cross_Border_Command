@@ -2906,7 +2906,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       else if (!/^\d{9,18}$/.test(acc))    missing.push('Account Number (9–18 digits)');
       if (!ifsc)                           missing.push('IFSC Code');
       else if (!IFSC_RE.test(ifsc))        missing.push('IFSC Code (e.g. HDFC0000350)');
-      if (!s4.account_holder_name.trim())  missing.push('Account Holder Name');
+      if (!s4.account_holder_name.trim() || !/[A-Za-z]/.test(s4.account_holder_name)) missing.push('Account Holder Name');
       if (!s4.bank_branch.trim())          missing.push('Bank Branch');
       if (missing.length > 0) {
         if (skipValidate) return false;
@@ -3224,7 +3224,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       isValidBankName(s4.bank_name) &&
       /^\d{9,18}$/.test(s4.bank_account_number.trim()) &&
       IFSC_RE.test(s4.ifsc_code.trim()) &&
-      !!s4.account_holder_name.trim() &&
+      !!s4.account_holder_name.trim() && /[A-Za-z]/.test(s4.account_holder_name) &&
       !!s4.bank_branch.trim()
     );
   const stage4PanOk = PAN_RE.test(s4.pan_number.trim());
@@ -3262,6 +3262,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       }
       if (!s4.account_holder_name.trim()) {
         p.push({ field: 'account_holder_name', label: 'Name on the Account', message: 'Enter the account holder name.' });
+      } else if (!/[A-Za-z]/.test(s4.account_holder_name)) {
+        p.push({ field: 'account_holder_name', label: 'Name on the Account', message: 'Account name must include at least one letter.' });
       }
       if (!s4.bank_branch.trim()) {
         p.push({ field: 'bank_branch', label: 'Branch', message: 'Enter the bank branch.' });
@@ -6196,7 +6198,7 @@ function Stage4Payroll({
     bank_name:           showErrors && bankMode && !s4.bank_name.trim(),
     bank_account_number: showErrors && bankMode && !/^\d{9,18}$/.test(s4.bank_account_number.trim()),
     ifsc_code:           showErrors && bankMode && !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(s4.ifsc_code.trim()),
-    account_holder_name: showErrors && bankMode && !s4.account_holder_name.trim(),
+    account_holder_name: showErrors && bankMode && (!s4.account_holder_name.trim() || !/[A-Za-z]/.test(s4.account_holder_name)),
     bank_branch:         showErrors && bankMode && !s4.bank_branch.trim(),
     pan_number:          showErrors && !/^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(s4.pan_number.trim()),
     pf_deduction:        showErrors && !s4.pf_deduction.trim(),
@@ -6297,6 +6299,9 @@ function Stage4Payroll({
             <Col data-field="account_holder_name" md={4}>
               <label className="onb-init-label">Name on the Account {bankMode && <span className="req">*</span>}</label>
               <input className={`onb-init-input ${bankMode ? 'is-required' : ''}${invalid.account_holder_name ? ' is-invalid' : ''}`} placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
+              {s4.account_holder_name.trim() && !/[A-Za-z]/.test(s4.account_holder_name) && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>Must include at least one letter</small>
+              )}
             </Col>
             <Col data-field="bank_branch" md={4}>
               <label className="onb-init-label">Branch {bankMode && <span className="req">*</span>}</label>
