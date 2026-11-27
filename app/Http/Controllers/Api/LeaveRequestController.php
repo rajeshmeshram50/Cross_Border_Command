@@ -60,6 +60,47 @@ class LeaveRequestController extends Controller
         return response()->json(['data' => $q->get()]);
     }
 
+    /**
+     * Preview the chargeable leave days for a date range BEFORE submitting, so the
+     * Request Leave form shows the real number (week-offs/holidays excluded, sandwich
+     * added) instead of a naive calendar count. Mirrors store()'s computeLeaveDays.
+     */
+    public function previewDays(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $data = $request->validate([
+            'employee_id' => ['nullable', 'integer'],
+            'from_date'   => ['required', 'date'],
+            'to_date'     => ['required', 'date'],
+            'day_type'    => ['nullable', 'in:full,first_half,second_half'],
+        ]);
+
+        $employee = !empty($data['employee_id']) ? Employee::find($data['employee_id']) : null;
+        if (!$employee) $employee = Employee::find($user->employee_id);
+        if (!$employee) abort(422, 'Could not resolve target employee.');
+
+        if ($user->user_type !== 'super_admin' && $user->client_id
+            && (int) $employee->client_id !== (int) $user->client_id) {
+            abort(403, 'You cannot preview leave for an employee outside your tenant.');
+        }
+
+        $from = Carbon::parse($data['from_date']);
+        $to   = Carbon::parse($data['to_date']);
+        if ($to->lt($from)) $to = $from->copy();
+        $dayType = $data['day_type'] ?? 'full';
+
+        $days = $this->computeLeaveDays($from, $to, $dayType, $employee, null, false, true);
+        $calendar = ($dayType !== 'full' && $from->isSameDay($to)) ? 0.5 : ($from->diffInDays($to) + 1);
+
+        return response()->json(['data' => [
+            'days'          => $days,
+            'calendar_days' => $calendar,
+            'excluded'      => round(max(0, $calendar - $days), 2),
+        ]]);
+    }
+
     public function store(Request $request)
     {
         $user = $request->user();
