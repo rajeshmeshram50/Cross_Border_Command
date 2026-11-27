@@ -261,6 +261,11 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     return m;
   }, [signingRuns]);
 
+  /* Ref, not the state flag: `sendingTplId` only disables the button on the
+     next render, so a double-click sent the document twice (QA #143). Declared
+     before the early return below so hook order stays stable (Rules of Hooks). */
+  const sendingRef = useRef(false);
+
   if (!employee) return null;
 
   const empDocsView = empDocs.map(d => {
@@ -434,10 +439,6 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     setExitTemplates(stamp);
     setPromoTemplates(stamp);
   };
-
-  /* Ref, not the state flag: `sendingTplId` only disables the button on the
-     next render, so a double-click sent the document twice (QA #143). */
-  const sendingRef = useRef(false);
 
   const sendDocForSignature = async (tplId: number, name: string | null) => {
     if (!employee || sendingRef.current) return;
