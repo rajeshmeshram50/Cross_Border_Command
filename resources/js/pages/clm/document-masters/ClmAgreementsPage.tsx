@@ -214,7 +214,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                           </Tooltip>
                         ) : (
                           <Tooltip label={`Edit ${r.name}`}>
-                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg></button>
                           </Tooltip>
                         )}
                         <Tooltip label={`Delete ${r.name}`}>
@@ -602,7 +602,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                             <button className="clm-act clm-act-edit" aria-label="Edit"
                               disabled={!!r.in_use}
                               style={r.in_use ? { opacity: .4, cursor: 'not-allowed' } : undefined}
-                              onClick={() => { if (r.in_use) return; setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                              onClick={() => { if (r.in_use) return; setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg></button>
                           </Tooltip>
                           <Tooltip label={r.in_use ? `${r.title} is in use by a live agreement, so it can no longer be deleted.` : `Delete — ${r.title}`}>
                             <button className="clm-act clm-act-del" aria-label="Delete"

@@ -1117,6 +1117,7 @@ export default function HrLeave() {
                 { key: 'Pending',   label: 'Pending',    icon: 'ri-time-line',            count: counts.tabs.Pending },
                 { key: 'Approved',  label: 'Approved',   icon: 'ri-checkbox-circle-line', count: counts.tabs.Approved },
                 { key: 'Rejected',  label: 'Rejected',   icon: 'ri-close-circle-line',    count: counts.tabs.Rejected },
+                { key: 'Cancelled', label: 'Cancelled',  icon: 'ri-forbid-line',          count: counts.tabs.Cancelled },
               ]}
               activeTab={status}
               onTabChange={k => setStatus(k as typeof status)}

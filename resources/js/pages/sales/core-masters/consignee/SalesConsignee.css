@@ -1903,3 +1903,27 @@
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
 [data-bs-theme="dark"] .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search { background: transparent; border: 0; }
 [data-bs-theme="dark"] .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
+
+/* Consignee row actions follow the Team Vault table, in this page's green:
+   Edit is the solid tile with a white icon; Archive / Evidence Vault are soft
+   white-to-mint tiles with a green icon that fill solid green on hover. */
+.smcg-act.smcg-act-edit, .smcg-act.smcg-act-vault { border: 1px solid transparent; border-radius: 9px; }
+.smcg-act.smcg-act-edit {
+  color: #fff;
+  background: linear-gradient(140deg, #34d399 0%, #059669 55%, #047857 100%);
+  box-shadow: 0 6px 12px -6px rgba(5,150,105,.75), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.smcg-act.smcg-act-vault {
+  color: #047857;
+  background: linear-gradient(150deg, #ffffff 0%, #e3f9ef 100%);
+  box-shadow: 0 2px 6px -2px rgba(5,150,105,.35), inset 0 1px 0 #fff;
+}
+.smcg-act.smcg-act-edit:hover { background: linear-gradient(140deg, #059669, #047857 60%, #065f46); box-shadow: 0 8px 16px -6px rgba(5,150,105,.7); transform: translateY(-1px); }
+.smcg-act.smcg-act-vault:hover {
+  color: #fff; border-color: transparent; transform: translateY(-1px);
+  background: linear-gradient(140deg, #34d399 0%, #059669 55%, #047857 100%);
+  box-shadow: 0 8px 16px -6px rgba(5,150,105,.7);
+}
+[data-bs-theme="dark"] .smcg-act.smcg-act-edit { color: #fff; border-color: transparent; background: linear-gradient(140deg, #34d399 0%, #059669 55%, #047857 100%); box-shadow: none; }
+[data-bs-theme="dark"] .smcg-act.smcg-act-vault { color: #6ee7b7; background: rgba(16,185,129,.10); border-color: rgba(52,211,153,.30); box-shadow: none; }
+[data-bs-theme="dark"] .smcg-act.smcg-act-vault:hover { color: #fff; background: #059669; border-color: #059669; }

@@ -1134,6 +1134,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
     Route::get   ('/leave-requests',                             [LeaveRequestController::class, 'index']);
     Route::post  ('/leave-requests',                             [LeaveRequestController::class, 'store']);
+    Route::post  ('/leave-requests/preview-days',                [LeaveRequestController::class, 'previewDays']);
 
     Route::get   ('/leave-requests/approvals',                   [LeaveRequestController::class, 'approvals']);
 

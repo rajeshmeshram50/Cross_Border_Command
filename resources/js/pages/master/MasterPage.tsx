@@ -488,10 +488,12 @@ function MasterPageInner({
       type="button"
       aria-label={title}
       disabled={disabled}
-      className="whm-act mp-act"
+      className={`whm-act mp-act${icon === 'ri-pencil-line' ? ' mp-act--edit' : ''}`}
       onClick={onClick}
     >
-      <i className={icon} />
+      {icon === 'ri-pencil-line'
+        ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
+        : <i className={icon} />}
 
     </button>
     </Tooltip>
@@ -1298,7 +1300,6 @@ function MasterPageInner({
                             : 'Delete';
         return (
           <div className="d-flex gap-1 justify-content-center">
-            {caps.view   && <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />}
             {caps.edit   && <ActionBtn
               title={editTooltip}
               icon="ri-pencil-line"
@@ -1306,6 +1307,7 @@ function MasterPageInner({
               disabled={blockedByRank || isSystemRow}
               onClick={() => openEdit(info.row.original)}
             />}
+            {caps.view   && <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />}
             {caps.delete && <ActionBtn
               title={deleteTooltip}
               icon="ri-delete-bin-line"

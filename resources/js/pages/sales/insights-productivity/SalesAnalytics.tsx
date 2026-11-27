@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ComingSoon from '../../../components/ui/ComingSoon';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Sales Analytics
@@ -26,35 +27,9 @@ export default function SalesAnalytics() {
     <div className="an-root">
       <style>{SCOPED_CSS}</style>
 
-      <div className="an-header">
-        <div className="an-header-left">
-          <div className="an-header-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="2" y1="20" x2="22" y2="20" /></svg>
-          </div>
-          <div>
-            <div className="an-header-title">Sales Analytics</div>
-            <div className="an-header-sub">Pipeline insights &amp; performance intelligence</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="an-hero">
-        <div className="an-hero-icon">
-          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="2" y1="20" x2="22" y2="20" /></svg>
-        </div>
-        <div className="an-hero-text">
-          <div className="an-hero-eyebrow">Sales Analytics</div>
-          <div className="an-hero-title">Coming Soon</div>
-          <div className="an-hero-sub">
-            The KPI Dashboard module is currently under active development.<br />
-            In the meantime, explore the sub-modules already built.
-          </div>
-        </div>
-        <div className="an-hero-status">
-          <div className="an-pulse" />
-          <span>In Development</span>
-        </div>
-      </div>
+      {/* Same KRYPTONE.AI placeholder the Dashboard uses; the shortcut cards
+          below stay so the built sub-pages are still one click away. */}
+      <ComingSoon className="an-cs" title="Sales Analytics is being built" />
 
       <div className="an-shortcuts">
         <div className="an-shortcut" onClick={() => navigate('/sales/diagnosis')}>
@@ -145,6 +120,9 @@ const SCOPED_CSS = `
   animation: anPulse 1.8s ease-in-out infinite;
 }
 @keyframes anPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.3); } }
+
+/* The placeholder normally fills the screen; leave room for the shortcut row. */
+.an-root .kcs.an-cs { min-height: calc(100dvh - 166px - 120px); }
 
 .an-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .an-shortcut {

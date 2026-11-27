@@ -1715,7 +1715,8 @@ function LeaveBalancesTab() {
 function LeavePlansBodyShimmer() {
   const card: CSSProperties = { border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 12px' };
   return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+    // marginTop so the skeleton clears the tabs' underline instead of touching it.
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 }}>
       <aside style={{ width: 280, flexShrink: 0 }}>
         <Shimmer height={36} radius={10} style={{ marginBottom: 14 }} />
         <Shimmer height={10} width={90} style={{ marginBottom: 12 }} />

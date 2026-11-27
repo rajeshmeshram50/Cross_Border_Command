@@ -641,22 +641,22 @@ export default function ClmCaseToCasePage() {
                             // flight — no other action until it finishes.
                             const frozen  = lifecycleBusy !== null || downloadingId !== null || certId !== null;
                             return (
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} busyLabel="Downloading…" disabled={frozen} onClick={() => downloadContract(c)}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                            </ActBtn>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                             {/* Once signed, the agreement is locked → show a view (eye) icon
                                 instead of edit; opening it lands on the view-only stage. */}
                             {c.status === 'signed' ? (
                               <ActBtn t={t} tone="violet" title="View CTC" disabled={frozen} onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></ActBtn>
                             ) : (
-                              <ActBtn t={t} tone="violet" title="Edit CTC" disabled={frozen} onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
+                              <ActBtn t={t} tone="violet" title="Edit CTC" disabled={frozen} onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg></ActBtn>
                             )}
                             <ActBtn t={t} tone="blue" title="Version History" busy={verBusy} busyLabel="Loading…" disabled={frozen && !verBusy} onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
                             <ActBtn t={t} tone="amber" title="Agreement Timeline" busy={tlBusy} busyLabel="Loading…" disabled={frozen && !tlBusy} onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
                             {/* Completion certificate — dimmed until signed; clicking an
                                 unsigned row toasts why it's not available. */}
                             <ActBtn t={t} tone="teal" title={c.status === 'signed' ? 'Download completion certificate' : 'Available once all parties have signed'} busy={certId === c.id} busyLabel="Downloading…" disabled={frozen && certId !== c.id} softOff={c.status !== 'signed'} onClick={() => downloadCertificate(c)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg></ActBtn>
+                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} busyLabel="Downloading…" disabled={frozen} onClick={() => downloadContract(c)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                            </ActBtn>
                           </div>
                             );
                           })()}
@@ -733,12 +733,20 @@ export default function ClmCaseToCasePage() {
   );
 }
 
+// Row actions follow the Team Vault table, in this page's violet: View / Edit
+// is the solid tile with a white icon; every other action is a soft white-to-
+// lavender tile with a violet icon that fills solid violet on hover.
+// The tone names stay so the call sites don't change.
+const SOLID_VIOLET_BG = 'linear-gradient(140deg,#a78bfa 0%,#7c3aed 55%,#6d28d9 100%)';
+const SOLID_VIOLET = { bg: SOLID_VIOLET_BG, border: 'transparent', color: '#fff', shadow: '0 6px 12px -6px rgba(124,58,237,.75), inset 0 1px 0 rgba(255,255,255,.3)' };
+const SOFT_LIGHT = { bg: 'linear-gradient(150deg,#ffffff 0%,#f1ebfe 100%)', border: 'transparent', color: '#6d28d9', shadow: '0 2px 6px -2px rgba(124,58,237,.35), inset 0 1px 0 #fff' };
+const SOFT_DARK = { bg: 'rgba(139,92,246,.10)', border: 'rgba(167,139,250,.30)', color: '#c4b5fd', shadow: 'none' };
 const ACT_TONES = {
-  green:  { light: { bg: '#D1FAE5', border: '#6EE7B7', color: '#047857' }, dark: { bg: 'rgba(16,185,129,.16)',  border: 'rgba(16,185,129,.42)', color: '#6ee7b7' } },
-  violet: { light: { bg: '#EDE9FE', border: '#C4B5FD', color: '#5B21B6' }, dark: { bg: 'rgba(124,58,237,.18)', border: 'rgba(124,58,237,.45)', color: '#c4b5fd' } },
-  blue:   { light: { bg: '#DBEAFE', border: '#93C5FD', color: '#0369A1' }, dark: { bg: 'rgba(56,189,248,.16)',  border: 'rgba(56,189,248,.42)', color: '#7dd3fc' } },
-  amber:  { light: { bg: '#FEF3C7', border: '#FCD34D', color: '#B45309' }, dark: { bg: 'rgba(245,158,11,.16)',  border: 'rgba(245,158,11,.42)', color: '#fcd34d' } },
-  teal:   { light: { bg: '#CCFBF1', border: '#5EEAD4', color: '#0F766E' }, dark: { bg: 'rgba(20,184,166,.16)',  border: 'rgba(20,184,166,.42)', color: '#5eead4' } },
+  green:  { light: SOFT_LIGHT, dark: SOFT_DARK },
+  violet: { light: SOLID_VIOLET, dark: SOLID_VIOLET },
+  blue:   { light: SOFT_LIGHT, dark: SOFT_DARK },
+  amber:  { light: SOFT_LIGHT, dark: SOFT_DARK },
+  teal:   { light: SOFT_LIGHT, dark: SOFT_DARK },
 } as const;
 
 function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled, softOff }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode; busy?: boolean; busyLabel?: string; disabled?: boolean; softOff?: boolean }) {
@@ -749,11 +757,12 @@ function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled, 
   //              can explain (via a toast) why the action isn't available yet.
   const off = busy || disabled;
   const dim = off || softOff;
+  const solid = tone === 'violet';
   return (
     <Tooltip label={busy ? (busyLabel ?? 'Loading…') : (disabled ? 'Please wait…' : title)}>
-      <button onClick={onClick} aria-label={title} disabled={off} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : dim ? 'not-allowed' : 'pointer', color: s.color, opacity: busy ? 1 : dim ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
-        onMouseEnter={e => { if (dim) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
-        onMouseLeave={e => { if (dim) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+      <button onClick={onClick} aria-label={title} disabled={off} style={{ width: 28, height: 28, borderRadius: 9, border: `1px solid ${s.border}`, background: s.bg, boxShadow: s.shadow, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : dim ? 'not-allowed' : 'pointer', color: s.color, opacity: busy ? 1 : dim ? .4 : 1, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { if (dim) return; const b = e.currentTarget.style; b.transform = 'translateY(-1px)'; b.background = solid ? 'linear-gradient(140deg,#7c3aed,#6d28d9 60%,#5b21b6)' : SOLID_VIOLET_BG; b.color = '#fff'; b.borderColor = 'transparent'; b.boxShadow = '0 8px 16px -6px rgba(124,58,237,.7)'; }}
+        onMouseLeave={e => { if (dim) return; const b = e.currentTarget.style; b.transform = 'none'; b.background = s.bg; b.color = s.color; b.borderColor = s.border; b.boxShadow = s.shadow; }}>
         {busy
           ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
           : children}

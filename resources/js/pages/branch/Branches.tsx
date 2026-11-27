@@ -243,10 +243,16 @@ export default function Branches({ onNavigate }: Props) {
               </div>
             )}
             <div className="min-w-0">
-              <div className="fw-semibold fs-13 d-flex align-items-center gap-1 text-truncate">
-                {b.name}
-              </div>
-              {b.description && <div className="text-muted fs-11 text-truncate" style={{ maxWidth: 240 }}>{b.description}</div>}
+              <Tooltip label={b.name}>
+                <div className="fw-semibold fs-13 d-flex align-items-center gap-1 text-truncate">
+                  {b.name}
+                </div>
+              </Tooltip>
+              {b.description && (
+                <Tooltip label={b.description}>
+                  <div className="text-muted fs-11 text-truncate" style={{ maxWidth: 240 }}>{b.description}</div>
+                </Tooltip>
+              )}
             </div>
           </div>
         );
@@ -669,6 +675,14 @@ export default function Branches({ onNavigate }: Props) {
               data={filtered}
               columns={columns}
               serial
+              /* Names the list so the toolbar's left half isn't an empty band —
+                 with no tabs, the search otherwise floats alone (QA #15). */
+              title="Branch List"
+              subtitle={
+                loading
+                  ? 'Loading…'
+                  : `${branches.length} ${branches.length === 1 ? 'branch' : 'branches'}`
+              }
               /* Same pale skin as Clients and the HRMS lists — see the note there. */
               className="hr-dt"
               accent="violet"

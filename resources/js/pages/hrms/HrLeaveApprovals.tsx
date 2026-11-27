@@ -383,7 +383,7 @@ export default function HrLeaveApprovals() {
               onPageChange: (idx) => setPage(idx + 1),
               onPageSizeChange: setPerPage,
             }}
-            tabs={(['All', 'Pending', 'Approved', 'Rejected'] as StatusFilter[]).map(s => ({
+            tabs={(['All', 'Pending', 'Approved', 'Rejected', 'Cancelled'] as StatusFilter[]).map(s => ({
               key: s, label: s, count: statusCounts[s],
             }))}
             activeTab={status}

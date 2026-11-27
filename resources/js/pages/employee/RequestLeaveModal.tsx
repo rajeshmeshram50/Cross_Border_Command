@@ -193,6 +193,35 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     [isHalf, fromDate, toDate],
   );
 
+  // The real chargeable days from the server (week-offs & holidays excluded,
+  // sandwich policy added) so the form shows what will actually be charged, not a
+  // naive calendar count. Falls back to the calendar count while it loads.
+  const [serverDays, setServerDays] = useState<number | null>(null);
+  const [serverExcluded, setServerExcluded] = useState(0);
+  useEffect(() => {
+    if (!isOpen || !fromDate || !toDate) { setServerDays(null); setServerExcluded(0); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      api.post('/leave-requests/preview-days', {
+        employee_id: Number(employeeId) || undefined,
+        from_date: fromDate,
+        to_date: toDate,
+        day_type: isHalf ? halfType : 'full',
+      })
+        .then(r => {
+          if (!alive) return;
+          const d = r.data?.data;
+          setServerDays(typeof d?.days === 'number' ? d.days : null);
+          setServerExcluded(Number(d?.excluded) || 0);
+        })
+        .catch(() => { if (alive) { setServerDays(null); setServerExcluded(0); } });
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [isOpen, employeeId, fromDate, toDate, isHalf, halfType]);
+
+  // What the form displays and checks against: the server number when available.
+  const displayDays = serverDays ?? totalDays;
+
   // If the picked range stops being a single day, snap back to Full day so a
   // stale "Custom" half-day selection can't ride along on a multi-day request.
   useEffect(() => {
@@ -307,14 +336,14 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       // apply = available − pending.
       const pend = selectedBalance.pending ?? 0;
       const remaining = Math.max(0, (selectedBalance.available ?? 0) - pend);
-      if (totalDays > remaining) {
+      if (displayDays > remaining) {
         await Swal.fire({
           title: remaining <= 0 ? `No ${selectedBalance.name} balance available` : 'Not enough leave balance',
           text: remaining <= 0
             ? (pend > 0
                 ? `${selectedBalance.name} is fully utilised — you already have ${pend} day${pend === 1 ? '' : 's'} awaiting approval, so you can't raise another until that request is approved or rejected.`
                 : `You have no ${selectedBalance.name} balance left, so this request can't be submitted.`)
-            : `${selectedBalance.name} has ${remaining} day${remaining === 1 ? '' : 's'} available${pend > 0 ? ` (after ${pend} pending)` : ''} but you requested ${totalDays}.`,
+            : `${selectedBalance.name} has ${remaining} day${remaining === 1 ? '' : 's'} available${pend > 0 ? ` (after ${pend} pending)` : ''} but you requested ${displayDays}.`,
           icon: 'warning',
           confirmButtonText: 'OK',
           confirmButtonColor: '#f06548',
@@ -474,9 +503,9 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 />
               </div>
               <div className="lvr-days-pill">
-                <div className="fw-bold" style={{ fontSize: 18, lineHeight: 1 }}>{totalDays}</div>
+                <div className="fw-bold" style={{ fontSize: 18, lineHeight: 1 }}>{displayDays}</div>
                 <div className="text-muted" style={{ fontSize: 10, marginTop: 2 }}>
-                  {totalDays === 1 ? 'day' : 'days'}
+                  {displayDays === 1 ? 'day' : 'days'}
                 </div>
               </div>
               <div className="lvr-date-cell">
@@ -590,8 +619,14 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
               <div className="text-muted mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
                 <i className="ri-time-line" />
-                You are requesting for <strong>{totalDays} {totalDays === 1 ? 'day' : 'days'}</strong> of leave
+                You are requesting for <strong>{displayDays} {displayDays === 1 ? 'day' : 'days'}</strong> of leave
               </div>
+              {serverExcluded > 0 && (
+                <div className="text-muted mt-1 d-flex align-items-center gap-1" style={{ fontSize: 11.5 }}>
+                  <i className="ri-information-line" />
+                  {serverExcluded} {serverExcluded === 1 ? 'day' : 'days'} not charged (week-off / holiday) out of {totalDays} calendar {totalDays === 1 ? 'day' : 'days'}.
+                </div>
+              )}
             </div>
           )}
 

@@ -79,7 +79,7 @@ export default function ClmSegmentPage() {
     ...(tab !== 'all' ? { regulatory_status: tab } : {}),
     ...(bcFilter !== 'all' ? { buyer_consignee: bcFilter } : {}),
   };
-  const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp, meta } =
+  const { rows, total, loading, paramsPending, search, setSearch, page, setPage, rpp, setRpp, meta } =
     usePagedList<Segment, { counts: Counts }>('/clm/segments', reloadKey, params);
   const counts: Counts = meta.counts ?? { all: 0, highly: 0, less: 0 };
   const narrowed = !!search.trim() || bcFilter !== 'all';
@@ -87,22 +87,26 @@ export default function ClmSegmentPage() {
   const [booted, setBooted] = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
 
-  /* Which tab the rows on screen actually answer. usePagedList decides
-     "replacing" by comparing its own applied query to the requested one, and
-     the tab IS part of that query — but only once the request is in flight and
-     only until it resolves, so a fast switch could land in a frame where the
-     rows are from the old tab yet nothing counts as replacing. The table then
-     fell through to the refresh branch, which dims it to 0.5: a washed-out
-     list, no shimmer, which is QA #29's "white blurred screen". Tracking the
-     tab the rows belong to closes that window. */
-  const answeredTab = useRef(tab);
-  useEffect(() => { if (!loading) answeredTab.current = tab; }, [loading, tab]);
-
-  /* Skeleton before the first answer and on a tab switch (the rows on screen
-     belong to the other tab). NOT on a search keystroke or a page move: the
-     last answer stays as it is until the new one lands, so the table does not
-     blank and jump on every letter typed. Undimmed, per the note below. */
-  const firstLoad  = loading && (!booted || answeredTab.current !== tab);
+  /* Skeleton before the first answer and on a tab / Customer-Consignee filter
+     switch (the rows on screen belong to the other tab). NOT on a search
+     keystroke or a page move: the last answer stays as it is until the new one
+     lands, so the table does not blank and jump on every letter typed.
+     paramsPending flips in the same render as the click. The old check updated
+     "which tab the rows answer" whenever loading was false, and in the render
+     right after the click loading had not turned true yet, so it marked the
+     old rows as the new tab's and the shimmer never showed. */
+  /* Hold the skeleton a short beat on every tab / filter switch, like the
+     Customers list does: the answer usually lands in a few ms, so without
+     this the shimmer flashes too fast to see and the rows just swap. */
+  const [switching, setSwitching] = useState(false);
+  const switchedOnce = useRef(false);
+  useEffect(() => {
+    if (!switchedOnce.current) { switchedOnce.current = true; return; }
+    setSwitching(true);
+    const t = window.setTimeout(() => setSwitching(false), 450);
+    return () => window.clearTimeout(t);
+  }, [tab, bcFilter]);
+  const firstLoad  = (loading && !booted) || paramsPending || switching;
   const isEmpty    = !firstLoad && rows.length === 0;
   /* There is deliberately no "refreshing" dim any more. A half-faded table
      reads as a rendering fault rather than a load, and it was what showed when
@@ -376,7 +380,7 @@ export default function ClmSegmentPage() {
                           <div className="clm-actions">
                             <Tooltip label="Edit segment">
                               <button type="button" aria-label="Edit segment" className="clm-act clm-act-edit" onClick={() => { setEditing(r); setModalOpen(true); }}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
                               </button>
                             </Tooltip>
                             <Tooltip label={r.in_use

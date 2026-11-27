@@ -495,6 +495,34 @@
   transform: none;
 }
 
+/* Row actions follow the Team Vault table: Edit is the solid teal tile with a
+   white pencil; View / Delete / History / Tree are soft white-to-cyan tiles
+   with a teal icon that fill solid teal on hover. */
+.mp-inv .whm-act.mp-act:not(.mp-act--edit) {
+  color: #0e7490;
+  background: linear-gradient(150deg, #ffffff 0%, #e6fafd 100%);
+  box-shadow: 0 2px 6px -2px rgba(8,145,178,.35), inset 0 1px 0 #fff;
+}
+.mp-inv .whm-act.mp-act:not(.mp-act--edit):not(:disabled):hover {
+  color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 8px 16px -6px rgba(8,145,178,.7);
+}
+.mp-inv .whm-act.mp-act:disabled:hover { transform: none; }
+.mp-inv .whm-act.mp-act:not(.mp-act--edit):disabled:hover {
+  color: #0e7490; background: linear-gradient(150deg, #ffffff 0%, #e6fafd 100%);
+}
+.mp-inv .whm-act.mp-act--edit:disabled:hover { background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%); }
+.mp-inv .whm-act.mp-act svg { width: 15px; height: 15px; }
+[data-bs-theme="dark"] .mp-inv .whm-act.mp-act:not(.mp-act--edit),
+[data-layout-mode="dark"] .mp-inv .whm-act.mp-act:not(.mp-act--edit) {
+  color: #67e8f9; background: rgba(6,182,212,.08); box-shadow: inset 0 0 0 1px rgba(34,211,238,.28);
+}
+[data-bs-theme="dark"] .mp-inv .whm-act.mp-act:not(.mp-act--edit):not(:disabled):hover,
+[data-layout-mode="dark"] .mp-inv .whm-act.mp-act:not(.mp-act--edit):not(:disabled):hover {
+  color: #fff; background: #0891b2; box-shadow: none;
+}
+
 [data-bs-theme="dark"] .mp-inv .dt-root,
 [data-layout-mode="dark"] .mp-inv .dt-root {
   --dt-head-fill: #0f222c;

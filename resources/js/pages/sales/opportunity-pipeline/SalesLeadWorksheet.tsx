@@ -2391,6 +2391,30 @@ const SCOPED_CSS = `
   box-shadow: 0 3px 10px rgba(14,116,144,.4);
 }
 
+/* Row actions follow the Team Vault table: View (the main action) is the solid
+   teal tile with a white icon; Activity / Assign are soft white-to-cyan tiles
+   with a teal icon that fill solid teal on hover. */
+.lwp-root .lwp-ab.lwp-ab:is(.lwp-ab-view, .lwp-ab-activity, .lwp-ab-assign) { border-radius: 9px; border: 1px solid transparent; }
+.lwp-root .lwp-ab.lwp-ab-view {
+  color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 6px 12px -6px rgba(8,145,178,.75), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.lwp-root .lwp-ab.lwp-ab-view:hover { color: #fff; background: linear-gradient(140deg, #0891b2, #0e7490 60%, #0b4f63); }
+.lwp-root .lwp-ab.lwp-ab:is(.lwp-ab-activity, .lwp-ab-assign) {
+  color: #0e7490;
+  background: linear-gradient(150deg, #ffffff 0%, #e6fafd 100%);
+  box-shadow: 0 2px 6px -2px rgba(8,145,178,.35), inset 0 1px 0 #fff;
+}
+.lwp-root .lwp-ab.lwp-ab:is(.lwp-ab-activity, .lwp-ab-assign):hover {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 8px 16px -6px rgba(8,145,178,.7);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab.lwp-ab-view { color: #fff; border-color: transparent; background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%); box-shadow: none; }
+[data-bs-theme="dark"] .lwp-root .lwp-ab.lwp-ab:is(.lwp-ab-activity, .lwp-ab-assign) { color: #67e8f9; background: rgba(6,182,212,.08); border-color: rgba(34,211,238,.28); box-shadow: none; }
+[data-bs-theme="dark"] .lwp-root .lwp-ab.lwp-ab:is(.lwp-ab-activity, .lwp-ab-assign):hover { color: #fff; background: #0891b2; border-color: #0891b2; }
+
 [data-bs-theme="dark"] .lwp-root .lwp-no-access {
   background: #0f172a; border-color: rgba(34,211,238,0.25); color: #e2e8f0;
 }

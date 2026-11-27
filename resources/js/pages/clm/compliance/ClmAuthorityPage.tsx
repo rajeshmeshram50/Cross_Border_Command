@@ -119,7 +119,7 @@ export default function ClmAuthorityPage() {
   const start    = (page - 1) * rpp;
   const safePage = page;
   const pageCount = Math.max(1, Math.ceil(count / rpp));
-  /* booted, not !loading: during a search reload the last answer stays on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty = booted && slice.length === 0;
+  /* booted, not !loading: during a search reload the last answer stays on screen (dimmed) instead of the table blanking and jumping. */ const isEmpty = booted && !loading && slice.length === 0;
 
   /* Dynamic rows-per-page — the shared hook the Clause Library and Trade
      Document masters use, so all three behave identically.
@@ -362,7 +362,7 @@ export default function ClmAuthorityPage() {
               ref={scrollRef}
               style={{ minHeight: fillH, maxHeight: fillH }}
             >
-              <div className="clm-tscroll"><table className="clm-table" style={{ opacity: loading && booted ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+              <div className="clm-tscroll"><table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>AUTHORITY ID</th>
@@ -371,8 +371,11 @@ export default function ClmAuthorityPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && !booted && <ClmSkeletonRows cols={5} />}
-                  {booted && slice.map((r, i) => (
+                  {/* Skeleton rows on EVERY load (first open, search, page, rows-per-page, after a save or a
+                      delete), not only the first. On the live server the old half-faded table was what
+                      showed while a page loaded, which read as no shimmer at all. */}
+                  {loading && <ClmSkeletonRows cols={5} rows={booted ? rpp : undefined} />}
+                  {booted && !loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -382,7 +385,7 @@ export default function ClmAuthorityPage() {
                         <div className="clm-actions">
                           <Tooltip label="Edit authority">
                             <button type="button" aria-label="Edit authority" className="clm-act clm-act-edit" onClick={() => { setEditing(r); setModalOpen(true); }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
                             </button>
                           </Tooltip>
                           <Tooltip label={r.in_use ? 'In use elsewhere — remove those references to delete' : 'Delete authority'}>

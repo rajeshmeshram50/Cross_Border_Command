@@ -150,9 +150,8 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
      on screen: a first load has no rows, so it gets the skeleton; a refetch
      still shows the previous page, so it is dimmed rather than blanked —
      blanking it would make a page change look like the list emptied. */
-  /* Skeleton before the first answer only. A search keystroke or page move keeps the last answer on screen, dimmed, instead of blanking the table and making it jump. */ const firstLoad  = loading && !booted;
-  const refreshing = loading && !firstLoad;
-  const isEmpty   = booted && rows.length === 0;
+  /* Skeleton rows on every load (search, page, after a save or delete), not a half-faded table. */ const firstLoad  = loading;
+  const isEmpty   = booted && !loading && rows.length === 0;
   const start     = (page - 1) * rpp;
   const safePage  = page;
   const autoFitRef = useRef(true);
@@ -212,7 +211,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
-            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+            <div className="clm-tscroll"><table className="clm-table">
               <thead><tr>
                 {/* Shares, not pixels — the Segment Master pattern. With three
                     pixel-width columns and one free one, the name column
@@ -261,7 +260,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                                 disabled={used}
                                 style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined}
                                 onClick={() => { if (used) return; setEditing(r); setModalOpen(true); }}
-                              ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                              ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg></button>
                             </Tooltip>
                           );
                         })()}
@@ -323,9 +322,8 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   /* `rows` IS the page — the endpoint sorts, searches and slices. */
   const slice      = rows;
   // See the note in TypesPane — one `loading` split by what is already on screen.
-  /* Skeleton before the first answer only. A search keystroke or page move keeps the last answer on screen, dimmed, instead of blanking the table and making it jump. */ const firstLoad  = loading && !booted;
-  const refreshing = loading && !firstLoad;
-  const isEmpty    = booted && rows.length === 0;
+  /* Skeleton rows on every load (search, page, after a save or delete), not a half-faded table. */ const firstLoad  = loading;
+  const isEmpty    = booted && !loading && rows.length === 0;
   const start      = (page - 1) * rpp;
   const safePage   = page;
   const autoFitRef = useRef(true);
@@ -392,7 +390,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
           <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH, maxHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
-            <div className="clm-tscroll"><table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+            <div className="clm-tscroll"><table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>CLAUSE ID</th>
@@ -418,7 +416,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                     <TruncCell value={r.name} />
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <Tooltip label="Edit"><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
+                        <Tooltip label="Edit"><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg></button></Tooltip>
                         {(() => {
                           // A clause inserted into a CTC agreement, Agreement Library, T&C or Trade Document
                           // can't be deleted (best-effort match, see libraryIndex). Guard mirrors clause types.
