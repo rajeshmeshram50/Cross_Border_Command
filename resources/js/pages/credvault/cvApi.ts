@@ -275,6 +275,16 @@ export type Loose = Record<string, any>;
 
 let metaCache: Promise<Meta> | null = null;
 
+/* The last list row seen for each credential id. The edit form uses it while
+   the full detail loads, so its header already shows the right type icon,
+   "Edit Login Credentials", the name and the code, instead of a generic
+   "Edit Credential" that then jumps to the real header. */
+export const rowHints = new Map<number, CredentialRow>();
+function rememberRows<R extends { data?: CredentialRow[] }>(r: R): R {
+  if (Array.isArray(r?.data)) r.data.forEach(x => { if (x && typeof x.id === 'number') rowHints.set(x.id, x); });
+  return r;
+}
+
 const vaultPath = (critical: boolean) => (critical ? '/critical-vault' : '/normal-vault');
 
 export const cvApi = {
@@ -290,8 +300,8 @@ export const cvApi = {
   generatePassword: (opts: Loose = {}) => send<{ data: { password: string; bits: number; level: string; strength_level: number; meets_policy: boolean; policy_minimum: string } }>('post', '/generate-password', opts).then(r => r.data),
   dashboard: (range = 14) => get<{ data: Loose }>('/dashboard', { range, tz: viewerTz() }).then(r => r.data),
 
-  list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', { ...q, tz: viewerTz() }),
-  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, { ...q, tz: viewerTz() }),
+  list: (q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>('/credentials', { ...q, tz: viewerTz() }).then(rememberRows),
+  vaultList: (critical: boolean, q: Q) => get<ListResponse<CredentialRow> & { member: Loose | null }>(`${vaultPath(critical)}/credentials`, { ...q, tz: viewerTz() }).then(rememberRows),
   nextCode: (critical = false) => get<{ data: { next_code: string } }>(`${vaultPath(critical)}/credentials/next-code`).then(r => r.data.next_code),
   show: (id: number) => get<{ data: CredentialDetail }>(`/credentials/${id}`).then(r => r.data),
   // `light`: the server answers with just id / code / name / vault / type / scope / risk / updated_at
