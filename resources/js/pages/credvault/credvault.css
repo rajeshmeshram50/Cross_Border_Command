@@ -19579,3 +19579,25 @@ body:has(.cvx.cv-page) .cvx .vd .vd-ptabs .smt-proctype-tab {
 
 .cvx.myv-page .sup-fig .bref-box__header { padding: 5px 12px; min-height: 40px; gap: 10px; }
 .cvx.myv-page .sup-fig .bref-box__header-ico { width: 30px; height: 30px; border-radius: 9px; }
+
+/* My Vault and Recycle Bin row actions: Delete in the same soft teal tile as the other
+   actions (Critical Vault and Team Vault already do this), not red. */
+.cvx:is(.myv-page, .rb-page) button.whm-act.whm-act--danger {
+  color: #0e7490 !important;
+  background: linear-gradient(150deg, #ffffff 0%, #e6fafd 100%) !important;
+  border: 0 !important;
+}
+.cvx:is(.myv-page, .rb-page) button.whm-act.whm-act--danger:hover:not(:disabled) {
+  color: #fff !important;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%) !important;
+}
+[data-bs-theme="dark"] .cvx:is(.myv-page, .rb-page) button.whm-act.whm-act--danger:not(.whm-act--edit) {
+  color: #67e8f9 !important;
+  background: rgba(6, 182, 212, .08) !important;
+  border-color: rgba(34, 211, 238, .28) !important;
+}
+[data-bs-theme="dark"] .cvx:is(.myv-page, .rb-page) button.whm-act.whm-act--danger:not(.whm-act--edit):hover:not(:disabled) {
+  color: #fff !important;
+  background: #0891b2 !important;
+  border-color: #0891b2 !important;
+}

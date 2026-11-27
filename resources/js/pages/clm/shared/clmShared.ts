@@ -2580,7 +2580,7 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
         setMeta(r.data);
         setApplied({ search: debounced, page, rpp, params: paramsKey });
       })
-      .catch((e) => { if (token === reqRef.current) { loadFailed(toast, 'the list', e); setRows([]); setTotal(0); } })
+      .catch((e) => { if (token === reqRef.current) { loadFailed(toast, 'the list', e); setRows([]); setTotal(0); setApplied({ search: debounced, page, rpp, params: paramsKey }); } })
       .finally(() => { if (token === reqRef.current) { setLoading(false); setBooted(true); } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, page, rpp, debounced, paramsKey, reloadKey]);
@@ -2590,7 +2590,12 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   const replacing = loading
     && (applied.search !== debounced || applied.page !== page || applied.rpp !== rpp || applied.params !== paramsKey);
 
-  return { rows, total, loading, booted, replacing, search, setSearch, page, setPage, rpp, setRpp, meta };
+  /* True from the very render the filter params (a tab, a dropdown) change
+     until their answer lands — no loading flag involved, so there is no frame
+     where the old tab's rows count as the new tab's answer. */
+  const paramsPending = applied.params !== paramsKey;
+
+  return { rows, total, loading, booted, replacing, paramsPending, search, setSearch, page, setPage, rpp, setRpp, meta };
 }
 
 /* Height a CLM list's table box may take.
