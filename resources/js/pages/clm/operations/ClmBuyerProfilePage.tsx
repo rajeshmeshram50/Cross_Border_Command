@@ -49,7 +49,7 @@ type BpData = {
 const EMPTY_BP: BpData = { buyers: [], consignees: [], ws_eq: [], ws_neq: [], wos_eq: [], wos_neq: [] };
 
 const BP_PER_PAGE = 10;
-const SEG_CHIP_COL = 150;
+const SEG_CHIP_COL = 180;
 
 const HOME_COUNTRY = 'india';
 const isDomesticCountry = (c: string) => (c || '').trim().toLowerCase() === HOME_COUNTRY;
@@ -141,16 +141,30 @@ function useExactFitRows(
       const scroller = el.closest('.main-content') as HTMLElement | null;
       const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
       const top = el.getBoundingClientRect().top;
-      const next = Math.max(240, Math.round(bottom - top - 8));
+      const space = Math.round(bottom - top - 8);
+      /* Everything in the card that is not a body row, measured from the real
+         boxes (header, pager, thead, borders) rather than added up by hand,
+         which came out a few px short and left an inner scrollbar. */
+      const table = el.querySelector('table') as HTMLElement | null;
+      const wrap  = table?.parentElement as HTMLElement | null;
+      const tbody = el.querySelector('tbody') as HTMLElement | null;
+      const nRows = tbody?.children.length || 0;
+      const rowH  = nRows ? tbody!.offsetHeight / nRows : 46;
+      const chrome = table && wrap && tbody && nRows
+        ? (el.offsetHeight - wrap.clientHeight) + (table.offsetHeight - tbody.offsetHeight) + 1
+        : ((el.firstElementChild as HTMLElement | null)?.offsetHeight || 0)
+          + ((el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 40)
+          + ((el.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight || 56) + 4;
+      /* Fit as many whole rows as the space holds (at least 3). It forced at
+         least 5 into a fixed-height card, so on a short / zoomed screen the
+         5th row was cut off behind an inner scrollbar. When even 3 rows do not
+         fit, the card grows to hold them and the page scrolls instead. */
+      const MIN_ROWS = 3;
+      const next = Math.max(space, Math.ceil(chrome + MIN_ROWS * rowH));
       setH((prev) => (prev === next ? prev : next));
 
       if (!autoFitRef.current) return;
-      const headerH = (el.firstElementChild as HTMLElement | null)?.offsetHeight || 0;
-      const theadH  = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 40;
-      const pagerH  = (el.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight || 56;
-      const rowH    = (el.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 46;
-      const avail = next - headerH - theadH - pagerH - 4;
-      setRows(Math.max(5, Math.floor(avail / rowH)));
+      setRows(Math.max(MIN_ROWS, Math.floor((space - chrome) / rowH)));
     };
     return settle(calc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -316,7 +330,7 @@ const BP_CSS = `
 :where(.bpx-94) { flex: 1 !important; min-height: 0 !important; overflow-y: auto !important; background: #fff !important; }
 :where(.bpx-95) { padding: 30px !important; text-align: center !important; font-size: 12.5px !important; color: #64748b !important; }
 :where(.bpx-96) { padding: 9px 11px !important; text-align: left !important; min-width: 140px !important; }
-:where(.bpx-97) { display: flex !important; flex-wrap: wrap !important; gap: 3px !important; justify-content: flex-start !important; align-items: center !important; }
+:where(.bpx-97) { display: flex !important; flex-wrap: nowrap !important; gap: 3px !important; justify-content: flex-start !important; align-items: center !important; }
 :where(.bpx-98) { display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 18px !important; background: linear-gradient(110deg,#f0fdff,#e8fafb) !important; border-top: 1.5px solid #A5F3FC !important; flex-shrink: 0 !important; }
 :where(.bpx-99) { font-size: 11px !important; font-weight: 600 !important; color: #0891b2 !important; }
 :where(.bpx-100) { width: 100% !important; max-width: 1120px !important; max-height: calc(100vh - 48px) !important; background: #fff !important; border-radius: 16px !important; overflow: hidden !important; display: flex !important; flex-direction: column !important; box-shadow: 0 28px 70px rgba(15,23,42,.45) !important; }
@@ -644,6 +658,196 @@ const BP_CSS = `
   .seg-page .bref-box__header-sub { display: none; }
   .seg-page .bpa-tab { flex: 1 1 auto; justify-content: center; }
 }
+
+/* Page strips (title strip + "What We Are Doing Here"): same shell as the P2P
+   Supplier Management strips - 1px #9ce1ee border, 16px radius, teal glow
+   shadow, 4px rounded accent, radial glow; 600-weight strip text. Light mode
+   only (the dark rules above stay as they are). */
+html:not([data-bs-theme="dark"]) .seg-page > .seg-page-card:is(.bpx-9, :has(> .bref-box)) {
+  border: 1px solid #9ce1ee !important; border-radius: 16px !important;
+  box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(6,182,212,.2), 0 2px 8px rgba(0,0,0,.06) !important;
+}
+html:not([data-bs-theme="dark"]) .seg-page > .seg-page-card.bpx-9 {
+  background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #9ce1ee 100%) !important;
+}
+html:not([data-bs-theme="dark"]) .seg-page > .seg-page-card.bpx-9 .bpx-11 { width: 4px !important; border-radius: 16px 0 0 16px; background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490) !important; }
+html:not([data-bs-theme="dark"]) .seg-page > .seg-page-card.bpx-9 .bpx-13 {
+  background-image: radial-gradient(ellipse at 10% 50%, rgba(103,232,249,.45) 0%, transparent 50%), radial-gradient(ellipse at 90% 50%, rgba(34,211,238,.25) 0%, transparent 55%) !important;
+  background-size: auto !important;
+}
+html:not([data-bs-theme="dark"]) .seg-page .bref-box::before { width: 4px; border-radius: 16px 0 0 16px; background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490); }
+html:not([data-bs-theme="dark"]) .seg-page .bref-box__header {
+  min-height: 48px; border-bottom: 1px solid #9ce1ee;
+  background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #9ce1ee 100%);
+}
+html:not([data-bs-theme="dark"]) .seg-page .bref-box__header::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(ellipse at 10% 50%, rgba(103,232,249,.45) 0%, transparent 50%), radial-gradient(ellipse at 90% 50%, rgba(34,211,238,.25) 0%, transparent 55%);
+}
+html:not([data-bs-theme="dark"]) .seg-page .bref-box.is-collapsed .bref-box__header { border-bottom-color: transparent; }
+.seg-page .bref-box__header-label, .seg-page .bref-box__header-title { font-weight: 600; }
+.seg-page .bref-box__header-ico { box-shadow: 0 0 0 3px rgba(6,182,212,.25), 0 4px 14px rgba(8,145,178,.45); }
+
+/* Customer / Consignee list toolbar (ScopeToolbar) - same values as the P2P
+   Supplier Management toolbar (.sup-tabs / .sup-tab / .dt-search). */
+.bpt-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: 0 0 auto; padding: 14px 20px 12px; background: #fff; border-bottom: 1px solid #e6f3f7; }
+.bpt-tabs { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; height: 48px; padding: 3px; box-sizing: border-box; background: linear-gradient(180deg, #f8fbfc, #eff5f8); border: 1px solid #e3edf1; border-radius: 12px; box-shadow: inset 0 1px 3px rgba(15,58,77,.05); }
+.bpt-tab { display: inline-flex; align-items: center; gap: 9px; height: 40px; padding: 0 14px 0 6px; margin: 0; font-family: var(--font-sans); font-size: 12.5px; font-weight: 650; white-space: nowrap; color: #5f7d8b; background: transparent; border: 0; border-radius: 9px; cursor: pointer; transition: background .2s, color .2s, box-shadow .2s; }
+.bpt-tab:hover { color: #0f2d38; background: rgba(255,255,255,.65); }
+.bpt-tab__ico { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px; color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2); box-shadow: 0 3px 8px -2px rgba(8,145,178,.45); }
+.bpt-tab__c { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 18px; padding: 0 7px; border-radius: 999px; font-size: 10px; font-weight: 800; color: #0e7490; background: #ecfeff; border: 1px solid #bfe8f0; }
+.bpt-tab.is-on { color: #fff; background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee); box-shadow: 0 10px 22px -8px rgba(15,58,77,.4), 0 1px 0 rgba(255,255,255,.2) inset; }
+.bpt-tab.is-on:hover { color: #fff; }
+.bpt-tab.is-on .bpt-tab__ico { background: rgba(255,255,255,.24); box-shadow: inset 0 0 0 1px rgba(255,255,255,.4); }
+.bpt-tab.is-on .bpt-tab__c { color: #fff; background: rgba(255,255,255,.25); border-color: rgba(255,255,255,.4); }
+.bpt-search { position: relative; display: flex; align-items: center; gap: 8px; flex: 0 1 665px; min-width: 220px; height: 48px; padding: 0 14px; box-sizing: border-box; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.04); color: #94a3b8; transition: border-color .16s, box-shadow .16s; }
+.bpt-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.18); }
+.bpt-search svg { flex-shrink: 0; }
+.bpt-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; font-family: inherit; font-size: 12.5px; font-weight: 500; color: #0f172a; }
+.bpt-search input::placeholder { color: #94a3b8; font-weight: 500; }
+[data-bs-theme="dark"] .bpt-bar { background: transparent; border-bottom-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .bpt-tabs { background: rgba(255,255,255,.04); border-color: rgba(34,211,238,.18); box-shadow: none; }
+[data-bs-theme="dark"] .bpt-tab { color: #cfe3ea; }
+[data-bs-theme="dark"] .bpt-tab:not(.is-on):hover { color: #fff; background: rgba(34,211,238,.12); }
+[data-bs-theme="dark"] .bpt-tab__c { color: #67e8f9; background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .bpt-tab.is-on .bpt-tab__c { color: #fff; background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.4); }
+[data-bs-theme="dark"] .bpt-search { background: rgba(255,255,255,.04); border-color: rgba(34,211,238,.3); box-shadow: none; }
+[data-bs-theme="dark"] .bpt-search input { color: var(--vz-body-color); }
+@media (max-width: 900px) {
+  .bpt-bar { flex-wrap: wrap; }
+  .bpt-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .bpt-search { flex: 1 1 100%; }
+}
+
+/* List tables on the page cards: same type scale as P2P Supplier Management
+   (header 9.5px/800 .08em #0e7490 on the pale teal band, boxed serial, mono
+   ID chip, 13px/700 names). Scoped with :where() so the dark-mode rules above
+   still win in dark mode. */
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) thead th {
+  padding: 13px 10px !important;
+  background: linear-gradient(180deg, #f0fdff, #e3f7fb) !important;
+  border-bottom: 1px solid #c9ebf2 !important;
+}
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) thead th > span {
+  font-size: 9.5px !important; font-weight: 800 !important; letter-spacing: .08em !important;
+  color: #0e7490 !important; opacity: 1 !important;
+}
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) tbody td { padding-top: 11px !important; padding-bottom: 11px !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-buyer-row { background: #fff !important; border-bottom: 1px solid #eef6f8 !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-buyer-row:hover { background: #f5feff !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bpx-67 {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: #fff; border: 1px solid #bfe9f1; box-shadow: 0 1px 2px rgba(8,145,178,.08);
+  font-size: 11px !important; font-weight: 800 !important; color: #0e7490 !important;
+  font-variant-numeric: tabular-nums;
+}
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) :is(.bpx-68, .bpx-76, .bpx-77) {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+  font-size: 12px !important; font-weight: 800 !important; letter-spacing: .02em;
+  padding: 5px 10px !important; border-radius: 8px !important;
+  color: #0e7490 !important; background: #f0fdff !important; border: 1px solid #a5e9f5 !important;
+}
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bpx-69 { font-size: 13px !important; font-weight: 700 !important; color: #0f172a !important; }
+:where(.bcm-overlay .bpx-49) :is(.bpx-72, th:first-child > span) { white-space: nowrap !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bpx-72 { font-size: 12.5px !important; font-weight: 600 !important; color: #334155 !important; }
+/* Count tiles (consignees / customer / total shipments): Supplier's Mapped
+   Products tile - 40px, 15px/800, grey when 0. */
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) :is(.bpx-2, .bpx-73) {
+  width: 40px !important; height: 40px !important; border-radius: 10px !important;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490) !important;
+  box-shadow: 0 6px 14px -5px rgba(8,145,178,.6) !important;
+}
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) :is(.bpx-2, .bpx-73) .bpx-3 { font-size: 15px !important; font-weight: 800 !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) :is(.bpx-2, .bpx-73).is-zero { background: #f1f5f9 !important; border: 1px solid #e2e8f0; box-shadow: none !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) :is(.bpx-2, .bpx-73).is-zero .bpx-3 { color: #94a3b8 !important; }
+/* Document progress pills: Supplier status-pill scale. */
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-prog { font-size: 12px !important; font-weight: 800 !important; padding: 3px 11px !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-prog .bpx-1 { font-size: 10px !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-prog + div { width: 64px !important; }
+/* Segment chip + "+N": Supplier's segment pill scale. */
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-seg-chip { font-size: 11.5px !important; font-weight: 500 !important; padding: 3px 6px 3px 11px !important; }
+:where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bpx-8 { height: 22px !important; min-width: 26px !important; font-size: 10.5px !important; }
+/* Popups: same shell as P2P Supplier "Mapped Products" (pale body, table in a
+   white rounded card, white footer with a plain 40px Close). */
+.bcm-overlay :is(.bpx-84, .bpx-100) { border-radius: 22px !important; background: #f7fdfe !important; box-shadow: 0 40px 90px -30px rgba(8,47,73,.7), 0 0 0 1px rgba(14,116,144,.08) !important; }
+.bcm-overlay .bpx-85 { padding: 18px 24px !important; background: linear-gradient(120deg, #0b4f63 0%, #0e7490 38%, #0891b2 72%, #22d3ee 100%) !important; }
+.bcm-overlay .bpx-94 { padding: 18px 22px 14px !important; background: #f7fdfe !important; }
+.bp-pop-card { background: #fff; border: 1px solid #dceef3; border-radius: 14px; box-shadow: 0 2px 12px rgba(14,116,144,.06); overflow: hidden; }
+.bcm-overlay .bpx-98 { padding: 8px 8px 8px 14px !important; background: #fff !important; border-top: 1px solid #e3f1f5 !important; }
+.bcm-overlay .bpx-99 { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 999px; background: #fff; border: 1px solid #dceef3; font-size: 12px !important; font-weight: 600 !important; color: #475569 !important; }
+.bcm-overlay .bpx-99 strong { color: #0e7490; font-weight: 800; }
+.bp-pop-close { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 20px; border-radius: 11px; background: #fff; border: 1px solid #e2e8f0; color: #334155; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.bp-pop-close:hover { border-color: #a5e9f5; color: #0e7490; background: #f0fdff; }
+:where(.bcm-overlay .bpx-49) thead th:nth-child(-n+3) > span { white-space: nowrap !important; }
+[data-bs-theme="dark"] .bcm-overlay :is(.bpx-84, .bpx-100), [data-bs-theme="dark"] .bcm-overlay .bpx-94 { background: #0f1b24 !important; }
+[data-bs-theme="dark"] .bp-pop-card { background: rgba(255,255,255,.02); border-color: rgba(34,211,238,.18); box-shadow: none; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-98 { background: #0f1b24 !important; border-top-color: rgba(34,211,238,.16) !important; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-99 { background: rgba(255,255,255,.05); border-color: rgba(34,211,238,.25); color: #9cc3cf !important; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-99 strong { color: #67e8f9; }
+[data-bs-theme="dark"] .bp-pop-close { background: rgba(255,255,255,.05); border-color: rgba(34,211,238,.3); color: #cfe3ea; }
+[data-bs-theme="dark"] .bp-pop-close:hover { color: #fff; background: rgba(34,211,238,.12); }
+/* Transaction wise tables: same white table as the Party wise lists (header
+   text has no span here, so the th itself carries the type). Tabs and the
+   card header are left as they are. */
+html:not([data-bs-theme="dark"]) :is(.bpx-46, .bpx-48, .bpx-47) { background: #fff !important; }
+/* Its header band: white like the Party wise toolbar, search box = .bpt-search. */
+.seg-page-card > .bpx-39 { padding: 14px 20px 12px !important; min-height: 0 !important; gap: 16px; }
+html:not([data-bs-theme="dark"]) .seg-page-card > .bpx-39 { background: #fff !important; border-bottom: 1px solid #e6f3f7 !important; }
+.seg-page-card > .bpx-39 .bpx-27 { width: 38px !important; height: 38px !important; border-radius: 11px !important; }
+.seg-page-card > .bpx-39 .bpx-40 { font-size: 14px !important; font-weight: 700 !important; letter-spacing: -.3px !important; }
+.seg-page-card > .bpx-39 .bpx-42 { font-size: 10.5px !important; color: #0e7490 !important; }
+.seg-page-card > .bpx-39 .bpx-43 { flex: 0 1 665px !important; min-width: 220px !important; height: 48px !important; padding: 0 14px !important; gap: 8px !important; box-sizing: border-box !important; background: #fff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; box-shadow: 0 1px 2px rgba(15,23,42,.04) !important; }
+.seg-page-card > .bpx-39 .bpx-43:focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(34,211,238,.18) !important; }
+.seg-page-card > .bpx-39 .bpx-44 { width: 15px !important; height: 15px !important; stroke: #94a3b8 !important; }
+.seg-page-card > .bpx-39 .bpx-45 { font-size: 12.5px !important; color: #0f172a !important; }
+.seg-page-card > .bpx-39 .bpx-45::placeholder { color: #94a3b8 !important; }
+[data-bs-theme="dark"] .seg-page-card > .bpx-39 .bpx-43 { background: rgba(255,255,255,.04) !important; border-color: rgba(34,211,238,.3) !important; box-shadow: none !important; }
+[data-bs-theme="dark"] .seg-page-card > .bpx-39 .bpx-45 { color: var(--vz-body-color) !important; }
+.bpx-48 .bpx-49 thead th { font-size: 9.5px !important; font-weight: 800 !important; letter-spacing: .08em !important; color: #0e7490 !important; text-transform: uppercase; white-space: nowrap; }
+html:not([data-bs-theme="dark"]) .bpx-48 .bpx-49 tbody tr { background: #fff !important; border-bottom: 1px solid #eef6f8 !important; }
+html:not([data-bs-theme="dark"]) .bpx-48 .bpx-49 tbody tr:hover { background: #f5feff !important; }
+.bpx-48 .bpx-49 tbody td { padding-top: 11px !important; padding-bottom: 11px !important; }
+[data-bs-theme="dark"] .bpx-48 .bpx-49 thead th { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .bpx-48 .bpx-49 tbody tr { background: transparent !important; border-bottom-color: rgba(255,255,255,.06) !important; }
+[data-bs-theme="dark"] .bpx-48 .bpx-49 tbody tr:hover { background: rgba(8,145,178,.14) !important; }
+
+/* PartyTab row (Customer / Consignee Transactions) = Supplier .sup-kinds. */
+.bpk-tabs { display: flex; align-items: stretch; gap: 22px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; padding: 14px 24px 0; background: #fff; border-bottom: 1px solid #e6f3f7; }
+.bpk-tab { position: relative; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; height: 40px; box-sizing: border-box; padding: 0 2px 9px; margin: 0; border: 0; background: transparent; white-space: nowrap; cursor: pointer; font-family: var(--font-sans); font-size: 12.5px; font-weight: 700; letter-spacing: -.1px; color: #94a3b8; transition: color .18s ease; }
+.bpk-tab::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2.5px; border-radius: 3px 3px 0 0; background: transparent; }
+.bpk-tab__ico { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 7px; background: #f1f5f9; color: #94a3b8; transition: all .2s ease; }
+.bpk-tab__c { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 20px; padding: 0 9px; box-sizing: border-box; border-radius: 999px; border: 1.5px solid #e2e8f0; background: #f1f5f9; color: #64748b; font-size: 10px; font-weight: 800; transition: all .2s ease; }
+.bpk-tab.is-on { color: #0c4a6e; }
+.bpk-tab.is-on::after { background: linear-gradient(90deg, #22d3ee, #0891b2); }
+.bpk-tab.is-on .bpk-tab__ico { color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490); box-shadow: 0 3px 8px -2px rgba(8,145,178,.5); }
+.bpk-tab.is-on .bpk-tab__c { color: #0e7490; background: linear-gradient(135deg, #d0fbff, #a8f1fa); border-color: #67e8f9; box-shadow: 0 2px 6px -1px rgba(8,145,178,.32); }
+.bpk-tab:not(.is-on):hover { color: #0e7490; }
+.bpk-tab:not(.is-on):hover .bpk-tab__ico { color: #0891b2; background: #e6f9fd; }
+.bpk-tab:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; border-radius: 6px; }
+[data-bs-theme="dark"] .bpk-tabs { background: transparent; border-bottom-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .bpk-tab { color: #6b86a0; }
+[data-bs-theme="dark"] .bpk-tab.is-on { color: #e0f7fb; }
+[data-bs-theme="dark"] .bpk-tab__ico { color: #6b86a0; background: rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .bpk-tab__c { color: #94a8bb; background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .bpk-tab.is-on .bpk-tab__c { color: #a5f3fc; background: linear-gradient(135deg, rgba(34,211,238,.22), rgba(8,145,178,.3)); border-color: rgba(103,232,249,.55); box-shadow: none; }
+[data-bs-theme="dark"] .bpk-tab:not(.is-on):hover { color: #a5f3fc; }
+
+/* Evidence Vault: Supplier's 40px text button. */
+.bp-vault-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; padding: 0 14px; border: 0; border-radius: 10px; cursor: pointer; white-space: nowrap; font-family: inherit; font-size: 12px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490); box-shadow: 0 6px 14px -5px rgba(8,145,178,.6); transition: filter .15s, box-shadow .15s; }
+.bp-vault-btn svg { width: 14px; height: 14px; }
+.bp-vault-btn:hover:not(:disabled) { filter: brightness(1.06); box-shadow: 0 8px 18px -6px rgba(8,145,178,.7); }
+.bp-vault-btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+[data-bs-theme="dark"] :where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) :is(.bpx-2, .bpx-73).is-zero { background: rgba(255,255,255,.05) !important; border-color: rgba(255,255,255,.1); }
+[data-bs-theme="dark"] :where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) thead th {
+  background: linear-gradient(180deg, rgba(34,211,238,.14), rgba(34,211,238,.08)), #0e1b24 !important;
+  border-bottom-color: rgba(34,211,238,.22) !important;
+}
+[data-bs-theme="dark"] :where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) thead th > span { color: #67e8f9 !important; }
+[data-bs-theme="dark"] :where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-buyer-row { background: transparent !important; border-bottom-color: rgba(255,255,255,.06) !important; }
+[data-bs-theme="dark"] :where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bp-buyer-row:hover { background: rgba(8,145,178,.14) !important; }
+[data-bs-theme="dark"] :where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) .bpx-67 { background: transparent; border-color: rgba(34,211,238,.3); color: #67e8f9 !important; }
+[data-bs-theme="dark"] :where(.seg-page-card .bpx-49, .bcm-overlay .bpx-49) :is(.bpx-68, .bpx-76, .bpx-77) { color: #67e8f9 !important; background: rgba(34,211,238,.08) !important; border-color: rgba(34,211,238,.3) !important; }
 `;
 
 /* 9.5px/800 at .07em - the house table header (DataTable.css .dt-table thead
@@ -693,20 +897,6 @@ function cardHoverOut(e: React.MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.borderColor = '#A5F3FC';
   e.currentTarget.style.boxShadow = '0 1px 3px rgba(6,182,212,.07)';
 }
-/* CLM's tab: 40px, 0 14px, radius 8, 12.5/650 — the same figures the
-   party-wise scope tabs above use. These were sized by padding alone (8px 16
-   at 12/700), so their height fell out of the font metrics and landed a few
-   pixels off the module's one tab height, on a different radius and weight
-   besides. Height is explicit with border-box so the row cannot drift again
-   if the label or the glyph changes. */
-const neqTabStyle = (on: boolean): CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-  height: 40, boxSizing: 'border-box', padding: '0 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
-  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, whiteSpace: 'nowrap', color: on ? '#fff' : '#0e7490',
-  background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#e0f7fa',
-  boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none',
-});
-
 function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onClick?: () => void }) {
   const { d, t } = obj;
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
@@ -741,7 +931,7 @@ function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onCl
 
 function NumBadge({ n }: { n: number }) {
   return (
-    <div className="bpx-2">
+    <div className={`bpx-2${n ? '' : ' is-zero'}`}>
       <span className="bpx-3">{n}</span>
     </div>
   );
@@ -786,12 +976,10 @@ function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box';
     <td className="bpx-4" onClick={(e) => e.stopPropagation()}>
       <Tooltip label={icon === 'shield' ? 'Shipment Evidence Vault' : 'Opportunity Evidence Vault'}>
         <button
+          type="button"
+          className="bp-vault-btn"
           onClick={onClick}
           disabled={disabled}
-          /* 40px at 12.5px - the house button (it was ~24px with 10px text). */
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: 40, boxSizing: 'border-box', padding: '0 14px', borderRadius: '8px', border: '1.5px solid rgba(6,182,212,.3)', background: 'linear-gradient(135deg,#f0fdff,#e8fbfd)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, fontFamily: 'inherit', fontSize: '12.5px', fontWeight: 700, color: '#0891b2', transition: 'all .15s', whiteSpace: 'nowrap' }}
-          onMouseEnter={(e) => { if (disabled) return; e.currentTarget.style.background = 'linear-gradient(135deg,#06b6d4,#0891b2)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#0891b2'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'linear-gradient(135deg,#f0fdff,#e8fbfd)'; e.currentTarget.style.color = '#0891b2'; e.currentTarget.style.borderColor = 'rgba(6,182,212,.3)'; }}
         >
           {icon === 'shield'
             ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" strokeWidth="2.5" /></svg>
@@ -809,11 +997,11 @@ const stickyThead: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, back
    border, as .clm-tab does: the pixel exists only so selecting a tab does
    not move the rail. Drawn for real it made every inactive tab an outlined
    box sitting inside the rail's own outline. */
-const idChip: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#0891b2', background: 'linear-gradient(135deg,rgba(8,145,178,.1),rgba(6,182,212,.06))', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(6,182,212,.25)' };
-const oppChip: CSSProperties = { fontSize: '10.5px', fontWeight: 600, color: '#4338CA', background: '#EEF2FF', padding: '2px 7px', borderRadius: '6px', border: '1px solid #C7D2FE' };
+const idChip: CSSProperties = { fontFamily: "'JetBrains Mono',ui-monospace,monospace", fontSize: '12px', fontWeight: 800, letterSpacing: '.02em', color: '#0e7490', background: '#f0fdff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #a5e9f5', whiteSpace: 'nowrap' };
+const oppChip: CSSProperties = { fontFamily: "'JetBrains Mono',ui-monospace,monospace", fontSize: '12px', fontWeight: 800, letterSpacing: '.02em', color: '#4338CA', background: '#EEF2FF', padding: '5px 10px', borderRadius: '8px', border: '1px solid #C7D2FE', whiteSpace: 'nowrap' };
 const oppChipMono: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#4338CA', background: '#EEF2FF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #C7D2FE' };
-const piChip: CSSProperties = { fontSize: '10.5px', fontWeight: 600, color: '#7c3aed', background: '#f5f3ff', padding: '2px 7px', borderRadius: '6px', border: '1px solid #ddd6fe' };
-const customerTd: CSSProperties = { padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', textAlign: 'left', whiteSpace: 'nowrap' };
+const piChip: CSSProperties = { fontSize: '12px', fontWeight: 700, color: '#7c3aed', background: '#f5f3ff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #ddd6fe', whiteSpace: 'nowrap' };
+const customerTd: CSSProperties = { padding: '11px 11px', fontSize: '13px', fontWeight: 700, color: '#0f172a', textAlign: 'left', whiteSpace: 'nowrap' };
 
 function txnRowHover(bg: string) {
   return {
@@ -967,7 +1155,7 @@ export default function ClmBuyerProfilePage() {
     const extra = segs.length - 1;
     return <span className="bpx-6">
       <span style={{ maxWidth: SEG_CHIP_COL, flexShrink: 1, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
-        <Tooltip label={segs[0]}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, boxSizing: 'border-box', minWidth: 0 }}><span className="bpx-7">{segs[0]}</span><SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
+        <Tooltip label={segs[0]}><span className="bp-seg-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, boxSizing: 'border-box', minWidth: 0 }}><span className="bpx-7">{segs[0]}</span><SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
       </span>
       {extra > 0 && (
         <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} className="bpx-8">+{extra}</button></Tooltip>
@@ -1013,6 +1201,14 @@ export default function ClmBuyerProfilePage() {
 
   const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
   const buyerTotal = scopedBuyers.length;
+  const buyerScopeCounts = useMemo(() => {
+    const dom = bpBuyerData.filter((r) => isDomesticBuyer(r.country)).length;
+    return { domestic: dom, international: bpBuyerData.length - dom };
+  }, [bpBuyerData]);
+  const consScopeCounts = useMemo(() => {
+    const dom = bpConsData.filter((r) => isDomesticCountry(r.country)).length;
+    return { domestic: dom, international: bpConsData.length - dom };
+  }, [bpConsData]);
   const buyerCompliant = scopedBuyers.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
   const partyPending = <T extends { kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog }>(
     rows: T[], pick: (r: T) => Prog,
@@ -1240,17 +1436,16 @@ export default function ClmBuyerProfilePage() {
 
           <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: txnCardFill, maxHeight: txnCardFill }}>
             <div className="bpx-39">
-              <div className="bpx-26">
-                <div className="bpx-27">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-                </div>
-                <div>
-                  <div className="bpx-28">
-                    <span className="bpx-40">International Transactions</span>
-                    <span className="bpx-41">With Shipment ID</span>
-                  </div>
-                  <div className="bpx-42">Cross-border shipment-linked transactions mapped to customers, opportunities &amp; compliance progress.</div>
-                </div>
+              {/* Customer = / ≠ Consignee tabs sit where the "International
+                  Transactions" heading was - Supplier Management tab look. */}
+              <div className="bpt-tabs" role="tablist">
+                {shipTab === 'with' ? <>
+                  <SubTab active={wsSub === 'eq'} kind="eq" count={wsEqRows.length} onClick={() => setWsSub('eq')} />
+                  <SubTab active={wsSub === 'neq'} kind="neq" count={wsNeqRows.length} onClick={() => setWsSub('neq')} />
+                </> : <>
+                  <SubTab active={wosSub === 'eq'} kind="eq" count={wosEqRows.length} onClick={() => setWosSub('eq')} />
+                  <SubTab active={wosSub === 'neq'} kind="neq" count={wosNeqRows.length} onClick={() => setWosSub('neq')} />
+                </>}
               </div>
               <div className="bpx-43">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" className="bpx-44"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -1261,10 +1456,6 @@ export default function ClmBuyerProfilePage() {
 
             {shipTab === 'with' && (
               <div className="bpx-46">
-                <div className="bpx-47">
-                  <SubTab active={wsSub === 'eq'} kind="eq" onClick={() => setWsSub('eq')} />
-                  <SubTab active={wsSub === 'neq'} kind="neq" onClick={() => setWsSub('neq')} />
-                </div>
 
                 {wsSub === 'eq' && (
                   <div ref={txnTableRef} className="bpx-48">
@@ -1281,7 +1472,7 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.shp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-50"><span className="bpx-67">{r.sr}</span></td>
                               <td className="bpx-51"><span style={idChip}>{r.shp}</span></td>
                               <td className="bpx-51"><span style={oppChip}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
@@ -1308,9 +1499,9 @@ export default function ClmBuyerProfilePage() {
 
                 {wsSub === 'neq' && (
                   <div ref={txnTableRef} className="bpx-48">
-                    <div className="bpx-53">
-                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer Transactions</button>
-                      <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
+                    <div className="bpk-tabs" role="tablist">
+                      <PartyTab party="buyer" active={neqParty === 'buyer'} count={wsNeqRows.length} onClick={() => setNeqParty('buyer')} />
+                      <PartyTab party="consignee" active={neqParty === 'consignee'} count={wsNeqRows.length} onClick={() => setNeqParty('consignee')} />
                     </div>
                     <table className="bpx-49">
                       <thead style={stickyThead}>
@@ -1325,7 +1516,7 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.shp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-50"><span className="bpx-67">{r.sr}</span></td>
                               <td className="bpx-51"><span style={idChip}>{r.shp}</span></td>
                               <td className="bpx-51"><span style={oppChip}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
@@ -1357,10 +1548,6 @@ export default function ClmBuyerProfilePage() {
 
             {shipTab === 'without' && (
               <div className="bpx-46">
-                <div className="bpx-47">
-                  <SubTab active={wosSub === 'eq'} kind="eq" onClick={() => setWosSub('eq')} />
-                  <SubTab active={wosSub === 'neq'} kind="neq" onClick={() => setWosSub('neq')} />
-                </div>
 
                 {wosSub === 'eq' && (
                   <div ref={txnTableRef} className="bpx-48">
@@ -1377,7 +1564,7 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.opp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-50"><span className="bpx-67">{r.sr}</span></td>
                               <td className="bpx-51"><span className="bpx-54">—</span></td>
                               <td className="bpx-51"><span style={oppChipMono}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
@@ -1401,9 +1588,9 @@ export default function ClmBuyerProfilePage() {
 
                 {wosSub === 'neq' && (
                   <div ref={txnTableRef} className="bpx-48">
-                    <div className="bpx-53">
-                      <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer Transactions</button>
-                      <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
+                    <div className="bpk-tabs" role="tablist">
+                      <PartyTab party="buyer" active={neqParty === 'buyer'} count={wosNeqRows.length} onClick={() => setNeqParty('buyer')} />
+                      <PartyTab party="consignee" active={neqParty === 'consignee'} count={wosNeqRows.length} onClick={() => setNeqParty('consignee')} />
                     </div>
                     <table className="bpx-49">
                       <thead style={stickyThead}>
@@ -1418,7 +1605,7 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.opp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-50"><span className="bpx-67">{r.sr}</span></td>
                               <td className="bpx-51"><span className="bpx-54">—</span></td>
                               <td className="bpx-51"><span style={oppChipMono}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
@@ -1482,7 +1669,7 @@ export default function ClmBuyerProfilePage() {
                 {bpaTab === 'buyer' && (
                   <div className="bpx-37">
                     {[
-                      { num: pad(buyerTotal), label: `Total ${buyerScope === 'domestic' ? 'Domestic' : 'International'} Customers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
+                      { num: pad(buyerTotal), label: `${buyerScope === 'domestic' ? 'Domestic' : 'International'} Customers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(buyerCompliant), label: 'Compliant Customers', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
                       { num: pad(buyerKyc), label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
                       { num: pad(buyerDd), label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
@@ -1506,7 +1693,7 @@ export default function ClmBuyerProfilePage() {
                 {bpaTab === 'consignee' && (
                   <div className="bpx-37">
                     {[
-                      { num: pad(consTotal), label: `Total ${consScope === 'domestic' ? 'Domestic' : 'International'} Consignees`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
+                      { num: pad(consTotal), label: `${consScope === 'domestic' ? 'Domestic' : 'International'} Consignees`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(consCompliant), label: 'Compliant Consignees', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
                       { num: pad(consKyc), label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
                       { num: pad(consDd), label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
@@ -1534,42 +1721,8 @@ export default function ClmBuyerProfilePage() {
           {bpaTab === 'buyer' && (
             <div>
               <div ref={buyerCardRef} className="seg-page-card" style={{ marginTop: 8, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: buyerCardFill, maxHeight: buyerCardFill }}>
-                <div className="bpx-59">
-                  <div className="bpx-26">
-                    <div className="bpx-60">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-                    </div>
-                    <div>
-                      <div className="bpx-40">Customer List</div>
-                      <div className="bpx-61">{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : `${buyerListTotal} registered across all segments`}</div>
-                    </div>
-                  </div>
-                  <div className="bpx-34">
-                    <div className="bpx-62">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} className="bpx-63" />
-                      <SearchClear show={buyerSearch} onClear={() => { setBuyerSearch(''); }} />
-                    </div>
-                    <div className="bpx-64">
-                      {([['international', 'International Customers'], ['domestic', 'Domestic Customers']] as const).map(([key, label]) => {
-                        const on = buyerScope === key;
-                        return (
-                          <button key={key} onClick={() => { setBuyerScope(key); setBuyerPage(1); }} className={on ? undefined : 'bpx-tab'} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
-                            fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap',
-                            transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
-                            ...(on
-                              ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
-                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid transparent', color: '#0e7490' }) }}>
-                            {key === 'international'
-                              ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-                              : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
+                <ScopeToolbar noun="Customers" scope={buyerScope} onScope={(k) => { setBuyerScope(k); setBuyerPage(1); }} counts={buyerScopeCounts}
+                  search={buyerSearch} onSearch={(v) => { setBuyerSearch(v); setBuyerPage(1); }} />
                 <div className="bpx-65" ref={buyerTableRef} style={!bpLoading && buyerSlice.length === 0 ? { display: 'flex', flexDirection: 'column' } : undefined}>
                   <table className="bpx-49">
                     <thead style={stickyThead}>
@@ -1597,7 +1750,7 @@ export default function ClmBuyerProfilePage() {
                             </td>
                             <td className="bpx-72">{r.country}</td>
                             <td className="bpx-51" onClick={(e) => e.stopPropagation()}>
-                              <Tooltip label="View consignees for this customer"><div className="bpx-73"
+                              <Tooltip label="View consignees for this customer"><div className={`bpx-73${r.cn ? '' : ' is-zero'}`}
                                 onClick={() => setConsListBuyer(r)}
                                 onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(6,182,212,.45)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}>
@@ -1612,7 +1765,7 @@ export default function ClmBuyerProfilePage() {
                             <ProgCell obj={r.agr} onClick={() => openBuyerDocs(r, 'agr')} />
                             <td className="bpx-74" onClick={(e) => e.stopPropagation()}>
                               <div className="bpx-75">
-                                <Tooltip label="Evidence Vault"><button style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openBuyerVault(r, 'company-dd')}><VaultIcon /></button></Tooltip>
+                                <button type="button" className="bp-vault-btn" disabled={!r.db_id} onClick={() => openBuyerVault(r, 'company-dd')}><VaultIcon />Evidence Vault</button>
                               </div>
                             </td>
                           </tr>
@@ -1635,42 +1788,8 @@ export default function ClmBuyerProfilePage() {
           {bpaTab === 'consignee' && (
             <div>
               <div ref={consCardRef} className="seg-page-card" style={{ marginTop: 8, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: consCardFill, maxHeight: consCardFill }}>
-                <div className="bpx-59">
-                  <div className="bpx-26">
-                    <div className="bpx-60">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
-                    </div>
-                    <div>
-                      <div className="bpx-40">Consignee List</div>
-                      <div className="bpx-61">{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : `${consListTotal} registered across all customers`}</div>
-                    </div>
-                  </div>
-                  <div className="bpx-34">
-                    <div className="bpx-62">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} className="bpx-63" />
-                      <SearchClear show={consSearch} onClear={() => { setConsSearch(''); }} />
-                    </div>
-                    <div className="bpx-64">
-                      {([['international', 'International Consignees'], ['domestic', 'Domestic Consignees']] as const).map(([key, label]) => {
-                        const on = consScope === key;
-                        return (
-                          <button key={key} onClick={() => { setConsScope(key); setConsPage(1); }} className={on ? undefined : 'bpx-tab'} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
-                            fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap',
-                            transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
-                            ...(on
-                              ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
-                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid transparent', color: '#0e7490' }) }}>
-                            {key === 'international'
-                              ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-                              : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
+                <ScopeToolbar noun="Consignees" scope={consScope} onScope={(k) => { setConsScope(k); setConsPage(1); }} counts={consScopeCounts}
+                  search={consSearch} onSearch={(v) => { setConsSearch(v); setConsPage(1); }} />
                 <div className="bpx-65" ref={consTableRef} style={!bpLoading && consSlice.length === 0 ? { display: 'flex', flexDirection: 'column' } : undefined}>
                   <table className="bpx-49">
                     <thead style={stickyThead}>
@@ -1716,7 +1835,7 @@ export default function ClmBuyerProfilePage() {
                             <ProgCell obj={r.agr} onClick={() => openConsDocs(r, 'agr')} />
                             <td className="bpx-74" onClick={(e) => e.stopPropagation()}>
                               <div className="bpx-75">
-                                <Tooltip label="Evidence Vault"><button style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openConsVault(r, 'company-dd')}><VaultIcon /></button></Tooltip>
+                                <button type="button" className="bp-vault-btn" disabled={!r.db_id} onClick={() => openConsVault(r, 'company-dd')}><VaultIcon />Evidence Vault</button>
                               </div>
                             </td>
                           </tr>
@@ -1786,6 +1905,38 @@ export default function ClmBuyerProfilePage() {
   );
 }
 
+/* Customer / Consignee list toolbar, laid out like P2P Supplier Management:
+   white band, International / Domestic tabs (icon tile, label, count) on the
+   left, the search box on the right. */
+type Scope = 'international' | 'domestic';
+function ScopeToolbar({ noun, scope, onScope, counts, search, onSearch }: {
+  noun: string; scope: Scope; onScope: (s: Scope) => void; counts: Record<Scope, number>;
+  search: string; onSearch: (v: string) => void;
+}) {
+  return (
+    <div className="bpt-bar">
+      <div className="bpt-tabs" role="tablist">
+        {(['international', 'domestic'] as const).map((key) => (
+          <button key={key} type="button" role="tab" aria-selected={scope === key} className={`bpt-tab${scope === key ? ' is-on' : ''}`} onClick={() => onScope(key)}>
+            <span className="bpt-tab__ico">
+              {key === 'international'
+                ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
+            </span>
+            {key === 'international' ? 'International' : 'Domestic'} {noun}
+            <span className="bpt-tab__c">{counts[key]}</span>
+          </button>
+        ))}
+      </div>
+      <div className="bpt-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+        <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={search} onChange={(e) => onSearch(e.target.value)} />
+        <SearchClear show={search} onClear={() => onSearch('')} />
+      </div>
+    </div>
+  );
+}
+
 function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string }) {
   const [open, setOpen] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
   const segs = names.map((s) => s.trim()).filter(Boolean);
@@ -1799,9 +1950,11 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
     setOpen({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
   };
   return <>
-    <Tooltip label={segs[0]}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, verticalAlign: 'middle', fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0].length > 30 ? `${segs[0].slice(0, 30)}…` : segs[0]}<SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
+    {/* Same chip as the list's renderSegCell: capped width with an ellipsis,
+        so the "+N" stays on the same line instead of dropping below. */}
+    <Tooltip label={segs[0]}><span className="bp-seg-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, boxSizing: 'border-box', minWidth: 0 }}><span className="bpx-7">{segs[0]}</span><SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
     {segs.length > 1 && (
-      <Tooltip label="View all segments"><button type="button" onClick={toggle} className="bpx-81">+{segs.length - 1}</button></Tooltip>
+      <Tooltip label="View all segments"><button type="button" onClick={toggle} className="bpx-8">+{segs.length - 1}</button></Tooltip>
     )}
     {open && createPortal(
       <>
@@ -1853,6 +2006,7 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
         </div>
 
         <div className="bpx-94">
+          <div className="bp-pop-card">
           <table className="bpx-49">
             <thead>
               <tr style={txnTableHeaderRow}>
@@ -1883,10 +2037,14 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div className="bpx-98">
           <span className="bpx-99">Showing <strong>{rows.length}</strong> consignee{rows.length === 1 ? '' : 's'}</span>
+          <button type="button" className="bp-pop-close" onClick={onClose}>
+            Close
+          </button>
         </div>
       </div>
     </div>,
@@ -1928,6 +2086,7 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
         </div>
 
         <div className="bpx-94">
+          <div className="bp-pop-card">
           <table className="bpx-49">
             <thead>
               <tr style={txnTableHeaderRow}>
@@ -1957,10 +2116,14 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div className="bpx-98">
           <span className="bpx-99">Consignee <strong>{consignee.id}</strong> → <strong>{customers.length}</strong> mapped customer{customers.length === 1 ? '' : 's'}</span>
+          <button type="button" className="bp-pop-close" onClick={onClose}>
+            Close
+          </button>
         </div>
       </div>
     </div>,
@@ -1968,22 +2131,33 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
   );
 }
 
-function SubTab({ active, kind, onClick }: { active: boolean; kind: 'eq' | 'neq'; onClick: () => void }) {
+/* Customer / Consignee Transactions: P2P Supplier's type tabs (.sup-kind) -
+   icon tile, label, count pill, teal underline on the active one. */
+function PartyTab({ party, active, count, onClick }: { party: 'buyer' | 'consignee'; active: boolean; count: number; onClick: () => void }) {
+  return (
+    <button type="button" role="tab" aria-selected={active} className={`bpk-tab${active ? ' is-on' : ''}`} onClick={onClick}>
+      <span className="bpk-tab__ico" aria-hidden>
+        {party === 'buyer'
+          ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+          : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>}
+      </span>
+      {party === 'buyer' ? 'Customer Transactions' : 'Consignee Transactions'}
+      <span className="bpk-tab__c">{count}</span>
+    </button>
+  );
+}
+
+function SubTab({ active, kind, count, onClick }: { active: boolean; kind: 'eq' | 'neq'; count: number; onClick: () => void }) {
   const isEq = kind === 'eq';
   return (
-    <button onClick={onClick} style={{
-      position: 'relative', padding: '9px 18px 10px', fontFamily: 'inherit', fontSize: '12px',
-      fontWeight: active ? 700 : 600, border: 'none', background: 'transparent', cursor: 'pointer',
-      color: active ? '#0891b2' : '#64748b', borderBottom: active ? '2.5px solid #0891b2' : '2.5px solid transparent',
-      marginBottom: '-1.5px', display: 'inline-flex', alignItems: 'center', gap: '6px', transition: 'color .15s', whiteSpace: 'nowrap',
-    }}>
-      {isEq
-        ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-        : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="17" y1="11" x2="23" y2="11" /><line x1="17" y1="15" x2="23" y2="15" /></svg>}
+    <button type="button" role="tab" aria-selected={active} className={`bpt-tab${active ? ' is-on' : ''}`} onClick={onClick}>
+      <span className="bpt-tab__ico">
+        {isEq
+          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="17" y1="11" x2="23" y2="11" /></svg>}
+      </span>
       {isEq ? 'Customer = Consignee' : 'Customer ≠ Consignee'}
-      {isEq
-        ? <span className="bpx-102">SAME</span>
-        : <span className="bpx-103">DIFF</span>}
+      <span className="bpt-tab__c">{count}</span>
     </button>
   );
 }
