@@ -204,25 +204,35 @@ class LeaveRequestController extends Controller
 
         $ptConfig  = json_decode((string) $ptConfigRaw, true);
         $accrual   = (is_array($ptConfig) ? $ptConfig['accrual'] ?? [] : []);
-        $unlimited = (bool) ($accrual['unlimited'] ?? false);
+        $unlimited = \App\Support\LeaveCarry::isUnlimitedYear((array) $accrual, \App\Support\LeaveYear::of($from));
 
         $leaveApp = (is_array($ptConfig) ? $ptConfig['leaveApp'] ?? [] : []);
-        $days = $this->computeLeaveDays($from, $to, $dayType, $employee);
+        $days = $this->computeLeaveDays($from, $to, $dayType, $employee, null, false, true);
 
         if ($dayType !== 'full' && !(bool) ($ptConfig['leaveApp']['allowHalfDay'] ?? false)) {
             abort(422, 'This leave type does not allow half-day leave.');
         }
         if (!$unlimited) {
-            $quotaDays = (float) ($accrual['yearlyQuota'] ?? 0);
+            $quotaDays = \App\Support\LeaveCarry::quotaForYear((array) $accrual, \App\Support\LeaveYear::of($from));
             $overdraft = !empty($accrual['employeeOverdraft']['enabled'])
                 ? (float) ($accrual['employeeOverdraft']['days'] ?? 0)
                 : 0.0;
+            // Scope to THIS leave's calendar year — the quota is per year, so a
+            // leave in one year must not be charged against another year's balance.
             $usedDays = (float) LeaveRequest::query()
                 ->where('employee_id', $employee->id)
                 ->where('leave_type_id', $data['leave_type_id'])
                 ->whereIn('status', ['Approved', 'Pending'])
+                ->whereYear('from_date', \App\Support\LeaveYear::of($from))
                 ->sum('days');
-            $available = max(0.0, ($quotaDays + $overdraft) - $usedDays);
+            // Opening carry-forward from prior years (0 when the rule is reset).
+            $carryIn = \App\Support\LeaveCarry::openingFor(
+                (int) $employee->id, (int) $data['leave_type_id'], \App\Support\LeaveYear::of($from),
+                (string) ($ptConfig['yearEnd']['carryForward'] ?? 'reset'),
+                (float) ($ptConfig['yearEnd']['carryForwardCap'] ?? 0),
+                (array) $accrual,
+            );
+            $available = max(0.0, ($quotaDays + $overdraft + $carryIn) - $usedDays);
             if ($days > $available) {
                 $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
                 abort(422, "Not enough leave balance — only {$fmt($available)} day(s) available for this leave type, but you requested {$fmt($days)}.");
@@ -639,6 +649,7 @@ class LeaveRequestController extends Controller
                 $employee,
                 $row->id,
                 $waived,
+                true,
             );
 
             $row->sandwich_waived         = $waived;
@@ -1021,6 +1032,7 @@ class LeaveRequestController extends Controller
         Employee $employee,
         ?int $ignoreRequestId = null,
         bool $sandwichWaived = false,
+        bool $minOneDay = false,
     ): float {
         if ($dayType !== 'full' && $from->isSameDay($to)) return 0.5;
 
@@ -1054,6 +1066,15 @@ class LeaveRequestController extends Controller
             $total += count(
                 \App\Support\SandwichPolicy::chargeableOffDays($from, $to, $isOff, $isLeave)
             );
+        }
+
+        // A full-day leave over a real date range that lands entirely on
+        // week-offs/holidays still costs at least one day — a leave is never
+        // recorded as 0 days (QA #246/#247). Only the stored leave uses this
+        // floor ($minOneDay); the internal sandwich-diff keeps the raw count,
+        // and payroll recomputes its own span, so paid/LOP days are unaffected.
+        if ($minOneDay && $dayType === 'full' && $from->lte($to) && $total < 1.0) {
+            $total = 1.0;
         }
 
         return $total;

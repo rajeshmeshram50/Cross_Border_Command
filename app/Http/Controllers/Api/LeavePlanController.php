@@ -29,6 +29,31 @@ class LeavePlanController extends Controller
         ]);
     }
 
+    /** Attach, per assigned leave type, the calendar years in which any employee
+     *  has raised leave (pivot.raised_years). The config UI blocks removing a
+     *  year that already has leave against it. */
+    private static function attachRaisedYears(iterable $plans, array $planIds): void
+    {
+        if (empty($planIds)) return;
+        $map = DB::table('leave_requests')
+            ->whereIn('leave_plan_id', $planIds)
+            ->whereNotNull('from_date')
+            ->selectRaw('leave_plan_id, leave_type_id, EXTRACT(YEAR FROM from_date)::int AS y')
+            ->distinct()
+            ->get()
+            ->groupBy(fn ($r) => $r->leave_plan_id . '::' . $r->leave_type_id);
+
+        foreach ($plans as $plan) {
+            if (!$plan->relationLoaded('leaveTypes')) continue;
+            foreach ($plan->leaveTypes as $type) {
+                if (!$type->pivot) continue;
+                $rows = $map[$plan->id . '::' . $type->id] ?? collect();
+                $type->pivot->raised_years = $rows->pluck('y')
+                    ->map(fn ($v) => (int) $v)->unique()->sort()->values()->all();
+            }
+        }
+    }
+
     private static function trimEmployeeAppends(iterable $plans): void
     {
         $hide = [
@@ -91,6 +116,9 @@ class LeavePlanController extends Controller
         });
 
         self::trimEmployeeAppends($rows);
+        if ($request->boolean('with_detail')) {
+            self::attachRaisedYears($rows, $planIds);
+        }
 
         return response()->json(
             ['data' => $rows] + ($total !== null ? ['total' => $total] : [])
@@ -108,6 +136,7 @@ class LeavePlanController extends Controller
             self::detailWith(),
         ));
         self::trimEmployeeAppends([$plan]);
+        self::attachRaisedYears([$plan], [$plan->id]);
 
         return response()->json(['data' => $plan]);
     }
@@ -484,29 +513,55 @@ class LeavePlanController extends Controller
                 'lt.paid_unpaid'
             )->get();
 
+        // Balances are per calendar year (quota resets each Jan). Default to the
+        // current year; a ?year= selector lets the UI view any year's balance.
+        $year = \App\Support\LeaveYear::sanitize($request->input('year', \App\Support\LeaveYear::current()));
+
         $requestsByType = LeaveRequest::query()
             ->where('employee_id', $employeeId)
             ->whereIn('leave_type_id', $planTypeRows->pluck('leave_type_id'))
+            ->whereYear('from_date', $year)
             ->orderBy('from_date')
             ->get(['id', 'leave_type_id', 'from_date', 'to_date', 'days', 'status'])
             ->groupBy('leave_type_id');
 
-        $types = $planTypeRows->map(function ($row) use ($requestsByType, $planRow) {
+        $types = $planTypeRows->map(function ($row) use ($requestsByType, $planRow, $year, $employeeId) {
             $cfg = $row->config_json ? json_decode($row->config_json, true) : null;
             $accrual = $cfg['accrual'] ?? null;
-            $unlimited = (bool) ($accrual['unlimited'] ?? false);
-            $quota = (float) ($accrual['yearlyQuota'] ?? 0);
+            $unlimited = \App\Support\LeaveCarry::isUnlimitedYear((array) ($accrual ?? []), $year);
+            $quota = \App\Support\LeaveCarry::quotaForYear((array) ($accrual ?? []), $year);
             $overdraft = $accrual['employeeOverdraft'] ?? null;
             $extra = (!$unlimited && ($overdraft['enabled'] ?? false))
                 ? (float) ($overdraft['days'] ?? 0)
                 : 0.0;
             $reqs = $requestsByType[$row->leave_type_id] ?? collect();
 
+            // Year-end rule: carry the previous years' leftover into this year's opening.
+            $yearEnd   = $cfg['yearEnd'] ?? [];
+            $carryIn   = (!$unlimited && $quota > 0)
+                ? \App\Support\LeaveCarry::openingFor(
+                    $employeeId, (int) $row->leave_type_id, $year,
+                    (string) ($yearEnd['carryForward'] ?? 'reset'),
+                    (float) ($yearEnd['carryForwardCap'] ?? 0),
+                    (array) ($accrual ?? []),
+                )
+                : 0.0;
+
             $transactions = [];
             $balance = 0.0;
             if (!$unlimited && $quota > 0) {
                 $yearStart = self::planYearStart($planRow->from_month, $planRow->calendar_year);
-                $balance = $quota;
+                if ($carryIn > 0) {
+                    $balance += $carryIn;
+                    $transactions[] = [
+                        'date' => $yearStart->format('d M Y'),
+                        'change' => "+ " . rtrim(rtrim(number_format($carryIn, 2), '0'), '.'),
+                        'balance' => round($balance, 2),
+                        'reason' => 'Carried forward from the previous year.',
+                        'kind' => 'accrual',
+                    ];
+                }
+                $balance += $quota;
                 $transactions[] = [
                     'date' => $yearStart->format('d M Y'),
                     'change' => "+ " . rtrim(rtrim(number_format($quota, 2), '0'), '.'),
@@ -542,7 +597,29 @@ class LeavePlanController extends Controller
                 }
             }
             $used      = round($used, 2);
-            $available = $unlimited ? null : round(max(0, ($quota + $extra) - $used), 2);
+            $available = $unlimited ? null : round(max(0, ($quota + $extra + $carryIn) - $used), 2);
+
+            // Pending (awaiting approval) days consume balance server-side too, so
+            // the apply form must net them out — otherwise a type already spoken
+            // for by an in-progress request still reads as free.
+            $pending = round((float) $reqs->where('status', 'Pending')->sum('days'), 2);
+
+            // Years this type is actually set up for (per-year quota + per-year
+            // unlimited), always including the current year. The apply form limits
+            // the date picker to these — a future year is applicable only once a
+            // row for it exists in the Yearly Quota table.
+            $acc = (array) ($accrual ?? []);
+            $configYears = [];
+            foreach (array_merge(
+                is_array($acc['quotaByYear'] ?? null) ? array_keys($acc['quotaByYear']) : [],
+                is_array($acc['unlimitedYears'] ?? null) ? $acc['unlimitedYears'] : [],
+            ) as $y) {
+                $y = (int) $y;
+                if ($y >= 2000 && $y <= 2100) $configYears[] = $y;
+            }
+            $configYears[] = \App\Support\LeaveYear::current();
+            $configYears = array_values(array_unique($configYears));
+            sort($configYears);
 
             return [
                 'leave_type_id' => (int) $row->leave_type_id,
@@ -553,13 +630,26 @@ class LeavePlanController extends Controller
                 'quota' => $quota,
                 'accrued' => $unlimited ? null : round($quota, 2),
                 'extra' => $extra,
+                'carried_in' => round($carryIn, 2),
                 'used' => $used,
+                'pending' => $pending,
                 'available' => $available,
                 'unlimited' => $unlimited,
                 'allow_half_day' => (bool) ($cfg['leaveApp']['allowHalfDay'] ?? false),
+                'config_years' => $configYears,
                 'transactions' => $transactions,
             ];
         })->values();
+
+        // Years the selector can offer: every year this employee has leave in,
+        // plus the current year, newest first.
+        $years = LeaveRequest::query()
+            ->where('employee_id', $employeeId)
+            ->whereIn('leave_type_id', $planTypeRows->pluck('leave_type_id'))
+            ->selectRaw('DISTINCT EXTRACT(YEAR FROM from_date)::int AS y')
+            ->pluck('y')->map(fn ($v) => (int) $v)->all();
+        $years = array_values(array_unique(array_merge($years, [$year, \App\Support\LeaveYear::current()])));
+        rsort($years);
 
         return response()->json([
             'data' => [
@@ -570,6 +660,8 @@ class LeavePlanController extends Controller
                     'plan_id' => (int) $planRow->id,
                     'plan_name' => $planRow->plan_name,
                 ],
+                'year' => $year,
+                'years' => $years,
                 'types' => $types,
             ],
         ]);
@@ -667,6 +759,8 @@ class LeavePlanController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $branchFilter = $request->integer('branch_id') ?: null;
+        // Roster balances are per calendar year; default current, ?year= to switch.
+        $rosterYear = \App\Support\LeaveYear::sanitize($request->input('year', \App\Support\LeaveYear::current()));
 
         $planQ = LeavePlans::query();
         $this->applyScope($planQ, $user, $branchFilter);
@@ -706,8 +800,8 @@ class LeavePlanController extends Controller
         foreach ($planTypeRows as $row) {
             $cfg = $row->config_json ? json_decode($row->config_json, true) : null;
             $accrual = $cfg['accrual'] ?? null;
-            $unlimited = (bool) ($accrual['unlimited'] ?? false);
-            $quota = (float) ($accrual['yearlyQuota'] ?? 0);
+            $unlimited = \App\Support\LeaveCarry::isUnlimitedYear((array) ($accrual ?? []), $rosterYear);
+            $quota = \App\Support\LeaveCarry::quotaForYear((array) ($accrual ?? []), $rosterYear);
             $overdraft = $accrual['employeeOverdraft'] ?? null;
             $extra = (!$unlimited && ($overdraft['enabled'] ?? false))
                 ? (float) ($overdraft['days'] ?? 0)
@@ -763,6 +857,7 @@ class LeavePlanController extends Controller
             $usedRows = DB::table('leave_requests')
                 ->whereIn('employee_id', $empIds)
                 ->where('status', 'Approved')
+                ->whereYear('from_date', $rosterYear)
                 ->groupBy('employee_id', 'leave_type_id')
                 ->select('employee_id', 'leave_type_id', DB::raw('SUM(days) as used_days'))
                 ->get();
@@ -829,6 +924,7 @@ class LeavePlanController extends Controller
 
         return response()->json([
             'data' => [
+                'year' => $rosterYear,
                 'columns' => $columns,
                 'employees' => $rows,
                 'filters' => [
@@ -861,9 +957,20 @@ class LeavePlanController extends Controller
 
     private function assertPlanEditable(LeavePlans $plan): void
     {
-        if (!$plan->unlocked && $this->isPlanSetupComplete($plan->id)) {
-            abort(422, 'This leave plan is fully set up and locked. To change it, clone it into a new plan and edit that.');
+        if ($plan->unlocked || !$this->isPlanSetupComplete($plan->id)) {
+            return;
         }
+        // A plan with employees mapped stays editable — per-year quota has to be
+        // managed on live plans (add next year, set a future quota). The lock
+        // (clone-to-change) only guards configured plans nobody is on yet. The
+        // UI freezes the current/past/raised rows; only future years change.
+        $hasEmployees = DB::table('leave_plan_employees')
+            ->where('leave_plan_id', $plan->id)
+            ->exists();
+        if ($hasEmployees) {
+            return;
+        }
+        abort(422, 'This leave plan is fully set up and locked. To change it, clone it into a new plan and edit that.');
     }
 
     private function clearDefaultForBranch(?int $clientId, ?int $branchId, ?int $exceptId = null): void

@@ -93,14 +93,18 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     setNotifyOptions([]); setSelectedNotify([]); setNotifyOpen(false);
   }, [isOpen]);
 
+  // Balances are per calendar year — fetch the year the leave falls in so the
+  // "days available" and the pre-submit check match the year being applied for.
+  const leaveYear = fromDate ? (Number(fromDate.slice(0, 4)) || undefined) : undefined;
+
   useEffect(() => {
     if (!isOpen) return;
     const empId = Number(employeeId);
     if (!Number.isFinite(empId) || empId <= 0) return;
-    employeeBalancesApi.fetch(empId)
+    employeeBalancesApi.fetch(empId, leaveYear)
       .then(resp => setBalanceTypes(resp.types))
       .catch(err => console.warn('[RequestLeaveModal] balance fetch failed', err));
-  }, [isOpen, employeeId]);
+  }, [isOpen, employeeId, leaveYear]);
 
   useEffect(() => {
     // Show the spinner from the first keystroke, not from the fetch — the
@@ -155,6 +159,30 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   const allowHalf = !!selectedBalanceType?.allow_half_day;
   const singleDay = !!fromDate && fromDate === toDate;
   const isHalf = dayMode === 'custom' && singleDay && allowHalf;
+
+  // Dates are picked AFTER a type, and only within the years that type is set up
+  // for — a future year opens only once its row exists in the Yearly Quota table.
+  const configYears = selectedBalanceType?.config_years ?? [];
+  const maxApplyDate = configYears.length ? `${Math.max(...configYears)}-12-31` : undefined;
+  // Pending (awaiting-approval) days already lock balance server-side, so net
+  // them out here — otherwise a type spoken for by an in-progress request still
+  // reads as free and the submit is rejected only at the server.
+  const pendingDays = selectedBalanceType?.pending ?? 0;
+  const effectiveAvailable = (selectedBalanceType && !selectedBalanceType.unlimited)
+    ? Math.max(0, (selectedBalanceType.available ?? 0) - pendingDays)
+    : null;
+
+  // A greyed date/month/year was clicked — explain why it's blocked instead of
+  // leaving the picker silent (a past day, or a year the type has no quota for).
+  const onBlockedDate = useCallback((iso: string) => {
+    const y = Number(iso.slice(0, 4));
+    const name = selectedBalanceType?.name ?? 'This leave type';
+    if (configYears.length && !configYears.includes(y)) {
+      toast.warning(`No quota set up for ${y}`, `${name} isn't set up for ${y}. Add ${y} to the leave type's Yearly Quota first.`);
+    } else {
+      toast.warning('Date not allowed', 'Leave can’t start on a past date — pick today or a later date.');
+    }
+  }, [configYears, selectedBalanceType, toast]);
 
   // If the chosen leave type doesn't allow half days, snap back to Full day.
   useEffect(() => {
@@ -263,14 +291,30 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       return;
     }
     const selectedBalance = balanceTypes.find(t => String(t.leave_type_id) === String(leaveTypeId));
+    // Year guard — a type applies only to the years it is set up for.
+    const fromYear = Number(fromDate.slice(0, 4));
+    const cfgYears = selectedBalance?.config_years ?? [];
+    if (selectedBalance && cfgYears.length && !cfgYears.includes(fromYear)) {
+      await Swal.fire({
+        title: 'Year not set up',
+        text: `${selectedBalance.name} isn't set up for ${fromYear}. Apply within ${cfgYears.join(', ')}, or add ${fromYear} to this leave type's Yearly Quota first.`,
+        icon: 'warning', confirmButtonText: 'OK', confirmButtonColor: '#f06548',
+      });
+      return;
+    }
     if (selectedBalance && !selectedBalance.unlimited) {
-      const remaining = selectedBalance.available ?? 0;
+      // Mirror the server: pending days are already committed, so what's free to
+      // apply = available − pending.
+      const pend = selectedBalance.pending ?? 0;
+      const remaining = Math.max(0, (selectedBalance.available ?? 0) - pend);
       if (totalDays > remaining) {
         await Swal.fire({
           title: remaining <= 0 ? `No ${selectedBalance.name} balance available` : 'Not enough leave balance',
           text: remaining <= 0
-            ? `You have no ${selectedBalance.name} balance left, so this request can't be submitted.`
-            : `${selectedBalance.name} has ${remaining} day${remaining === 1 ? '' : 's'} available but you requested ${totalDays}.`,
+            ? (pend > 0
+                ? `${selectedBalance.name} is fully utilised — you already have ${pend} day${pend === 1 ? '' : 's'} awaiting approval, so you can't raise another until that request is approved or rejected.`
+                : `You have no ${selectedBalance.name} balance left, so this request can't be submitted.`)
+            : `${selectedBalance.name} has ${remaining} day${remaining === 1 ? '' : 's'} available${pend > 0 ? ` (after ${pend} pending)` : ''} but you requested ${totalDays}.`,
           icon: 'warning',
           confirmButtonText: 'OK',
           confirmButtonColor: '#f06548',
@@ -334,42 +378,8 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
         </div>
 
         <div className="lvr-body">
-          <div className="lvr-section">
-            <div className="lvr-section-title">
-              <i className="ri-calendar-line" />
-              <span>Leave Dates</span><span className="lvr-req" aria-hidden="true">*</span>
-            </div>
-            <div className="lvr-date-strip">
-              <div className="lvr-date-cell">
-                <label className="lvr-mini-label">From<span className="lvr-req" aria-hidden="true">*</span></label>
-                <MasterDatePicker
-                  value={fromDate}
-                  onChange={(v) => {
-                    setFromDate(v);
-                    if (toDate && new Date(toDate) < new Date(v)) setToDate(v);
-                  }}
-                  minDate={minStartDate}
-                  placeholder="Select date"
-                />
-              </div>
-              <div className="lvr-days-pill">
-                <div className="fw-bold" style={{ fontSize: 18, lineHeight: 1 }}>{totalDays}</div>
-                <div className="text-muted" style={{ fontSize: 10, marginTop: 2 }}>
-                  {totalDays === 1 ? 'day' : 'days'}
-                </div>
-              </div>
-              <div className="lvr-date-cell">
-                <label className="lvr-mini-label">To<span className="lvr-req" aria-hidden="true">*</span></label>
-                <MasterDatePicker
-                  value={toDate}
-                  onChange={setToDate}
-                  minDate={fromDate || minStartDate}
-                  placeholder="Select date"
-                />
-              </div>
-            </div>
-          </div>
-
+          {/* Leave Type is chosen FIRST — it decides which calendar years the
+              date pickers may offer and how many days are actually free. */}
           <div className="lvr-section">
             <div className="lvr-section-title">
               <i className="ri-bookmark-line" />
@@ -400,20 +410,93 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                  * word being added. Red for Unpaid so it reads as a cost;
                  * green for Paid. No badge at all when the leave master has no
                  * value, rather than implying "Paid". */
-                options={balanceTypes.map(t => ({
-                  value: String(t.leave_type_id),
-                  label: `${t.name} — ${t.unlimited ? 'Unlimited days available' : `${t.available ?? 0} days available`}`,
-                  ...(t.paid_unpaid ? {
-                    badge: {
-                      text: t.paid_unpaid,
-                      tone: (t.paid_unpaid === 'Unpaid' ? 'red' : 'green') as 'red' | 'green',
-                      title: t.paid_unpaid === 'Unpaid'
-                        ? 'Days taken under this type are not paid — they are deducted as loss of pay.'
-                        : 'Days taken under this type are paid.',
-                    },
-                  } : {}),
-                }))}
+                options={balanceTypes.map(t => {
+                  // Days free to apply = balance minus anything already awaiting
+                  // approval, so the dropdown shows what can truly be raised.
+                  const free = Math.max(0, (t.available ?? 0) - (t.pending ?? 0));
+                  return {
+                    value: String(t.leave_type_id),
+                    label: `${t.name} — ${t.unlimited ? 'Unlimited days available' : `${free} day${free === 1 ? '' : 's'} available`}`,
+                    ...(t.paid_unpaid ? {
+                      badge: {
+                        text: t.paid_unpaid,
+                        tone: (t.paid_unpaid === 'Unpaid' ? 'red' : 'green') as 'red' | 'green',
+                        title: t.paid_unpaid === 'Unpaid'
+                          ? 'Days taken under this type are not paid — they are deducted as loss of pay.'
+                          : 'Days taken under this type are paid.',
+                      },
+                    } : {}),
+                  };
+                })}
               />
+            )}
+
+            {/* A type already spoken for by a pending request can't be raised
+                again until that request is approved or rejected. */}
+            {selectedBalanceType && !selectedBalanceType.unlimited && pendingDays > 0 && (
+              <div className="lvr-warning" style={{ marginTop: 8 }}>
+                <i className="ri-time-line" />
+                <span>
+                  You already have <strong>{pendingDays} day{pendingDays === 1 ? '' : 's'}</strong> of {selectedBalanceType.name} awaiting approval.
+                  {effectiveAvailable !== null && effectiveAvailable <= 0
+                    ? ' This type is fully utilised — you can’t raise another until that request is approved or rejected.'
+                    : ` Only ${effectiveAvailable} day${effectiveAvailable === 1 ? '' : 's'} can be applied for until then.`}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="lvr-section">
+            <div className="lvr-section-title">
+              <i className="ri-calendar-line" />
+              <span>Leave Dates</span><span className="lvr-req" aria-hidden="true">*</span>
+            </div>
+            {!leaveTypeId && (
+              <div className="text-muted mb-2 d-flex align-items-center gap-1" style={{ fontSize: 12 }}>
+                <i className="ri-information-line" />
+                <span>Select a leave type first — the dates allowed depend on it.</span>
+              </div>
+            )}
+            <div className="lvr-date-strip">
+              <div className="lvr-date-cell">
+                <label className="lvr-mini-label">From<span className="lvr-req" aria-hidden="true">*</span></label>
+                <MasterDatePicker
+                  value={fromDate}
+                  onChange={(v) => {
+                    setFromDate(v);
+                    if (toDate && new Date(toDate) < new Date(v)) setToDate(v);
+                  }}
+                  minDate={minStartDate}
+                  maxDate={maxApplyDate}
+                  disabled={!leaveTypeId}
+                  onDisabledSelect={onBlockedDate}
+                  placeholder="Select date"
+                />
+              </div>
+              <div className="lvr-days-pill">
+                <div className="fw-bold" style={{ fontSize: 18, lineHeight: 1 }}>{totalDays}</div>
+                <div className="text-muted" style={{ fontSize: 10, marginTop: 2 }}>
+                  {totalDays === 1 ? 'day' : 'days'}
+                </div>
+              </div>
+              <div className="lvr-date-cell">
+                <label className="lvr-mini-label">To<span className="lvr-req" aria-hidden="true">*</span></label>
+                <MasterDatePicker
+                  value={toDate}
+                  onChange={setToDate}
+                  minDate={fromDate || minStartDate}
+                  maxDate={maxApplyDate}
+                  disabled={!leaveTypeId || !fromDate}
+                  onDisabledSelect={onBlockedDate}
+                  placeholder="Select date"
+                />
+              </div>
+            </div>
+            {leaveTypeId && maxApplyDate && configYears.length === 1 && (
+              <div className="text-muted mt-2 d-flex align-items-center gap-1" style={{ fontSize: 11.5 }}>
+                <i className="ri-information-line" />
+                <span>{selectedBalanceType?.name} is set up for {configYears[0]} only. To apply for a later year, add that year to the leave type’s Yearly Quota.</span>
+              </div>
             )}
           </div>
 

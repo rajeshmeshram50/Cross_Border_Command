@@ -20,6 +20,9 @@ export interface ApiLeaveType {
     quota_summary: string | null;
     eoy_summary: string | null;
     is_setup: boolean;
+    /** Calendar years any employee has raised this type's leave in — a year
+     *  with leave against it can't be removed from the Yearly Quota table. */
+    raised_years?: number[];
   };
 }
 
@@ -160,13 +163,15 @@ export interface ApiLeaveBalanceRow {
 }
 
 export interface ApiLeaveBalancesResponse {
+  /** Calendar year these roster balances are for. */
+  year?: number;
   columns: ApiLeaveBalanceColumn[];
   employees: ApiLeaveBalanceRow[];
   filters: { departments: string[]; locations: string[] };
 }
 
 export const leaveBalancesApi = {
-  fetch: (params: { department_id?: number; location?: string; search?: string } = {}) =>
+  fetch: (params: { department_id?: number; location?: string; search?: string; year?: number } = {}) =>
     api.get<{ data: ApiLeaveBalancesResponse }>('/leave-balances', { params }).then(r => r.data.data),
 };
 
@@ -380,11 +385,20 @@ export interface ApiEmployeeBalanceType {
    *  (from the plan's "Extra Leave" setup). 0 when not enabled. Shown as a
    *  breakdown — it is NOT added to `quota` / `available`. */
   extra: number;
+  /** Days carried forward into this year from the previous year's leftover
+   *  (year-end rule carry_all / carry_capped). 0 for reset or the first year. */
+  carried_in?: number;
   used: number;
+  /** Days awaiting approval. These already consume balance server-side, so the
+   *  apply form nets them out of `available` when checking a new request. */
+  pending?: number;
   available: number | null;
   unlimited: boolean;
   /** Whether this leave type permits half-day (first/second half) requests. */
   allow_half_day?: boolean;
+  /** Calendar years this type is set up for (per-year quota / unlimited rows,
+   *  current year always included). The apply date picker is limited to these. */
+  config_years?: number[];
   transactions: ApiEmployeeBalanceTransaction[];
 }
 
@@ -396,10 +410,16 @@ export interface ApiEmployeeBalanceResponse {
     plan_id: number | null;
     plan_name: string | null;
   };
+  /** Calendar year these balances are for, and the years the selector can offer. */
+  year?: number;
+  years?: number[];
   types: ApiEmployeeBalanceType[];
 }
 
 export const employeeBalancesApi = {
-  fetch: (employeeId: number) =>
-    api.get<{ data: ApiEmployeeBalanceResponse }>(`/employees/${employeeId}/leave-balances`).then(r => r.data.data),
+  fetch: (employeeId: number, year?: number) =>
+    api.get<{ data: ApiEmployeeBalanceResponse }>(
+      `/employees/${employeeId}/leave-balances`,
+      year ? { params: { year } } : undefined,
+    ).then(r => r.data.data),
 };

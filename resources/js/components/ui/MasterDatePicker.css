@@ -303,12 +303,14 @@
   }
   /* A range-blocked day left clickable (onDisabledSelect) — looks disabled but
      still takes a click so the host can react (e.g. show a toast). */
-  .master-datepicker-day.is-blocked {
+  .master-datepicker-day.is-blocked,
+  .master-datepicker-cell.is-blocked {
     color: var(--vz-secondary-color);
     opacity: 0.35;
     cursor: not-allowed;
   }
-  .master-datepicker-day.is-blocked:hover {
+  .master-datepicker-day.is-blocked:hover,
+  .master-datepicker-cell.is-blocked:hover {
     background: transparent;
   }
   .master-datepicker-footer {
