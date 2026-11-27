@@ -946,6 +946,8 @@ export default function SalesQPI() {
   const renderSignAction = (
     kind: 'quotation' | 'pi', id: number | undefined, code: string,
     customer: string, leadId: number | null | undefined, readOnly: boolean,
+    /** Rendered right after the Send for Sign pill (the PI row's Edit button). */
+    afterPill?: React.ReactNode,
   ) => {
     if (!id) return null;
     const sig = sigByRow[`${kind}:${id}`];
@@ -989,6 +991,7 @@ export default function SalesQPI() {
             </Tooltip>
           )
         )}
+        {afterPill}
         <ActionBtn
           title={inProgress ? 'View sent document' : signed ? signedHint : 'No document sent yet'}
           color="#0ea5e9" disabled={!inProgress}
@@ -1085,6 +1088,27 @@ export default function SalesQPI() {
         const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
+            {r.status === 'converted_to_pi' ? (
+              <Tooltip label="This quotation has already been converted to a PI">
+                <button type="button" disabled className="qpi-convert-btn qpi-convert-btn-done" aria-label="Already converted to PI">
+                  <IconCheck /><span className="qpi-convert-btn-label">Converted</span>
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip label={readOnly ? readOnlyHint : oppHasPi(r) ? 'This opportunity already has a Proforma Invoice — its quotations can no longer be converted' : (convertingId === r.id ? 'Converting…' : 'Convert this quotation into a PI')}>
+                <button
+                  type="button"
+                  className="qpi-convert-btn"
+                  disabled={readOnly || convertingId === r.id || oppHasPi(r)}
+                  onClick={() => { if (oppHasPi(r)) { toast.error('Locked', 'This opportunity already has a Proforma Invoice. No more PIs can be created from its quotations.'); return; } openConvert(r); }}
+                >
+                  {convertingId === r.id ? <span className="qpi-convert-spinner" aria-hidden /> : <IconRepeatSm />}
+                  <span className="qpi-convert-btn-label">
+                    {convertingId === r.id ? 'Converting' : 'Convert to PI'}
+                  </span>
+                </button>
+              </Tooltip>
+            )}
             {(() => {
               const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
               const qConverted = r.status === 'converted_to_pi';
@@ -1111,27 +1135,6 @@ export default function SalesQPI() {
             />
               );
             })()}
-            {r.status === 'converted_to_pi' ? (
-              <Tooltip label="This quotation has already been converted to a PI">
-                <button type="button" disabled className="qpi-convert-btn qpi-convert-btn-done" aria-label="Already converted to PI">
-                  <IconCheck /><span className="qpi-convert-btn-label">Converted</span>
-                </button>
-              </Tooltip>
-            ) : (
-              <Tooltip label={readOnly ? readOnlyHint : oppHasPi(r) ? 'This opportunity already has a Proforma Invoice — its quotations can no longer be converted' : (convertingId === r.id ? 'Converting…' : 'Convert this quotation into a PI')}>
-                <button
-                  type="button"
-                  className="qpi-convert-btn"
-                  disabled={readOnly || convertingId === r.id || oppHasPi(r)}
-                  onClick={() => { if (oppHasPi(r)) { toast.error('Locked', 'This opportunity already has a Proforma Invoice. No more PIs can be created from its quotations.'); return; } openConvert(r); }}
-                >
-                  {convertingId === r.id ? <span className="qpi-convert-spinner" aria-hidden /> : <IconRepeatSm />}
-                  <span className="qpi-convert-btn-label">
-                    {convertingId === r.id ? 'Converting' : 'Convert to PI'}
-                  </span>
-                </button>
-              </Tooltip>
-            )}
             <ActionBtn
               title={
                 readOnly
@@ -1258,7 +1261,8 @@ export default function SalesQPI() {
         const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
-            {(() => {
+            {/* Edit sits right after the Send for Sign pill, as it does after Convert to PI. */}
+            {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly, (() => {
               const pStatus = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
               const pSent   = pStatus === 'inprogress';
               const pSigned = pStatus === 'completed';
@@ -1276,8 +1280,7 @@ export default function SalesQPI() {
               }}
             />
               );
-            })()}
-            {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
+            })())}
             <ActionBtn
               title={
                 readOnly

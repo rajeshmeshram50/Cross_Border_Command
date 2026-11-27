@@ -1139,9 +1139,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     return null;
   };
 
+  /* Stage 1 errors: open the tab that holds the first failing field (Country, State, Address and
+     contact fields live on Address & Contact, the rest on Identification), mark the fields red
+     and scroll to the first one, so a warning toast is never left without a highlighted field. */
+  const ADDRESS_TAB_KEYS = new Set(['addrType', 'addr', 'country', 'state', 'city', 'pin', 'cpName', 'cpDesig', 'cpTel', 'cpEmail', 'cpWa']);
+  const showStage1Errors = (next: Record<string, string>) => {
+    setErrors(next);
+    setStage(1);
+    const firstKey = Object.keys(next)[0];
+    setTab(firstKey && ADDRESS_TAB_KEYS.has(firstKey) ? 'address-contact' : 'identification');
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+  };
+  const flagCountryBlock = (msg: string) => {
+    showStage1Errors({ country: 'Country does not match the opportunity currency.' });
+    toast.error('Country doesn’t match the opportunity', msg);
+  };
+
   const submitCustomer = async () => {
     const ccBlock = currencyCountryBlock();
-    if (ccBlock) { setStage(1); setTab('identification'); toast.error('Country doesn’t match the opportunity', ccBlock); return; }
+    if (ccBlock) { flagCountryBlock(ccBlock); return; }
     if (!gstScrutinyComplete) { promptForGstScrutiny(); return; }
     if (inFlightRef.current || saving) return;
     inFlightRef.current = true;
@@ -1190,12 +1208,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           };
           next[map[key] ?? key] = msg;
         }
-        setErrors(next);
-        setStage(1);
-        const firstKey = Object.keys(next)[0];
-        const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        if (!Object.keys(next).some(k => document.querySelector(`[data-field="${k}"]`))) {
+        showStage1Errors(next);
+        const known = new Set(['coName', 'coLegal', 'coType', 'coSeg', 'coClass', 'coRisk', ...ADDRESS_TAB_KEYS]);
+        if (!Object.keys(next).some(k => known.has(k))) {
           toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
         }
       } else {
@@ -1209,7 +1224,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   const persistStage1 = async (): Promise<number | null> => {
     const ccBlock = currencyCountryBlock();
-    if (ccBlock) { toast.error('Country doesn’t match the opportunity', ccBlock); return null; }
+    if (ccBlock) { flagCountryBlock(ccBlock); return null; }
     if (inFlightRef.current || saving) return savedDbId;
     inFlightRef.current = true;
     setSaving(true);
@@ -1255,12 +1270,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           const msg = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
           next[map[key] ?? key] = msg;
         }
-        setErrors(next);
-        setStage(1);
-        setTab('identification');
-        const firstKey = Object.keys(next)[0];
-        document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        if (!Object.keys(next).some(k => document.querySelector(`[data-field="${k}"]`))) {
+        showStage1Errors(next);
+        const known = new Set(['coName', 'coLegal', 'coType', 'coSeg', 'coClass', 'coRisk', ...ADDRESS_TAB_KEYS]);
+        if (!Object.keys(next).some(k => known.has(k))) {
           toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
         }
       } else {
@@ -1375,7 +1387,24 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           ? <StepperShimmer />
           : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} complete={stageComplete} />}
 
-        {stage > 1 && (
+        {stage === 1 && showShimmer && (
+          <div className="acm-tabs acm-tabs-shimmer">
+            <Shimmer height={14} width={170} radius={4} style={{ margin: '0 14px 10px' }} />
+            <Shimmer height={14} width={190} radius={4} style={{ margin: '0 14px 10px' }} />
+          </div>
+        )}
+        {stage === 1 && !showShimmer && (
+          <div className="acm-tabs">
+            <button type="button" className={`acm-tab ${tab === 'identification' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('identification')}>Customer Identification</button>
+            <button type="button" className={`acm-tab ${tab === 'address-contact' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => { if (tab === 'address-contact' || validateStage1()) setTab('address-contact'); }}>Address &amp; Contact Details</button>
+          </div>
+        )}
+
+
+        <div className="acm-body">
+          {/* Inside the scrolling body, so opening it pushes the KYC tabs and table down
+              (scroll to reach them) instead of squeezing them into the space left below it. */}
+          {stage > 1 && (
           <div className={`acm-history ${historyOpen ? 'acm-hist-open' : ''}`}>
             <div className="acm-history-header" onClick={() => setHistoryOpen(o => !o)}>
               <div className="acm-history-header-left">
@@ -1400,23 +1429,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               <HistoryStage1 form={form} locations={locations} customerId={customer?.id} segments={masters.segments} />
             </div>
           </div>
-        )}
-
-        {stage === 1 && showShimmer && (
-          <div className="acm-tabs acm-tabs-shimmer">
-            <Shimmer height={14} width={170} radius={4} style={{ margin: '0 14px 10px' }} />
-            <Shimmer height={14} width={190} radius={4} style={{ margin: '0 14px 10px' }} />
-          </div>
-        )}
-        {stage === 1 && !showShimmer && (
-          <div className="acm-tabs">
-            <button type="button" className={`acm-tab ${tab === 'identification' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('identification')}>Customer Identification</button>
-            <button type="button" className={`acm-tab ${tab === 'address-contact' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => { if (tab === 'address-contact' || validateStage1()) setTab('address-contact'); }}>Address &amp; Contact Details</button>
-          </div>
-        )}
-
-
-        <div className="acm-body">
+          )}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => String(s.id)) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesById={segTypesById} onGstGate={reportGstGate} guardSegmentRemove={(prev, vs) => {
@@ -1734,6 +1747,7 @@ function GstScrutinyManagePopup(props: {
   const [draft, setDraft] = useState<GstDraft>(EMPTY_GST_DRAFT);
   const [errs, setErrs] = useState<{ gstNumber?: string; lastFilingDate?: string }>({});
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [page, setPage] = useState(1);
 
   const GST_PER_PAGE = 5;
@@ -1752,14 +1766,17 @@ function GstScrutinyManagePopup(props: {
   const setD = <K extends keyof GstDraft>(k: K, v: GstDraft[K]) => setDraft(prev => ({ ...prev, [k]: v }));
 
   const save = async () => {
+    // A ref, not just state: two fast clicks land before the re-render that disables the button.
+    if (busyRef.current) return;
     const e: typeof errs = {};
     const gstErr = gstNumberError(draft.gstNumber);
     if (gstErr) e.gstNumber = gstErr;
     if (!draft.lastFilingDate) e.lastFilingDate = 'GST Last Filing Date is required';
     if (Object.keys(e).length) { setErrs(e); return; }
+    busyRef.current = true;
     setBusy(true);
-    const ok = await onAdd(draft);
-    setBusy(false);
+    let ok = false;
+    try { ok = await onAdd(draft); } finally { busyRef.current = false; setBusy(false); }
     if (ok) { setDraft(EMPTY_GST_DRAFT); setErrs({}); setAdding(false); setPage(1); }
   };
 
@@ -1858,14 +1875,16 @@ function GstScrutinyManagePopup(props: {
               </div>
             </div>
             <div className="acm-gst-head-actions">
-              <button type="button" className="acm-close" onClick={closeForm} aria-label="Close">
+              <button type="button" className="acm-close" onClick={() => { if (!busy) closeForm(); }} disabled={busy} aria-label="Close">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
           </div>
 
           <div className="acm-gst-body">
-            <div className="acm-gst-form">
+            {/* While Save waits on the server nothing else can be used: the fields, the status
+                and date pickers and the close button are all locked until the answer lands. */}
+            <div className={`acm-gst-form${busy ? ' is-busy' : ''}`} aria-busy={busy || undefined}>
               <div className="acm-row acm-row-3">
                 <Field label="GST Number" required error={errs.gstNumber}>
                   <input
@@ -1880,7 +1899,7 @@ function GstScrutinyManagePopup(props: {
                   <MasterSelect value={draft.status} options={GST_STATUS_OPTS} placeholder="Select GST status" onChange={v => setD('status', v as GstDraft['status'])} />
                 </Field>
                 <Field label="GST Last Filing Date" required error={errs.lastFilingDate}>
-                  <MasterDatePicker value={draft.lastFilingDate} onChange={v => { setD('lastFilingDate', v); setErrs(p => ({ ...p, lastFilingDate: undefined })); }} placeholder="dd/mm/yyyy" maxDate={today} />
+                  <MasterDatePicker value={draft.lastFilingDate} onChange={v => { setD('lastFilingDate', v); setErrs(p => ({ ...p, lastFilingDate: undefined })); }} placeholder="dd/mm/yyyy" maxDate={today} popupClassName="acm-gst-cal" />
                 </Field>
               </div>
               <div className="acm-row acm-row-2">
@@ -2616,9 +2635,9 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owner
         </div>
 
         <div className="acm-section-body acm-section-body-table">
-          <div className="acm-table-wrap">
+          <div className="acm-table-wrap dt-root hr-dt" data-accent="violet">
             {loading ? (
-              <table className="acm-table">
+              <table className="acm-table dt-table">
                 <thead><tr>
                   {isOwners ? (
                     <>
@@ -2636,7 +2655,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owner
                 <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 8} /></tbody>
               </table>
             ) : showSegmentRef ? (
-              <table className="acm-table">
+              <table className="acm-table dt-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
                   <th>Issuing Authority</th><th>Requirement</th>
@@ -2651,11 +2670,10 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owner
                     </td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
-                    const srPad = String(sr).padStart(2, '0');
                     const up = segmentRefUploads[`${sub}::${dl.code}`];
                     return (
                       <tr key={dl.code}>
-                        <td>{srPad}</td>
+                        <td><span className="dt-serial">{sr}</span></td>
                         <td><span className="acm-doc-code">{dl.code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{(() => {
                           const v = dl.name || '';
@@ -2689,7 +2707,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owner
                 </tbody>
               </table>
             ) : isOwners ? (
-              <table className="acm-table">
+              <table className="acm-table dt-table">
                 <thead><tr>
                   <th>Sr No</th><th>Owner Name</th><th>Designation</th><th>Email</th><th>Phone</th>
                   <th>ID Proof</th><th>Address Proof</th><th>Photograph</th><th>Actions</th>
@@ -2699,7 +2717,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owner
                     <tr className="acm-empty-row"><td colSpan={9}>{q ? 'No owners match your search.' : 'No owners captured yet. Click "+ Add Owner KYC Document" to add one.'}</td></tr>
                   ) : ownerSlice.map((o, i) => (
                     <tr key={o.id}>
-                      <td>{String(start + i + 1).padStart(2, '0')}</td>
+                      <td><span className="dt-serial">{start + i + 1}</span></td>
                       <td style={{ fontWeight: 700, color: '#1f2937' }}>{o.owner_name}</td>
                       <td>{o.designation || '—'}</td>
                       <td>{o.official_email || '—'}</td>
@@ -2726,7 +2744,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owner
                 </tbody>
               </table>
             ) : (
-              <table className="acm-table">
+              <table className="acm-table dt-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>License</th>
                   <th>Issuing Authority</th><th>Issuing Date</th><th>Expiry</th><th>Attachment</th><th>Actions</th>
@@ -2748,7 +2766,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owner
                     const issClass = d.issue_date ? 'acm-issue-date' : 'acm-expiry-na';
                     return (
                       <tr key={d.id}>
-                        <td>{String(sr).padStart(2, '0')}</td>
+                        <td><span className="dt-serial">{sr}</span></td>
                         <td><span className="acm-doc-code">{code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
                         <td style={{ fontFamily: 'JetBrains Mono, ui-monospace, monospace', fontSize: 11 }}>{d.license_number || '—'}</td>
@@ -3922,12 +3940,76 @@ const SCOPED_CSS = `
 .acm-kyc-stage .acm-section-purple { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .acm-kyc-stage .acm-section-body-table { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 1 1 auto; min-height: 168px; }
+/* Short screens: the card still grows to the footer (no empty band under it) but never shrinks
+   below its rows, so a long table scrolls the body instead of being crushed. */
 @media (max-height: 820px) {
   .acm-kyc-stage,
   .acm-kyc-stage .acm-section-purple,
-  .acm-kyc-stage .acm-section-body-table { flex: 0 0 auto; min-height: 0; }
-  .acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 0 0 auto; min-height: 0; max-height: 44vh; }
+  .acm-kyc-stage .acm-section-body-table { flex: 1 0 auto; min-height: 0; }
+  .acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 1 0 auto; min-height: 0; max-height: none; }
 }
+/* "What you did in previous stages" now sits inside the body: the body's padding gives its sides,
+   so drop the card-level margins. While it is open the KYC card keeps its full height and the
+   body scrolls, rather than the card shrinking under its own table. */
+.acm-body > .acm-history { margin: 0 0 12px; }
+.acm-body:has(> .acm-hist-open) .acm-kyc-stage,
+.acm-body:has(> .acm-hist-open) .acm-kyc-stage .acm-section-purple,
+.acm-body:has(> .acm-hist-open) .acm-kyc-stage .acm-section-body-table { flex-shrink: 0; }
+/* KYC tables look like the Customers list: the table and its pager are ONE box (no rounded
+   bottom on the table meeting a second rounded band), and an empty table is one even white
+   area with its message in the middle (no short tinted strip over blank white). */
+.acm-kyc-stage .acm-section-body-table .acm-table-wrap { max-height: none; border-bottom: 0; border-radius: 12px 12px 0 0; box-shadow: none; }
+.acm-kyc-stage .acm-doc-pag-wrap .wl-pager { border: 1px solid #ece4fb; border-top: 2px solid #ddd6fe; border-radius: 0 0 12px 12px; }
+.acm-kyc-stage .acm-table-wrap:has(.acm-empty-row) > .acm-table { height: 100%; }
+.acm-kyc-stage .acm-table-wrap:has(.acm-empty-row) thead tr { height: 42px; }
+.acm-kyc-stage .acm-empty-row td { background: #fff; vertical-align: middle; }
+[data-bs-theme="dark"] .acm-kyc-stage .acm-section-body-table .acm-table-wrap { border-color: rgba(167,139,250,0.18); }
+[data-bs-theme="dark"] .acm-kyc-stage .acm-doc-pag-wrap .wl-pager { border-color: rgba(167,139,250,0.18); border-top-color: rgba(167,139,250,0.30); }
+/* KYC step: only an 8px gap between the card and the footer. */
+.acm-body:has(.acm-kyc-stage) { padding-bottom: 8px !important; }
+/* KYC table = the Customers list table: the header band runs edge to edge inside the card
+   and the pager closes the card, with no second rounded box drawn around table + pager. */
+.acm-kyc-stage .acm-section-body.acm-section-body-table { padding: 0 !important; }
+.acm-kyc-stage .acm-section-body-table .acm-table-wrap.acm-table-wrap {
+  border: 0 !important; border-radius: 0 !important; box-shadow: none !important; background: transparent;
+}
+.acm-kyc-stage .acm-doc-pag-wrap .wl-pager.wl-pager {
+  border: 0 !important; border-top: 1px solid #ece4fb !important; border-radius: 0 !important;
+}
+[data-bs-theme="dark"] .acm-kyc-stage .acm-doc-pag-wrap .wl-pager.wl-pager { border-top-color: rgba(167,139,250,0.18) !important; }
+/* The card's purple left line sits above the sticky table header (z 5), so the header
+   band no longer cuts it; 8px between the search bar and the table header. */
+.acm-kyc-stage .acm-section-purple::before { z-index: 6; }
+.acm-kyc-stage .acm-doc-toolbar { padding-bottom: 8px; }
+/* GST Scrutiny form while Save waits on the server: fields and pickers take no input. */
+.acm-gst-form.is-busy .acm-row { pointer-events: none; opacity: .6; transition: opacity .15s ease; }
+.acm-gst-card .acm-close:disabled { opacity: .45; cursor: not-allowed; }
+/* GST Last Filing Date picker in the popup's violet (the shared picker is teal). */
+.acm-gst-form .master-datepicker-toggle.open,
+.acm-gst-form .master-datepicker-toggle:focus { border-color: #7c3aed !important; box-shadow: 0 0 0 3px rgba(124,58,237,.15) !important; }
+.acm-gst-form .master-datepicker-icon { color: #7c3aed !important; }
+.master-datepicker-popup.acm-gst-cal .master-datepicker-nav:hover { background: rgba(124,58,237,.10); color: #7c3aed; border-color: rgba(124,58,237,.3); }
+.master-datepicker-popup.acm-gst-cal .master-datepicker-title-btn.is-clickable { background: rgba(124,58,237,.08); border-color: rgba(124,58,237,.18); color: #7c3aed; }
+.master-datepicker-popup.acm-gst-cal .master-datepicker-title-btn.is-clickable:hover { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.40); color: #6d28d9; }
+.master-datepicker-popup.acm-gst-cal .master-datepicker-day:hover:not(:disabled):not(.is-selected),
+.master-datepicker-popup.acm-gst-cal .master-datepicker-cell:hover:not(.is-selected) { background: rgba(124,58,237,.10); color: #7c3aed; }
+.master-datepicker-popup.acm-gst-cal .master-datepicker-day.is-today,
+.master-datepicker-popup.acm-gst-cal .master-datepicker-cell.is-today { background: rgba(124,58,237,.12); color: #7c3aed; }
+.master-datepicker-popup.acm-gst-cal .master-datepicker-day.is-selected,
+.master-datepicker-popup.acm-gst-cal .master-datepicker-cell.is-selected { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.30); }
+.master-datepicker-popup.acm-gst-cal .master-datepicker-footer .today-btn { color: #7c3aed; }
+[data-bs-theme="dark"] .master-datepicker-popup.acm-gst-cal .master-datepicker-title-btn.is-clickable { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .master-datepicker-popup.acm-gst-cal .master-datepicker-day.is-today,
+[data-bs-theme="dark"] .master-datepicker-popup.acm-gst-cal .master-datepicker-cell.is-today { color: #c4b5fd; }
+[data-bs-theme="dark"] .master-datepicker-popup.acm-gst-cal .master-datepicker-footer .today-btn { color: #c4b5fd; }
+/* 8px between the Company DD / Owner KYC / Trade Licence tabs and the card below. */
+.acm-kyc-stage .acm-subtabs-row.acm-subtabs-row { margin-bottom: 8px; }
+/* Same 12px on the left and right of the popup content. The 8px scrollbar lives inside the
+   right padding, so the scrollbar space is always reserved and taken out of that padding:
+   4px + 8px gutter = 12px on the right, with or without a scrollbar. The stage cards above
+   the body line up with it. */
+.acm-body { scrollbar-gutter: stable; padding-left: 12px !important; padding-right: 4px !important; }
+.acm-card > .acm-stepper { padding-left: 12px !important; padding-right: 12px !important; }
 .acm-body::-webkit-scrollbar { width: 8px; }
 .acm-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
 
