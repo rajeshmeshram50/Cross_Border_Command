@@ -3741,6 +3741,28 @@
   overflow-wrap: normal;
 }
 
+/* QA #7 / #16 - Generate Password (My Vault, Password Health): the box grew a line as the length
+   went up, so the whole centred popup jumped. It now keeps one height at every length: room for
+   two lines (a 64-character password fills exactly that), a short one sits centred in it, and
+   anything longer (a long passphrase) scrolls inside the box. */
+.cvx #crd-host .gp-box .gp-out {
+  box-sizing: border-box;
+  height: 84px;
+}
+.cvx #crd-host .gp-box .gp-out__v:not(.is-phrase) {
+  font-size: 16px;
+  /* Random characters: wrap at any character, so a line never ends early at a "-" and spills
+     a 64-character password onto a third line. (Passphrase words still wrap whole.) */
+  word-break: break-all;
+  line-break: anywhere;
+}
+.cvx #crd-host .gp-box .gp-out__v {
+  max-height: calc(2 * 1.35em + 4px);   /* +4px: the coloured digit / symbol spans make a line a hair taller */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 .cvx #crd-host .gp-box .gp-len {
   margin-top: 12px;
 }
@@ -17236,6 +17258,15 @@
 
 .cvx .tvc-top .bst-search.whm-main-search input {
   height: 100%;
+}
+
+/* QA #41: the bar is 48px but its 1px border left the input itself at 46px. The input is now 48px
+   too, laid over the border (-1px top and bottom; it is transparent, so the border still shows) -
+   the bar, the input and the tabs beside it are all 48px. */
+.cvx .tvc-top .bst-search.whm-main-search > input {
+  box-sizing: border-box;
+  height: 48px;
+  margin-block: -1px;
 }
 
 /* Critical Vault only: Figma search bar up to 665px wide, pinned right; the gap to the tabs is the leftover
