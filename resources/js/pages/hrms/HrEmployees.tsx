@@ -332,6 +332,11 @@ const STEP_SHIMMER_MS = 500;
    In embed mode nothing but the dialogs renders, and the list/stats requests
    that feed the table are skipped — the caller's own page is on screen behind
    the modal, and re-fetching a table nobody can see is pure cost. */
+/* Case- and accent-insensitive column sort — "alice" and "Alice" compare equal
+   and sort together, instead of all upper-case names coming first (QA #251). */
+const ciSort = (a: any, b: any, id: string) =>
+  String(a.getValue(id) ?? '').localeCompare(String(b.getValue(id) ?? ''), undefined, { sensitivity: 'base' });
+
 export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   /** emp_code to open the edit wizard for, instead of rendering the list. */
   embedEditCode?: string;
@@ -3705,6 +3710,9 @@ const STEP_SAFE_FIELDS = new Set([
       header: 'Employee',
       id: 'name',
       accessorFn: (r: EmployeeRow) => r.name,
+      // Sort names case-insensitively (QA #251) — the default put "Zoe" before
+      // "alice" because upper-case code points sort first.
+      sortingFn: ciSort,
       meta: { width: '14%' },
       cell: info => {
         const e = info.row.original;
@@ -3749,18 +3757,21 @@ const STEP_SAFE_FIELDS = new Set([
     {
       header: 'Department',
       accessorKey: 'department',
+      sortingFn: ciSort,
       meta: { width: '8%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
       header: 'Designation',
       accessorKey: 'designation',
+      sortingFn: ciSort,
       meta: { width: '9%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
+      sortingFn: ciSort,
       meta: { width: '8%', align: 'center' },
       /* Role names run long ("Software Development", "Training Coordinator")
          and the column is narrow — ChipCell ellipsises inside the pill and
@@ -3791,6 +3802,7 @@ const STEP_SAFE_FIELDS = new Set([
     {
       header: 'Manager',
       accessorKey: 'manager',
+      sortingFn: ciSort,
       meta: { width: '7%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
