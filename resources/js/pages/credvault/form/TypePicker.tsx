@@ -97,7 +97,7 @@ export default function TypePicker({ meta, critical = false, onPick, onClose }: 
                     onClick={() => { setQ(''); search.current?.focus(); }}>
                     <Svg icon="x" size={12} sw={2.6} />
                   </button>
-                ) : critical ? null : <kbd>/</kbd>}
+                ) : null}
               </div>
               <button type="button" className="mapsup-close" onClick={onClose} aria-label="Close"><Svg icon="x" size={13} sw={2.8} /></button>
             </div>

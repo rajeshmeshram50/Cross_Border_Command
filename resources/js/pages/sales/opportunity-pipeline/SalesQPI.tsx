@@ -5433,4 +5433,23 @@ const SCOPED_CSS = `
   border-color: #a78bfa !important;
 }
 
+/* List toolbar sizes: the tab rail keeps its 48px (40px tab inside); the search bar, the Doc Type
+   filter and the Create Quotation / Create PI button are 40px, centred on the rail, and all
+   read 12.5px. Before, the bar stretched them to the rail's 48px and Create read 11.5px. */
+.qpi-root .qpi-card .qpi-tablebar { align-items: center; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
+  box-sizing: border-box; height: 40px; min-height: 40px; align-self: center;
+}
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search input { font-size: 12.5px; }
+.qpi-root .qpi-card .qpi-tablebar .qpi-doctype-filter {
+  height: 40px; min-height: 40px; align-self: center;
+}
+.qpi-root .qpi-card .qpi-tablebar .qpi-doctype-filter .master-select-toggle {
+  height: 40px; min-height: 40px; font-size: 12.5px;
+}
+.qpi-root .qpi-card .qpi-tablebar .qpi-doctype-filter .master-select-value { font-size: 12.5px; }
+.qpi-root .qpi-card .qpi-tablebar .cstrip__action-btn {
+  box-sizing: border-box; height: 40px; min-height: 40px; align-self: center; font-size: 12.5px;
+}
+
 `;
