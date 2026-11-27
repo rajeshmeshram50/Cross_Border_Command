@@ -600,7 +600,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [uploadedLoading, setUploadedLoading] = useState(false);
 
   useEffect(() => {
-    if (tab !== 'vault' || !employeeId) return;
+    // Also load on the Payroll tab: its Identity status reads these uploaded docs.
+    if ((tab !== 'vault' && tab !== 'payroll') || !employeeId) return;
     let cancelled = false;
 
     /* BOTH loaders go up here, synchronously, before the first await. (#43)

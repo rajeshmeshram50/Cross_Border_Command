@@ -36,7 +36,17 @@ export default function PayrollTab() {
     // Whose profile is on screen — decides whether identity numbers are
     // masked at all. See sensitiveDisplay() below. (QA #109)
     isOwnProfile,
+    // Uploaded employee documents (Aadhaar / PAN cards etc.) — the identity
+    // status below counts a card as "Provided" when its document is on file.
+    uploadedDocs,
   } = useEmployeeProfile();
+
+  /* A document counts as provided once it's uploaded or verified (not rejected).
+     Aadhaar/PAN are captured as uploaded CARDS (onboarding + Edit Employee), not
+     only as typed numbers, so the identity status must honour the document too. */
+  const hasDoc = (key: string): boolean =>
+    Array.isArray(uploadedDocs)
+    && uploadedDocs.some((d: any) => d?.document_key === key && (d?.status === 'uploaded' || d?.status === 'verified'));
   const toast = useToast();
 
   // ── Bank / payment-details edit ────────────────────────────────────────
@@ -422,7 +432,9 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
      and the branch and client forms already apply. (#200) */
   const panStatus = (() => {
     const pan = String(empDetail?.pan_number ?? '').replace(/\s+/g, '').toUpperCase();
-    if (!pan) return { label: 'Not Provided', tone: 'amber' as const, title: 'No PAN on file.' };
+    if (!pan) return hasDoc('pan')
+      ? { label: 'Provided', tone: 'green' as const, title: 'PAN card document is on file.' }
+      : { label: 'Not Provided', tone: 'amber' as const, title: 'No PAN on file.' };
     return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)
       ? { label: 'Provided', tone: 'green' as const, title: 'PAN is on file and correctly formatted.' }
       : { label: 'Check Format', tone: 'amber' as const, title: 'PAN is not in the expected format (e.g. ABCDE1234F).' };
@@ -434,7 +446,9 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
      Aadhaar on file was shown a green tick and nothing else. (#200) */
   const aadhaarStatus = (() => {
     const aadhaar = String(empDetail?.aadhaar_number ?? '').replace(/\s+/g, '');
-    if (!aadhaar) return { label: 'Not Provided', tone: 'amber' as const, title: 'No Aadhaar on file.' };
+    if (!aadhaar) return hasDoc('aadhaar')
+      ? { label: 'Provided', tone: 'green' as const, title: 'Aadhaar card document is on file.' }
+      : { label: 'Not Provided', tone: 'amber' as const, title: 'No Aadhaar on file.' };
     return /^\d{12}$/.test(aadhaar)
       ? { label: 'Provided', tone: 'green' as const, title: 'Aadhaar is on file and correctly formatted.' }
       : { label: 'Check Format', tone: 'amber' as const, title: 'Aadhaar should be 12 digits.' };
