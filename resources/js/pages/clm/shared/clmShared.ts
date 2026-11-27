@@ -943,16 +943,32 @@ body:not(:has(.clm-mc)) .clm-table-fill > .clm-tscroll::-webkit-scrollbar-thumb 
   transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .22s ease;
 }
 .clm-act:hover { transform: translateY(-1px); }
-.clm-act-edit { color: #0891b2; border-color: rgba(6,182,212,.25); background: rgba(240,253,255,.8); }
-.clm-act-edit:hover { background: #cffafe; border-color: #0891b2; box-shadow: 0 4px 12px rgba(8,145,178,.25); }
-.clm-act-del  { color: #ef4444; border-color: rgba(239,68,68,.22); background: rgba(255,245,245,.8); }
-.clm-act-del:hover  { background: #fee2e2; border-color: #ef4444; box-shadow: 0 4px 12px rgba(239,68,68,.22); }
-.clm-act-view { color: #6366f1; border-color: rgba(99,102,241,.22); background: rgba(238,242,255,.8); }
-.clm-act-view:hover { background: #e0e7ff; border-color: #6366f1; box-shadow: 0 4px 12px rgba(99,102,241,.22); }
-.clm-act-dl   { color: #16a34a; border-color: rgba(34,197,94,.25); background: rgba(240,253,244,.8); }
-.clm-act-dl:hover   { background: #dcfce7; border-color: #16a34a; box-shadow: 0 4px 12px rgba(22,163,74,.22); }
-[data-bs-theme="dark"] .clm-act-dl { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.32); }
-[data-bs-theme="dark"] .clm-act-dl:hover { background: rgba(34,197,94,.24); }
+/* Row actions follow the Team Vault table: Edit is the solid teal tile with a
+   white icon; Delete / View / Download are soft white-to-cyan tiles with a teal
+   icon that fill solid teal on hover. Locked ones are faded. */
+.clm-act-edit, .clm-act-del, .clm-act-view, .clm-act-dl { border-radius: 10px; border: 0; }
+.clm-act-edit {
+  color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 6px 12px -6px rgba(8,145,178,.75), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.clm-act-del, .clm-act-view, .clm-act-dl {
+  color: #0e7490;
+  background: linear-gradient(150deg, #ffffff 0%, #e6fafd 100%);
+  box-shadow: 0 2px 6px -2px rgba(8,145,178,.35), inset 0 1px 0 #fff;
+}
+.clm-act-edit:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: linear-gradient(140deg, #0891b2, #0e7490 60%, #0b4f63);
+  box-shadow: 0 8px 16px -6px rgba(8,145,178,.7), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.clm-act-del:hover:not(:disabled):not([aria-disabled="true"]),
+.clm-act-view:hover:not(:disabled):not([aria-disabled="true"]),
+.clm-act-dl:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 8px 16px -6px rgba(8,145,178,.7), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.clm-act[aria-disabled="true"] { opacity: .45; cursor: not-allowed; transform: none; }
 
 /* Empty / loading */
 .clm-status { text-align: center; padding: 24px 12px; color: #94a3b8; font-style: italic; font-size: 12.5px; }
@@ -2023,10 +2039,13 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-badge-violet,
 [data-bs-theme="dark"] .clm-badge-indigo,
 [data-bs-theme="dark"] .clm-badge-pink { filter: brightness(1.15); }
-[data-bs-theme="dark"] .clm-act-edit { background: rgba(8,145,178,.14); border-color: rgba(6,182,212,.35); }
-[data-bs-theme="dark"] .clm-act-edit:hover { background: rgba(8,145,178,.28); }
-[data-bs-theme="dark"] .clm-act-del { background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.32); }
-[data-bs-theme="dark"] .clm-act-del:hover  { background: rgba(239,68,68,.22); }
+[data-bs-theme="dark"] .clm-act-edit { color: #fff; box-shadow: 0 6px 14px -6px rgba(8,145,178,.6), inset 0 1px 0 rgba(255,255,255,.18); }
+[data-bs-theme="dark"] .clm-act-del,
+[data-bs-theme="dark"] .clm-act-view,
+[data-bs-theme="dark"] .clm-act-dl { color: #67e8f9; background: rgba(6,182,212,.08); box-shadow: inset 0 0 0 1px rgba(34,211,238,.28); }
+[data-bs-theme="dark"] .clm-act-del:hover:not(:disabled):not([aria-disabled="true"]),
+[data-bs-theme="dark"] .clm-act-view:hover:not(:disabled):not([aria-disabled="true"]),
+[data-bs-theme="dark"] .clm-act-dl:hover:not(:disabled):not([aria-disabled="true"]) { color: #fff; background: #0891b2; box-shadow: none; }
 [data-bs-theme="dark"] .clm-select { background-image: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2367e8f9' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); }
 
 /* DCP — Add/Edit Segment Rule modal (Stage 1 stepper + cards, Stage 2 cat tabs).
@@ -2393,6 +2412,21 @@ body:has(:is(.clm-modal-bd, .clm-conf-bd, .tnw-overlay, .tdw-overlay, .dr-overla
 .clm-mc .clm-act.clm-act svg { stroke: currentColor; }
 .clm-mc .clm-act.clm-act:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 [data-bs-theme="dark"] .clm-mc .clm-act.clm-act { color: #fff; }
+/* Team Vault look: only Edit is solid; the other row actions are soft teal tiles */
+.clm-mc .clm-act.clm-act:is(.clm-act-del, .clm-act-view, .clm-act-dl) {
+  color: #0e7490;
+  background: linear-gradient(150deg, #ffffff 0%, #e6fafd 100%);
+  box-shadow: 0 2px 6px -2px rgba(8,145,178,.35), inset 0 1px 0 #fff;
+}
+.clm-mc .clm-act.clm-act:is(.clm-act-del, .clm-act-view, .clm-act-dl):hover:not(:disabled):not([aria-disabled="true"]) {
+  color: #fff; background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+}
+[data-bs-theme="dark"] .clm-mc .clm-act.clm-act:is(.clm-act-del, .clm-act-view, .clm-act-dl) {
+  color: #67e8f9; background: rgba(6,182,212,.08); box-shadow: inset 0 0 0 1px rgba(34,211,238,.28);
+}
+[data-bs-theme="dark"] .clm-mc .clm-act.clm-act:is(.clm-act-del, .clm-act-view, .clm-act-dl):hover:not(:disabled):not([aria-disabled="true"]) {
+  color: #fff; background: #0891b2;
+}
 
 /* Tab rails (Segments' All / Highly / Less Regulated): the Master list's tabs */
 .clm-mc .clm-tabrail {

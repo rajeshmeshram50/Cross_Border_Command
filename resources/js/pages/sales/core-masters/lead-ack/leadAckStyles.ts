@@ -829,6 +829,30 @@ export const LEAD_ACK_CSS = `
 [data-bs-theme="dark"] .lam-table .smc-act-del  { background: rgba(239,68,68,.10); border-color: rgba(248,113,113,.35); color: #fca5a5; }
 /* 8px between the buttons, as in the Customers actions column (gap-2). */
 .lam-table .lam-actions { gap: 8px; }
+
+/* Row actions follow the Team Vault table: Edit is the solid violet tile with a
+   white icon; Delete is a soft white-to-lavender tile with a violet icon that fills
+   solid violet on hover. */
+.lam-table .smc-act.smc-act-edit, .lam-table .smc-act.smc-act-del { border-radius: 9px; border: 1px solid transparent; }
+.lam-table .smc-act.smc-act-edit {
+  color: #fff;
+  background: linear-gradient(140deg, #a78bfa 0%, #7c3aed 55%, #6d28d9 100%);
+  box-shadow: 0 6px 12px -6px rgba(124,58,237,.75), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.lam-table .smc-act.smc-act-edit:hover { background: linear-gradient(140deg, #7c3aed, #6d28d9 60%, #5b21b6); box-shadow: 0 8px 16px -6px rgba(124,58,237,.7); transform: translateY(-1px); }
+.lam-table .smc-act.smc-act-del {
+  color: #6d28d9;
+  background: linear-gradient(150deg, #ffffff 0%, #f1ebfe 100%);
+  box-shadow: 0 2px 6px -2px rgba(124,58,237,.35), inset 0 1px 0 #fff;
+}
+.lam-table .smc-act.smc-act-del:hover:not([aria-disabled="true"]) {
+  color: #fff; border-color: transparent; transform: translateY(-1px);
+  background: linear-gradient(140deg, #a78bfa 0%, #7c3aed 55%, #6d28d9 100%);
+  box-shadow: 0 8px 16px -6px rgba(124,58,237,.7);
+}
+[data-bs-theme="dark"] .lam-table .smc-act.smc-act-edit { color: #fff; border-color: transparent; background: linear-gradient(140deg, #a78bfa 0%, #7c3aed 55%, #6d28d9 100%); }
+[data-bs-theme="dark"] .lam-table .smc-act.smc-act-del { color: #c4b5fd; background: rgba(139,92,246,.10); border-color: rgba(167,139,250,.30); box-shadow: none; }
+[data-bs-theme="dark"] .lam-table .smc-act.smc-act-del:hover:not([aria-disabled="true"]) { color: #fff; background: #7c3aed; border-color: #7c3aed; }
 `;
 
 const TEAL_MAP: [RegExp, string][] = [

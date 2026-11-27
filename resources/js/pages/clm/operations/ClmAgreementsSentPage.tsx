@@ -550,21 +550,35 @@ const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
 const THEAD_BG = 'linear-gradient(110deg,#f0fdff,#e8fbfd)';
 
 const ICO_DL  = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
-const ICO_EDIT = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>;
+const ICO_EDIT = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>;
 const ICO_VER  = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg>;
 const ICO_TL   = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
 
-function ActionBtn({ title, color, bg, border, t, onClick, children, busy, disabled, softOff }: { title: string; color: string; bg: string; border: string; t: OpsTokens; onClick: () => void; children: React.ReactNode; busy?: boolean; disabled?: boolean; softOff?: boolean }) {
-  const fbg     = t.dark ? `color-mix(in srgb, ${color} 20%, transparent)` : bg;
-  const fborder = t.dark ? `color-mix(in srgb, ${color} 45%, transparent)` : border;
-  const fcolor  = t.dark ? `color-mix(in srgb, ${color} 55%, #ffffff)` : color;
+const SOLID_TEAL = 'linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%)';
+const SOLID_TEAL_HOVER = 'linear-gradient(140deg, #0891b2, #0e7490 60%, #0b4f63)';
+const SOLID_SHADOW = '0 6px 12px -6px rgba(8,145,178,.75), inset 0 1px 0 rgba(255,255,255,.3)';
+
+/* Row actions follow the Team Vault table: Edit is the solid teal tile with a
+   white icon; every other action is a soft white-to-cyan tile with a teal icon
+   that fills solid teal on hover. */
+function actLook(solid: boolean, dark: boolean) {
+  if (solid) return { bg: SOLID_TEAL, color: '#fff', border: 'transparent', shadow: SOLID_SHADOW, hover: SOLID_TEAL_HOVER };
+  return dark
+    ? { bg: 'rgba(6,182,212,.08)', color: '#67e8f9', border: 'rgba(34,211,238,.28)', shadow: 'none', hover: SOLID_TEAL }
+    : { bg: 'linear-gradient(150deg, #ffffff 0%, #e6fafd 100%)', color: '#0e7490', border: 'transparent', shadow: '0 2px 6px -2px rgba(8,145,178,.35), inset 0 1px 0 #fff', hover: SOLID_TEAL };
+}
+
+function ActionBtn({ title, color, bg, border, t, onClick, children, busy, disabled, softOff, solid = false }: { title: string; color: string; bg: string; border: string; t: OpsTokens; onClick: () => void; children: React.ReactNode; busy?: boolean; disabled?: boolean; softOff?: boolean; solid?: boolean }) {
+  // (color / bg / border are kept in the signature for the call sites.)
+  void color; void bg; void border;
+  const s = actLook(solid, t.dark);
   const off = busy || disabled;
   const dim = off || softOff;
   return (
     <Tooltip label={busy ? 'Loading…' : (disabled ? 'Please wait…' : title)}>
-      <button onClick={onClick} disabled={off} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${fborder}`, background: fbg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : dim ? 'not-allowed' : 'pointer', color: fcolor, opacity: busy ? 1 : dim ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
-        onMouseEnter={e => { if (dim) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.13)'; }}
-        onMouseLeave={e => { if (dim) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+      <button onClick={onClick} disabled={off} style={{ width: 28, height: 28, borderRadius: 9, border: `1px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : dim ? 'not-allowed' : 'pointer', color: s.color, opacity: busy ? 1 : dim ? .4 : 1, flexShrink: 0, transition: 'all .15s', boxShadow: s.shadow }}
+        onMouseEnter={e => { if (dim) return; const b = e.currentTarget.style; b.background = s.hover; b.color = '#fff'; b.borderColor = 'transparent'; b.transform = 'translateY(-1px)'; }}
+        onMouseLeave={e => { if (dim) return; const b = e.currentTarget.style; b.background = s.bg; b.color = s.color; b.borderColor = s.border; b.transform = 'none'; }}>
         {busy
           ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
           : children}
@@ -578,6 +592,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const off = busy || disabled;
+  const dl = actLook(false, t.dark);
   const toggle = () => {
     if (off) return;
     if (open) { setDlOpen(null); return; }
@@ -587,7 +602,9 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id
   };
   return (
     <>
-      <Tooltip label={busy ? 'Downloading…' : (disabled ? 'Please wait…' : 'Download Contract')}><button ref={btnRef} onClick={toggle} disabled={off} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: busy ? 1 : disabled ? .4 : .85, flexShrink: 0 }}>{busy ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : ICO_DL}</button></Tooltip>
+      <Tooltip label={busy ? 'Downloading…' : (disabled ? 'Please wait…' : 'Download Contract')}><button ref={btnRef} onClick={toggle} disabled={off} style={{ width: 28, height: 28, borderRadius: 9, border: `1px solid ${dl.border}`, background: dl.bg, boxShadow: dl.shadow, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: dl.color, opacity: busy ? 1 : disabled ? .4 : 1, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { if (off) return; const b = e.currentTarget.style; b.background = dl.hover; b.color = '#fff'; b.borderColor = 'transparent'; b.transform = 'translateY(-1px)'; }}
+        onMouseLeave={e => { if (off) return; const b = e.currentTarget.style; b.background = dl.bg; b.color = dl.color; b.borderColor = dl.border; b.transform = 'none'; }}>{busy ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : ICO_DL}</button></Tooltip>
       {open && pos && createPortal(
         <>
           <div onClick={() => setDlOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
@@ -681,12 +698,12 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
                           const tlBusy  = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'timeline';
                           const frozen  = lifecycleBusy !== null;
                           return (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                          <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} disabled={frozen} onPick={(fmt) => onDownload(c, fmt)} t={t} />
-                          <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} disabled={frozen} onClick={() => onEdit(c)}>{ICO_EDIT}</ActionBtn>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                          <ActionBtn solid title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} disabled={frozen} onClick={() => onEdit(c)}>{ICO_EDIT}</ActionBtn>
                           <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" t={t} busy={verBusy} disabled={frozen && !verBusy} onClick={() => onVersion(c)}>{ICO_VER}</ActionBtn>
                           <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" t={t} busy={tlBusy} disabled={frozen && !tlBusy} onClick={() => onTimeline(c)}>{ICO_TL}</ActionBtn>
                           <ActionBtn title={c.approval === 'approved' ? 'Download completion certificate' : 'Available once approved & signed'} color="#0F766E" bg="#CCFBF1" border="#5EEAD4" t={t} busy={certId === c.id} disabled={frozen && certId !== c.id} softOff={c.approval !== 'approved'} onClick={() => downloadCertificate(c)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg></ActionBtn>
+                          <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} disabled={frozen} onPick={(fmt) => onDownload(c, fmt)} t={t} />
                         </div>
                           );
                         })()}

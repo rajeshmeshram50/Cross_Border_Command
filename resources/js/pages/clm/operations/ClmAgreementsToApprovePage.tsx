@@ -567,10 +567,11 @@ function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: (
    on the contract can read the conversation and add their own remark. Always
    active (unlike Review & Approve, which waits for the initiator's reply). */
 function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
+  // Team Vault look: a soft white-to-cyan tile (Review & Approve is the solid one).
   const fg = t.dark ? '#67e8f9' : '#0e7490';
   return (
     <Tooltip label="View conversation & add your remark">
-      <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, boxSizing: 'border-box', padding: '0 11px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.45)' : '#A5F3FC'}`, background: t.dark ? 'rgba(6,182,212,.14)' : '#ECFEFF', color: fg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, boxSizing: 'border-box', padding: '0 11px', borderRadius: 8, border: `1px solid ${t.dark ? 'rgba(34,211,238,.28)' : 'transparent'}`, background: t.dark ? 'rgba(6,182,212,.08)' : 'linear-gradient(150deg, #ffffff 0%, #e6fafd 100%)', boxShadow: t.dark ? 'none' : '0 2px 6px -2px rgba(8,145,178,.35), inset 0 1px 0 #fff', color: fg, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={fg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> Respond
       </button>
     </Tooltip>
@@ -710,7 +711,9 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                         <Tooltip label={dlId === c.id ? 'Preparing PDF…' : 'Download agreement PDF'}>
-                          <button type="button" onClick={() => onDownload(c.id)} disabled={dlId === c.id} aria-label="Download agreement PDF" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 27, height: 27, borderRadius: 8, border: `1px solid ${c.status === 'approved' ? (t.dark ? 'rgba(52,211,153,.4)' : '#A7F3D0') : (t.dark ? 'rgba(248,113,113,.4)' : '#FECACA')}`, background: c.status === 'approved' ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(239,68,68,.16)' : '#FEF2F2'), color: c.status === 'approved' ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#fca5a5' : '#DC2626'), cursor: dlId === c.id ? 'wait' : 'pointer', flexShrink: 0 }}>
+                          <button type="button" onClick={() => onDownload(c.id)} disabled={dlId === c.id} aria-label="Download agreement PDF" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, border: `1px solid ${t.dark ? 'rgba(34,211,238,.28)' : 'transparent'}`, background: t.dark ? 'rgba(6,182,212,.08)' : 'linear-gradient(150deg, #ffffff 0%, #e6fafd 100%)', boxShadow: t.dark ? 'none' : '0 2px 6px -2px rgba(8,145,178,.35), inset 0 1px 0 #fff', color: t.dark ? '#67e8f9' : '#0e7490', cursor: dlId === c.id ? 'wait' : 'pointer', flexShrink: 0, transition: 'background .15s, transform .15s, color .15s' }}
+                            onMouseEnter={e => { if (dlId === c.id) return; e.currentTarget.style.background = 'linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = t.dark ? 'rgba(6,182,212,.08)' : 'linear-gradient(150deg, #ffffff 0%, #e6fafd 100%)'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; e.currentTarget.style.transform = 'none'; }}>
                             {dlId === c.id
                               ? <svg className="ata-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                               : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}

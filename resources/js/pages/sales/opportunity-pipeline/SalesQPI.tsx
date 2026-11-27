@@ -1085,6 +1085,32 @@ export default function SalesQPI() {
         const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
+            {(() => {
+              const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
+              const qConverted = r.status === 'converted_to_pi';
+              const oppLocked = !qConverted && oppHasPi(r);
+              return (
+            <ActionBtn
+              title={readOnly ? readOnlyHint : qConverted ? 'Converted to PI — editing locked' : oppLocked ? 'This opportunity already has a Proforma Invoice — its quotations are locked' : qSigned ? 'Quotation signed — editing locked' : 'Edit Quotation'}
+              icon={<IconEdit />}
+              color="#16a34a"
+              disabled={readOnly || qSigned || qConverted || oppLocked}
+              onClick={() => {
+                if (!r.id) { toast.error('Cannot edit', 'This quotation has no server id yet.'); return; }
+                if (qConverted) {
+                  toast.error('Locked', 'This quotation has been converted to a PI and cannot be edited. Edit the PI instead.');
+                  return;
+                }
+                if (oppLocked) {
+                  toast.error('Locked', 'This opportunity already has a Proforma Invoice. Its quotations can no longer be edited.');
+                  return;
+                }
+                setEditingQuotationId(r.id);
+                setCreateQtOpen(true);
+              }}
+            />
+              );
+            })()}
             {r.status === 'converted_to_pi' ? (
               <Tooltip label="This quotation has already been converted to a PI">
                 <button type="button" disabled className="qpi-convert-btn qpi-convert-btn-done" aria-label="Already converted to PI">
@@ -1123,32 +1149,6 @@ export default function SalesQPI() {
               cooling={!!r.id && cooldownLeft('quotation', r.id) > 0}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
-            {(() => {
-              const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
-              const qConverted = r.status === 'converted_to_pi';
-              const oppLocked = !qConverted && oppHasPi(r);
-              return (
-            <ActionBtn
-              title={readOnly ? readOnlyHint : qConverted ? 'Converted to PI — editing locked' : oppLocked ? 'This opportunity already has a Proforma Invoice — its quotations are locked' : qSigned ? 'Quotation signed — editing locked' : 'Edit Quotation'}
-              icon={<IconEdit />}
-              color="#16a34a"
-              disabled={readOnly || qSigned || qConverted || oppLocked}
-              onClick={() => {
-                if (!r.id) { toast.error('Cannot edit', 'This quotation has no server id yet.'); return; }
-                if (qConverted) {
-                  toast.error('Locked', 'This quotation has been converted to a PI and cannot be edited. Edit the PI instead.');
-                  return;
-                }
-                if (oppLocked) {
-                  toast.error('Locked', 'This opportunity already has a Proforma Invoice. Its quotations can no longer be edited.');
-                  return;
-                }
-                setEditingQuotationId(r.id);
-                setCreateQtOpen(true);
-              }}
-            />
-              );
-            })()}
             <ActionBtn
               title={(r as any).zoho_status === 'Sync' ? 'Already synced to Zoho Books — sync again' : 'Sync to Zoho Books (Estimate)'}
               icon={<IconZohoSync />}
@@ -1258,24 +1258,6 @@ export default function SalesQPI() {
         const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
-            {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
-            <ActionBtn
-              title={
-                readOnly
-                  ? readOnlyHint
-                  : isEmailing('pi', r.id)
-                    ? 'Sending…'
-                    : r.id && cooldownLeft('pi', r.id) > 0
-                      ? `Please wait ${cooldownLeft('pi', r.id)}s (max 3 per minute)`
-                      : 'Email PI'
-              }
-              icon={<IconMail />}
-              color="#2563eb"
-              disabled={readOnly || (isEmailing('pi', r.id))}
-              loading={isEmailing('pi', r.id)}
-              cooling={!!r.id && cooldownLeft('pi', r.id) > 0}
-              onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
-            />
             {(() => {
               const pStatus = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
               const pSent   = pStatus === 'inprogress';
@@ -1295,6 +1277,24 @@ export default function SalesQPI() {
             />
               );
             })()}
+            {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
+            <ActionBtn
+              title={
+                readOnly
+                  ? readOnlyHint
+                  : isEmailing('pi', r.id)
+                    ? 'Sending…'
+                    : r.id && cooldownLeft('pi', r.id) > 0
+                      ? `Please wait ${cooldownLeft('pi', r.id)}s (max 3 per minute)`
+                      : 'Email PI'
+              }
+              icon={<IconMail />}
+              color="#2563eb"
+              disabled={readOnly || (isEmailing('pi', r.id))}
+              loading={isEmailing('pi', r.id)}
+              cooling={!!r.id && cooldownLeft('pi', r.id) > 0}
+              onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
+            />
             <ActionBtn
               title={(r as any).zoho_status === 'Sync' ? 'Already synced to Zoho Books — sync again' : 'Sync to Zoho Books (Invoice)'}
               icon={<IconZohoSync />}
@@ -4053,8 +4053,7 @@ const IconMail = () => (
 );
 const IconEdit = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" />
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
   </svg>
 );
 const IconKebab = () => (
@@ -5450,6 +5449,45 @@ const SCOPED_CSS = `
 .qpi-root .qpi-card .qpi-tablebar .qpi-doctype-filter .master-select-value { font-size: 12.5px; }
 .qpi-root .qpi-card .qpi-tablebar .cstrip__action-btn {
   box-sizing: border-box; height: 40px; min-height: 40px; align-self: center; font-size: 12.5px;
+}
+
+/* Row actions follow the Team Vault table, in this page's violet: Edit is the
+   solid tile with a white icon; every other action is a soft white-to-lavender
+   tile with a violet icon that fills solid violet on hover. Disabled ones keep
+   the same look, faded. */
+.qpi-root .qpi-act.qpi-act {
+  border-radius: 9px; border: 1px solid transparent; color: #6d28d9;
+  background: linear-gradient(150deg, #ffffff 0%, #f1ebfe 100%);
+  box-shadow: 0 2px 6px -2px rgba(124,58,237,.35), inset 0 1px 0 #fff;
+}
+.qpi-root .qpi-act.qpi-act[aria-label^="Edit"] {
+  color: #fff;
+  background: linear-gradient(140deg, #a78bfa 0%, #7c3aed 55%, #6d28d9 100%);
+  box-shadow: 0 6px 12px -6px rgba(124,58,237,.75), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.qpi-root .qpi-act.qpi-act:not(.qpi-act-disabled):not(:disabled):hover {
+  color: #fff; border-color: transparent; transform: translateY(-1px);
+  background: linear-gradient(140deg, #a78bfa 0%, #7c3aed 55%, #6d28d9 100%);
+  box-shadow: 0 8px 16px -6px rgba(124,58,237,.7), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.qpi-root .qpi-act.qpi-act[aria-label^="Edit"]:not(.qpi-act-disabled):not(:disabled):hover {
+  background: linear-gradient(140deg, #7c3aed, #6d28d9 60%, #5b21b6);
+}
+.qpi-root .qpi-act.qpi-act:is(.qpi-act-disabled, :disabled),
+.qpi-root .qpi-act.qpi-act:is(.qpi-act-disabled, :disabled):hover {
+  opacity: .4; transform: none; cursor: not-allowed;
+  color: #6d28d9 !important; border-color: transparent !important;
+  background: linear-gradient(150deg, #ffffff 0%, #f1ebfe 100%) !important;
+}
+[data-bs-theme="dark"] .qpi-root .qpi-act.qpi-act,
+[data-bs-theme="dark"] .qpi-root .qpi-act.qpi-act:is(.qpi-act-disabled, :disabled) {
+  color: #c4b5fd !important; background: rgba(139,92,246,.10) !important;
+  border-color: rgba(167,139,250,.30) !important; box-shadow: none;
+}
+[data-bs-theme="dark"] .qpi-root .qpi-act.qpi-act[aria-label^="Edit"]:not(.qpi-act-disabled):not(:disabled),
+[data-bs-theme="dark"] .qpi-root .qpi-act.qpi-act:not(.qpi-act-disabled):not(:disabled):hover {
+  color: #fff !important; border-color: transparent !important;
+  background: linear-gradient(140deg, #a78bfa 0%, #7c3aed 55%, #6d28d9 100%) !important;
 }
 
 `;
