@@ -898,9 +898,69 @@
 .dt-act-warning:hover:not(:disabled) { background: linear-gradient(135deg, #fbbf24, #b45309); box-shadow: 0 4px 14px rgba(180, 83, 9, .40); }
 .dt-act-danger:hover:not(:disabled)  { background: linear-gradient(135deg, #f87171, #b91c1c); box-shadow: 0 4px 14px rgba(185, 28, 28, .40); }
 
+/* Solid (primary) action — filled by DEFAULT, not only on hover, so the first
+   action stands out from the tinted rest. A disabled/muted solid keeps the fill,
+   just dimmed, so it still reads as the same control. */
+.dt-act.is-solid { color: #fff; border-color: transparent; order: -1; }
+.dt-act.is-solid.dt-act-accent  { background: linear-gradient(135deg, var(--dt-a-500), var(--dt-a-700)); }
+.dt-act.is-solid.dt-act-info     { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+.dt-act.is-solid.dt-act-success  { background: linear-gradient(135deg, #34d399, #059669); }
+.dt-act.is-solid.dt-act-warning  { background: linear-gradient(135deg, #fbbf24, #b45309); }
+.dt-act.is-solid.dt-act-danger   { background: linear-gradient(135deg, #f87171, #b91c1c); }
+
 /* Actions column packs 2–4 of these; keep them evenly spaced without every
    page having to wrap them in its own flex row. */
 .dt-table tbody td .dt-act + .dt-act { margin-left: 4px; }
+
+/* HRMS action tiles — CredVault / Team Vault's "whm-act" tiles recoloured to our
+   violet accent. Edit is the solid violet tile with a white pencil; the rest are
+   soft white→violet tiles with a violet icon that fill solid violet on hover. */
+.hr-acts { display: inline-flex; gap: 6px; align-items: center; }
+.hr-act {
+  width: 30px; height: 30px; flex-shrink: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  border: 1px solid #ddd3ff;
+  color: #7c5cfc;
+  background: linear-gradient(150deg, #ffffff 0%, #f1ecff 100%);
+  box-shadow: 0 2px 6px -2px rgba(124, 92, 252, .35), inset 0 1px 0 #fff;
+  cursor: pointer;
+  transition: background .18s, color .18s, transform .18s, box-shadow .18s, border-color .18s;
+}
+.hr-act i { font-size: 15px; line-height: 1; }
+.hr-act svg { width: 15px; height: 15px; }
+.hr-act:not(.hr-act--edit):not(:disabled):hover {
+  color: #fff; border-color: transparent; transform: translateY(-1px);
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%);
+  box-shadow: 0 7px 18px -4px rgba(124, 58, 237, .5), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+/* The solid edit tile matches the "Initiate Onboarding" (.onb-init-btn.is-compact)
+   button exactly: the glossy 4-stop violet gradient, inset highlights and top sheen. */
+.hr-act--edit {
+  order: -1; color: #fff; border-color: transparent;
+  position: relative; overflow: hidden;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .4), 0 1px 0 rgba(255, 255, 255, .4) inset, 0 -2px 6px rgba(91, 33, 182, .3) inset;
+}
+.hr-act--edit::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .28), transparent);
+  pointer-events: none;
+}
+.hr-act--edit > svg, .hr-act--edit > i { position: relative; z-index: 1; }
+.hr-act--edit:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(124, 58, 237, .5), 0 1px 0 rgba(255, 255, 255, .4) inset; }
+.hr-act:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+/* No stray UA focus box after a mouse click; keep a clean ring for keyboard. */
+.hr-act:focus { outline: none; }
+.hr-act:focus-visible { outline: 2px solid #a78bfa; outline-offset: 1px; }
+[data-bs-theme="dark"] .hr-act:not(.hr-act--edit),
+[data-layout-mode="dark"] .hr-act:not(.hr-act--edit) {
+  color: #c4b5fd; background: rgba(124, 92, 252, .10); border-color: rgba(124, 92, 252, .30); box-shadow: none;
+}
+[data-bs-theme="dark"] .hr-act:not(.hr-act--edit):not(:disabled):hover,
+[data-layout-mode="dark"] .hr-act:not(.hr-act--edit):not(:disabled):hover {
+  color: #fff; background: #6d4bf0; box-shadow: none;
+}
 
 /* The shared pager bleeds into a 16px-padded host by default; this layout is
    flush, so reset the bleed and let it sit inside the rounded card. */

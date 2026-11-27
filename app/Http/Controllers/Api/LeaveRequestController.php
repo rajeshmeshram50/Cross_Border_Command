@@ -248,6 +248,17 @@ class LeaveRequestController extends Controller
         $unlimited = \App\Support\LeaveCarry::isUnlimitedYear((array) $accrual, \App\Support\LeaveYear::of($from));
 
         $leaveApp = (is_array($ptConfig) ? $ptConfig['leaveApp'] ?? [] : []);
+
+        // A leave whose dates are ALL weekly-offs/holidays is not a leave — the
+        // employee is already off — so reject it instead of charging a day
+        // (QA #256/#257). This is a plain off-day scan (weekly-off + holiday),
+        // deliberately NOT routed through SandwichPolicy, so sandwich stays
+        // untouched: bridged off-days are charged by the sandwich branch, never
+        // raised as their own request, so no legitimate leave is blocked here.
+        if (!$this->hasWorkingDay($from, $to, $employee)) {
+            abort(422, 'The selected date(s) are all weekly-offs or holidays — no leave is needed for days you are already off.');
+        }
+
         $days = $this->computeLeaveDays($from, $to, $dayType, $employee, null, false, true);
 
         if ($dayType !== 'full' && !(bool) ($ptConfig['leaveApp']['allowHalfDay'] ?? false)) {
@@ -1061,6 +1072,27 @@ class LeaveRequestController extends Controller
             if ($emp && $emp->reporting_manager_id) {
                 $myEmpId = $user->employee_id;
                 if ($myEmpId && (int)$emp->reporting_manager_id === (int)$myEmpId) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when at least one day in [from, to] is a working day for this
+     * employee (not a weekly-off and not a holiday). Used to reject an all-off
+     * leave at submit. Intentionally independent of SandwichPolicy.
+     */
+    private function hasWorkingDay(Carbon $from, Carbon $to, Employee $employee): bool
+    {
+        $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
+        $start = $from->copy()->startOfDay();
+        $end   = $to->copy()->startOfDay();
+        $holidaySet = $this->holidayDatesInRange($employee, $start, $end);
+
+        foreach (CarbonPeriod::create($start, $end) as $d) {
+            if (!\App\Support\WeekOff::isOff($weeklyOffLabel, $d)
+                && !isset($holidaySet[$d->toDateString()])) {
+                return true;
             }
         }
         return false;

@@ -209,17 +209,16 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
         </div>
         <div className="d-flex align-items-center gap-2 flex-shrink-0">
           <Button
-            color="secondary"
-            className="btn-label waves-effect waves-light rounded-pill"
+            className="rounded-pill px-3 d-inline-flex align-items-center"
             onClick={() => onNavigate('branch-form', { editId: branchId })}
+            style={{ color: '#fff', border: 'none', background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%)' }}
           >
-            <i className="ri-pencil-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+            <i className="ri-pencil-line me-1" style={{ fontSize: 15 }}></i>
             Edit Profile
           </Button>
-          <button type="button" className="frm-cstrip-back" onClick={onBack}>
-            <i className="ri-arrow-left-line" />
-            Back
-          </button>
+          <Button color="light" className="rounded-pill px-3" onClick={onBack}>
+            <i className="ri-arrow-left-line align-bottom me-1" />Back
+          </Button>
         </div>
       </div>
 
@@ -380,7 +379,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>
               <SectionHeader title="About" gradient={GRAD_PRIMARY} icon="ri-information-line" />
-              <p className="text-muted mb-0">
+              <p className="text-muted mb-3">
                 <strong>{branch.name}</strong> is a {branch.branch_type || 'branch'}
                 {branch.industry && <> operating in the <strong>{branch.industry}</strong> sector</>}
                 {location && <> based in <strong>{location}</strong></>}.
@@ -391,7 +390,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
                 <Col xs={12} md={4}>
                   <div className="d-flex align-items-center p-3 h-100" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(64,81,137,0.06), rgba(102,145,231,0.04))', border: '1px solid var(--vz-border-color)' }}>
                     <div className="flex-shrink-0 me-3">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ width: 40, height: 40, background: GRAD_PRIMARY, boxShadow: '0 4px 10px rgba(64,81,137,0.25)' }}>
+                      <span className="d-inline-flex align-items-center justify-content-center" style={{ width: 40, height: 40, borderRadius: 11, background: GRAD_PRIMARY, boxShadow: '0 4px 10px rgba(64,81,137,0.25)' }}>
                         <i className="ri-git-branch-line" style={{ color: '#fff', fontSize: 18 }}></i>
                       </span>
                     </div>
@@ -404,7 +403,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
                 <Col xs={12} md={4}>
                   <div className="d-flex align-items-center p-3 h-100" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(41,156,219,0.06), rgba(95,200,255,0.04))', border: '1px solid var(--vz-border-color)' }}>
                     <div className="flex-shrink-0 me-3">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ width: 40, height: 40, background: GRAD_INFO, boxShadow: '0 4px 10px rgba(41,156,219,0.25)' }}>
+                      <span className="d-inline-flex align-items-center justify-content-center" style={{ width: 40, height: 40, borderRadius: 11, background: GRAD_INFO, boxShadow: '0 4px 10px rgba(41,156,219,0.25)' }}>
                         <i className="ri-hashtag" style={{ color: '#fff', fontSize: 18 }}></i>
                       </span>
                     </div>
@@ -417,7 +416,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
                 <Col xs={12} md={4}>
                   <div className="d-flex align-items-center p-3 h-100" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(247,184,75,0.08), rgba(255,212,122,0.04))', border: '1px solid var(--vz-border-color)' }}>
                     <div className="flex-shrink-0 me-3">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ width: 40, height: 40, background: GRAD_WARNING, boxShadow: '0 4px 10px rgba(247,184,75,0.3)' }}>
+                      <span className="d-inline-flex align-items-center justify-content-center" style={{ width: 40, height: 40, borderRadius: 11, background: GRAD_WARNING, boxShadow: '0 4px 10px rgba(247,184,75,0.3)' }}>
                         <i className="ri-briefcase-line" style={{ color: '#fff', fontSize: 18 }}></i>
                       </span>
                     </div>

@@ -208,18 +208,17 @@ export default function Payments() {
 
   // Outline icon pill — identical to the one used on the Clients page.
   const ActionBtn = ({
-    title, icon, color, onClick, disabled,
-  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    title, icon, onClick, disabled, solid,
+  }: { title: string; icon: string; color?: string; onClick: () => void; disabled?: boolean; solid?: boolean }) => (
     <Tooltip label={title}>
       <button
         type="button"
         aria-label={title}
         disabled={disabled}
-        data-color={color}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center pmt-action-btn"
+        className={`hr-act${solid ? ' hr-act--edit' : ''}`}
         onClick={onClick}
       >
-        <i className={`${icon} fs-14`} />
+        <i className={icon} />
       </button>
     </Tooltip>
   );
@@ -333,7 +332,7 @@ export default function Payments() {
         const p: Payment = info.row.original;
         return (
           <div className="d-flex gap-2 justify-content-center">
-            <ActionBtn title="View" icon="ri-eye-line" color="info" onClick={() => setViewPayment(p)} />
+            <ActionBtn title="View" icon="ri-eye-line" solid onClick={() => setViewPayment(p)} />
             {p.status === 'success' && (
               <ActionBtn title="Invoice PDF" icon="ri-file-pdf-2-line" color="primary" onClick={() => viewInvoice(p)} />
             )}

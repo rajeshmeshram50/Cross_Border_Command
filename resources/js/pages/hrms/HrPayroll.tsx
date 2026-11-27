@@ -1654,20 +1654,20 @@ status: facetParam(facets.status),
       cell: info => {
         const r = info.row.original;
         return (
-          <div className="d-flex align-items-center justify-content-center gap-2">
-            <button type="button" className="onb-edit-btn" title="View Payslip" onClick={() => openPayslip(r)}>
-              <i className="ri-eye-line" style={{ fontSize: 14 }} />
+          <div className="hr-acts justify-content-center">
+            <button type="button" className="hr-act hr-act--edit" title="View Payslip" onClick={() => openPayslip(r)}>
+              <i className="ri-eye-line" />
             </button>
             <button
               type="button"
-              className="onb-edit-btn"
+              className="hr-act"
               title="Download payslip PDF"
               disabled={pdfBusyId === r.id}
               onClick={() => downloadPayslipPdf(r)}
             >
               {pdfBusyId === r.id
                 ? <Spinner size="sm" style={{ width: 14, height: 14 }} />
-                : <i className="ri-download-2-line" style={{ fontSize: 14 }} />}
+                : <i className="ri-download-2-line" />}
             </button>
           </div>
         );
@@ -1937,14 +1937,12 @@ status: facetParam(facets.status),
           return (
             <button
               type="button"
-              className="onb-vault-btn"
+              className="hr-act hr-act--edit"
               title={payslipBlocked ? `Payslip unavailable while status is ${r.status}` : 'Download payslip'}
               disabled={payslipBlocked}
-              style={payslipBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
               onClick={() => { if (!payslipBlocked) openPayslip(r); }}
             >
-              <i className={`${payslipBlocked ? 'ri-lock-line' : 'ri-file-download-line'}`} style={{ fontSize: 14 }} />
-              Payslip
+              <i className={`${payslipBlocked ? 'ri-lock-line' : 'ri-download-2-line'}`} />
             </button>
           );
         },
@@ -2054,16 +2052,21 @@ status: facetParam(facets.status),
           <div className="d-inline-flex align-items-center gap-1">
             <button
               type="button"
-              className="onb-vault-btn"
+              className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 fw-semibold"
               disabled={exiting}
               aria-disabled={locked || undefined}
-              style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              style={{
+                height: 40, padding: '0 17px', fontSize: 12, borderRadius: 10,
+                ...(locked
+                  ? { opacity: 0.5, cursor: 'not-allowed', background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', border: '1px solid var(--vz-border-color)' }
+                  : { color: '#fff', border: 'none', background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%)', boxShadow: '0 3px 8px rgba(124,58,237,.3), 0 1px 0 rgba(255,255,255,.35) inset' }),
+              }}
               title={exiting
                 ? `Exit in progress${emp.exit_last_working_day ? ` — last working day ${emp.exit_last_working_day}` : ''}. Settle this in Exit Management, not here.`
                 : perm.lockedTitle(action)}
               onClick={() => { if (!exiting) perm.guard(action, () => setSalaryEmp(emp)); }}
             >
-              <i className={`me-1 ${locked ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
+              <i className={`${locked ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
               {exiting ? 'Exiting' : (emp.has_structure ? 'Revise' : 'Set Salary')}
             </button>
 
@@ -2076,12 +2079,12 @@ status: facetParam(facets.status),
             {emp.has_structure && (
               <button
                 type="button"
-                className="onb-vault-btn"
+                className="hr-act"
                 title="Salary revision history — every version with its breakup"
                 aria-label="Salary revision history"
                 onClick={() => setHistoryEmp(emp)}
               >
-                <i className="ri-history-line" style={{ fontSize: 13 }} />
+                <i className="ri-history-line" />
               </button>
             )}
           </div>

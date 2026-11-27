@@ -254,7 +254,10 @@ export default function JobTab() {
                   return (
                     <>
                       {/* All asset fields on a single row — equal-width auto cols. */}
-                      <Col><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">{empDetail?.laptop_assigned || (laptop ? 'Yes' : 'No')}</div></Col>
+                      {/* A linked asset is the source of truth — the stored
+                          laptop_assigned string ('No') is truthy and otherwise
+                          wins the ||, so it showed No even after assigning. */}
+                      <Col><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">{laptop ? 'Yes' : (empDetail?.laptop_assigned || 'No')}</div></Col>
                       <Col>
                         <div className="ep-field-label">Laptop Asset ID</div>
                         {laptop ? (

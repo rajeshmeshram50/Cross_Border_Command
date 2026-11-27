@@ -1156,6 +1156,16 @@ export function PillCell({
  * a Remix class, so existing icons are untouched.
  */
 export function ActionIcon({ icon, className = '' }: { icon: string; className?: string }) {
+  if (icon === 'edit-pencil') {
+    // The Feather/Lucide pencil used by CredVault's edit tile.
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+      </svg>
+    );
+  }
   if (icon === 'edit-svg') {
     return (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1188,6 +1198,8 @@ export function ActionCell({
   onClick,
   disabled = false,
   muted = false,
+  solid = false,
+  hrTile = false,
 }: {
   title: string;
   icon: string;
@@ -1197,13 +1209,23 @@ export function ActionCell({
   /** Looks disabled (dimmed, not-allowed) but still fires onClick — so the
    *  handler can explain why the action isn't allowed. */
   muted?: boolean;
+  /** Filled by default (not only on hover) so the primary action stands out —
+   *  the disabled/muted state keeps the fill, just dimmed. */
+  solid?: boolean;
+  /** Opt in to the violet HRMS `.hr-act` tile (filled when `solid`) instead of
+   *  the toned `.dt-act`. Lets the admin/billing lists match the HRMS tables
+   *  without changing every other caller. `tone` is ignored when set. */
+  hrTile?: boolean;
 }) {
+  const className = hrTile
+    ? `hr-act${solid ? ' hr-act--edit' : ''}`
+    : `dt-act dt-act-${tone}${solid ? ' is-solid' : ''}`;
   const btn = (
     <button
       type="button"
       aria-label={title}
       disabled={disabled}
-      className={`dt-act dt-act-${tone}`}
+      className={className}
       style={muted ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
       onClick={e => { e.stopPropagation(); onClick(); }}
     >

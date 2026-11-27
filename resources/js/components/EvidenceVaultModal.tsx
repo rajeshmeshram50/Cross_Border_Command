@@ -1070,30 +1070,29 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                       </td>
                       <td style={{ color: 'var(--vz-secondary-color)', whiteSpace: 'nowrap' }}>{fmtDate(r.created_at) || '—'}</td>
                       {/* One button (Track) centres; two (Track + Download) stay right. */}
-                      <td className={`ev-td-actions${r.status === 'Completed' ? '' : ' ev-td-actions--center'}`}>
+                      <td className="ev-td-actions ev-td-actions--center">
                         {/* Pending rows: the only thing to do is watch where it
                             is, so Track stands alone. Completed: add the
                             signed-PDF download. */}
-                        <button type="button" className="ev-doc-btn ev-doc-btn--soft"
-                          onClick={() => setSigView(r)}
-                          title="Who signed, when, and every step in between">
-                          {/* "Track" on every row. A completed document said
-                              "Audit Trail" and a pending one "Track" — two
-                              names for one button, so the column read as two
-                              different actions depending on the row. */}
-                          <i className="ri-file-history-line" />Track
-                        </button>
-                        {/* Read it without saving it first. Employee rows have
-                            had this eye since the start; these had Download or
-                            nothing, which is a poor way to check a document
-                            before approving it. */}
-                        <button type="button" className="ev-doc-btn ev-doc-btn--open"
-                          disabled={busyKey === `view-${r.id}`} onClick={() => viewRun(r)}
-                          title="Open the document">
-                          {busyKey === `view-${r.id}`
-                            ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />View</>
-                            : <><i className="ri-eye-line" />View</>}
-                        </button>
+                        {/* Read it without saving it first — the primary action, so
+                            it leads and is filled. */}
+                        <Tooltip label="View">
+                          <button type="button" className="hr-act hr-act--edit"
+                            disabled={busyKey === `view-${r.id}`} onClick={() => viewRun(r)}
+                            aria-label="View">
+                            {busyKey === `view-${r.id}`
+                              ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                              : <i className="ri-eye-line" />}
+                          </button>
+                        </Tooltip>
+                        {/* "Track" on every row — who signed, when, and every
+                            step in between. */}
+                        <Tooltip label="Track">
+                          <button type="button" className="hr-act"
+                            onClick={() => setSigView(r)} aria-label="Track">
+                            <i className="ri-file-history-line" />
+                          </button>
+                        </Tooltip>
                         {(r.status === 'Pending' || r.status === 'In Progress') && (
                           <span className="ev-doc-btn ev-doc-btn--await" aria-disabled="true"
                             title="Out with the signers — nothing to do here yet">
@@ -1108,21 +1107,26 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                             document reached this table instead and offered
                             Track and View — nothing that moved it on. */}
                         {(r.status === 'Rejected' || r.status === 'Cancelled') && (
-                          <button type="button" className="ev-doc-btn ev-doc-btn--send"
-                            disabled={sendingTplId != null}
-                            onClick={() => sendDocForSignature(r.template_id, r.template?.name ?? null)}>
-                            {sendingTplId === r.template_id
-                              ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Sending…</>
-                              : <><i className="ri-send-plane-line" />Re-send</>}
-                          </button>
+                          <Tooltip label="Re-send">
+                            <button type="button" className="hr-act"
+                              disabled={sendingTplId != null} aria-label="Re-send"
+                              onClick={() => sendDocForSignature(r.template_id, r.template?.name ?? null)}>
+                              {sendingTplId === r.template_id
+                                ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                : <i className="ri-send-plane-line" />}
+                            </button>
+                          </Tooltip>
                         )}
                         {r.status === 'Completed' && (
-                          <button type="button" className="ev-doc-btn ev-doc-btn--download"
-                            disabled={busyKey === `run-${r.id}`} onClick={() => downloadRun(r)}>
-                            {busyKey === `run-${r.id}`
-                              ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-                              : <><i className="ri-download-line" />Download</>}
-                          </button>
+                          <Tooltip label="Download">
+                            <button type="button" className="hr-act"
+                              disabled={busyKey === `run-${r.id}`} aria-label="Download"
+                              onClick={() => downloadRun(r)}>
+                              {busyKey === `run-${r.id}`
+                                ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                : <i className="ri-download-line" />}
+                            </button>
+                          </Tooltip>
                         )}
                       </td>
                     </tr>
@@ -1321,13 +1325,13 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                             {status}
                           </span>
                         </td>
-                        <td className="ev-td-actions">
+                        <td className="ev-td-actions ev-td-actions--center">
                           {/* Icon only, and labelled by the app's own Tooltip rather
                               than the browser's `title` — same treatment as the
                               ActionBtn icons in the employee table. */}
                           <Tooltip label={status === 'Generated' ? 'Preview' : 'View'}>
                             <button type="button"
-                              className={`ev-doc-btn ev-doc-btn--icon ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
+                              className="hr-act hr-act--edit"
                               disabled={disabled || busyKey === d.key}
                               onClick={() => handleViewRow(d)}
                               aria-label={status === 'Generated' ? 'Preview' : 'View'}
@@ -1338,15 +1342,18 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                             </button>
                           </Tooltip>
                           {!refused && (
-                            <button type="button"
-                              className="ev-doc-btn ev-doc-btn--download"
-                              disabled={disabled || busyKey === d.key}
-                              onClick={() => handleDownloadRow(d)}
-                            >
-                              {busyKey === d.key && busyAction === 'download'
-                                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
-                                : <><i className="ri-download-line" />Download</>}
-                            </button>
+                            <Tooltip label="Download">
+                              <button type="button"
+                                className="hr-act"
+                                disabled={disabled || busyKey === d.key}
+                                onClick={() => handleDownloadRow(d)}
+                                aria-label="Download"
+                              >
+                                {busyKey === d.key && busyAction === 'download'
+                                  ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                  : <i className="ri-download-line" />}
+                              </button>
+                            </Tooltip>
                           )}
                           {/* The only way forward for a refused document. It is
                               why the row is listed at all. (QA #34) */}
@@ -1470,10 +1477,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
               <i className="ri-file-history-line" />
             </span>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.8)' }}>
-                {r.code ? `${r.code} · ` : ''}Signing Workflow
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 19, lineHeight: 1.2, marginTop: 2 }}>Track</div>
+              <div style={{ fontWeight: 700, fontSize: 19, lineHeight: 1.2 }}>Track</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,.85)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {r.template?.name || 'Document'} · e-Signature lifecycle
                 <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,.22)' }}>{r.status}</span>

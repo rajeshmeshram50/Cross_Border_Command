@@ -350,16 +350,16 @@ export default function HrBroadcastCentre() {
             <Tooltip label={r.status === 'Draft' ? 'Edit' : 'View'}>
               <button
                 type="button"
-                className={`rec-act ${r.status === 'Draft' ? 'rec-act-edit' : 'rec-act-view'} rec-act--icon`}
+                className="hr-act hr-act--edit"
                 aria-label={r.status === 'Draft' ? 'Edit' : 'View'}
                 onClick={() => { setEditingRow(r); setCreateOpen(true); }}
               >
-                {r.status === 'Draft' ? <ActionIcon icon="edit-svg" /> : <i className="ri-eye-line" />}
+                {r.status === 'Draft' ? <ActionIcon icon="edit-pencil" /> : <i className="ri-eye-line" />}
               </button>
             </Tooltip>
             {r.status === 'Draft' && (
               <Tooltip label={publishingId === r.id ? 'Publishing…' : 'Publish Now'}>
-                <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" disabled={publishingId === r.id} onClick={() => handlePublishNow(r)}>
+                <button type="button" className="hr-act" aria-label="Publish Now" disabled={publishingId === r.id} onClick={() => handlePublishNow(r)}>
                   <i className={publishingId === r.id ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-line'} />
                 </button>
               </Tooltip>
@@ -367,7 +367,7 @@ export default function HrBroadcastCentre() {
 
             {r.status === 'Draft' && (
               <Tooltip label="Delete">
-                <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
+                <button type="button" className="hr-act" aria-label="Delete" onClick={() => handleDelete(r)}>
                   <i className="ri-delete-bin-line" />
                 </button>
               </Tooltip>

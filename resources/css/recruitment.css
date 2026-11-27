@@ -8017,24 +8017,24 @@
 .att-btn-reject { background: #ffffff; color: #b91c1c; border: 1px solid #fecaca; }
 .att-btn-reject:hover { background: #fef2f2; }
 
+/* The lone View action is a FILLED TEAL tile, matching this page's teal theme
+   (the attendance / regularization header gradient), mirroring the HRMS violet
+   .hr-act--edit tile in that colour. Icon-only, 30×30. */
 .att-reg-view {
-  height: 28px;
-  padding: 0 11px;
-  cursor: pointer;
-  background: #eef2ff;
-  color: #4338ca;
-  border: 1px solid #c7d2fe;
+  width: 30px; height: 30px; flex-shrink: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; cursor: pointer; color: #fff;
+  border: 1px solid transparent; position: relative; overflow: hidden;
+  background: linear-gradient(135deg, #047857 0%, #0ab39c 55%, #10b981 100%);
+  box-shadow: 0 4px 12px rgba(4, 120, 87, .4), 0 1px 0 rgba(255, 255, 255, .4) inset, 0 -2px 6px rgba(4, 95, 70, .3) inset;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
-.att-reg-view:hover { background: #e0e7ff; color: #3730a3; }
-[data-bs-theme="dark"] .att-reg-view {
-  background: rgba(99,102,241,0.14);
-  color: #c7d2fe;
-  border-color: rgba(99,102,241,0.38);
-}
-[data-bs-theme="dark"] .att-reg-view:hover {
-  background: rgba(99,102,241,0.24);
-  color: #e0e7ff;
-}
+.att-reg-view::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.28), transparent); pointer-events: none; }
+.att-reg-view > i, .att-reg-view > svg { position: relative; z-index: 1; }
+.att-reg-view i { font-size: 15px; line-height: 1; }
+.att-reg-view:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(4, 120, 87, .5), 0 1px 0 rgba(255, 255, 255, .4) inset; color: #fff; }
+[data-bs-theme="dark"] .att-reg-view,
+[data-bs-theme="dark"] .att-reg-view:hover { color: #fff; }
 
 .att-emplist {
   background: #ffffff;
@@ -10656,23 +10656,22 @@
   color: #fcd34d;
 }
 
+/* Filled tile matching this page's teal table theme, like the HRMS edit tile. */
 .att-log-status-btn {
-  width: 30px; height: 30px;
+  width: 30px; height: 30px; flex-shrink: 0; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 8px;
-  background: transparent;
-  border: 1px solid var(--vz-border-color);
-  color: var(--vz-secondary-color);
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  border-radius: 10px;
+  border: 1px solid transparent; color: #fff;
+  position: relative; overflow: hidden; cursor: pointer;
+  background: linear-gradient(135deg, #047857 0%, #0ab39c 55%, #10b981 100%);
+  box-shadow: 0 4px 12px rgba(4, 120, 87, .35), 0 1px 0 rgba(255, 255, 255, .4) inset, 0 -2px 6px rgba(4, 95, 70, .25) inset;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
+.att-log-status-btn::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.28), transparent); pointer-events: none; }
+.att-log-status-btn > i { position: relative; z-index: 1; }
 .att-log-status-btn i { font-size: 15px; line-height: 1; }
-.att-log-status-btn:hover {
-  background: var(--vz-light, #f9fafb);
-  border-color: #d1d5db;
-  color: var(--vz-body-color);
-}
-.att-log-status-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.att-log-status-btn:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(4, 120, 87, .45), 0 1px 0 rgba(255, 255, 255, .4) inset; }
+.att-log-status-btn:disabled { cursor: not-allowed; opacity: 0.5; transform: none; }
 
 .att-log-row--off > td {
   background: var(--vz-light, #f9fafb) !important;
@@ -11212,7 +11211,6 @@
   .att-logs-monthchip:hover,
   .att-logs-export:hover,
   .att-log-action-btn:hover,
-  .att-log-status-btn:hover,
   .att-aq-btn:hover,
   .att-aq-filter:hover,
   .att-emp-corr-pill,

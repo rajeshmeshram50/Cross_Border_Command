@@ -114,32 +114,6 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
 
   return (
     <>
-      <Row>
-        <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <div className="d-flex align-items-center gap-2">
-              <button
-                className="btn btn-soft-primary btn-icon rounded-circle"
-                style={{ width: 36, height: 36 }}
-                onClick={onBack}
-                title="Back to clients"
-              >
-                <i className="ri-arrow-left-line fs-16"></i>
-              </button>
-              <h4 className="mb-sm-0">Permissions</h4>
-            </div>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item">
-                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/clients'); }}>Client</a>
-                </li>
-                <li className="breadcrumb-item active">Permissions</li>
-              </ol>
-            </div>
-          </div>
-        </Col>
-      </Row>
-
       {!adminUser && (
         <Alert color="warning">
           <i className="ri-alert-line me-1"></i>
@@ -148,82 +122,82 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
       )}
 
       {adminUser && (
-        <Card className="shadow-sm">
-          <CardHeader className="bg-light-subtle border-bottom">
-            <Row className="align-items-center g-3">
-              <Col sm="auto">
-                <div className="d-flex align-items-center gap-3">
-                  <div className="avatar-sm">
-                    <div className="avatar-title rounded bg-primary text-white fw-bold">
-                      {adminUser.name?.charAt(0)?.toUpperCase()}
-                    </div>
-                  </div>
-                  <div>
-                    <h6 className="mb-0 fs-14">{adminUser.name}</h6>
-                    <p className="text-muted mb-0 fs-12">{adminUser.email}</p>
-                  </div>
-                  <Badge color={adminUser.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">
-                    {adminUser.status}
-                  </Badge>
-                </div>
-              </Col>
-              <Col className="text-end">
-                <Button
-                  color="primary"
-                  className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
-                  onClick={handleSave}
-                  disabled={saving}
-                  style={{ minWidth: 180, justifyContent: 'center' }}
-                >
-                  {saving ? (
-                    <>
-                      <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <i className="ri-shield-check-line align-middle fs-16"></i>
-                      Save Permissions
-                    </>
-                  )}
-                </Button>
-              </Col>
-            </Row>
-          </CardHeader>
-
-          <PermissionMatrix
-            modules={modules}
-            matrix={matrix}
-            onChange={setMatrix}
-            grantableBy={null}
-          />
-
-          <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
-            <span className="text-muted fs-13">
-              <i className="ri-edit-box-line me-1 text-primary"></i>
-              Editing: <strong className="text-dark">{adminUser.name}</strong>
-            </span>
-            <Button
-              color="primary"
-              className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
-              onClick={handleSave}
-              disabled={saving}
-              style={{ minWidth: 180, justifyContent: 'center' }}
+        <>
+        {/* Navy identity hero — the same header the Employee Permissions page
+            uses: identity leads, a square dismiss sits top-right, and Save
+            lives at the foot. */}
+        <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, marginBottom: 16, background: 'linear-gradient(120deg, #000066 0%, #00008b 100%)', boxShadow: '0 10px 30px rgba(0,0,40,0.25)' }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)', backgroundSize: '18px 18px', pointerEvents: 'none' }} />
+          <button
+            type="button" aria-label="Back to clients" onClick={onBack}
+            style={{ position: 'absolute', top: 12, right: 12, zIndex: 3, width: 34, height: 34, borderRadius: 9, border: '1px solid rgba(255,255,255,0.32)', background: 'rgba(255,255,255,0.16)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)' }}
+          >
+            <i className="ri-close-line" style={{ fontSize: 18, fontWeight: 700 }} />
+          </button>
+          <div className="d-flex gap-2 align-items-center" style={{ padding: '16px 20px', position: 'relative' }}>
+            <div
+              className="d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 44, height: 44, fontSize: 16, borderRadius: 12, background: 'linear-gradient(135deg,#a855f7,#7c3aed)', boxShadow: '0 8px 22px rgba(124,58,237,0.45), 0 0 0 2px rgba(255,255,255,0.14)' }}
             >
-              {saving ? (
-                <>
-                  <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <i className="ri-shield-check-line align-middle fs-16"></i>
-                  Save Permissions
-                </>
-              )}
-            </Button>
-          </CardBody>
-        </Card>
+              {adminUser.name?.charAt(0)?.toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <h5 className="mb-0 fw-bold text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>{adminUser.name}</h5>
+                <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 999, background: 'rgba(34,197,94,0.18)', color: '#86efac', border: '1px solid rgba(34,197,94,0.40)' }}>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px rgba(34,197,94,0.85)' }} />
+                  {(adminUser.status || 'active').toUpperCase()}
+                </span>
+                {adminUser.email && (
+                  <a href={`mailto:${adminUser.email}`} className="text-decoration-none d-inline-flex align-items-center gap-1" style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)' }}>
+                    <i className="ri-mail-line" style={{ fontSize: 13 }} />{adminUser.email}
+                  </a>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 }}>
+                <i className="ri-building-line me-1" />Client · Grant or revoke module access
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* The matrix is its own card; the Save bar rides inside it via `footer`
+            so it sits flush under the grid (same as the Employee page) — no
+            second card, no dead gap. */}
+        <PermissionMatrix
+          modules={modules}
+          matrix={matrix}
+          onChange={setMatrix}
+          grantableBy={null}
+          footer={
+            <div className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-3">
+              <span className="text-muted fs-13">
+                <i className="ri-edit-box-line me-1 text-primary"></i>
+                Editing: <strong className="text-dark">{adminUser.name}</strong>
+              </span>
+              <Button
+                color="primary"
+                className="waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2"
+                onClick={handleSave}
+                disabled={saving}
+                style={{ minWidth: 180, justifyContent: 'center' }}
+              >
+                {saving ? (
+                  <>
+                    <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="ri-shield-check-line align-middle fs-16"></i>
+                    Save Permissions
+                  </>
+                )}
+              </Button>
+            </div>
+          }
+        />
+        </>
       )}
     </>
   );

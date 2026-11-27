@@ -8,7 +8,7 @@ import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { Shimmer } from '../../components/ui/Shimmer';
-import DataTable, { ActionCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import CtcLivePreview from '../clm/operations/CtcLivePreview';
 import TemplateVersionsModal from './doc-templates/TemplateVersionsModal';
@@ -1297,9 +1297,19 @@ function RefineTemplates(props: {
   );
 }
 
-function ActionBtn({ icon, tone, onClick, title, disabled, muted }: { icon: string; tone: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string; disabled?: boolean; muted?: boolean }) {
-  const mapped = tone === 'primary' || tone === 'dark' ? 'accent' : tone;
-  return <ActionCell title={title} icon={icon} tone={mapped} onClick={onClick} disabled={disabled} muted={muted} />;
+function ActionBtn({ icon, onClick, title, disabled, muted }: { icon: string; tone?: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string; disabled?: boolean; muted?: boolean }) {
+  // Shared HRMS action tile (.hr-act). Edit → solid violet pencil; the rest are
+  // soft white→violet tiles that fill solid on hover (see DataTable.css).
+  const isEdit = icon === 'edit-svg' || icon === 'ri-pencil-line';
+  const btn = (
+    <button type="button" aria-label={title} disabled={disabled}
+      className={`hr-act${isEdit ? ' hr-act--edit' : ''}`}
+      style={muted ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
+      onClick={e => { e.stopPropagation(); if (!disabled) onClick(); }}>
+      <ActionIcon icon={isEdit ? 'edit-pencil' : icon} />
+    </button>
+  );
+  return disabled ? btn : <Tooltip label={title}>{btn}</Tooltip>;
 }
 
 /* Dark-theme overrides for this page. Light styles stay inline; these rules

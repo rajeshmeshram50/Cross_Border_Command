@@ -650,14 +650,7 @@ function ExpenseActionCell({
         type="button"
         aria-label={verdict === 'approve' ? 'Approve' : 'Reject'}
         onClick={() => { setConfirmAction({ stage, verdict }); setComment(''); }}
-        className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-        style={{
-          width: 28, height: 28, padding: 0,
-          background: verdict === 'approve'
-            ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
-            : 'linear-gradient(135deg,#f06548,#ff7a5c)',
-          color: '#fff', border: 'none',
-        }}
+        className={`hr-act${verdict === 'approve' ? ' hr-act--edit' : ''}`}
       >
         <i className={verdict === 'approve' ? 'ri-check-line' : 'ri-close-line'} />
       </button>
@@ -673,37 +666,25 @@ function ExpenseActionCell({
           the buttons to its right edge keeps the trailing kebab — and every
           icon before it — in a straight line down the table. */}
       <div
-        className="d-inline-flex align-items-center justify-content-end gap-1"
-        /* paddingRight keeps the trailing kebab off the column's edge. Flush
-           against it the icons read as clipped — and where a vertical scrollbar
-           sits over that edge, they genuinely were. */
-        style={{ minWidth: (mode === 'hr' || mode === 'team') ? 216 : undefined, paddingRight: 6 }}
+        className="d-inline-flex align-items-center justify-content-center gap-1"
       >
         {(canManagerAct || canHrReview) && onReview ? (
           (() => {
             // The viewer's OWN claim isn't self-approvable — show the button
             // greyed (still clickable so onReview can toast the reason).
             const isOwn = mode === 'hr' && currentEmployeeId != null && Number(c.employee_id) === Number(currentEmployeeId);
-
-            /* Stage, not permission (CBC #158). Green while the reporting
-               manager still has to act; faint blue once they have and it is
-               HR's turn. A viewer holding BOTH roles otherwise saw an unchanged
-               green button after approving at manager level, so nothing said
-               the first step was done. */
-            const atHrStage = c.manager_status === 'approved' && c.hr_status === 'pending';
-            const reviewBtnStyle = atHrStage
-              ? { background: '#b6d9f7', color: '#08406f', border: '1px solid #8dc3ef' }
-              : { background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none' };
             return (
-              <button
-                type="button"
-                onClick={() => onReview(c)}
-                title={isOwn ? 'Your own request — your reporting manager approves it' : undefined}
-                className={`btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold exp-review-btn ${atHrStage ? 'exp-review-btn--hr' : ''}`}
-                style={{ height: 28, padding: '0 12px', fontSize: 11.5, ...reviewBtnStyle, whiteSpace: 'nowrap', ...(isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : null) }}
-              >
-                <i className="ri-eye-line" /> Review &amp; Approve
-              </button>
+              <Tooltip label={isOwn ? 'Your own request — your reporting manager approves it' : 'Review & Approve'}>
+                <button
+                  type="button"
+                  aria-label="Review & Approve"
+                  onClick={() => onReview(c)}
+                  className="hr-act hr-act--edit"
+                  style={isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                >
+                  <i className="ri-eye-line" />
+                </button>
+              </Tooltip>
             );
           })()
         ) : (
@@ -718,11 +699,7 @@ function ExpenseActionCell({
               type="button"
               aria-label={settleDone ? 'View payment history' : 'Record payment'}
               onClick={() => onRecordPayment?.(c)}
-              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-              style={{
-                width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
-                background: settleDone ? 'linear-gradient(135deg,#0ab39c,#02c8a7)' : 'linear-gradient(135deg,#f7b84b,#f59e0b)',
-              }}
+              className="hr-act hr-act--edit"
             >
               <i className={settleDone ? 'ri-history-line' : 'ri-bank-card-line'} />
             </button>
@@ -741,17 +718,10 @@ function ExpenseActionCell({
                   toast.info('Not ready yet', 'The claim must be fully paid and every payment synced to Zoho before it can be emailed.');
                 }
               }}
-              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-              style={{
-                width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
-                cursor: canEmail ? 'pointer' : 'not-allowed',
-                // Disabled state is conveyed by the muted grey gradient, NOT
-                // element opacity — CSS opacity also dims the ::after tooltip pill,
-                // which made the tooltip render faint on the disabled button.
-                background: !canEmail ? 'linear-gradient(135deg,var(--exp-mute-a,#cbd5e1),var(--exp-mute-b,#94a3b8))'
-                  : emailedAlready ? 'linear-gradient(135deg,var(--exp-mute-b,#94a3b8),var(--exp-mute-c,#64748b))'
-                  : 'linear-gradient(135deg,#6366f1,#4f46e5)',
-              }}
+              className="hr-act"
+              // Kept clickable even when not ready, so the onClick can explain why
+              // (toast); the muted look is conveyed with opacity, not a grey swap.
+              style={canEmail ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
             >
               <i className={emailedAlready && canEmail ? 'ri-mail-check-line' : 'ri-mail-send-line'} />
             </button>
@@ -764,8 +734,7 @@ function ExpenseActionCell({
               type="button"
               aria-label="View payments"
               onClick={() => onViewPayments?.(c)}
-              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-              style={{ width: 28, height: 28, padding: 0, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}
+              className="hr-act hr-act--edit"
             >
               <i className="ri-history-line" />
             </button>

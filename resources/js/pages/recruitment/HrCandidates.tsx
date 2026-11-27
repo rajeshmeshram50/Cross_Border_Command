@@ -404,7 +404,7 @@ export default function HrCandidates() {
               <Tooltip label="View Candidate">
                 <button
                   type="button"
-                  className="rec-act rec-act-view rec-act--icon"
+                  className="hr-act hr-act--edit"
                   aria-label="View Candidate"
                   onClick={() => { setEditing(c); setViewOnly(true); setModalOpen(true); }}
                 >
@@ -420,11 +420,11 @@ export default function HrCandidates() {
               <Tooltip label={perm.canEdit ? 'Edit Candidate' : 'View Candidate (no edit permission)'}>
                 <button
                   type="button"
-                  className="rec-act rec-act-view rec-act--icon"
+                  className="hr-act hr-act--edit"
                   aria-label={perm.canEdit ? 'Edit Candidate' : 'View Candidate'}
                   onClick={() => { setEditing(c); setViewOnly(!perm.canEdit); setModalOpen(true); }}
                 >
-                  {perm.canEdit ? <ActionIcon icon="edit-svg" /> : <i className="ri-eye-line" />}
+                  {perm.canEdit ? <ActionIcon icon="edit-pencil" /> : <i className="ri-eye-line" />}
                 </button>
               </Tooltip>
             )}
@@ -432,7 +432,7 @@ export default function HrCandidates() {
               <Tooltip label={perm.lockedTitle('edit') ?? 'Mark Selected'}>
                 <button
                   type="button"
-                  className="rec-act rec-act-approve rec-act--icon"
+                  className="hr-act"
                   aria-label="Mark Selected"
                   aria-disabled={!perm.canEdit || undefined}
                   style={perm.canEdit ? undefined : LOCKED_STYLE}
@@ -446,7 +446,7 @@ export default function HrCandidates() {
               <Tooltip label={perm.lockedTitle('edit') ?? 'Mark Rejected'}>
                 <button
                   type="button"
-                  className="rec-act rec-act-reject rec-act--icon"
+                  className="hr-act"
                   aria-label="Mark Rejected"
                   aria-disabled={!perm.canEdit || undefined}
                   style={perm.canEdit ? undefined : LOCKED_STYLE}
