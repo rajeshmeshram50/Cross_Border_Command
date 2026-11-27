@@ -786,6 +786,14 @@ class EmployeeController extends Controller
             'exit_in_progress',
             in_array((int) $row->id, \App\Support\ExitInProgress::employeeIds(null, [(int) $row->id]), true),
         );
+        // Once an employee has leave on record, their leave plan can't be switched —
+        // balances/history are tied to it. The form greys the field on this flag.
+        $row->setAttribute(
+            'has_leave_taken',
+            \App\Models\LeaveRequest::where('employee_id', $row->id)
+                ->whereIn('status', ['Approved', 'Pending'])
+                ->exists(),
+        );
         return response()->json($row);
     }
 
@@ -2859,7 +2867,18 @@ class EmployeeController extends Controller
 
     private function syncLeavePlanPivot(Employee $employee, $rawValue, ?int $assignedBy): void
     {
+        // Once the employee has leave on record, their plan is frozen — balances
+        // and history are tied to it, so neither a switch nor a removal is applied.
+        $currentPlanId = (int) (DB::table('leave_plan_employees')
+            ->where('employee_id', $employee->id)
+            ->value('leave_plan_id') ?? 0);
+        $planFrozen = $currentPlanId > 0
+            && \App\Models\LeaveRequest::where('employee_id', $employee->id)
+                ->whereIn('status', ['Approved', 'Pending'])
+                ->exists();
+
         if ($rawValue === null || $rawValue === '') {
+            if ($planFrozen) return;
             DB::table('leave_plan_employees')
                 ->where('employee_id', $employee->id)
                 ->delete();
@@ -2869,6 +2888,7 @@ class EmployeeController extends Controller
         if (!is_numeric($rawValue)) return;
         $planId = (int) $rawValue;
         if ($planId <= 0) return;
+        if ($planFrozen && $planId !== $currentPlanId) return;
 
         $plan = LeavePlans::find($planId);
         if (!$plan) return;

@@ -26,6 +26,7 @@ import { SalaryVersionBadge } from '../../components/SalaryVersionBadge';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
+import { ciSort } from '../../utils/tableSort';
 /* Breakup rules live in one place now — onboarding Stage 1 edits the same CTC
    and the Revise Salary modal writes the same table, so a copy per screen is
    how the figures drift apart. */
@@ -332,11 +333,6 @@ const STEP_SHIMMER_MS = 500;
    In embed mode nothing but the dialogs renders, and the list/stats requests
    that feed the table are skipped — the caller's own page is on screen behind
    the modal, and re-fetching a table nobody can see is pure cost. */
-/* Case- and accent-insensitive column sort — "alice" and "Alice" compare equal
-   and sort together, instead of all upper-case names coming first (QA #251). */
-const ciSort = (a: any, b: any, id: string) =>
-  String(a.getValue(id) ?? '').localeCompare(String(b.getValue(id) ?? ''), undefined, { sensitivity: 'base' });
-
 export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   /** emp_code to open the edit wizard for, instead of rendering the list. */
   embedEditCode?: string;
@@ -1083,6 +1079,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const [eCustomProbation, setECustomProbation] = useState('');
   const [eCustomNotice, setECustomNotice] = useState('');
   const [eLeavePlan, setELeavePlan] = useState('');
+  // Locked once the employee has leave on record — the plan can't be switched
+  // because their balances/history are tied to it.
+  const [eLeavePlanLocked, setELeavePlanLocked] = useState(false);
   const [leavePlanOptions, setLeavePlanOptions] = useState<Array<{ value: string; label: string }>>([]);
   /* Has the leave-plan list SETTLED (resolved or failed)? An empty list means
      two different things — "this tenant has no configured plans" and "the
@@ -1526,7 +1525,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setELegalEntity(''); setELegalEntityLabel(''); setELocation(''); setEReportingMgr(''); setSavedMgrOption(null);
     setEProbationPolicy(''); setENoticePeriod('');
     setECustomProbation(''); setECustomNotice('');
-    setELeavePlan(''); setEHolidayList('');
+    setELeavePlan(''); setELeavePlanLocked(false); setEHolidayList('');
     setEAttendanceTracking(true); setEShift('');
     setEWeeklyOff(''); setEAttendanceNumber('');
     setEOvertime(''); setEOvertimeApplicable('No'); setEExpensePolicy('');
@@ -2557,6 +2556,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       );
 
       if (raw.leave_plan !== undefined && raw.leave_plan !== null) setELeavePlan(raw.leave_plan);
+      setELeavePlanLocked(!!raw.has_leave_taken);
       if (raw.holiday_group_id) setEHolidayList(String(raw.holiday_group_id));
       else setEHolidayList('');
       if (raw.attendance_tracking !== undefined && raw.attendance_tracking !== null) setEAttendanceTracking(!!raw.attendance_tracking);
@@ -5431,15 +5431,20 @@ const STEP_SAFE_FIELDS = new Set([
                           value={eLeavePlan}
                           onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }}
                           options={leavePlanOptions}
-                          // Greyed shut without the Leave grant — the list is
-                          // never fetched in that case, so there is nothing to
-                          // open and nothing to assign.
-                          disabled={!leavePerm.canView}
+                          // Greyed shut without the Leave grant (the list is never
+                          // fetched then), or once the employee has leave on record
+                          // — the plan can't change because balances are tied to it.
+                          disabled={!leavePerm.canView || eLeavePlanLocked}
                           placeholder={!leavePerm.canView
                             ? 'Requires Leave module access'
                             : (leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave')}
                           invalid={!!eErrors.leave_plan}
                         />
+                        {eLeavePlanLocked && (
+                          <small className="text-muted d-flex align-items-center gap-1 mt-1">
+                            <i className="ri-lock-2-line" /> Leave plan is locked — this employee has already taken leave under it.
+                          </small>
+                        )}
                         {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                       </Col>
                       <Col md={4}>

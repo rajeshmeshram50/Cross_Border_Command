@@ -3,6 +3,7 @@ import { Col, Row, Button, Modal, ModalBody } from 'reactstrap';
 import HrEmployees from '../hrms/HrEmployees';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { ciSort } from '../../utils/tableSort';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import api from '../../api';
@@ -610,6 +611,7 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Employee',
       accessorKey: 'name',
+      sortingFn: ciSort,
       meta: { width: '13%', wrap: true },
       cell: info => {
         const r = info.row.original;
@@ -626,11 +628,12 @@ export default function HrEmployeeOnboarding() {
       },
     },
     { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%', align: 'center' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%', align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  sortingFn: ciSort, meta: { width: '8%', align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', sortingFn: ciSort, meta: { width: '9%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
+      sortingFn: ciSort,
       meta: { width: '9%', align: 'center' },
       cell: info => <ChipCell value={info.getValue() as string} className="onb-role-pill" />,
     },
@@ -651,6 +654,7 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
+      sortingFn: ciSort,
       meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
@@ -712,6 +716,7 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Status',
       accessorKey: 'status',
+      sortingFn: ciSort,
       meta: { width: '8%', align: 'center' },
       cell: info => {
         const statusColor = ONBOARD_STATUS_COLOR[info.row.original.status];

@@ -9,6 +9,7 @@ import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import { ciSort } from '../../utils/tableSort';
 import Tooltip from '../../components/ui/Tooltip';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
@@ -286,6 +287,7 @@ export default function HrExitManagement() {
     {
       header: 'Employee',
       accessorKey: 'name',
+      sortingFn: ciSort,
       // wrap: the exit-state caption sits on a second line under the name.
       /* PIXEL widths, not percentages.
          Percentages are a share of the table's width, so on any container
@@ -376,11 +378,12 @@ export default function HrExitManagement() {
       meta: { width: w(130, 108), wrap: true, align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118), align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: w(150, 124), align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  sortingFn: ciSort, meta: { width: w(140, 118), align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', sortingFn: ciSort, meta: { width: w(150, 124), align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
+      sortingFn: ciSort,
       meta: { width: w(140, 120), align: 'center' },
       /* Role names run long ("Software Developer", "Sales Intern") and the
          column is narrow — ChipCell ellipsises inside the pill and reveals
@@ -406,6 +409,7 @@ export default function HrExitManagement() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
+      sortingFn: ciSort,
       meta: { width: w(170, 146) },
       cell: info => {
         const e = info.row.original;
@@ -428,6 +432,7 @@ export default function HrExitManagement() {
     ...(tab === 'active' ? [] : ([{
       header: 'Exit Type',
       accessorKey: 'exitType',
+      sortingFn: ciSort,
       meta: { width: 170, wrap: true, align: 'center' },
       cell: (info: any) => {
         const t = String(info.getValue() || '').trim();
@@ -503,6 +508,7 @@ export default function HrExitManagement() {
     {
       header: 'Status',
       accessorKey: 'status',
+      sortingFn: ciSort,
       /* `wrap` opts this cell out of the table's default
          `overflow:hidden; text-overflow:ellipsis` (DataTable.css). Without it
          the "Exit In Progress" pill was wider than the column and got clipped,
