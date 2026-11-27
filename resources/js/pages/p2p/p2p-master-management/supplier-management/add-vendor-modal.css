@@ -2455,11 +2455,17 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 }
 .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page), body.apm-supplier-wizard-open) .avm-cp-popup.avm-cp-popup-map { max-width: 800px; }
+/* CS-2786: dragging the Remarks box taller grew the whole centred popup past the screen, hiding
+   its top and bottom. The box keeps one height and scrolls inside; the popup never outgrows the
+   screen - head and footer stay put, the body scrolls if a short screen needs it. */
 .avm-cp-backdrop .avm-cp-popup.avm-cp-popup-map .avm-cp-body textarea.avm-input {
-  height: 64px; min-height: 64px !important; max-height: 120px;
+  height: 72px; min-height: 72px !important; max-height: 72px;
   padding-top: 10px; padding-bottom: 10px; line-height: 1.5;
-  resize: vertical; overflow-y: auto;
+  resize: none; overflow-y: auto; overflow-wrap: anywhere;
 }
+.avm-cp-backdrop .avm-cp-popup.avm-cp-popup-map { max-height: calc(100dvh - 48px); }
+.avm-cp-backdrop .avm-cp-popup.avm-cp-popup-map > :not(.avm-cp-body) { flex: 0 0 auto; }
+.avm-cp-backdrop .avm-cp-popup.avm-cp-popup-map > .avm-cp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .avm-auto { position: relative; }
 .avm-auto .avm-input.avm-auto-input {
   padding-left: 32px; padding-right: 62px; background: var(--avmv-eef3f6, #eef3f6); border: 1.5px solid #e2e8f0; color: #475569;
@@ -2499,6 +2505,9 @@ body:has(.avm-cp-popup-doc) .spi-mdl-backdrop.cam-layer { z-index: 13300; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page), body.apm-supplier-wizard-open) .avm-mapped-search:focus-within { border-color: var(--avmv-22d3ee, #22d3ee); box-shadow: 0 0 0 3px rgba(var(--avmv-rgb-22d3ee, 34, 211, 238),.16); }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page), body.apm-supplier-wizard-open) .avm-mapped-search input::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page), body.apm-supplier-wizard-open) .avm-mapped-search { border-color: rgba(var(--avmv-rgb-67e8f9, 103, 232, 249),.25); color: var(--avmv-67e8f9, #67e8f9); background: rgba(255,255,255,.04); }
+/* Dark: the clear (x) fell back to the shared slate colour and filled near-white on hover - keep it a teal tint. */
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page), body.apm-supplier-wizard-open) .avm-mapped-search .ui-search-clear { --ui-search-clear-dark: #67e8f9; background: rgba(34, 211, 238, .14); color: #67e8f9; }
+[data-bs-theme="dark"] :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page), body.apm-supplier-wizard-open) .avm-mapped-search .ui-search-clear:hover { background: rgba(34, 211, 238, .3); color: #ecfeff; }
 
 .avm-cp-popup.avm-cp-popup-mapped { max-width: 1160px; }
 :is(body:has(.smc-root.sup-list), body:has(.sct-page), body:has(.svm-page), body.apm-supplier-wizard-open) .avm-cp-popup.avm-cp-popup-mapped { max-width: 1160px; }

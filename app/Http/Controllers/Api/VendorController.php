@@ -92,6 +92,22 @@ class VendorController extends Controller
         'segment',
     ];
 
+    /**
+     * The supplier-list type tab a supplier type falls in - the same rule as typeKind() /
+     * matchesKind() on the list page: movement-of-goods names are FFD / Transporter, "service"
+     * names are Service, any other named type is Material / Goods; no type (or "Pending") is
+     * counted under All only.
+     */
+    private static function supplierKind(?string $typeName): ?string
+    {
+        if ($typeName === null || $typeName === '' || $typeName === 'Pending') return null;
+        $t = mb_strtolower($typeName);
+        foreach (['logist', 'transport', 'ffd', 'freight'] as $needle) {
+            if (str_contains($t, $needle)) return 'logistics';
+        }
+        return str_contains($t, 'service') ? 'services' : 'material';
+    }
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -240,6 +256,31 @@ class VendorController extends Controller
             $q->whereIn('vendors.id', $wanted ?: [0]);
         }
 
+        // Supplier-type tabs (All / Material / FFD / Service): counted here with one grouped query
+        // over the filtered list, and `kind` narrows the list in SQL. The list page used to download
+        // every supplier (per_page=1000) just to count and filter these on screen.
+        $typeCounts = $facet()
+            ->select('vendors.vendor_type_id')
+            ->selectRaw('count(*) as c')
+            ->groupBy('vendors.vendor_type_id')
+            ->pluck('c', 'vendor_type_id');
+        $typeIds = $typeCounts->keys()->filter(fn($k) => $k !== '' && $k !== null)->map(fn($k) => (int) $k)->all();
+        $typeNames = $typeIds ? VendorTypes::query()->whereIn('id', $typeIds)->pluck('name', 'id') : collect();
+        $kindCounts = ['all' => 0, 'material' => 0, 'logistics' => 0, 'services' => 0];
+        $kindTypeIds = ['material' => [], 'logistics' => [], 'services' => []];
+        foreach ($typeCounts as $typeId => $c) {
+            $kindCounts['all'] += (int) $c;
+            $kind = self::supplierKind($typeNames[(int) $typeId] ?? null);
+            if ($kind !== null) {
+                $kindCounts[$kind] += (int) $c;
+                $kindTypeIds[$kind][] = (int) $typeId;
+            }
+        }
+        $kind = (string) $request->query('kind', '');
+        if (isset($kindTypeIds[$kind])) {
+            $q->whereIn('vendors.vendor_type_id', $kindTypeIds[$kind] ?: [0]);
+        }
+
         $page = $q->paginate((int) $request->query('per_page', 24));
 
         $page->getCollection()->transform(function ($v) use ($complianceById) {
@@ -261,6 +302,7 @@ class VendorController extends Controller
                     'compliant'     => $compliantCount,
                     'non_compliant' => $nonCompliantCount,
                 ],
+                'kind' => $kindCounts,
             ],
         ]));
     }

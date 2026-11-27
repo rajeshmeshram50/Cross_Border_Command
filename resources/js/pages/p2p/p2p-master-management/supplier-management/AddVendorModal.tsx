@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentProps, type ReactNode } from 'react';
 import { useIsClipped } from '../../../../components/ui/DataTable';
 import SegmentBadge, { SEG_TAG_DARK, segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
@@ -15,9 +15,7 @@ import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import AttachPicker from '../../procurement-management/sourcing-tracker/AttachPicker';
-import { MasterRecordModal } from '../../../master/MasterRecordModal';
-import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
-import { CLM_CSS } from '../../../clm/shared/clmShared';
+import type { SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { formatProductCode } from '../../../../utils/formatProductCode';
@@ -26,7 +24,6 @@ import {
   validateGstin, validateIfsc, validateSwift, validateAccountNumber,
   validateTin, sanitizeTin, TIN_MAX,
 } from '../../../../utils/fieldValidators';
-import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
@@ -36,6 +33,26 @@ import './add-vendor-modal.css';
 import { serviceBucketOf, type ServiceBucket } from './serviceMapping';
 import { SVC_ICONS } from '../service-management/serviceIcons';
 import { lazyPage } from '../../../../utils/lazyPage';
+
+/* QA #49: Send for Signature pulls in the PDF viewer (pdfjs) and the CLM rich-text editor kit -
+   over a megabyte the form never needs to open. Loaded on the first Send for Signature click
+   instead, and kept mounted from then on exactly as before. */
+const SalesCustomerSendForSignatureModal = lazyPage(() => import('../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal'));
+
+/* The "+" quick-add popups (a master record, a CLM segment) bring the Master page kit and the CLM
+   page styles - ~300 KB used only on that click. Loaded on demand; the segment kit is warmed in
+   the background once the form is ready (warmQuickAdds) so its click does not wait. */
+const MasterRecordModal = lazyPage(() => import('../../../master/MasterRecordModal').then(m => ({ default: m.MasterRecordModal })));
+const loadSegmentKit = () => Promise.all([
+  import('../../../clm/compliance/ClmSegmentPage'),
+  import('../../../clm/shared/clmShared'),
+]);
+type SegmentModalProps = ComponentProps<typeof import('../../../clm/compliance/ClmSegmentPage').SegmentModal>;
+const SegmentModal = lazyPage(() => loadSegmentKit().then(([m, s]) => ({
+  default: (p: SegmentModalProps) => <><style>{s.CLM_CSS}</style><m.SegmentModal {...p} /></>,
+})));
+// Only the segment "+" is reachable today (nothing opens quickAdd), so only its kit is warmed.
+const warmQuickAdds = () => { void loadSegmentKit(); };
 
 const AddProductModal = lazyPage(() => import('../product-management/AddProductModal'));
 
@@ -475,9 +492,12 @@ export default function AddVendorModal(props: {
     if (segAddLoading) return;
     setSegAddLoading(true);
     try {
-      const { data } = await api.get<{ data: { code: string; name: string; regulatory_status?: string }[] }>('/clm/segments', { params: { lite: 1 } });
+      const [{ data }, [segKit]] = await Promise.all([
+        api.get<{ data: { code: string; name: string; regulatory_status?: string }[] }>('/clm/segments', { params: { lite: 1 } }),
+        loadSegmentKit(),
+      ]);
       const segRows = data.data ?? [];
-      setSegAdd({ nextCode: nextSegmentCode(segRows), segments: segRows });
+      setSegAdd({ nextCode: segKit.nextSegmentCode(segRows), segments: segRows });
     } catch {
       setSegAdd({ nextCode: 'SG-001', segments: [] });
     } finally {
@@ -491,6 +511,17 @@ export default function AddVendorModal(props: {
   const [advancing, setAdvancing] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(isEdit);
   const [mastersLoading, setMastersLoading] = useState<boolean>(true);
+  // Once the form has its data, fetch the "+" quick-add popups' code while the browser is idle.
+  useEffect(() => {
+    if (loadingEdit || mastersLoading) return;
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(warmQuickAdds, { timeout: 3000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(warmQuickAdds, 1000);
+    return () => window.clearTimeout(t);
+  }, [loadingEdit, mastersLoading]);
 
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
@@ -815,6 +846,9 @@ export default function AddVendorModal(props: {
 
   const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>([]);
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
+  // Mounted from the first Send for Signature on (its code is lazy - see the import above).
+  const sigMountedRef = useRef(false);
+  if (Array.isArray(sendForSignature)) sigMountedRef.current = true;
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }>>({});
 
   const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
@@ -3462,8 +3496,7 @@ export default function AddVendorModal(props: {
       )}
 
       {segAdd && (
-        <>
-          <style>{CLM_CSS}</style>
+        <Suspense fallback={null}>
           <SegmentModal
             existing={null}
             nextCode={segAdd.nextCode}
@@ -3490,11 +3523,11 @@ export default function AddVendorModal(props: {
               }
             }}
           />
-        </>
+        </Suspense>
       )}
 
       {quickAdd && (
-        <MasterRecordModal
+        <Suspense fallback={null}><MasterRecordModal
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
           onSaved={(row) => {
@@ -3548,10 +3581,10 @@ export default function AddVendorModal(props: {
             }
             setQuickAdd(null);
           }}
-        />
+        /></Suspense>
       )}
 
-      <SalesCustomerSendForSignatureModal
+      {sigMountedRef.current && <Suspense fallback={null}><SalesCustomerSendForSignatureModal
         open={Array.isArray(sendForSignature)}
         boxSize={{ width: 240, height: 55 }}
         multiBox
@@ -3575,7 +3608,7 @@ export default function AddVendorModal(props: {
             : r));
           setSendForSignature(null);
         }}
-      />
+      /></Suspense>}
     </div>
   ), document.body);
 }
@@ -5206,6 +5239,21 @@ export function MappedServicesPopup(props: {
     return (rows ?? []).filter((_, i) => !q || haystacks[i].includes(q));
   }, [rows, haystacks, search]);
 
+  /* Footer pager, as on Mapped Products: 10 a page, back to page 1 on a new search, and to the
+     last page when a service is mapped (the new row is appended there). */
+  const [svcPage, setSvcPage] = useState(1);
+  useEffect(() => { setSvcPage(1); }, [search]);
+  const prevSvcLen = useRef<number | null>(null);
+  useEffect(() => {
+    const len = rows ? rows.length : null;
+    if (len !== null && prevSvcLen.current !== null && len > prevSvcLen.current) setSvcPage(Math.ceil(len / LIST_MAPPED_PAGE_SIZE));
+    prevSvcLen.current = len;
+  }, [rows]);
+  const svcPages = Math.max(1, Math.ceil(filtered.length / LIST_MAPPED_PAGE_SIZE));
+  const svcCurPage = Math.min(svcPage, svcPages);
+  const svcStart = (svcCurPage - 1) * LIST_MAPPED_PAGE_SIZE;
+  const pageRows = filtered.slice(svcStart, svcStart + LIST_MAPPED_PAGE_SIZE);
+
   const mapped = useMemo(() => new Set((rows ?? []).map(r => r.serviceId)), [rows]);
   const editRow = editingId != null ? (rows ?? []).find(r => r.mapId === editingId) ?? null : null;
   const options = useMemo(() => {
@@ -5330,7 +5378,14 @@ export function MappedServicesPopup(props: {
             <i className="ri-add-line" aria-hidden /> Map New Service
           </button>
         ) : undefined}
-        footer={<button className="avm-btn-ghost" onClick={props.onClose}>Close</button>}
+        footer={<>
+          {rows && rows.length > 0 && filtered.length > 0 && (
+            <div className="smp-pag smp-foot-pager">
+              <WorklistPager total={filtered.length} page={svcCurPage} pageSize={LIST_MAPPED_PAGE_SIZE} onPage={setSvcPage} />
+            </div>
+          )}
+          <button className="avm-btn-ghost" onClick={props.onClose}>Close</button>
+        </>}
       >
         {props.addInHeader ? (
           <SmpSearch name="mapped-services-search" label="Search mapped services"
@@ -5374,9 +5429,9 @@ export function MappedServicesPopup(props: {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r, i) => (
+                  {pageRows.map((r, i) => (
                     <tr key={r.mapId}>
-                      <td style={{ textAlign: 'center' }}><span className="dt-serial">{i + 1}</span></td>
+                      <td style={{ textAlign: 'center' }}><span className="dt-serial">{svcStart + i + 1}</span></td>
                       <td>
                         <span className="smp-prod">
                           <span className="smp-prod-ico" aria-hidden>{SVC_ICONS.wrench}</span>

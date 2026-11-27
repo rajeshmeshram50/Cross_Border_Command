@@ -439,7 +439,7 @@ function RefineSuppliers(props: {
 }
 
 /** The design's supplier-type tabs. They send `kind` to /vendors and read `facets.kind` counts
-    (backend pending: filter + counts by the same rule as typeKind). */
+    (VendorController::supplierKind uses the same rule as typeKind). */
 type SupplierKind = 'all' | 'material' | 'logistics' | 'services';
 /* Tab glyphs as the Figma draws them: 12px line icons, stroke 2.2 (users / box / truck / wrench). */
 const KIND_ICON: Record<SupplierKind, ReactNode> = {
@@ -455,16 +455,6 @@ const SUPPLIER_KINDS: { key: SupplierKind; label: string }[] = [
   { key: 'services', label: 'Service Suppliers' },
 ] as const;
 
-/** Rows a type tab may load at once while the API cannot filter by type. */
-const KIND_FETCH_CAP = 1000;
-const matchesKind = (v: Vendor, k: SupplierKind) =>
-  k === 'all' || (!!v.type && v.type !== 'Pending' && typeKind(v.type) === k);
-const countKinds = (rows: Vendor[]): Record<SupplierKind, number> => ({
-  all: rows.length,
-  material: rows.filter(v => matchesKind(v, 'material')).length,
-  logistics: rows.filter(v => matchesKind(v, 'logistics')).length,
-  services: rows.filter(v => matchesKind(v, 'services')).length,
-});
 
 /** "State, Country" for the supplier cell (either may be missing). */
 const place = (v: Vendor) => [v.state !== '—' ? v.state : '', v.country ?? ''].filter(Boolean).join(', ');
@@ -504,8 +494,6 @@ export default function Vendors() {
   const isIntlScope = scopeTab === 'international';
   const [kindTab, setKindTab] = useState<SupplierKind>('all');
   const [kindCounts, setKindCounts] = useState<Record<SupplierKind, number> | null>(null);
-  const kindCacheRef = useRef('');    // filters + type of the list a type tab holds
-  const countsKeyRef = useRef('');    // filters the tab counts were taken for
   const [addOpen, setAddOpen] = useState(false);
   /* Domestic / International is asked BEFORE the form opens, because the
      answer changes what the form may OFFER — Country, and the GST block that
@@ -758,15 +746,9 @@ export default function Vendors() {
     return Number(b.total ?? b.meta?.total ?? (Array.isArray(b) ? b.length : 0)) || 0;
   }, [debouncedSearch, scopeTab, tab]);
 
-  const refresh = useCallback(async (opts?: { silent?: boolean; keepKindCounts?: boolean }) => {
-    const filterKey = JSON.stringify([debouncedSearch, catParam, compParam, scopeTab, tab]);
-    const kindMode = kindTab !== 'all';
-    // A type tab holds the whole filtered list and pages it here, so a page change needs no fetch.
-    if (kindMode && !opts?.silent && kindCacheRef.current === `${filterKey}|${kindTab}`) {
-      // After this render's effects (the swap effect below sets the shimmer on a page change).
-      void Promise.resolve().then(() => setSwapping(false));
-      return;
-    }
+  /* One request per view: the page of rows plus every count (scope, category, compliance and the
+     type tabs in facets.kind). A type tab sends `kind` and is paged by the API like All. */
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) {
       if (bootedRef.current) setRefetching(true);
       else                   setLoading(true);
@@ -780,45 +762,17 @@ export default function Vendors() {
       ...(compParam ? { compliance: compParam } : {}),
       scope: scopeTab,
       tab,
+      ...(kindTab !== 'all' ? { kind: kindTab } : {}),
     };
-    const fetchAll = () => api.get<any>('/vendors', { params: { ...base, page: 1, per_page: KIND_FETCH_CAP } });
     try {
-      /* Until /vendors filters and counts by `kind` (backend pending), a type tab loads the whole
-         filtered list once, keeps its type, and pages it on screen. */
-      const res = kindMode
-        ? await fetchAll()
-        : await api.get<any>('/vendors', { params: { ...base, page, per_page: rpp } });
+      const res = await api.get<any>('/vendors', { params: { ...base, page, per_page: rpp } });
       if (token !== reqRef.current) return;
       const body: any = res.data ?? {};
       const rows: Vendor[] = (Array.isArray(body) ? body : (body.data ?? [])).map(apiToVendor);
-      if (kindMode) {
-        const ofKind = rows.filter(v => matchesKind(v, kindTab));
-        setVendors(ofKind);
-        setTotal(ofKind.length);
-        kindCacheRef.current = `${filterKey}|${kindTab}`;
-      } else {
-        setVendors(rows);
-        setTotal(Number(body.total ?? rows.length) || 0);
-        kindCacheRef.current = '';
-      }
+      setVendors(rows);
+      setTotal(Number(body.total ?? rows.length) || 0);
       setFacets(body.facets ?? null);
-
-      // Tab counts: the API's own when it sends them; otherwise counted here, once per filter set.
-      if (body.facets?.kind) {
-        setKindCounts(body.facets.kind);
-      } else if (kindMode) {
-        setKindCounts(countKinds(rows));
-        countsKeyRef.current = filterKey;
-      } else if ((opts?.silent && !opts.keepKindCounts) || countsKeyRef.current !== filterKey) {
-        countsKeyRef.current = filterKey;
-        fetchAll()
-          .then(r => {
-            if (countsKeyRef.current !== filterKey) return;
-            const b: any = r.data ?? {};
-            setKindCounts(countKinds((Array.isArray(b) ? b : (b.data ?? [])).map(apiToVendor)));
-          })
-          .catch(() => { /* counts stay as they were; the list itself loaded */ });
-      }
+      if (body.facets?.kind) setKindCounts(body.facets.kind);
     } catch {
       if (token !== reqRef.current) return;
       toast.error('Load failed', 'Could not load suppliers');
@@ -841,6 +795,7 @@ export default function Vendors() {
     setKindCounts(null);
     setTotal(0);
     setScopeTab(next);
+    setPage(1);   // same render as the scope: one request for page 1, not a stale page first
   };
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, kindTab, catParam, compParam]);
@@ -966,14 +921,28 @@ useEffect(() => {
     }
   };
 }, [allowed]);
+
+  /* QA #49: the Add / Edit form's code (~370 KB JS + CSS) used to download only on the first open
+     (Add warmed it on hover, row Edit never did), so that open waited for it. Once the list has
+     shown, fetch it - and the Add scope gate - while the browser is idle; opening is then instant.
+     Hashed build files, so the browser keeps them for later visits. */
+  useEffect(() => {
+    if (!allowed || loading) return;
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    const warm = () => { warmVendorWizard(); void import('./SupplierScopeGate'); };
+    if (typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(warm, { timeout: 2000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(warm, 600);
+    return () => window.clearTimeout(t);
+  }, [allowed, loading]);
  
 
   const pages = Math.max(1, Math.ceil(total / rpp));
   const curPage = Math.min(page, pages);
   const start = (curPage - 1) * rpp;   // Sr No offset for the rows on this page
-  /* Until /vendors filters by `kind`, the type tab narrows the loaded page on screen; once the
-     API filters, every row already matches and this is a no-op. */
-  const pageRows = kindTab === 'all' ? vendors : vendors.slice(start, start + rpp);
+  const pageRows = vendors;
 
   const handleSave = () => {
     setAddOpen(false);
@@ -1154,7 +1123,7 @@ useEffect(() => {
                 const on = kindTab === k.key;
                 const count = kindCounts?.[k.key] ?? (k.key === 'all' && kindTab === 'all' ? total : null);
                 return (
-                  <button key={k.key} type="button" role="tab" aria-selected={on} className={`sup-kind${on ? ' is-on' : ''}`} onClick={() => setKindTab(k.key)}>
+                  <button key={k.key} type="button" role="tab" aria-selected={on} className={`sup-kind${on ? ' is-on' : ''}`} onClick={() => { setKindTab(k.key); setPage(1); }}>
                     <span className="sup-kind__ico" aria-hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{KIND_ICON[k.key]}</svg></span>{k.label}
                     {/* 0 until the counts arrive (never a dash), like the Domestic / International tabs. */}
                     <span className="sup-kind__c">{count ?? 0}</span>
@@ -1488,7 +1457,7 @@ useEffect(() => {
             supplier={vaultTarget}
             /* Re-read the list on close: uploads in the vault change the supplier's Compliant
                status, which otherwise showed only after a page refresh (CS-2326). */
-            onClose={() => { setVaultTarget(null); void refresh({ silent: true, keepKindCounts: true }); }}
+            onClose={() => { setVaultTarget(null); void refresh({ silent: true }); }}
           />
         </Suspense>
       )}
