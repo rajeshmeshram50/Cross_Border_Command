@@ -8198,3 +8198,33 @@ body.apm-map-gate-open .supch-ov {
 }
 
 .prd-panel > .prd-pagination { margin-top: auto; }
+
+/* QA #106 - Products list: the header's Add Product button reads 12.5px like Filter beside it
+   (the shared .sup-fig strip sets 11.5px; scoped here so other list pages keep theirs). */
+.prd-root .sup-fig .cstrip__action-btn { font-size: 12.5px; }
+
+/* QA #107 - Product Details: every button 40px tall with 12.5px text; the three tabs are 40px
+   buttons inside a 48px bar (4px padding each side). */
+.pv2pd-root .pv2pd-hbtn,
+.pv2pd-root .pv2pd-act {
+  box-sizing: border-box;
+  height: 40px;
+  min-height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12.5px;
+}
+.pv2pd-root .pv2pd-tabs {
+  box-sizing: border-box;
+  min-height: 48px;
+}
+.pv2pd-root .pv2pd-tab {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 12.5px;
+}
