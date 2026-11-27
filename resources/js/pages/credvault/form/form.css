@@ -83,6 +83,9 @@
 [data-bs-theme="dark"] .cvx .crd-pickbox .crd-search { background: rgba(15, 37, 48, .95); border-color: rgba(34, 211, 238, .3); color: #67e8f9; }
 [data-bs-theme="dark"] .cvx .crd-pickbox .crd-search input { color: #e2f4f8; }
 [data-bs-theme="dark"] .cvx .crd-pickbox .crd-search kbd { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
+/* Type picker (My Vault and Critical Vault), dark: the search clear (x) kept its light pale-cyan fill - same teal as the "/" hint it replaces. */
+[data-bs-theme="dark"] .cvx .crd-pickbox .crd-search__clear { color: #67e8f9; background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .3); }
+[data-bs-theme="dark"] .cvx .crd-pickbox .crd-search__clear:hover { color: #ecfeff; background: rgba(34, 211, 238, .22); border-color: rgba(103, 232, 249, .5); }
 
 .cvx .crd-pickbox--cv .crd-tile--c:has(.crd-tile__new) .crd-tile__row { padding-right: 26px; }
 
