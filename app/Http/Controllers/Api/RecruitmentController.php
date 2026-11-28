@@ -182,6 +182,7 @@ class RecruitmentController extends Controller
 
         $data = $this->validatePayload($request, $row->id);
         $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id, $row);
+        $this->guardOpeningsReduction($row, $data);
         $this->guardStatusTransition($row, $data);
         $this->reconcileExpiryStatus($data, $row);
 
@@ -189,6 +190,31 @@ class RecruitmentController extends Controller
 
         $row->load(self::WITH);
         return response()->json($row);
+    }
+
+    private function guardOpeningsReduction(Recruitment $row, array $data): void
+    {
+        if (!array_key_exists('openings', $data)) return;
+
+        $new = ($data['openings'] === null || $data['openings'] === '') ? 0 : (int) $data['openings'];
+        $current = (int) $row->openings;
+        if ($new >= $current) return;
+
+        $selected = \App\Models\Candidate::query()
+            ->where('recruitment_id', $row->id)
+            ->where('status', 'Selected')
+            ->count();
+
+        if ($new < $selected) {
+            throw ValidationException::withMessages([
+                'openings' => [sprintf(
+                    'Openings cannot be reduced to %d — %d candidate(s) are already selected. Set it to at least %d.',
+                    $new,
+                    $selected,
+                    $selected,
+                )],
+            ]);
+        }
     }
 
     private function guardStatusTransition(Recruitment $row, array $data): void

@@ -524,6 +524,11 @@ function AuthRoutes() {
   const state = location.state as { email?: string } | null;
   const [resetEmail, setResetEmail] = useState(state?.email || '');
 
+  // Returning to Login ends the reset flow — drop the email so re-opening Forgot Password starts blank.
+  useEffect(() => {
+    if (location.pathname === '/login') setResetEmail('');
+  }, [location.pathname]);
+
   return (
     <Suspense fallback={<RouteFallback />}>
     <Routes>

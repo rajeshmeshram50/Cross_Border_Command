@@ -218,7 +218,7 @@ export default function IdimsHeader() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const toast = useToast();
-  const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
+  const { user, logout, tenantThemeEnabled } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const { selectedBranch } = useBranchSwitcher();
   const dispatch = useDispatch();
@@ -820,32 +820,7 @@ export default function IdimsHeader() {
                 </div>
               )}
 
-              <div className="idims-theme-switch" title="Switch brand theme">
-                <span className="idims-theme-switch-label">{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
-                <button type="button" className="idims-theme-toggle" aria-label="Toggle brand theme"
-                  onClick={() => { closeMenus(); toggleTenantTheme?.(); }} />
-              </div>
-
               <div className="idims-actions">
-                <button
-                  type="button"
-                  className={`idims-action-btn idims-stop-btn${net.paused ? ' is-paused' : net.pending ? ' is-busy' : ''}`}
-                  title={net.paused
-                    ? `Resume ${net.paused} stopped request${net.paused === 1 ? '' : 's'}`
-                    : net.pending
-                      ? `Stop loading (${net.pending} request${net.pending === 1 ? '' : 's'} in progress)`
-                      : 'Nothing loading'}
-                  aria-label={net.paused ? 'Resume loading' : 'Stop loading'}
-                  disabled={!net.pending && !net.paused}
-                  onClick={() => { closeMenus(); toggleNetwork(); }}
-                >
-                  {net.paused ? IC.resume : IC.stop}
-                  {!!(net.paused || net.pending) && (
-                    <span className="idims-stop-count">
-                      {(net.paused || net.pending) > 9 ? '9+' : (net.paused || net.pending)}
-                    </span>
-                  )}
-                </button>
                 <button type="button" className="idims-action-btn" title="Toggle theme" onClick={() => { closeMenus(); toggleThemeSynced(); }}>
                   {theme === 'dark' ? IC.sun : IC.moon}
                 </button>

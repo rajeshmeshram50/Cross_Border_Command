@@ -1549,6 +1549,19 @@ class EmployeeController extends Controller
             $first  = $data['first_name']  ?? $row->first_name;
             $middle = array_key_exists('middle_name', $data) ? $data['middle_name'] : $row->middle_name;
             $last   = array_key_exists('last_name', $data)   ? $data['last_name']   : $row->last_name;
+
+            // When the primary email changes, follow it on official_email if that was only mirroring it,
+            // so approval mailers (which prefer official_email) reach the new address — QA #259.
+            if (array_key_exists('email', $data) && !array_key_exists('official_email', $data)) {
+                $oldPrimary  = (string) ($row->getOriginal('email') ?? '');
+                $oldOfficial = (string) ($row->getOriginal('official_email') ?? '');
+                $newPrimary  = (string) $data['email'];
+                $wasMirroring = $oldOfficial === '' || strcasecmp($oldOfficial, $oldPrimary) === 0;
+                if ($wasMirroring && strcasecmp($newPrimary, $oldPrimary) !== 0) {
+                    $data['official_email'] = $newPrimary;
+                }
+            }
+
             $row->update(array_merge($data, [
                 'display_name'                => Employee::composeDisplayName($first, $middle, $last),
                 'wizard_step_completed'       => $newStep,
@@ -2434,7 +2447,11 @@ class EmployeeController extends Controller
                 ->ignore($employeeId);
         }
 
-        $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
+        // Local part must hold at least one letter/digit — rejects "-----@gmail.com".
+        $emailFormat = 'regex:/^(?=[A-Za-z0-9._%+-]*[A-Za-z0-9])[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/';
+        $emailRule = $isUpdate
+            ? ['nullable', 'email', 'max:191', $emailFormat]
+            : ['required', 'email', 'max:191', $emailFormat];
 
         $orgEmailRule = new \App\Rules\UniqueSystemEmail('organisation', $scopeClientId);
         $withOrg = fn(array $rules) => array_merge($rules, [$orgEmailRule]);
@@ -2538,7 +2555,7 @@ class EmployeeController extends Controller
             'nationality_country_id' => 'nullable|integer',
             'work_country_id'        => 'nullable|integer',
             'email'        => $withOrg($emailRule),
-            'official_email' => $withOrg(['nullable', 'email', 'max:191']),
+            'official_email' => $withOrg(['nullable', 'email', 'max:191', $emailFormat]),
             'mobile'       => ['nullable', 'string', 'max:15', 'regex:/^[+0-9\s\-()]{6,15}$/'],
             'alt_mobile'   => ['nullable', 'string', 'max:15', 'regex:/^[+0-9\s\-()]{6,15}$/'],
 
@@ -2664,6 +2681,8 @@ class EmployeeController extends Controller
             'bank_branch.regex'            => 'Branch can contain letters, numbers, spaces and . , - / ( ) & only.',
             'bank_account_number.regex'    => 'Account Number must be 8 to 18 digits, with no spaces or symbols.',
             'email.unique'                 => 'This email address is already in use in the system. Each address can be used only once, by one person, in one organization — use a different email.',
+            'email.regex'                  => 'Enter a valid email like name@company.com — the part before @ must contain at least one letter or number.',
+            'official_email.regex'         => 'Enter a valid email like name@company.com — the part before @ must contain at least one letter or number.',
         ]);
     }
 

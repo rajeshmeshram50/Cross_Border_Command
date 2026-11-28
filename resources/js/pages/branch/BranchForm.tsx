@@ -267,22 +267,23 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     } else if (form.email && form.user_email.trim().toLowerCase() === form.email.trim().toLowerCase()) {
       e.user_email = 'Admin email should differ from the branch email';
     }
-  } else if (!isEdit) {
+  } else {
     e.user_email = 'Admin email is required';
   }
 
-  if (!isEdit) {
-    const NAME_RE = /^[A-Za-z ]+$/;
-    if (!form.user_name?.trim()) {
-      e.user_name = 'Admin user name is required';
-    } else if (!NAME_RE.test(form.user_name.trim())) {
-      e.user_name = 'Full name may contain letters and spaces only';
-    } else if (form.user_name.trim().length < 2) {
-      e.user_name = 'Admin name must be at least 2 characters';
-    } else if (form.user_name.trim().length > 100) {
-      e.user_name = 'Admin name cannot exceed 100 characters';
-    }
+  // Full Name is required on both add and edit — a branch user always needs a name.
+  const NAME_RE = /^[A-Za-z ]+$/;
+  if (!form.user_name?.trim()) {
+    e.user_name = 'Admin user name is required';
+  } else if (!NAME_RE.test(form.user_name.trim())) {
+    e.user_name = 'Full name may contain letters and spaces only';
+  } else if (form.user_name.trim().length < 2) {
+    e.user_name = 'Admin name must be at least 2 characters';
+  } else if (form.user_name.trim().length > 100) {
+    e.user_name = 'Admin name cannot exceed 100 characters';
+  }
 
+  if (!isEdit) {
     if (!form.user_password) {
       e.user_password = 'Password is required';
     } else if (form.user_password.length > 64) {
@@ -291,14 +292,15 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
       const errs = validatePasswordRules(form.user_password);
       if (errs.length) e.user_password = errs.join(', ');
     }
-
-    if (form.user_phone) {
-      const err = validatePhone(form.user_phone, form.country, 'Admin phone');
-      if (err) e.user_phone = err;
-    }
   } else if (form.user_password) {
     const errs = validatePasswordRules(form.user_password);
     if (errs.length) e.user_password = errs.join(', ');
+  }
+
+  // Phone is optional but validated whenever provided (add or edit).
+  if (form.user_phone) {
+    const err = validatePhone(form.user_phone, form.country, 'Admin phone');
+    if (err) e.user_phone = err;
   }
 
   if (form.user_password && form.user_password !== form.user_password_confirmation) {
@@ -2144,17 +2146,17 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            <SectionHeader icon="ri-user-line" title={isEdit ? 'Branch User Credentials' : 'Branch User Credentials (Required)'} badge="F" />
+            <SectionHeader icon="ri-user-line" title="Branch User Credentials (Required)" badge="F" />
             <Row className="g-2 mb-3">
               <Col md={4}>
-                <Lbl>Full Name {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                <Lbl>Full Name <span className="text-danger">*</span></Lbl>
                 <Input name="user_name" style={css.input} value={form.user_name} invalid={fieldInvalid('user_name')}
                   onChange={e => set('user_name', e.target.value)} onBlur={() => touch('user_name')}
                   placeholder="User full name" />
                 <FormFeedback style={css.formFeedback}>{fieldError('user_name')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Lbl>Email {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                <Lbl>Email <span className="text-danger">*</span></Lbl>
                 <Input name="user_email" style={css.input} type="email" value={form.user_email} invalid={fieldInvalid('user_email')}
                   onChange={e => set('user_email', e.target.value.toLowerCase())} onBlur={() => touch('user_email')}
                   placeholder="user@branch.com" />
