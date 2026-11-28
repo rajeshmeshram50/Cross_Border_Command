@@ -771,6 +771,11 @@ export const SALES_MATRIX_DETAIL_CSS = `
   justify-content: center; white-space: nowrap;
 }
 .smd-deal-tabs .dt-tab.smd-deal-tab:disabled { opacity: .65; cursor: not-allowed; }
+.smd-deal-tabs .smd-deal-tab-label {
+  display: block; min-width: 0; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.smd-deal-tabs .dt-tab.smd-deal-tab .tm-saved-badge { flex: 0 0 auto; }
 .smd-deal-tab-soon {
   position: absolute; top: 2px; right: 3px;
   font-size: 5px; font-weight: 800; letter-spacing: .05em;

@@ -226,18 +226,18 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
           feedback that their data was loaded from the server. */}
       <div className="smd-deal-tabs dt-tabrail hr-dt" data-accent="violet">
         <div className="dt-tabs" role="tablist">
-          <button type="button" role="tab" aria-selected className="dt-tab on smd-deal-tab">
-            Task Manager
+          <button type="button" role="tab" aria-selected className="dt-tab on smd-deal-tab" title="Task Manager">
+            <span className="smd-deal-tab-label">Task Manager</span>
             {initial?.id != null && <span className="tm-saved-badge" title="Saved on server">●</span>}
           </button>
-          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
-            Chanakya<span className="smd-deal-tab-soon">SOON</span>
+          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled title="Chanakya (coming soon)">
+            <span className="smd-deal-tab-label">Chanakya</span><span className="smd-deal-tab-soon">SOON</span>
           </button>
-          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
-            Sarthi<span className="smd-deal-tab-soon">SOON</span>
+          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled title="Sarthi (coming soon)">
+            <span className="smd-deal-tab-label">Sarthi</span><span className="smd-deal-tab-soon">SOON</span>
           </button>
-          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
-            Chat View<span className="smd-deal-tab-soon">SOON</span>
+          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled title="Chat View (coming soon)">
+            <span className="smd-deal-tab-label">Chat View</span><span className="smd-deal-tab-soon">SOON</span>
           </button>
         </div>
       </div>
