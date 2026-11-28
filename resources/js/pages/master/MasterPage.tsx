@@ -128,6 +128,10 @@ function MasterPageInner({
   const [perPage, setPerPage] = useState(10);
   const [totalRows, setTotalRows] = useState(0);
   const [serverCounts, setServerCounts] = useState<{ all: number; active: number; inactive: number } | null>(null);
+  // KPI cards summarise the whole master, not the page on screen: a paged master loads its full
+  // set once for them (reloaded after every save / delete via kpiTick).
+  const [kpiRows, setKpiRows] = useState<any[] | null>(null);
+  const [kpiTick, setKpiTick] = useState(0);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   useEffect(() => {
@@ -280,6 +284,16 @@ function MasterPageInner({
 
     return () => { aborted = true; };
   }, [cfg.slug, refSlugs.join('|'), serverPaged, page, perPage, debouncedSearch, serverPaged ? statusTab : '']);
+
+  useEffect(() => {
+    setKpiRows(null);
+    if (!serverPaged || !cfg.kpis?.length) return;
+    let aborted = false;
+    api.get(masterEndpoint(cfg))
+      .then(r => { if (!aborted) setKpiRows(Array.isArray(r.data) ? r.data : []); })
+      .catch(() => { /* fall back to the page's rows */ });
+    return () => { aborted = true; };
+  }, [cfg.slug, serverPaged, kpiTick]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
   const statusOnlyEdit = !!cfg.inUseStatusOnly && !!editing?.in_use;
@@ -813,6 +827,7 @@ function MasterPageInner({
         toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }
       bustAllMasterBundles();
+      setKpiTick(t => t + 1);
       setModalOpen(false);
     } catch (err: any) {
       if (err?.response?.status === 422 && err?.response?.data?.errors) {
@@ -860,6 +875,7 @@ function MasterPageInner({
       setTotalRows(t => Math.max(0, t - 1));
       bumpCounts(deleteTarget, -1);
       bustAllMasterBundles();
+      setKpiTick(t => t + 1);
       toast.success('Deleted', `"${label}" removed successfully`);
       setDeleteOpen(false);
       setDeleteTarget(null);
@@ -1573,7 +1589,7 @@ function MasterPageInner({
       </div>
 
       {cfg.kpis && cfg.kpis.length > 0 && (
-        <MpKpiCards items={cfg.kpis.map(k => ({ key: k.label, label: k.label, icon: k.icon, value: k.compute(records) }))} />
+        <MpKpiCards items={cfg.kpis.map(k => ({ key: k.label, label: k.label, icon: k.icon, value: k.compute(kpiRows ?? records) }))} />
       )}
 
       {cfg.slug === 'designations' && (

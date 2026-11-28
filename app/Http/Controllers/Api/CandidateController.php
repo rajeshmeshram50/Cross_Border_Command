@@ -202,6 +202,9 @@ class CandidateController extends Controller
             $this->guardRecruitmentOpen($parent);
 
             $this->guardDuplicate($data, (int) $data['recruitment_id'], null);
+            // A brand-new candidate may be created straight as Selected — honour
+            // the openings-full rule here too.
+            $this->assertOpeningAvailable((int) $parent->id, $data['status'] ?? null);
 
             $payload = array_merge($data, [
                 'client_id'  => $parent->client_id,
@@ -230,6 +233,10 @@ class CandidateController extends Controller
         $data = $this->validatePayload($request, $row->id);
         $this->normaliseReferral($data);
         $this->guardDuplicate($data, $row->recruitment_id, $row->id);
+
+        // Editing the candidate must honour the same openings-full rule as the
+        // list-view "mark Selected" action — selecting here was bypassing it.
+        $this->assertOpeningAvailable($row->recruitment_id, $data['status'] ?? null, $row->id, $row->status);
 
         $oldPath = $row->cv_path;
         if ($request->hasFile('cv')) {
@@ -298,6 +305,42 @@ class CandidateController extends Controller
         }
     }
 
+    /**
+     * Block putting a candidate into an opening-occupying status (Selected /
+     * Offered) once every opening on the recruitment is already filled.
+     * Shared by store(), update() and updateStatus() so no path can bypass it.
+     * $excludeId / $currentStatus are null when creating a brand-new candidate.
+     */
+    private function assertOpeningAvailable(int $recruitmentId, ?string $newStatus, ?int $excludeId = null, ?string $currentStatus = null): void
+    {
+        $occupying = ['Selected', 'Offered'];
+        // Only guards a transition INTO an occupying status; re-saving a
+        // candidate that is already Selected/Offered is fine.
+        if (!$newStatus || !in_array($newStatus, $occupying, true) || in_array($currentStatus, $occupying, true)) {
+            return;
+        }
+        $rec = Recruitment::find($recruitmentId);
+        if (!$rec) {
+            return;
+        }
+        $query = Candidate::query()
+            ->where('recruitment_id', $recruitmentId)
+            ->whereIn('status', $occupying);
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+        $filled = $query->count();
+        if ($filled >= (int) $rec->openings) {
+            throw ValidationException::withMessages([
+                'status' => [sprintf(
+                    'All %d opening(s) for %s are already filled — cannot select more candidates. Reject one of the existing selections first.',
+                    (int) $rec->openings,
+                    $rec->code ?: ('#' . $rec->id),
+                )],
+            ]);
+        }
+    }
+
     public function updateStatus(Request $request, $id)
     {
         $this->authorize($request, 'can_edit');
@@ -309,26 +352,7 @@ class CandidateController extends Controller
             'status_notes'     => 'nullable|string',
         ]);
 
-        $occupying = ['Selected', 'Offered'];
-        if (in_array($data['status'], $occupying, true) && !in_array($row->status, $occupying, true)) {
-            $rec = Recruitment::find($row->recruitment_id);
-            if ($rec) {
-                $filled = Candidate::query()
-                    ->where('recruitment_id', $row->recruitment_id)
-                    ->whereIn('status', $occupying)
-                    ->where('id', '!=', $row->id)
-                    ->count();
-                if ($filled >= (int) $rec->openings) {
-                    throw ValidationException::withMessages([
-                        'status' => [sprintf(
-                            'All %d opening(s) for %s are already filled — cannot select more candidates. Reject one of the existing selections first.',
-                            (int) $rec->openings,
-                            $rec->code ?: ('#' . $rec->id),
-                        )],
-                    ]);
-                }
-            }
-        }
+        $this->assertOpeningAvailable($row->recruitment_id, $data['status'], $row->id, $row->status);
 
         $previousStatus = $row->status;
         $row->update($data);
