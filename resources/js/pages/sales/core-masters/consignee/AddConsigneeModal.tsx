@@ -1910,11 +1910,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   toast.error('Only one Same-as-Customer allowed', 'This customer already has one.');
                   return;
                 }
-                if (v && extraCustomerIds.length > 0) {
-                  toast.error('Not available with multiple customers', 'Remove the extra mapped customers to use “Same as Customer”.');
-                  return;
-                }
-
                 setSameAsCustomer(v);
                 setLinkedHidden(!v);
                 if (!v) {
