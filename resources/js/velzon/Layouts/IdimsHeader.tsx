@@ -218,7 +218,7 @@ export default function IdimsHeader() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const toast = useToast();
-  const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
+  const { user, logout, tenantThemeEnabled } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const { selectedBranch } = useBranchSwitcher();
   const dispatch = useDispatch();
@@ -815,12 +815,6 @@ export default function IdimsHeader() {
                   )}
                 </div>
               )}
-
-              <div className="idims-theme-switch" title="Switch brand theme">
-                <span className="idims-theme-switch-label">{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
-                <button type="button" className="idims-theme-toggle" aria-label="Toggle brand theme"
-                  onClick={() => { closeMenus(); toggleTenantTheme?.(); }} />
-              </div>
 
               <div className="idims-actions">
                 <button
