@@ -13,7 +13,7 @@ class ClmTradeDocLibrary extends Model
 
     protected $fillable = [
         'client_id', 'branch_id', 'code', 'name', 'title', 'doc_type', 'purpose',
-        'party', 'regulatory', 'segment', 'file_path', 'content', 'docx_path', 'docx_original_name',
+        'party', 'regulatory', 'segment', 'segment_ids', 'file_path', 'content', 'docx_path', 'docx_original_name',
         'header_config', 'footer_config',
         'status', 'created_by', 'updated_by',
     ];
@@ -21,7 +21,14 @@ class ClmTradeDocLibrary extends Model
     protected $casts = [
         'header_config' => 'array',
         'footer_config' => 'array',
+        'segment_ids'   => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        // Keep segment_ids in step with the segment text on every save path.
+        static::saving(fn (self $m) => \App\Support\LibrarySegments::syncIdsOnSave($m));
+    }
 
     public function client(): BelongsTo { return $this->belongsTo(Client::class); }
 }

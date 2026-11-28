@@ -173,6 +173,12 @@ function useExactFitRows(
 }
 
 const BP_CSS = `
+/* Party wise / Transaction wise CLM have different heights: one fits the
+   screen, the other scrolls. The app scroller (.main-content) then gained and
+   lost its scrollbar on every switch, and the whole page jumped sideways by
+   its width. Reserving the gutter keeps the width the same either way. Scoped
+   by :has to the two profile pages (only they render .seg-page). */
+.main-content:has(.seg-page) { scrollbar-gutter: stable; }
 :where(.bpx-1) { font-size: 9px !important; font-weight: 500 !important; color: #94a3b8 !important; }
 :where(.bpx-2) { width: 24px !important; height: 24px !important; border-radius: 6px !important; background: linear-gradient(135deg,#0e7490,#0891b2) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
 :where(.bpx-3) { font-size: 9px !important; font-weight: 800 !important; color: #fff !important; }
@@ -435,6 +441,18 @@ const BP_CSS = `
    turning into a navy chip. */
 [data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; }
 [data-bs-theme="dark"] .seg-page .bpx-tab:not(:hover),
+/* Pager inside the popups: the CLM teal pager (the popups portal outside .clm-root,
+   so the page-level .clm-root pager rules do not reach them and it fell back to violet). */
+.bcm-overlay .wl-pager, .bcm-overlay .tc-wl-pag { border-top-color: #a5e8f5; background: linear-gradient(90deg, #f0fdff 0%, #e6fafe 40%, #f0fdff 100%); }
+.bcm-overlay .tc-wl-info, .bcm-overlay .tc-wl-rows { color: #0e7490; border-color: #a5e8f5; }
+.bcm-overlay .tc-wl-info .tc-wl-hl, .bcm-overlay .tc-wl-rows select { color: #0891b2; }
+.bcm-overlay .tc-wl-range { background: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%); box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset; }
+.bcm-overlay .tc-wl-btn { border-color: #a5e8f5; color: #0891b2; }
+.bcm-overlay .tc-wl-btn:hover:not(:disabled) { border-color: #0891b2; box-shadow: 0 4px 12px rgba(8,145,178,.25); }
+[data-bs-theme="dark"] .bcm-overlay .wl-pager, [data-bs-theme="dark"] .bcm-overlay .tc-wl-pag { border-top-color: rgba(6,182,212,.30); background: linear-gradient(90deg, #0b1220 0%, #0e1726 45%, #0b1220 100%); }
+[data-bs-theme="dark"] .bcm-overlay .tc-wl-info, [data-bs-theme="dark"] .bcm-overlay .tc-wl-rows, [data-bs-theme="dark"] .bcm-overlay .tc-wl-btn { color: #67e8f9; border-color: rgba(6,182,212,.30); background: rgba(255,255,255,.05); }
+[data-bs-theme="dark"] .bcm-overlay .tc-wl-info .tc-wl-hl, [data-bs-theme="dark"] .bcm-overlay .tc-wl-rows select { color: #a5f3fc; }
+[data-bs-theme="dark"] .bcm-overlay .tc-wl-btn:hover:not(:disabled) { background: rgba(255,255,255,.10); border-color: #22d3ee; }
 [data-bs-theme="dark"] .bcm-overlay .bpx-tab:not(:hover) { color: #67e8f9 !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; }
 [data-bs-theme="dark"] .seg-page .bpx-tab:hover,
 [data-bs-theme="dark"] .bcm-overlay .bpx-tab:hover { color: #a5f3fc !important; background: rgba(255,255,255,.08) !important; border-color: transparent !important; box-shadow: 0 2px 6px rgba(0,0,0,.35) !important; }
@@ -784,6 +802,21 @@ html:not([data-bs-theme="dark"]) .seg-page .bref-box.is-collapsed .bref-box__hea
 .bp-pop-close { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 20px; border-radius: 11px; background: #fff; border: 1px solid #e2e8f0; color: #334155; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
 .bp-pop-close:hover { border-color: #a5e9f5; color: #0e7490; background: #f0fdff; }
 :where(.bcm-overlay .bpx-49) thead th:nth-child(-n+3) > span { white-space: nowrap !important; }
+/* Popup tables = the DataTable component: an even 44px header band where a long
+   label (Due Diligence, Trade Docs & Agreements) wraps to two tidy lines like the
+   list pages do, so the table always fits the popup with no sideways scroll; the
+   solid gradient Sr No badge; zebra rows with the DataTable hover. */
+.bcm-overlay .bpx-49 thead th { height: 44px; padding: 6px 10px !important; vertical-align: middle; line-height: 1.3; }
+.bcm-overlay .bpx-49 thead th > span { display: inline-block; max-width: 110px; white-space: normal; }
+.bcm-overlay .bpx-49 tbody tr:nth-child(even) { background: #f7fdfe !important; }
+.bcm-overlay .bpx-49 tbody tr:hover { background: #ecfbfe !important; }
+.bcm-overlay .bpx-49 .bpx-67 {
+  background: linear-gradient(135deg, #0891b2, #0e7490) !important; border: 0 !important;
+  color: #fff !important; box-shadow: 0 2px 6px rgba(8,145,178,.30) !important;
+}
+[data-bs-theme="dark"] .bcm-overlay .bpx-49 tbody tr:nth-child(even) { background: rgba(255,255,255,.025) !important; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-49 tbody tr:hover { background: rgba(8,145,178,.14) !important; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-49 .bpx-67 { color: #e2e8f0 !important; }
 [data-bs-theme="dark"] .bcm-overlay :is(.bpx-84, .bpx-100), [data-bs-theme="dark"] .bcm-overlay .bpx-94 { background: #0f1b24 !important; }
 [data-bs-theme="dark"] .bp-pop-card { background: rgba(255,255,255,.02); border-color: rgba(34,211,238,.18); box-shadow: none; }
 [data-bs-theme="dark"] .bcm-overlay .bpx-98 { background: #0f1b24 !important; border-top-color: rgba(34,211,238,.16) !important; }
@@ -1977,6 +2010,13 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
 
 function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows: ConsRow[]; onClose: () => void }) {
   useScrollLock(true);
+  /* Paged like the other list popups: the pager footer sits at the bottom of the card. */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const start = (safePage - 1) * pageSize;
+  const pageRows = rows.slice(start, start + pageSize);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -2022,9 +2062,9 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
             <tbody>
               {rows.length === 0 ? (
                 <tr><td colSpan={11} className="bpx-95">No consignees mapped to this customer yet.</td></tr>
-              ) : rows.map((r, i) => (
+              ) : pageRows.map((r, i) => (
                 <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
-                  <td className="bpx-66"><span className="bpx-67">{i + 1}</span></td>
+                  <td className="bpx-66"><span className="bpx-67">{start + i + 1}</span></td>
                   <td className="bpx-51"><span className="bpx-76">{r.id}</span></td>
                   <td className="bpx-51"><span className="bpx-77">{r.cid}</span></td>
                   <td className="bpx-69">{r.name}</td>
@@ -2041,14 +2081,14 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
               ))}
             </tbody>
           </table>
+          <WorklistPager
+            total={rows.length}
+            page={safePage}
+            pageSize={pageSize}
+            onPage={setPage}
+            onPageSize={(n) => { setPageSize(n); setPage(1); }}
+          />
           </div>
-        </div>
-
-        <div className="bpx-98">
-          <span className="bpx-99">Showing <strong>{rows.length}</strong> consignee{rows.length === 1 ? '' : 's'}</span>
-          <button type="button" className="bp-pop-close" onClick={onClose}>
-            Close
-          </button>
         </div>
       </div>
     </div>,

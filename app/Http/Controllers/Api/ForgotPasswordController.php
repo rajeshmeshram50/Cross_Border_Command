@@ -77,7 +77,7 @@ class ForgotPasswordController extends Controller
             ], 503);
         }
         try {
-            Mail::to($email)->cc('php@inhpl.com')->send(new PasswordResetOtpMail(
+            Mail::to($email)->send(new PasswordResetOtpMail(
                 $otp,
                 $user->name,
                 $email,

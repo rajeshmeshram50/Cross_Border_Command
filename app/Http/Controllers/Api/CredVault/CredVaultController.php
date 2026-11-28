@@ -1913,7 +1913,7 @@ class CredVaultController extends Controller
             $prefix = Credential::VAULT_PREFIX['normal'];
             $this->importBatch = [
                 'prefix' => $prefix,
-                'next'   => (int) substr($this->nextCode('credvault_credentials', $prefix, $u->client_id), strlen($prefix) + 1),
+                'next'   => (int) substr($this->nextCode('credvault_credentials', $prefix, $u->client_id, $u->branch_id), strlen($prefix) + 1),
                 'names'  => Credential::where('client_id', $u->client_id)->where('owner_id', $u->id)->where('type', $payload['type'])
                     ->pluck('name')->mapWithKeys(fn ($n) => [Str::lower(trim((string) $n)) => true])->all(),
                 'audit'  => [],
@@ -1982,7 +1982,7 @@ class CredVaultController extends Controller
     {
         $result = $this->inTransaction('import the credentials', function () use ($u, $d, $payload, $pol, $scope, $deptId) {
             $picked = array_flip($d['rows']);
-            $code   = $this->nextCode('credvault_credentials', 'CRD', $u->client_id);
+            $code   = $this->nextCode('credvault_credentials', 'CRD', $u->client_id, $u->branch_id);
             $n      = (int) substr($code, 4);
             $items  = 0;
             $weak   = 0;
@@ -3034,7 +3034,7 @@ class CredVaultController extends Controller
                     'client_id' => $u->client_id, 'branch_id' => $u->branch_id, 'owner_id' => $u->id, 'created_by' => $u->id,
                     'code' => $this->importBatch
                         ? sprintf('%s-%04d', $this->importBatch['prefix'], $this->importBatch['next'])
-                        : $this->nextCode('credvault_credentials', Credential::VAULT_PREFIX[$vault], $u->client_id),
+                        : $this->nextCode('credvault_credentials', Credential::VAULT_PREFIX[$vault], $u->client_id, $u->branch_id),
                     'vault' => $vault, 'type' => $type,
                 ]);
             }
@@ -5042,25 +5042,39 @@ class CredVaultController extends Controller
         });
     }
 
-    protected function nextCode(string $table, string $prefix, int $clientId): string
+    protected function nextCode(string $table, string $prefix, int $clientId, ?int $branchId = null): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->value('id');
 
-        return sprintf('%s-%04d', $prefix, $this->lastNumber($table, $prefix, $clientId) + 1);
+        return sprintf('%s-%04d', $prefix, $this->lastNumber($table, $prefix, $clientId, $branchId) + 1);
     }
 
-    protected function peekCode(string $table, string $prefix, int $clientId): string
+    protected function peekCode(string $table, string $prefix, int $clientId, ?int $branchId = null): string
     {
-        return sprintf('%s-%04d', $prefix, $this->lastNumber($table, $prefix, $clientId) + 1);
+        return sprintf('%s-%04d', $prefix, $this->lastNumber($table, $prefix, $clientId, $branchId) + 1);
     }
 
-    protected function lastNumber(string $table, string $prefix, int $clientId): int
+    /**
+     * Highest code number already used for this prefix. Credential codes
+     * (credvault_credentials) run as a per-branch series, so each branch gets
+     * its own CRD-0001 onward; other tables (transfers) stay client-wide.
+     * Purged credentials are still counted (by branch) so numbers never recycle.
+     */
+    protected function lastNumber(string $table, string $prefix, int $clientId, ?int $branchId = null): int
     {
+        $byBranch = $table === 'credvault_credentials';
         $num = fn (?string $code) => $code ? (int) substr($code, strlen($prefix) + 1) : 0;
-        $n = $num(DB::table($table)->where('client_id', $clientId)->where('code', 'like', "{$prefix}-%")->orderByDesc('id')->value('code'));
-        if ($table === 'credvault_credentials') {
-            $n = max($n, $num(AuditLog::where('client_id', $clientId)->where('action', 'purge')->where('credential_code', 'like', "{$prefix}-%")
-                ->orderByDesc('credential_code')->value('credential_code')));
+
+        $q = DB::table($table)->where('client_id', $clientId)->where('code', 'like', "{$prefix}-%");
+        if ($byBranch) {
+            $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+        }
+        $n = $num($q->orderByDesc('id')->value('code'));
+
+        if ($byBranch) {
+            $aq = AuditLog::where('client_id', $clientId)->where('action', 'purge')->where('credential_code', 'like', "{$prefix}-%");
+            $branchId === null ? $aq->whereNull('branch_id') : $aq->where('branch_id', $branchId);
+            $n = max($n, $num($aq->orderByDesc('credential_code')->value('credential_code')));
         }
 
         return $n;

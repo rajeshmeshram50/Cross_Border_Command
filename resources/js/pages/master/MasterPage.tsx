@@ -99,6 +99,7 @@ function MasterPageInner({
   const toast = useToast();
   const [records, setRecords] = useState<any[]>([]);
   const [refData, setRefData] = useState<Record<string, any[]>>({});
+  const [apiOpts, setApiOpts] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
 
   const isSuperAdmin = user?.user_type === 'super_admin';
@@ -255,6 +256,24 @@ function MasterPageInner({
     setRefData(next);
   }, [refSlugs.join('|')]);
 
+  // Fields that source their select options from an API endpoint (e.g. live employees).
+  const optsApiFields = useMemo(() => cfg.fields.filter(f => f.optsApi), [cfg]);
+
+  const fetchApiOpts = useCallback(async () => {
+    if (optsApiFields.length === 0) return;
+    const pairs = await Promise.all(optsApiFields.map(f =>
+      api.get(f.optsApi!)
+        .then(r => {
+          const raw = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
+          const opts = f.optsApiBuild ? f.optsApiBuild(raw) : raw;
+          return [f.n, opts] as const;
+        })
+        .catch(() => [f.n, [] as any[]] as const)));
+    const next: Record<string, any[]> = {};
+    for (const [k, v] of pairs) next[k] = v;
+    setApiOpts(next);
+  }, [optsApiFields.map(f => f.n).join('|')]);
+
   useEffect(() => {
     let aborted = false;
     setLoading(true);
@@ -279,8 +298,9 @@ function MasterPageInner({
         }).catch(() => { if (!aborted) setRecords([]); });
 
     const loadRefs = fetchRefs();
+    const loadApiOpts = fetchApiOpts();
 
-    Promise.all([loadRecords, loadRefs]).finally(() => { if (!aborted) setLoading(false); });
+    Promise.all([loadRecords, loadRefs, loadApiOpts]).finally(() => { if (!aborted) setLoading(false); });
 
     return () => { aborted = true; };
   }, [cfg.slug, refSlugs.join('|'), serverPaged, page, perPage, debouncedSearch, serverPaged ? statusTab : '']);
@@ -1763,7 +1783,7 @@ function MasterPageInner({
                           : [String(f.showWhen.equals)];
                         return need.includes(cur);
                       })
-                      .map((f, i) => renderField(f, i, editing, viewOnly || (statusOnlyEdit && f.n !== 'status'), refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen, radioValues, (name, value) => setRadioValues((prev) => ({ ...prev, [name]: value }))))}
+                      .map((f, i) => renderField(f, i, editing, viewOnly || (statusOnlyEdit && f.n !== 'status'), refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen, radioValues, (name, value) => setRadioValues((prev) => ({ ...prev, [name]: value })), apiOpts))}
                   </Row>
                 </div>
               );
@@ -2605,6 +2625,7 @@ export function renderField(
   apiAutogen: Record<string, string> = {},
   radioValues: Record<string, string> = {},
   onRadioChange: (name: string, value: string) => void = () => {},
+  apiOpts: Record<string, any[]> = {},
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -2702,7 +2723,11 @@ export function renderField(
       />
     );
   } else if (f.t === 'select') {
-    let options = normalizeOpts(f.opts);
+    let options = f.optsApi ? normalizeOpts(apiOpts[f.n] || []) : normalizeOpts(f.opts);
+    // Keep an already-saved value listed even if it's no longer among the loaded options.
+    if (f.optsApi && defaultVal != null && String(defaultVal) !== '' && !options.some(o => String(o.value) === String(defaultVal))) {
+      options = [{ value: String(defaultVal), label: String(defaultVal) }, ...options];
+    }
     if (f.noneLabel) {
       options = [{ value: '', label: f.noneLabel }, ...options];
     }

@@ -8,6 +8,9 @@ export type FieldDef = {
   p?: string;
   full?: boolean;
   opts?: FieldOption[];
+  // Load select options from an API endpoint; optsApiBuild maps the raw rows to options.
+  optsApi?: string;
+  optsApiBuild?: (rows: any[]) => FieldOption[];
   ref?: string;
   refL?: string;
   refLFmt?: string;
@@ -192,20 +195,29 @@ const C: Record<string, MasterConfig> = {
         } },
       { n: 'parent_id', l: 'Parent Department', t: 'select', ref: 'departments', refL: 'name',
         noneLabel: '— None (Root Department) —' },
-      { n: 'head', l: 'Department Head', t: 'select', noneLabel: '— Select Employee —', opts: [
-        { value: 'Gaurav Jagtap',   label: 'Gaurav Jagtap — Software Developer' },
-        { value: 'Atharv Patekar',  label: 'Atharv Patekar — QA Engineer' },
-        { value: 'Parth Lakare',    label: 'Parth Lakare — Business Analyst' },
-        { value: 'Sonal Pawar',     label: 'Sonal Pawar — HR Executive' },
-        { value: 'Nisha Kapoor',    label: 'Nisha Kapoor — Finance Manager' },
-        { value: 'Kiran Patel',     label: 'Kiran Patel — Sales Lead' },
-        { value: 'Manoj Gawade',    label: 'Manoj Gawade — Logistics Manager' },
-        { value: 'Durgesh Urkude',  label: 'Durgesh Urkude — Sales Manager' },
-        { value: 'Ankit Bhosale',   label: 'Ankit Bhosale — Purchase Manager' },
-        { value: 'Priti Shende',    label: 'Priti Shende — Accounts Manager' },
-        { value: 'Sandeep Kadu',    label: 'Sandeep Kadu — Logistics Manager' },
-        { value: 'Rohit Nagpure',   label: 'Rohit Nagpure — Sales Executive' },
-      ] },
+      { n: 'head', l: 'Department Head', t: 'select', noneLabel: '— Select Head —',
+        // Live, active employees ranked by hierarchy — HODs first, then Team Leaders.
+        // Stored as the name string; first option is the top candidate (lowest id at the highest level).
+        optsApi: '/employees',
+        optsApiBuild: (rows: any[]) => {
+          const rankOf = (e: any) => {
+            const lvl = String(e?.designation?.level ?? e?.designation?.name ?? '').toLowerCase();
+            if (lvl.includes('hod') || lvl.includes('head of department')) return 1;
+            if (lvl.includes('team lead') || lvl.includes('tl')) return 2;
+            return 99;
+          };
+          return rows
+            .filter(e => String(e?.status ?? '').toLowerCase() === 'active')
+            .map(e => ({ e, rank: rankOf(e) }))
+            .filter(x => x.rank <= 2)
+            .sort((a, b) => a.rank - b.rank || Number(a.e.id) - Number(b.e.id))
+            .map(({ e, rank }) => {
+              const nm = (e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim()).trim();
+              const tag = rank === 1 ? 'HOD' : 'TL';
+              return { value: nm, label: e.designation?.name ? `${nm} — ${e.designation.name}` : `${nm} — ${tag}` };
+            })
+            .filter(o => o.value);
+        } },
       { n: 'email', l: 'Department Email', t: 'email', p: 'e.g. sd@enterprise.com' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],

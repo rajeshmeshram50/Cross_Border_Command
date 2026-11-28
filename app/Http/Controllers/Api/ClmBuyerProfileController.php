@@ -16,6 +16,7 @@ use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
 use App\Models\SegmentDocUpload;
 use App\Models\ShipmentOrder;
+use App\Support\LibrarySegments;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -53,9 +54,11 @@ class ClmBuyerProfileController extends Controller
             $uploadsByOwner[$u->uploadable_type . '#' . $u->uploadable_id][$u->category . '::' . $u->doc_code] = true;
         }
 
+        // Segment -> library rows: by segment id when the row has ids, else by
+        // name/code as before (App\Support\LibrarySegments).
         $agreements = ClmAgreementLibrary::where('client_id', $cid)
             ->where('agr_status', 'Active')
-            ->get(['id', 'segment', 'regulatory', 'party']);
+            ->get(LibrarySegments::columns('clm_agreement_library', ['id', 'segment', 'regulatory', 'party']));
         $agrPartyById = [];
         $agrIdsBySeg = [];
         foreach ($agreements as $a) $agrPartyById[(int) $a->id] = (string) $a->party;
@@ -63,20 +66,14 @@ class ClmBuyerProfileController extends Controller
             $sid = (int) $s->id;
             $list = [];
             foreach ($agreements as $a) {
-                if ((string) $a->regulatory !== (string) $s->regulatory_status) continue;
-                if (
-                    $this->csvHasToken((string) $a->segment, (string) $s->name)
-                    || $this->csvHasToken((string) $a->segment, (string) $s->code)
-                ) {
-                    $list[] = (int) $a->id;
-                }
+                if (LibrarySegments::matches($a, $s)) $list[] = (int) $a->id;
             }
             $agrIdsBySeg[$sid] = $list;
         }
 
         $tradeDocs = ClmTradeDocLibrary::where('client_id', $cid)
             ->where('status', 'active')
-            ->get(['id', 'segment', 'regulatory', 'party']);
+            ->get(LibrarySegments::columns('clm_trade_doc_library', ['id', 'segment', 'regulatory', 'party']));
         $tdPartyById = [];
         $tdIdsBySeg = [];
         foreach ($tradeDocs as $m) $tdPartyById[(int) $m->id] = (string) $m->party;
@@ -84,13 +81,7 @@ class ClmBuyerProfileController extends Controller
             $sid = (int) $s->id;
             $list = [];
             foreach ($tradeDocs as $m) {
-                if ((string) $m->regulatory !== (string) $s->regulatory_status) continue;
-                if (
-                    $this->csvHasToken((string) $m->segment, (string) $s->name)
-                    || $this->csvHasToken((string) $m->segment, (string) $s->code)
-                ) {
-                    $list[] = (int) $m->id;
-                }
+                if (LibrarySegments::matches($m, $s)) $list[] = (int) $m->id;
             }
             $tdIdsBySeg[$sid] = $list;
         }
@@ -548,15 +539,5 @@ class ClmBuyerProfileController extends Controller
                 'wos_neq'    => $wosNeq,
             ],
         ]);
-    }
-
-    private function csvHasToken(?string $csv, string $token): bool
-    {
-        $token = mb_strtolower(trim($token));
-        if ($token === '' || $csv === null || $csv === '') return false;
-        foreach (explode(',', $csv) as $part) {
-            if (mb_strtolower(trim($part)) === $token) return true;
-        }
-        return false;
     }
 }

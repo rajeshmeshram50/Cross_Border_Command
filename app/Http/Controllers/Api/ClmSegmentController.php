@@ -363,6 +363,39 @@ class ClmSegmentController extends Controller
 
     private function cascadeSegmentRename(int $segmentId, $clientId, string $old, string $new): void
     {
+        // Agreement / Trade Document libraries match by segment id, so a rename
+        // no longer detaches them. Only the display text is brought up to date:
+        // the old name becomes the new one on rows linked to this segment id,
+        // and stays as well if another linked segment still carries it. The ids
+        // are not touched (DB::table, so the model save hook does not run).
+        foreach (['clm_agreement_library', 'clm_trade_doc_library'] as $lib) {
+            if (!$this->schemaHas($lib, 'segment_ids')) continue;
+            $rows = DB::table($lib)->where('client_id', $clientId)
+                ->whereRaw('segment_ids::jsonb @> ?::jsonb', [json_encode([$segmentId])])
+                ->get(['id', 'segment', 'segment_ids']);
+            foreach ($rows as $r) {
+                $ids = array_values(array_filter(array_map('intval', (array) json_decode((string) $r->segment_ids, true))));
+                $otherOld = DB::table('clm_segments')
+                    ->whereIn('id', array_diff($ids, [$segmentId]) ?: [0])
+                    ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($old))])
+                    ->exists();
+                $parts = [];
+                foreach (array_map('trim', explode(',', (string) $r->segment)) as $p) {
+                    if ($p === '') continue;
+                    if (strcasecmp($p, trim($old)) === 0) {
+                        $parts[] = $new;
+                        if ($otherOld) $parts[] = $p;
+                    } else {
+                        $parts[] = $p;
+                    }
+                }
+                $text = implode(', ', array_values(array_unique($parts)));
+                if ($text !== (string) $r->segment) {
+                    DB::table($lib)->where('id', $r->id)->update(['segment' => $text]);
+                }
+            }
+        }
+
         if ($this->schemaHas('clm_tnc_library', 'segment_ids')) {
             foreach (DB::table('clm_tnc_library')->whereJsonContains('segment_ids', $segmentId)->get(['id', 'segment_ids']) as $r) {
                 $names = \App\Support\SegmentGuard::namesFor(json_decode((string) $r->segment_ids, true) ?: []);

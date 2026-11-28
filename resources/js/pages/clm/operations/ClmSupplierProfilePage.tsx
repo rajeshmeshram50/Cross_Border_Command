@@ -101,6 +101,10 @@ const EMPTY_SP: SpData = {
 
 /* ───────────────────────── Extracted CSS ───────────────────────── */
 const CSS = `
+/* Party wise / Transaction wise switch: keep the app scroller's gutter so the
+   page does not jump sideways when one tab scrolls and the other does not
+   (same rule as Customer Profile). */
+.main-content:has(.seg-page) { scrollbar-gutter: stable; }
 /* 8px, the same gutter Customer Profile uses. Both pages declare .seg-page
    globally, so the two rules disagreed on the page's own padding — 8 here,
    0 there — and whichever style block loaded last decided it. The cards

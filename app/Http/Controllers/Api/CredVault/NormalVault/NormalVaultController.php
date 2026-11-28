@@ -21,7 +21,7 @@ class NormalVaultController extends CredVaultController
 
         return response()->json(['status' => true, 'data' => [
             'vault'     => self::VAULT,
-            'next_code' => $this->peekCode('credvault_credentials', Credential::VAULT_PREFIX[self::VAULT], $u->client_id),
+            'next_code' => $this->peekCode('credvault_credentials', Credential::VAULT_PREFIX[self::VAULT], $u->client_id, $u->branch_id),
             'preview'   => true,
         ]], 200);
     }

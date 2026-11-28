@@ -490,24 +490,7 @@ class ClmAgreementController extends Controller
         $segmentsOut = [];
         $tdUploadsByOwner = null;
         foreach ($segments as $seg) {
-            $name = $seg->name;
-            $code = $seg->code;
-            $agreements = ClmAgreementLibrary::where('client_id', $user->client_id)
-                ->where('regulatory', $seg->regulatory_status)
-                ->where(function ($q) use ($name, $code) {
-                    foreach ([$name, $code] as $needle) {
-                        $q->orWhere('segment', $needle)
-                          ->orWhere('segment', 'LIKE', $needle . ',%')
-                          ->orWhere('segment', 'LIKE', $needle . ', %')
-                          ->orWhere('segment', 'LIKE', '%,' . $needle)
-                          ->orWhere('segment', 'LIKE', '%, ' . $needle)
-                          ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')
-                          ->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
-                    }
-                })
-                ->where('agr_status', 'Active')
-                ->orderBy('id')
-                ->get()
+            $agreements = $this->libraryRowsForSegment(ClmAgreementLibrary::query(), (int) $user->client_id, $seg, 'agr_status', 'Active')
                 ->filter(fn (ClmAgreementLibrary $a) => $this->partyIncluded($a->party, $buyerEqualsConsignee))
                 ->values();
 
@@ -684,26 +667,22 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'saved' => count($data['items'])]);
     }
 
-    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = [], bool $buyerEqualsConsignee = false, ?array &$uploadsCache = null): array
+    /**
+     * Active library rows (agreements or trade documents) of one segment: by
+     * segment id when the row has ids, else by name/code as before; the row's
+     * regulatory must equal the segment's (App\Support\LibrarySegments).
+     */
+    private function libraryRowsForSegment($query, int $cid, $seg, string $statusCol, string $statusVal)
     {
-        $name = $seg->name;
-        $code = $seg->code;
-        $docs = ClmTradeDocLibrary::where('client_id', $cid)
-            ->where('regulatory', $seg->regulatory_status)
-            ->where(function ($q) use ($name, $code) {
-                foreach ([$name, $code] as $needle) {
-                    $q->orWhere('segment', $needle)
-                      ->orWhere('segment', 'LIKE', $needle . ',%')
-                      ->orWhere('segment', 'LIKE', $needle . ', %')
-                      ->orWhere('segment', 'LIKE', '%,' . $needle)
-                      ->orWhere('segment', 'LIKE', '%, ' . $needle)
-                      ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')
-                      ->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
-                }
-            })
-            ->where('status', 'active')
+        return \App\Support\LibrarySegments::scopeForSegment($query->where('client_id', $cid), $seg)
+            ->where($statusCol, $statusVal)
             ->orderBy('id')
             ->get();
+    }
+
+    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = [], bool $buyerEqualsConsignee = false, ?array &$uploadsCache = null): array
+    {
+        $docs = $this->libraryRowsForSegment(ClmTradeDocLibrary::query(), $cid, $seg, 'status', 'active');
         if ($docs->isEmpty()) return [];
 
         if ($uploadsCache === null) {
