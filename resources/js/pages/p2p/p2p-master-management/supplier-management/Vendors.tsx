@@ -803,11 +803,23 @@ export default function Vendors() {
   /* Last measured list height (scroller + pager), so the shimmer shown during a
      swap occupies exactly the same space as the rows it stands in for. */
   const [shimH, setShimH] = useState<number | null>(null);
+  /* The table area's real height (rows + pager) from the last rendered list.
+     shimH covers only the rows' scroller, so a swap shimmer held to it dropped
+     the 57px pager band: the card shrank and grew back on every tab switch and
+     the page jumped. Read when a swap starts, while the old list (with the
+     fit logic's final heights) is still on screen. */
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const wrapHRef = useRef<number | null>(null);
   useEffect(() => {
-    if (bootedRef.current) setSwapping(true);
+    if (!bootedRef.current) return;
+    if (wrapRef.current && wrapRef.current.querySelector('.wl-pager')) wrapHRef.current = wrapRef.current.offsetHeight;
+    setSwapping(true);
   }, [scopeTab, kindTab, catParam, compParam, debouncedSearch, page, tab, rpp]);
 
-  useEffect(() => {
+  /* Layout effect: the scroller is a fresh element after every swap, and its
+     fixed height has to be set before the browser paints it - set after paint,
+     the full-height list showed for a frame and the page scrollbar flashed. */
+  useLayoutEffect(() => {
     const recompute = () => {
       const el = scrollRef.current;
       if (!el) return;
@@ -1131,13 +1143,16 @@ useEffect(() => {
                 );
               })}
             </div>
-            <div className="smc-table-wrap sup-table-wrap">
+            <div className="smc-table-wrap sup-table-wrap" ref={wrapRef}>
             {loading || swapping ? (
               /* Held to the list's own height while a tab / filter / page swaps.
                  Unbounded, the shimmer grew ~400px past the window, the page
                  scrollbar flashed in, and the Filter button and search box
                  jumped 10px sideways on every tab switch. */
-              <div style={shimH ? { height: shimH, overflow: 'hidden' } : undefined}>
+              /* key: a fresh element. Without it React reused the scroller's DOM
+                 node, which still carried the fit logic's inline max-height
+                 (rows only), and that clipped the shimmer 57px short. */
+              <div key="swap-shimmer" style={(wrapHRef.current ?? shimH) ? { height: wrapHRef.current ?? shimH ?? undefined, overflow: 'hidden' } : undefined}>
                 <ShimmerTable rows={Math.min(rpp, 12)} cols={11} />
               </div>
             ) : (

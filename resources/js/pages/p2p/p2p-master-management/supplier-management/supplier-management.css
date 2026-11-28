@@ -783,6 +783,16 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   box-shadow: 0 0 0 3px rgba(34, 211, 238, .18);
 }
 .smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search input::placeholder { color: #94a3b8; font-weight: 500; }
+/* Chrome paints its autofill blue (#e8f0fe) behind a remembered value, as a
+   band across the whole input. Delaying the background change keeps the
+   box's own background, light or dark. */
+.smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search input:is(:-webkit-autofill, :autofill),
+.smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search input:is(:-webkit-autofill, :autofill):is(:hover, :focus) {
+  -webkit-text-fill-color: currentColor;
+  -webkit-box-shadow: 0 0 0 1000px transparent inset;
+  transition: background-color 600000s 0s, color 600000s 0s;
+  caret-color: currentColor;
+}
 .smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search .dt-search-icon { color: #94a3b8; }
 [data-bs-theme="dark"] .smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search {
   background: rgba(255, 255, 255, .04);
