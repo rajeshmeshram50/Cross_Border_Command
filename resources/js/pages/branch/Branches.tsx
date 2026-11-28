@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Col, Row, Spinner } from 'reactstrap';
-import DataTable from '../../components/ui/DataTable';
+import DataTable, { ActionIcon } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -171,42 +171,17 @@ export default function Branches({ onNavigate }: Props) {
 
   // ── Clients-page style compact action button ──
   const ActionBtn = ({
-    title, icon, color, onClick, disabled,
-  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    title, icon, onClick, disabled, solid,
+  }: { title: string; icon: string; color?: string; onClick: () => void; disabled?: boolean; solid?: boolean }) => (
     <Tooltip label={title}>
       <button
         type="button"
         aria-label={title}
         disabled={disabled}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center"
-        style={{
-          width: 30, height: 30, borderRadius: 8,
-          background: 'var(--vz-secondary-bg)',
-          border: '1px solid var(--vz-border-color)',
-          color: 'var(--vz-secondary-color)',
-          transition: 'all .15s ease',
-        }}
-        onMouseEnter={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          const tint =
-            color === 'primary' ? '#40518918' :
-              color === 'danger' ? '#f0654818' :
-                color === 'success' ? '#0ab39c18' :
-                  color === 'info' ? '#299cdb18' :
-                    color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)';
-          el.style.background = tint;
-          el.style.borderColor = `var(--vz-${color})`;
-          el.style.color = `var(--vz-${color})`;
-        }}
-        onMouseLeave={e => {
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = 'var(--vz-secondary-bg)';
-          el.style.borderColor = 'var(--vz-border-color)';
-          el.style.color = 'var(--vz-secondary-color)';
-        }}
+        className={`hr-act${solid ? ' hr-act--edit' : ''}`}
         onClick={onClick}
       >
-        <i className={`${icon} fs-14`} />
+        <ActionIcon icon={icon} />
       </button>
     </Tooltip>
   );
@@ -368,15 +343,19 @@ export default function Branches({ onNavigate }: Props) {
     {
       header: () => <div className="text-center">Actions</div>,
       id: 'actions',
+      // Reserve width for the five 30px tiles + gaps so the whole group sits
+      // inside the horizontal scroll instead of clipping at the edge.
+      meta: { width: 196, align: 'center' },
       cell: (info: any) => {
         const b: Branch = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center">
-            <ActionBtn title="View" icon="ri-eye-line" color="primary" onClick={() => onNavigate('branch-view', { branchId: b.id })} />
-            <ActionBtn title="Edit" icon="ri-pencil-line" color="info" onClick={() => onNavigate('branch-form', { editId: b.id })} />
-            <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger" disabled={deleting === b.id} onClick={() => openDeleteModal(b)} />
-            <ActionBtn title="Employees" icon="ri-team-line" color="primary" onClick={() => onNavigate('branch-users', { branchId: b.id, branchName: b.name })} />
-            <ActionBtn title="Permissions" icon="ri-shield-check-line" color="success" onClick={() => onNavigate('permissions', { branchId: b.id, branchName: b.name })} />
+            {/* Edit leads and is the filled tile; Delete (destructive) sits last. */}
+            <ActionBtn title="Edit" icon="edit-pencil" solid onClick={() => onNavigate('branch-form', { editId: b.id })} />
+            <ActionBtn title="View" icon="ri-eye-line" onClick={() => onNavigate('branch-view', { branchId: b.id })} />
+            <ActionBtn title="Employees" icon="ri-team-line" onClick={() => onNavigate('branch-users', { branchId: b.id, branchName: b.name })} />
+            <ActionBtn title="Permissions" icon="ri-shield-check-line" onClick={() => onNavigate('permissions', { branchId: b.id, branchName: b.name })} />
+            <ActionBtn title="Delete" icon="ri-delete-bin-line" disabled={deleting === b.id} onClick={() => openDeleteModal(b)} />
           </div>
         );
       },

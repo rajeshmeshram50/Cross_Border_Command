@@ -808,7 +808,7 @@ export default function HrLeave() {
         const r = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center">
-            <ActionBtn title="View details" icon="ri-eye-line" tone="info" onClick={() => openDetail(r)} />
+            <ActionBtn title="View details" icon="ri-eye-line" tone="info" solid onClick={() => openDetail(r)} />
             {/* Approve / Reject appear ONLY when it's the viewer's turn in the
                 manager→HR chain (server-computed canActNow). HR therefore can't
                 act while it sits at the manager level, and a manager-rejected
@@ -1973,19 +1973,20 @@ function ConfirmActionModal({
 }
 
 function ActionBtn({
-  title, icon, tone, onClick, disabled,
+  title, icon, onClick, disabled, solid,
 }: {
   title: string;
   icon: string;
-  tone: 'info' | 'success' | 'danger' | 'neutral';
+  tone?: 'info' | 'success' | 'danger' | 'neutral';
   onClick?: () => void;
   disabled?: boolean;
+  /** Solid primary tile (also forced for an edit icon, or a lone action). */
+  solid?: boolean;
 }) {
-  const toneClass =
-    tone === 'info'    ? 'rec-act-tone-info'
-    : tone === 'success' ? 'rec-act-tone-success'
-    : tone === 'danger'  ? 'rec-act-tone-danger'
-    : 'rec-act-tone-neutral';
+  // Shared HRMS action tile (.hr-act): edit → solid violet pencil; otherwise a
+  // soft white→violet tile filling solid on hover (see DataTable.css).
+  const isEdit = icon === 'edit-svg' || icon === 'ri-pencil-line';
+  const isSolid = isEdit || solid;
   return (
     <Tooltip label={title}>
       <button
@@ -1993,9 +1994,9 @@ function ActionBtn({
         aria-label={title}
         disabled={disabled}
         onClick={onClick}
-        className={`rec-act-icon ${toneClass}`}
+        className={`hr-act${isSolid ? ' hr-act--edit' : ''}`}
       >
-        <ActionIcon icon={icon} />
+        <ActionIcon icon={isEdit ? 'edit-pencil' : icon} />
       </button>
     </Tooltip>
   );

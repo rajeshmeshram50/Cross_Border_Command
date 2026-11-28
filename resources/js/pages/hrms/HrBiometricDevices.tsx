@@ -9,7 +9,8 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import Swal from 'sweetalert2';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
-import DataTable, { ActionCell, IdCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionIcon, IdCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import Tooltip from '../../components/ui/Tooltip';
 import '../../../css/recruitment.css';
 
 interface Terminal {
@@ -162,9 +163,17 @@ export default function HrBiometricDevices() {
          the column matches every other module instead of using reactstrap's
          soft-primary / soft-danger squares. */
       cell: info => (
-        <div className="d-flex gap-1 justify-content-center">
-          <ActionCell title="Edit"   icon="edit-svg"           tone="info"   onClick={() => openEdit(info.row.original)} />
-          <ActionCell title="Remove" icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(info.row.original)} />
+        <div className="hr-acts justify-content-center">
+          <Tooltip label="Edit">
+            <button type="button" aria-label="Edit" className="hr-act hr-act--edit" onClick={() => openEdit(info.row.original)}>
+              <ActionIcon icon="edit-pencil" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Remove">
+            <button type="button" aria-label="Remove" className="hr-act" onClick={() => handleDelete(info.row.original)}>
+              <ActionIcon icon="ri-delete-bin-line" />
+            </button>
+          </Tooltip>
         </div>
       ),
     },

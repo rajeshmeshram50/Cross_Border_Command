@@ -737,8 +737,14 @@ export default function HrEmployeeOnboarding() {
         if (tab === 'completed') {
           return (
             <Tooltip label="View uploaded evidence documents">
-              <button type="button" className="onb-vault-btn" aria-label="Evidence Vault" onClick={() => openVault(r)}>
-                <i className="ri-shield-check-line" style={{ fontSize: 14 }} />
+              <button
+                type="button"
+                className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 fw-semibold"
+                aria-label="Evidence Vault"
+                style={{ height: 40, padding: '0 17px', fontSize: 12, borderRadius: 10, color: '#fff', border: 'none', background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%)', boxShadow: '0 3px 8px rgba(124,58,237,.3), 0 1px 0 rgba(255,255,255,.35) inset' }}
+                onClick={() => openVault(r)}
+              >
+                <i className="ri-shield-check-line" />
                 Evidence Vault
               </button>
             </Tooltip>
@@ -750,13 +756,13 @@ export default function HrEmployeeOnboarding() {
             <Tooltip label={empPerm.lockedTitle('edit') ?? 'Edit Employee'}>
               <button
                 type="button"
-                className="onb-edit-btn flex-shrink-0"
+                className="hr-act hr-act--edit flex-shrink-0"
                 aria-label="Edit Employee"
                 aria-disabled={!empPerm.canEdit || undefined}
-                style={empPerm.canEdit ? undefined : { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }}
+                style={empPerm.canEdit ? undefined : { opacity: .5, cursor: 'not-allowed' }}
                 onClick={() => empPerm.guard('edit', () => openEdit(r))}
               >
-                <ActionIcon icon="edit-svg" />
+                <ActionIcon icon="edit-pencil" />
               </button>
             </Tooltip>
             <Tooltip label={notJoinedYet

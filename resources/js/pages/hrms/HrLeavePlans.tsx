@@ -1416,22 +1416,22 @@ function LeaveTypesTab({
       cell: info => {
         const t = info.row.original;
         return (
-          <div className="d-flex justify-content-end gap-1">
+          <div className="hr-acts justify-content-end">
             <Tooltip label="View details">
-              <button type="button" className="lp-row-action" aria-label="View" onClick={() => onView(t.id)}>
+              <button type="button" className="hr-act" aria-label="View" onClick={() => onView(t.id)}>
                 <i className="ri-eye-line" />
               </button>
             </Tooltip>
             {canEdit && (
               <Tooltip label="Edit leave type">
-                <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)}>
-                  <ActionIcon icon="edit-svg" />
+                <button type="button" className="hr-act hr-act--edit" aria-label="Edit" onClick={() => onEdit(t.id)}>
+                  <ActionIcon icon="edit-pencil" />
                 </button>
               </Tooltip>
             )}
             {canDelete && (
               <Tooltip label="Delete leave type">
-                <button type="button" className="lp-row-action lp-row-action--danger" aria-label="Delete" onClick={() => onDelete(t.id)}>
+                <button type="button" className="hr-act" aria-label="Delete" onClick={() => onDelete(t.id)}>
                   <ActionIcon icon="trash-svg" />
                 </button>
               </Tooltip>
@@ -1715,8 +1715,9 @@ function LeaveBalancesTab() {
 function LeavePlansBodyShimmer() {
   const card: CSSProperties = { border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 12px' };
   return (
-    // marginTop so the skeleton clears the tabs' underline instead of touching it.
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 16 }}>
+    // Match the 20px side gutter of the tabs/body so the skeleton doesn't touch
+    // the shell border; top/bottom padding keeps it clear of the tabs underline.
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', padding: '16px 20px 20px' }}>
       <aside style={{ width: 280, flexShrink: 0 }}>
         <Shimmer height={36} radius={10} style={{ marginBottom: 14 }} />
         <Shimmer height={10} width={90} style={{ marginBottom: 12 }} />

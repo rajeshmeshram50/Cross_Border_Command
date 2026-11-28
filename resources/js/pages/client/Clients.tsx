@@ -286,30 +286,28 @@ export default function Clients({ onNavigate }: Props) {
       },
     },
     {
-      header: 'Actions',
+      header: () => <div className="text-center">Actions</div>,
       id: 'actions',
-      // 228px: seven 28px buttons and their 4px gaps need 220, and every column
-      // here was an even 153 — so the row overflowed 46px on BOTH sides into a
-      // cell that clips, eating the eye and the gear. Left-aligned so the group
-      // sits against the status column instead of floating in the middle of a
-      // wide cell.
-      meta: { width: 238, align: 'left' },
+      // 238px holds the seven tiles and their gaps; centred to sit under the
+      // centred header.
+      meta: { width: 238, align: 'center' },
       cell: (info: any) => (
         // No `gap-1`: DataTable.css already spaces these with
         // `.dt-act + .dt-act { margin-left: 4px }`, and carrying both put 4px
         // twice between every pair — 244px of buttons in what I had sized as a
         // 220px row, so the last one still fell off the edge.
-        <div className="d-flex justify-content-start">
-          <ActionCell title="View"        icon="ri-eye-line"          tone="accent"  onClick={() => onNavigate('client-view',        { clientId: info.row.original.id })} />
-          {/* `edit-svg`, not ri-pencil-line — ActionIcon maps it to the product's
-              edit glyph, the same one Biometric Devices and Document Templates
-              show. A bare pencil reads as "draw", not "edit this record". */}
-          <ActionCell title="Edit"        icon="edit-svg"             tone="info"    onClick={() => onNavigate('client-form',        { editId:   info.row.original.id })} />
-          <ActionCell title="Delete"      icon="ri-delete-bin-line"   tone="danger"  disabled={deleting === info.row.original.id} onClick={() => handleDeleteClick(info.row.original)} />
-          <ActionCell title="Branches"    icon="ri-git-branch-line"   tone="accent"  onClick={() => onNavigate('client-branches',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
-          <ActionCell title="Permissions" icon="ri-shield-check-line" tone="success" onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
-          <ActionCell title="Payments"    icon="ri-bank-card-line"    tone="warning" onClick={() => onNavigate('client-payments',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
-          <ActionCell title="Settings"    icon="ri-settings-3-line"   tone="accent"  onClick={() => toast.info('Coming Soon', 'Client settings will be available in a future update.')} />
+        <div className="d-flex justify-content-center gap-1">
+          {/* Edit leads and is the filled tile, matching the HRMS tables.
+              `edit-svg`, not ri-pencil-line — ActionIcon maps it to the product's
+              edit glyph; a bare pencil reads as "draw", not "edit this record". */}
+          <ActionCell title="Edit"        icon="edit-pencil"          hrTile solid onClick={() => onNavigate('client-form',        { editId:   info.row.original.id })} />
+          <ActionCell title="View"        icon="ri-eye-line"          hrTile onClick={() => onNavigate('client-view',        { clientId: info.row.original.id })} />
+          <ActionCell title="Branches"    icon="ri-git-branch-line"   hrTile onClick={() => onNavigate('client-branches',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionCell title="Permissions" icon="ri-shield-check-line" hrTile onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionCell title="Payments"    icon="ri-bank-card-line"    hrTile onClick={() => onNavigate('client-payments',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionCell title="Settings"    icon="ri-settings-3-line"   hrTile onClick={() => toast.info('Coming Soon', 'Client settings will be available in a future update.')} />
+          {/* Destructive action sits last. */}
+          <ActionCell title="Delete"      icon="ri-delete-bin-line"   hrTile disabled={deleting === info.row.original.id} onClick={() => handleDeleteClick(info.row.original)} />
         </div>
       ),
     },

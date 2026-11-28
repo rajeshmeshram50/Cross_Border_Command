@@ -318,13 +318,13 @@ export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' |
         return (
           <div className="rec-row-actions justify-content-center">
             <Tooltip label="Edit">
-              <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit"
+              <button type="button" className="hr-act hr-act--edit" aria-label="Edit"
                 onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
               </button>
             </Tooltip>
             <Tooltip label={delLocked ? 'Group is assigned to employees — can’t delete' : 'Delete'}>
-              <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" aria-disabled={delLocked}
+              <button type="button" className="hr-act" aria-label="Delete" aria-disabled={delLocked}
                 onClick={() => { if (delLocked) return; handleDelete(r); }}
                 style={delLocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
@@ -942,11 +942,11 @@ function ManageGroupsModal({
         const inUse = (g.employees_count ?? 0) > 0;
         return (
           <div className="rec-row-actions justify-content-center">
-            <Tooltip label="Edit"><button type="button" className="rec-act rec-act-view rec-act--icon" onClick={() => startEdit(g)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+            <Tooltip label="Edit"><button type="button" className="hr-act hr-act--edit" onClick={() => startEdit(g)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>
             </button></Tooltip>
             <Tooltip label={inUse ? `Assigned to ${g.employees_count} employee${g.employees_count === 1 ? '' : 's'} — reassign them first` : 'Delete'}>
-              <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-disabled={inUse}
+              <button type="button" className="hr-act" aria-disabled={inUse}
                 onClick={() => { if (inUse) return; remove(g); }}
                 style={inUse ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>

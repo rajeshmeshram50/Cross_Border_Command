@@ -431,7 +431,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
     },
     {
       id: 'action', header: 'Action', enableSorting: false,
-      meta: { align: 'right' },
+      meta: { align: 'center' },
       cell: ({ row }) => {
         const r = row.original;
         const rowBusy   = busy?.id === r.id;
@@ -453,11 +453,12 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                   aria-busy={approving}
                   disabled={rowBusy}
                   onClick={() => act(r, 'approve')}
-                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center"
                   style={{
-                    width: 28, height: 28, padding: 0,
-                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                    width: 30, height: 30, padding: 0, borderRadius: 10,
+                    background: 'linear-gradient(135deg, #047857 0%, #0ab39c 55%, #10b981 100%)',
                     color: '#fff', border: 'none',
+                    boxShadow: '0 4px 12px rgba(4,120,87,.35), 0 1px 0 rgba(255,255,255,.4) inset',
                     // Inline opacity beats Bootstrap's .btn:disabled dimming, so the
                     // button actually running stays bright and the other one greys out.
                     opacity: rejecting ? 0.45 : 1,
@@ -476,11 +477,12 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                   aria-busy={rejecting}
                   disabled={rowBusy}
                   onClick={() => act(r, 'reject')}
-                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center"
                   style={{
-                    width: 28, height: 28, padding: 0,
+                    width: 30, height: 30, padding: 0, borderRadius: 10,
                     background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
                     color: '#fff', border: 'none',
+                    boxShadow: '0 4px 12px rgba(240,101,72,.3), 0 1px 0 rgba(255,255,255,.4) inset',
                     opacity: approving ? 0.45 : 1,
                     cursor: rowBusy ? 'wait' : 'pointer',
                   }}
@@ -581,9 +583,9 @@ function ViewButton({ row, onOpen }: { row: ApiRegularization; onOpen: (r: ApiRe
            stylesheet without !important, so this pill stayed on its light
            indigo in dark mode while every other cell on the row darkened with
            the table. (QA #36) */
-        className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold ep-fs-11 att-reg-view"
+        className="att-reg-view"
       >
-        <i className="ri-eye-line" />View
+        <i className="ri-eye-line" />
       </button>
     </Tooltip>
   );

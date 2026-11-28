@@ -587,12 +587,12 @@ function ActionBtn({ title, color, bg, border, t, onClick, children, busy, disab
   );
 }
 
-function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id: string; dlOpen: string | null; setDlOpen: (s: string | null) => void; onPick: (fmt: string) => void; t: OpsTokens; busy?: boolean; disabled?: boolean }) {
+function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled, solid = false }: { id: string; dlOpen: string | null; setDlOpen: (s: string | null) => void; onPick: (fmt: string) => void; t: OpsTokens; busy?: boolean; disabled?: boolean; solid?: boolean }) {
   const open = dlOpen === id;
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const off = busy || disabled;
-  const dl = actLook(false, t.dark);
+  const dl = actLook(solid, t.dark);
   const toggle = () => {
     if (off) return;
     if (open) { setDlOpen(null); return; }
@@ -773,7 +773,8 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                       <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{rej.reason}</div></Tooltip></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                       <td style={TD_C}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                        <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} onPick={(fmt) => onDownload(c, fmt)} t={t} />
+                        {/* The only action on a rejected row, so it is the solid one. */}
+                        <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} onPick={(fmt) => onDownload(c, fmt)} t={t} solid />
                       </div></td>
                     </tr>
                   );

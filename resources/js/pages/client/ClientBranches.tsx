@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Col, Row } from 'reactstrap';
+import { Button, Col, Row } from 'reactstrap';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -230,22 +230,15 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                 </div>
               </div>
             </div>
-            <button type="button" className="cb-close-btn" onClick={onBack} aria-label="Close">
-              <i className="ri-close-line" />
-            </button>
+            <Button color="light" className="rounded-pill px-3" onClick={onBack}>
+              <i className="ri-arrow-left-line align-bottom me-1" />Back to Client
+            </Button>
           </div>
 
-          <div
-            className="branches-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
-            {/* ── KPI cards (single row, equal height) ── */}
-            <Row className="g-3 mb-3 align-items-stretch">
+          {/* No wrapping surface — header, KPI row and the list card sit directly,
+              matching the Clients page structure. */}
+          {/* ── KPI cards (single row, equal height) ── */}
+          <Row className="g-3 mb-3 align-items-stretch">
               {/* md=4, not md=3: there are three KPIs, and a four-up grid left
                   the last quarter of the row empty. */}
               {KPI_CARDS.map(k => (
@@ -325,7 +318,6 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                 </>
               }
             />
-          </div>
         </Col>
       </Row>
     </>

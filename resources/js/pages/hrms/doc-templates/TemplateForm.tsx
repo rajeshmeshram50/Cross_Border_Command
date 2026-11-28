@@ -1451,8 +1451,8 @@ function Step2(props: {
                 className="tpl-input"
                 style={inputStyle(false)} />
               <button type="button" onClick={() => props.removeSigner(i)} title="Remove"
-                className="tpl-sign-remove"
-                style={{ width: 30, height: 30, border: 0, borderRadius: 6, background: '#fee2e2', color: '#b91c1c', cursor: 'pointer' }}>
+                className="tpl-sign-remove d-inline-flex align-items-center justify-content-center"
+                style={{ width: 30, height: 30, flexShrink: 0, border: 0, borderRadius: 10, background: 'linear-gradient(135deg,#f06548,#ff7a5c)', color: '#fff', cursor: 'pointer', fontSize: 15, boxShadow: '0 4px 12px rgba(240,101,72,.3), 0 1px 0 rgba(255,255,255,.4) inset' }}>
                 <i className="ri-delete-bin-line" />
               </button>
             </div>
@@ -2111,8 +2111,8 @@ function TplFormDarkStyles() {
         color: #c4b5fd !important;
       }
       [data-bs-theme="dark"] .tpl-form-page .tpl-sign-remove {
-        background: rgba(248,113,113,0.18) !important;
-        color: #fca5a5 !important;
+        background: linear-gradient(135deg,#f06548,#ff7a5c) !important;
+        color: #fff !important;
       }
       [data-bs-theme="dark"] .tpl-form-page .tpl-sign-preview {
         background: rgba(124,92,252,0.10) !important;

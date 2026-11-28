@@ -1114,8 +1114,8 @@ function PipActionsView({ pips }: { pips: ActivePip[] }) {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div className="d-flex justify-content-end gap-1">
-                        <button type="button" className="pip-icon-btn" title="View"><i className="ri-eye-line" /></button>
-                        <button type="button" className="pip-icon-btn" title="Edit"><ActionIcon icon="edit-svg" /></button>
+                        <button type="button" className="hr-act" title="View"><i className="ri-eye-line" /></button>
+                        <button type="button" className="hr-act hr-act--edit" title="Edit"><ActionIcon icon="edit-pencil" /></button>
                       </div>
                     </td>
                   </tr>

@@ -105,20 +105,20 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
            action is "shut this", and a cross says that in one glyph. */
         .cv-hero-close {
           display: inline-flex; align-items: center; justify-content: center;
-          width: 30px; height: 30px;
+          width: 34px; height: 34px;
           border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.38);
-          background: rgba(255, 255, 255, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.5);
+          background: rgba(255, 255, 255, 0.22);
           color: #fff; cursor: pointer;
           backdrop-filter: blur(6px);
           transition: background .15s, border-color .15s, transform .15s;
         }
         .cv-hero-close:hover {
-          background: rgba(255, 255, 255, 0.30);
-          border-color: rgba(255, 255, 255, 0.6);
+          background: rgba(255, 255, 255, 0.34);
+          border-color: rgba(255, 255, 255, 0.7);
           transform: translateY(-1px);
         }
-        .cv-hero-close i { font-size: 15px; line-height: 1; }
+        .cv-hero-close i { font-size: 19px; line-height: 1; font-weight: 700; }
 
         /* Back is an ACTION, so it has to look like one. As a reactstrap
            light-coloured button it rendered white-on-white against this strip
@@ -247,109 +247,42 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
           and parked the page's two actions in a band of their own above it;
           they now sit ON the hero, where the eye already is. */}
 
-      {/* ── Hero banner — velzon-style profile cover with all hero content inside ── */}
-      <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 16 }}>
-        <div
-          className="position-relative overflow-hidden cv-hero"
-          style={{ padding: '18px 20px 16px' }}
-        >
-          <div className="cv-hero-actions">
-            <button type="button" className="cv-hero-close" onClick={onBack} aria-label="Close">
-              <i className="ri-close-line" />
-            </button>
+      {/* ── Page header strip — the standard app header (like the Employee page),
+          not a saturated colour hero. Carries the org identity, the two key
+          counts, and the Back action. ── */}
+      <div className="frm-cstrip hr-cstrip mb-3">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon">
+            {(() => {
+              const heroSrc = (client as any).profile_photo_url || (client as any).profile_photo || client.logo;
+              return heroSrc
+                ? <img src={heroSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12 }} />
+                : <i className="ri-building-line" />;
+            })()}
           </div>
-          <Row className="g-3 align-items-center position-relative flex-nowrap">
-            <Col xs="auto">
-              {(() => {
-                // Profile photo wins over logo (it's the more "human" avatar);
-                // fall back to logo, then initials when neither exists.
-                const heroSrc = (client as any).profile_photo_url || (client as any).profile_photo || client.logo;
-                return heroSrc ? (
-                  <img
-                    src={heroSrc}
-                    alt=""
-                    className="rounded-circle"
-                    style={{
-                      width: 76, height: 76, objectFit: 'cover',
-                      background: '#fff',
-                      padding: 3,
-                      border: '1px solid rgba(255,255,255,0.3)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                    }}
-                  />
-                ) : (
-                  <div
-                    className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
-                    style={{
-                      width: 76, height: 76, fontSize: 26,
-                      background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
-                      color: '#fff',
-                      border: '2px solid rgba(255,255,255,0.3)',
-                      backdropFilter: 'blur(6px)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                    }}
-                  >
-                    {initials}
-                  </div>
-                );
-              })()}
-            </Col>
-
-            <Col className="min-w-0">
-              <h3 className="text-white mb-1 fw-semibold" style={{ fontSize: 20, letterSpacing: '-.3px' }}>{client.org_name}</h3>
-              <p className="mb-1" style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12.5 }}>
-                <i className="ri-building-line align-bottom me-1"></i>
-                {client.org_type}{client.industry && <> &middot; {client.industry}</>}
-              </p>
-              <div className="d-flex gap-3 flex-wrap" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12.5 }}>
-                {location && (
-                  <div>
-                    <i className="ri-map-pin-user-line me-1 fs-16 align-middle" style={{ color: 'rgba(255,255,255,0.9)' }}></i>
-                    {location}
-                  </div>
-                )}
-                {client.website && (
-                  <div>
-                    <i className="ri-global-line me-1 fs-16 align-middle" style={{ color: 'rgba(255,255,255,0.9)' }}></i>
-                    {client.website}
-                  </div>
-                )}
-              </div>
-            </Col>
-
-            <Col xs="auto">
-              <div className="d-flex align-items-center gap-2">
-                <div
-                  className="text-center px-3 py-1"
-                  style={{
-                    background: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 12,
-                    backdropFilter: 'blur(6px)',
-                    minWidth: 78,
-                  }}
-                >
-                  <h3 className="text-white mb-0 fw-bold lh-1" style={{ fontSize: 20 }}>{client.branches_count ?? 0}</h3>
-                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em', fontSize: 10.5, marginTop: 2 }}>Branches</p>
-                </div>
-                <div
-                  className="text-center px-3 py-1"
-                  style={{
-                    background: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 12,
-                    backdropFilter: 'blur(6px)',
-                    minWidth: 78,
-                  }}
-                >
-                  <h3 className="text-white mb-0 fw-bold lh-1" style={{ fontSize: 20 }}>{client.users_count ?? 0}</h3>
-                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em', fontSize: 10.5, marginTop: 2 }}>Users</p>
-                </div>
-              </div>
-            </Col>
-          </Row>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title text-truncate">{client.org_name}</div>
+            <div className="frm-cstrip-sub text-truncate">
+              {[client.org_type, client.industry, location].filter(Boolean).join(' · ')}
+            </div>
+          </div>
         </div>
-      </Card>
+        <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+          {([['Branches', client.branches_count ?? 0], ['Users', client.users_count ?? 0]] as const).map(([label, n]) => (
+            <span
+              key={label}
+              className="d-inline-flex align-items-center gap-1 fw-semibold"
+              style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 999, background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', border: '1px solid var(--vz-border-color)' }}
+            >
+              <strong style={{ color: 'var(--vz-heading-color)' }}>{n}</strong>{label}
+            </span>
+          ))}
+          <Button color="light" className="rounded-pill px-3" onClick={onBack}>
+            <i className="ri-arrow-left-line align-bottom me-1" />Back to Clients
+          </Button>
+        </div>
+      </div>
 
       {/* ── Overview content ── */}
       {(() => {

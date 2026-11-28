@@ -544,18 +544,15 @@ export default function HrCustomFields() {
 
 
 // ── Small bits ──────────────────────────────────────────────────────────────
-function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'info' | 'danger'; onClick: () => void; title: string }) {
-  // Matches the shared row-action icon style (HrEmployees): theme-aware subtle
-  // square + border, muted icon, tinting to the tone colour on hover. Works in
-  // both light and dark mode via Velzon CSS variables.
+function ActionBtn({ icon, onClick, title }: { icon: string; tone?: 'info' | 'danger'; onClick: () => void; title: string }) {
+  // Shared HRMS action tile (.hr-act). Edit is the solid violet pencil; the rest
+  // are soft white→violet tiles that fill solid on hover (see DataTable.css).
+  const isEdit = icon === 'edit-svg' || icon === 'ri-pencil-line';
   return (
     <Tooltip label={title}>
       <button type="button" onClick={onClick} aria-label={title}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center"
-        style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', color: 'var(--vz-secondary-color)', transition: 'all .15s ease' }}
-        onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = `var(--vz-${tone})`; el.style.color = `var(--vz-${tone})`; }}
-        onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = 'var(--vz-border-color)'; el.style.color = 'var(--vz-secondary-color)'; }}>
-        <ActionIcon icon={icon} className="fs-14" />
+        className={`hr-act${isEdit ? ' hr-act--edit' : ''}`}>
+        <ActionIcon icon={isEdit ? 'edit-pencil' : icon} />
       </button>
     </Tooltip>
   );

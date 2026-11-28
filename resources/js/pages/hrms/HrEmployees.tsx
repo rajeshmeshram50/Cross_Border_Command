@@ -3962,7 +3962,7 @@ const STEP_SAFE_FIELDS = new Set([
                   : exitFrozen
                     ? 'Exit initiated — profile locked. Manage it in HR > Exit Management.'
                     : (perm.lockedTitle('edit') ?? 'Edit')}
-              icon="edit-svg" color="info"
+              icon="edit-pencil" solid
               onClick={() => exitFrozen
                 ? sayExitFrozen()
                 : perm.guard('edit', () => openEditEmployee(e))}
@@ -6453,9 +6453,12 @@ function lockedStyle(locked: boolean): React.CSSProperties | undefined {
  *              leaves the user guessing whether the app is broken.
  */
 function ActionBtn({
-  title, icon, color, onClick, disabled, locked, badge,
-}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean; locked?: boolean; badge?: 'dot' }) {
+  title, icon, onClick, disabled, locked, badge, solid,
+}: { title: string; icon: string; color?: string; onClick: () => void; disabled?: boolean; locked?: boolean; badge?: 'dot'; solid?: boolean }) {
   const dim = disabled || locked;
+  // CredVault "whm-act" tiles recoloured to our violet (.hr-act / .hr-act--edit):
+  // the primary (edit) is the solid violet tile; the rest are soft white→violet
+  // tiles with a violet icon that fill solid on hover. All styling is in the CSS.
   return (
     <Tooltip label={title}>
       <button
@@ -6463,31 +6466,11 @@ function ActionBtn({
         aria-label={title}
         disabled={disabled}
         aria-disabled={locked || undefined}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center position-relative"
-        style={{
-          width: 30, height: 30, borderRadius: 8,
-          background: 'var(--vz-secondary-bg)',
-          border: '1px solid var(--vz-border-color)',
-          color: 'var(--vz-secondary-color)',
-          transition: 'all .15s ease',
-          opacity: dim ? 0.4 : 1,
-          cursor: dim ? 'not-allowed' : 'pointer',
-        }}
-        onMouseEnter={e => {
-          if (dim) return;
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.borderColor = `var(--vz-${color})`;
-          el.style.color = `var(--vz-${color})`;
-        }}
-        onMouseLeave={e => {
-          if (dim) return;
-          const el = e.currentTarget as HTMLButtonElement;
-          el.style.borderColor = 'var(--vz-border-color)';
-          el.style.color = 'var(--vz-secondary-color)';
-        }}
+        className={`hr-act${solid ? ' hr-act--edit' : ''} position-relative`}
+        style={locked && !disabled ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
         onClick={() => { if (!disabled) onClick(); }}
       >
-        <ActionIcon icon={icon} className="fs-14" />
+        <ActionIcon icon={icon} className="fs-15" />
         {badge === 'dot' && (
           <span
             aria-hidden

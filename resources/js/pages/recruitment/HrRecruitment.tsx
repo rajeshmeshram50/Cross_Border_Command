@@ -3166,13 +3166,12 @@ function CandidatesPlaceholderModal({
  * clickable, so the handler can raise the "you don't have permission" toast.
  */
 function ActionBtn({
-  title, icon, color, onClick, disabled, locked,
-}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean; locked?: boolean }) {
-  const toneClass =
-    color === 'info' || color === 'primary' ? 'rec-act-tone-info'
-    : color === 'success' ? 'rec-act-tone-success'
-    : color === 'danger'  ? 'rec-act-tone-danger'
-    : 'rec-act-tone-neutral';
+  title, icon, onClick, disabled, locked, solid,
+}: { title: string; icon: string; color?: string; onClick: () => void; disabled?: boolean; locked?: boolean; solid?: boolean }) {
+  // Shared HRMS action tile (.hr-act): edit → solid violet pencil; otherwise a
+  // soft white→violet tile filling solid on hover (see DataTable.css).
+  const isEdit = icon === 'edit-svg' || icon === 'ri-pencil-line';
+  const isSolid = isEdit || solid;
   return (
     <Tooltip label={title}>
       <button
@@ -3181,10 +3180,10 @@ function ActionBtn({
         disabled={disabled}
         aria-disabled={locked || undefined}
         onClick={onClick}
-        style={locked && !disabled ? { opacity: .45, cursor: 'not-allowed', filter: 'grayscale(0.7)' } : undefined}
-        className={`rec-act-icon ${toneClass}`}
+        style={locked && !disabled ? { opacity: .45, cursor: 'not-allowed' } : undefined}
+        className={`hr-act${isSolid ? ' hr-act--edit' : ''}`}
       >
-        <ActionIcon icon={icon} />
+        <ActionIcon icon={isEdit ? 'edit-pencil' : icon} />
       </button>
     </Tooltip>
   );

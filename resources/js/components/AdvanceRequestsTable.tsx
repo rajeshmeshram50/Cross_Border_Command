@@ -887,30 +887,17 @@ function AdvanceActionCell({
   const reimbursePending = settledDone && r.settle_type === 'reimburse' && !r.settle_reimbursed;
 
 
-  /* Stage, not permission (CBC #158). Green while the reporting manager still
-     has to act; faint blue once they have and it is HR's turn. A viewer holding
-     both roles otherwise saw an unchanged green button after approving. */
-  const atHrStage = r.manager_status === 'approved' && r.hr_status === 'pending';
-  const reviewBtnStyle = atHrStage
-    ? { background: '#b6d9f7', color: '#08406f', border: '1px solid #8dc3ef' }
-    : { background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none' };
-
   const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
-    <button
-      type="button"
-      title={verdict === 'approve' ? 'Approve' : 'Reject'}
-      onClick={() => { setConfirmAction({ stage, verdict }); setComment(''); }}
-      className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-      style={{
-        width: 28, height: 28, padding: 0,
-        background: verdict === 'approve'
-          ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
-          : 'linear-gradient(135deg,#f06548,#ff7a5c)',
-        color: '#fff', border: 'none',
-      }}
-    >
-      <i className={verdict === 'approve' ? 'ri-check-line' : 'ri-close-line'} />
-    </button>
+    <Tooltip label={verdict === 'approve' ? 'Approve' : 'Reject'}>
+      <button
+        type="button"
+        aria-label={verdict === 'approve' ? 'Approve' : 'Reject'}
+        onClick={() => { setConfirmAction({ stage, verdict }); setComment(''); }}
+        className={`hr-act${verdict === 'approve' ? ' hr-act--edit' : ''}`}
+      >
+        <i className={verdict === 'approve' ? 'ri-check-line' : 'ri-close-line'} />
+      </button>
+    </Tooltip>
   );
 
   return (
@@ -925,8 +912,7 @@ function AdvanceActionCell({
           it reads as clipped — and genuinely is clipped when a vertical
           scrollbar overlaps that edge. */}
       <div
-        className="d-inline-flex align-items-center gap-1 justify-content-end flex-nowrap"
-        style={{ minWidth: (mode === 'hr' || mode === 'team') ? 216 : undefined, paddingRight: 6 }}
+        className="d-inline-flex align-items-center gap-1 justify-content-center flex-nowrap"
       >
         {/* Manager / HR act via the same Review & Approve popup as expense claims. */}
         {(canManagerAct || canHrReview) && onReview ? (
@@ -935,15 +921,17 @@ function AdvanceActionCell({
             // clickable so onReview can toast the reason.
             const isOwn = mode === 'hr' && currentEmployeeId != null && Number(r.employee_id) === Number(currentEmployeeId);
             return (
-              <button
-                type="button"
-                onClick={() => onReview(r)}
-                title={isOwn ? 'Your own request — your reporting manager approves it' : undefined}
-                className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
-                style={{ height: 28, padding: '0 12px', fontSize: 11.5, ...reviewBtnStyle, whiteSpace: 'nowrap', ...(isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : null) }}
-              >
-                <i className="ri-eye-line" /> Review &amp; Approve
-              </button>
+              <Tooltip label={isOwn ? 'Your own request — your reporting manager approves it' : 'Review & Approve'}>
+                <button
+                  type="button"
+                  aria-label="Review & Approve"
+                  onClick={() => onReview(r)}
+                  className="hr-act hr-act--edit"
+                  style={isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                >
+                  <i className="ri-eye-line" />
+                </button>
+              </Tooltip>
             );
           })()
         ) : (
@@ -954,70 +942,77 @@ function AdvanceActionCell({
         )}
         {/* HR: record a payout / view the payout history on an approved advance. */}
         {canSettle && (
-          <button
-            type="button"
-            onClick={() => onRecordPayment?.(r)}
-            className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
-            style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: settleDone ? 'linear-gradient(135deg,#0e7490,#0891b2)' : 'linear-gradient(135deg,#f59e0b,#fbbf24)', whiteSpace: 'nowrap' }}
-          >
-            <i className={settleDone ? 'ri-history-line' : 'ri-wallet-3-line'} /> {settleDone ? 'View History' : 'Record Payment'}
-          </button>
+          <Tooltip label={settleDone ? 'View History' : 'Record Payment'}>
+            <button
+              type="button"
+              aria-label={settleDone ? 'View History' : 'Record Payment'}
+              onClick={() => onRecordPayment?.(r)}
+              className="hr-act hr-act--edit"
+            >
+              <i className={settleDone ? 'ri-history-line' : 'ri-wallet-3-line'} />
+            </button>
+          </Tooltip>
         )}
         {/* Employee: settle a fully-paid company advance (replaces the View eye). */}
         {needsSettle && (
-          <button
-            type="button"
-            onClick={() => onSettle?.(r)}
-            className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
-            title="Settle this advance against actual spend"
-            style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', whiteSpace: 'nowrap' }}
-          >
-            <i className="ri-check-double-line" /> Settle Payment
-          </button>
+          <Tooltip label="Settle this advance against actual spend">
+            <button
+              type="button"
+              aria-label="Settle Payment"
+              onClick={() => onSettle?.(r)}
+              className="hr-act hr-act--edit"
+            >
+              <i className="ri-check-double-line" />
+            </button>
+          </Tooltip>
         )}
         {/* Owner / non-HR: pending follow-through gets a labelled button; else the eye. */}
         {!canSettle && !needsSettle && onViewPayments && r.status === 'approved' && (r.settlement_status ?? 'unpaid') !== 'unpaid' && (
           returnPending ? (
-            <button
-              type="button"
-              onClick={() => onViewPayments(r)}
-              className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
-              title="Employee return pending — record it"
-              style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#d97706,#f59e0b)', whiteSpace: 'nowrap' }}
-            >
-              <i className="ri-arrow-go-back-line" /> Return Pending
-            </button>
+            <Tooltip label="Employee return pending — record it">
+              <button
+                type="button"
+                aria-label="Return Pending"
+                onClick={() => onViewPayments(r)}
+                className="hr-act hr-act--edit"
+              >
+                <i className="ri-arrow-go-back-line" />
+              </button>
+            </Tooltip>
           ) : reimbursePending ? (
             <>
-              <button
-                type="button"
-                onClick={() => (onRaiseReimbursement ? onRaiseReimbursement(r) : onViewPayments(r))}
-                className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
-                title="Reimbursement pending — raise the expense"
-                style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0e7490,#0891b2)', whiteSpace: 'nowrap' }}
-              >
-                <i className="ri-file-add-line" /> Raise Expense
-              </button>
-              <button
-                type="button"
-                onClick={() => onViewPayments(r)}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                title="View details"
-                style={{ width: 28, height: 28, padding: 0, color: '#0e7490', border: '1px solid #a5e9f3', background: '#ecfeff' }}
-              >
-                <i className="ri-eye-line" />
-              </button>
+              <Tooltip label="Reimbursement pending — raise the expense">
+                <button
+                  type="button"
+                  aria-label="Raise Expense"
+                  onClick={() => (onRaiseReimbursement ? onRaiseReimbursement(r) : onViewPayments(r))}
+                  className="hr-act hr-act--edit"
+                >
+                  <i className="ri-file-add-line" />
+                </button>
+              </Tooltip>
+              <Tooltip label="View details">
+                <button
+                  type="button"
+                  aria-label="View details"
+                  onClick={() => onViewPayments(r)}
+                  className="hr-act"
+                >
+                  <i className="ri-eye-line" />
+                </button>
+              </Tooltip>
             </>
           ) : (
+            <Tooltip label="View payout history">
             <button
               type="button"
+              aria-label="View payout history"
               onClick={() => onViewPayments(r)}
-              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-              title="View payout history"
-              style={{ width: 28, height: 28, padding: 0, color: '#0e7490', border: '1px solid #a5e9f3', background: '#ecfeff' }}
+              className="hr-act hr-act--edit"
             >
               <i className="ri-eye-line" />
             </button>
+            </Tooltip>
           )
         )}
         <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} viewerMode={mode} onShowRemark={onShowRemark} />

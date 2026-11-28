@@ -130,11 +130,11 @@ export default function HiringTab() {
                     <Tooltip label="Edit Draft">
                       <button
                         type="button"
-                        className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
+                        className="hr-act hr-act--edit"
                         aria-label="Edit Draft"
                         onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
                       >
-                        <ActionIcon icon="edit-svg" />
+                        <ActionIcon icon="edit-pencil" />
                       </button>
                     </Tooltip>
                   )}
