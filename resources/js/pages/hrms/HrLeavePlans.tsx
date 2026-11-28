@@ -7,6 +7,7 @@ import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse, ApiLeaveBalanceRow } from './leavePlansApi';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
+import { ciSort } from '../../utils/tableSort';
 import Tooltip from '../../components/ui/Tooltip';
 import TruncText from '../../components/ui/TruncText';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -1197,6 +1198,7 @@ function ConfigurationTab({
     {
       header: 'Leave Type',
       accessorKey: 'name',
+      sortingFn: ciSort,
       meta: { width: '34%', wrap: true },
       cell: info => {
         const t = info.row.original;
@@ -1353,6 +1355,7 @@ function LeaveTypesTab({
     {
       header: 'Name',
       accessorKey: 'name',
+      sortingFn: ciSort,
       meta: { width: '34%', wrap: true },
       cell: info => {
         const t = info.row.original;
@@ -1376,11 +1379,13 @@ function LeaveTypesTab({
     {
       header: 'Type',
       accessorKey: 'type',
+      sortingFn: ciSort,
       cell: info => <span className="fs-13 text-muted">{String(info.getValue() ?? '')}</span>,
     },
     {
       header: 'Group',
       accessorKey: 'group',
+      sortingFn: ciSort,
       meta: { width: 130 },
       cell: info => (
         <span className="fs-13 text-muted text-capitalize">{String(info.getValue() ?? '—')}</span>
@@ -1400,6 +1405,7 @@ function LeaveTypesTab({
     {
       header: 'Code',
       accessorKey: 'code',
+      sortingFn: ciSort,
       meta: { width: 100, align: 'center' },
       cell: info => {
         const t = info.row.original;

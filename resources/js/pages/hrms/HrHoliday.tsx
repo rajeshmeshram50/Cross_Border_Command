@@ -10,6 +10,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { ciSort } from '../../utils/tableSort';
 import TruncText from '../../components/ui/TruncText';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import SearchClear from '../../components/ui/SearchClear';
@@ -223,7 +224,7 @@ export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' |
     {
       header: 'Holiday Name',
       accessorKey: 'name',
-
+      sortingFn: ciSort,
       meta: { width: 250, wrap: true },
       cell: info => {
         const r = info.row.original;
@@ -249,6 +250,7 @@ export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' |
 
       header: 'Description',
       accessorKey: 'description',
+      sortingFn: ciSort,
       meta: { width: 260, wrap: true },
       cell: info => {
         const d = info.row.original.description;
@@ -269,6 +271,7 @@ export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' |
       header: 'Group',
       id: 'group',
       accessorFn: (r: HolidayRow) => (r.holiday_group_id ? (r.group?.name || groupName(r.holiday_group_id)) : ''),
+      sortingFn: ciSort,
       meta: { width: 176, align: 'center' },
       cell: info => {
         const r = info.row.original;
@@ -298,6 +301,7 @@ export default function HrHoliday({ variant = 'violet' }: { variant?: 'violet' |
     {
       header: 'Type',
       accessorKey: 'type',
+      sortingFn: ciSort,
       meta: { width: 151, align: 'center' },
       cell: info => {
         const t = info.row.original.type;
@@ -902,6 +906,7 @@ function ManageGroupsModal({
     {
       header: 'Group Name',
       accessorKey: 'name',
+      sortingFn: ciSort,
       meta: { wrap: true },
       cell: info => {
         const g = info.row.original;
@@ -917,6 +922,7 @@ function ManageGroupsModal({
          Name and Holidays sat empty. */
       header: 'Description',
       accessorKey: 'description',
+      sortingFn: ciSort,
       meta: { wrap: true },
       cell: info => {
         const d = info.row.original.description;
