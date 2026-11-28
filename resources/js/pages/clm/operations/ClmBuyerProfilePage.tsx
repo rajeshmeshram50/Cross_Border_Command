@@ -773,7 +773,11 @@ html:not([data-bs-theme="dark"]) .seg-page .bref-box.is-collapsed .bref-box__hea
 .bcm-overlay :is(.bpx-84, .bpx-100) { border-radius: 22px !important; background: #f7fdfe !important; box-shadow: 0 40px 90px -30px rgba(8,47,73,.7), 0 0 0 1px rgba(14,116,144,.08) !important; }
 .bcm-overlay .bpx-85 { padding: 18px 24px !important; background: linear-gradient(120deg, #0b4f63 0%, #0e7490 38%, #0891b2 72%, #22d3ee 100%) !important; }
 .bcm-overlay .bpx-94 { padding: 18px 22px 14px !important; background: #f7fdfe !important; }
-.bp-pop-card { background: #fff; border: 1px solid #dceef3; border-radius: 14px; box-shadow: 0 2px 12px rgba(14,116,144,.06); overflow: hidden; }
+.bp-pop-card { background: #fff; border: 1px solid #dceef3; border-radius: 14px; box-shadow: 0 2px 12px rgba(14,116,144,.06); overflow-x: auto; overflow-y: hidden; }
+/* The Customer popup ran 1120px while its table needs ~1117 of content plus
+   the body padding - Total Shipments was cut off. Same width as the
+   Consignees popup; on a narrow screen the card scrolls instead of cutting. */
+.bcm-overlay .bpx-100 { max-width: 1180px !important; }
 .bcm-overlay .bpx-98 { padding: 8px 8px 8px 14px !important; background: #fff !important; border-top: 1px solid #e3f1f5 !important; }
 .bcm-overlay .bpx-99 { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 999px; background: #fff; border: 1px solid #dceef3; font-size: 12px !important; font-weight: 600 !important; color: #475569 !important; }
 .bcm-overlay .bpx-99 strong { color: #0e7490; font-weight: 800; }
