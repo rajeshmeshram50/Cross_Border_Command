@@ -2035,8 +2035,11 @@ function ScopedStyles() {
       .gd-page .gd-vars-table .gd-row > *:nth-child(1) { position: sticky; left: 0; z-index: 2; }
       .gd-page .gd-vars-table .gd-table-head > *:nth-child(2),
       .gd-page .gd-vars-table .gd-row > *:nth-child(2) { position: sticky; left: 56px; z-index: 2; }
+      /* Opaque, and the SAME purple as the band — not #f5f3ff, which left the
+         frozen Sr No / Employee header cells as near-white blocks with the
+         band's white text on top (invisible in light mode). */
       .gd-page .gd-vars-table .gd-table-head > *:nth-child(1),
-      .gd-page .gd-vars-table .gd-table-head > *:nth-child(2) { background: #f5f3ff; }
+      .gd-page .gd-vars-table .gd-table-head > *:nth-child(2) { background: color-mix(in srgb, #8b5cf6 60%, #7c3aed); }
       .gd-page .gd-vars-table .gd-row > *:nth-child(1),
       .gd-page .gd-vars-table .gd-row > *:nth-child(2) { background: #fff; transition: background 140ms ease; }
       /* The shadow only appears once there is something scrolled under it. */
