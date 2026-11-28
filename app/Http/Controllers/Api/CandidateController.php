@@ -956,6 +956,30 @@ class CandidateController extends Controller
                     )],
                 ]);
             }
+
+            // The email must not already belong to an employee in this tenant —
+            // that person is on the roster, not a candidate.
+            $clientId = Recruitment::where('id', $recruitmentId)->value('client_id');
+            if ($clientId) {
+                $lc  = mb_strtolower($email);
+                $emp = Employee::query()
+                    ->where('client_id', $clientId)
+                    ->where(function ($w) use ($lc) {
+                        $w->whereRaw('LOWER(email) = ?', [$lc])
+                          ->orWhereRaw('LOWER(official_email) = ?', [$lc]);
+                    })
+                    ->first(['id', 'first_name', 'last_name', 'emp_code']);
+                if ($emp) {
+                    $who = trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))
+                        ?: ($emp->emp_code ?: 'an existing employee');
+                    throw ValidationException::withMessages([
+                        'email' => [sprintf(
+                            'This email already belongs to an existing employee (%s). A candidate cannot use an employee email.',
+                            $who,
+                        )],
+                    ]);
+                }
+            }
         }
 
         $mobileDigits = preg_replace('/\D/', '', (string) ($data['mobile'] ?? ''));
