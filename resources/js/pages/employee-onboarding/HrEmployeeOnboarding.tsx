@@ -5468,47 +5468,51 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                   <span className={`onb-doc-status-pill onb-doc-status-pill--${String(effective).toLowerCase()}`}>
                     {effective}
                   </span>
-                  {srv?.url && (
-                    <Tooltip label={`Preview ${d.name}`}>
-                      <a
-                        href={srv.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-view"
-                      >
-                        <i className="ri-eye-line" /> View
-                      </a>
-                    </Tooltip>
-                  )}
-                  <Tooltip label={
-                    isBusy   ? 'Uploading…'
-                    : isLocked ? 'Another document is uploading — wait for it to finish'
-                    : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
-                  }>
-                    <button
-                      type="button"
-                      className="onb-doc-upload-btn"
-                      onClick={() => triggerUpload(d.id, d.name, accept, d.maxMb)}
-                      disabled={isBusy || isLocked}
-                      style={isBusy ? { opacity: 0.6, cursor: 'progress' } : (isLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined)}
-                    >
-                      <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
-                      {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
-                    </button>
-                  </Tooltip>
-                  {srv && (
-                    <Tooltip label={isLocked ? 'Another document is uploading — wait for it to finish' : 'Remove this document'}>
+                  <div className="d-inline-flex align-items-center gap-1 ms-auto flex-shrink-0">
+                    {srv?.url && (
+                      <Tooltip label={`Preview ${d.name}`}>
+                        <a
+                          href={srv.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hr-act hr-act--edit"
+                          aria-label={`Preview ${d.name}`}
+                        >
+                          <i className="ri-eye-line" />
+                        </a>
+                      </Tooltip>
+                    )}
+                    <Tooltip label={
+                      isBusy   ? 'Uploading…'
+                      : isLocked ? 'Another document is uploading — wait for it to finish'
+                      : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
+                    }>
                       <button
                         type="button"
-                        className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del"
-                        onClick={() => triggerDelete(srv.id, d.name)}
-                        disabled={isLocked || isBusy}
-                        style={(isLocked || isBusy) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                        className={`hr-act${srv ? '' : ' hr-act--edit'}`}
+                        aria-label={srv ? `Replace ${d.name}` : `Upload ${d.name}`}
+                        onClick={() => triggerUpload(d.id, d.name, accept, d.maxMb)}
+                        disabled={isBusy || isLocked}
+                        style={isBusy ? { opacity: 0.6, cursor: 'progress' } : (isLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined)}
                       >
-                        <i className="ri-delete-bin-line" />
+                        <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : (srv ? 'ri-refresh-line' : 'ri-upload-cloud-2-line')}`} />
                       </button>
                     </Tooltip>
-                  )}
+                    {srv && (
+                      <Tooltip label={isLocked ? 'Another document is uploading — wait for it to finish' : 'Remove this document'}>
+                        <button
+                          type="button"
+                          className="hr-act"
+                          aria-label="Remove this document"
+                          onClick={() => triggerDelete(srv.id, d.name)}
+                          disabled={isLocked || isBusy}
+                          style={(isLocked || isBusy) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                        >
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -5769,12 +5773,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                                   {s.doc.original_name || `Salary Slip ${si + 1}`}
                                 </span>
                                 <span className={`onb-doc-status-pill onb-doc-status-pill--${String(eff).toLowerCase()}`}>{eff}</span>
-                                {s.doc.url && (
-                                  <a href={s.doc.url} target="_blank" rel="noreferrer" className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-view"><i className="ri-eye-line" /></a>
-                                )}
-                                <button type="button" className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del" onClick={() => triggerDelete(s.doc.id, `${d.name} (${s.doc.original_name || si + 1})`)}>
-                                  <i className="ri-delete-bin-line" />
-                                </button>
+                                <div className="d-inline-flex align-items-center gap-1 flex-shrink-0">
+                                  {s.doc.url && (
+                                    <Tooltip label="Preview"><a href={s.doc.url} target="_blank" rel="noreferrer" className="hr-act hr-act--edit" aria-label="Preview"><i className="ri-eye-line" /></a></Tooltip>
+                                  )}
+                                  <Tooltip label="Remove"><button type="button" className="hr-act" aria-label="Remove" onClick={() => triggerDelete(s.doc.id, `${d.name} (${s.doc.original_name || si + 1})`)}>
+                                    <i className="ri-delete-bin-line" />
+                                  </button></Tooltip>
+                                </div>
                               </div>
                             );
                           })}
@@ -5800,47 +5806,51 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     <span className={`onb-doc-status-pill onb-doc-status-pill--${String(effective).toLowerCase()}`}>
                       {effective}
                     </span>
-                    {srv?.url && (
-                      <Tooltip label={`Preview ${d.name}`}>
-                        <a
-                          href={srv.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-view"
-                        >
-                          <i className="ri-eye-line" /> View
-                        </a>
-                      </Tooltip>
-                    )}
-                    <Tooltip
-                      label={
-                        isBusy
-                          ? 'Uploading…'
-                          : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
-                      }
-                    >
-                      <button
-                        type="button"
-                        className="onb-doc-upload-btn"
-                        disabled={isBusy || c._busy}
-                        onClick={() => uploadForCompany(c._localKey, d.id, d.name, d.maxMb)}
-                        style={(isBusy || c._busy) ? { opacity: 0.6, cursor: 'progress' } : undefined}
+                    <div className="d-inline-flex align-items-center gap-1 ms-auto flex-shrink-0">
+                      {srv?.url && (
+                        <Tooltip label={`Preview ${d.name}`}>
+                          <a
+                            href={srv.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="hr-act hr-act--edit"
+                            aria-label={`Preview ${d.name}`}
+                          >
+                            <i className="ri-eye-line" />
+                          </a>
+                        </Tooltip>
+                      )}
+                      <Tooltip
+                        label={
+                          isBusy
+                            ? 'Uploading…'
+                            : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
+                        }
                       >
-                        <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
-                        {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
-                      </button>
-                    </Tooltip>
-                    {srv && (
-                      <Tooltip label="Remove this document">
                         <button
                           type="button"
-                          className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del"
-                          onClick={() => triggerDelete(srv.id, d.name)}
+                          className={`hr-act${srv ? '' : ' hr-act--edit'}`}
+                          aria-label={srv ? `Replace ${d.name}` : `Upload ${d.name}`}
+                          disabled={isBusy || c._busy}
+                          onClick={() => uploadForCompany(c._localKey, d.id, d.name, d.maxMb)}
+                          style={(isBusy || c._busy) ? { opacity: 0.6, cursor: 'progress' } : undefined}
                         >
-                          <i className="ri-delete-bin-line" />
+                          <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : (srv ? 'ri-refresh-line' : 'ri-upload-cloud-2-line')}`} />
                         </button>
                       </Tooltip>
-                    )}
+                      {srv && (
+                        <Tooltip label="Remove this document">
+                          <button
+                            type="button"
+                            className="hr-act"
+                            aria-label="Remove this document"
+                            onClick={() => triggerDelete(srv.id, d.name)}
+                          >
+                            <i className="ri-delete-bin-line" />
+                          </button>
+                        </Tooltip>
+                      )}
+                    </div>
                   </div>
                 );
               })}
