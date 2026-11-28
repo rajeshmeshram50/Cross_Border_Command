@@ -1234,8 +1234,6 @@ class SegmentDocUploadController extends Controller
 
     private function matchSegmentLibrary($query, int $cid, $seg, string $statusCol)
     {
-        $name = $seg->name;
-        $code = $seg->code;
         $statusVal = $statusCol === 'agr_status' ? 'Active' : 'active';
 
         $key = $seg->id ?? null;
@@ -1245,21 +1243,9 @@ class SegmentDocUploadController extends Controller
             return $this->segmentLibraryCache[$cacheKey];
         }
 
-        $rows = $query->where('client_id', $cid)
-            ->where('regulatory', $seg->regulatory_status)
-            ->where(function ($q) use ($name, $code) {
-                foreach ([$name, $code] as $needle) {
-                    $n = mb_strtolower(trim((string) $needle));
-                    if ($n === '') continue;
-                    $q->orWhereRaw('LOWER(segment) = ?', [$n])
-                        ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ',%'])
-                        ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ', %'])
-                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n])
-                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n])
-                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n . ',%'])
-                        ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n . ',%']);
-                }
-            })
+        // By segment id when the library row has ids, else by name/code as
+        // before; regulatory must still match (App\Support\LibrarySegments).
+        $rows = \App\Support\LibrarySegments::scopeForSegment($query->where('client_id', $cid), $seg)
             ->where($statusCol, $statusVal)
             ->orderBy('id')
             ->get();

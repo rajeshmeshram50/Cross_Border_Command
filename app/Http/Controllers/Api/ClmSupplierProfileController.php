@@ -50,18 +50,16 @@ class ClmSupplierProfileController extends Controller
             $uploadsByOwner[$u->uploadable_type . '#' . $u->uploadable_id][$u->category . '::' . $u->doc_code] = true;
         }
 
+        // Segment -> agreements: by segment id when the row has ids, else by
+        // name/code as before (App\Support\LibrarySegments).
         $agreements = ClmAgreementLibrary::where('client_id', $cid)
             ->where('agr_status', 'Active')
-            ->get(['id', 'segment', 'regulatory']);
+            ->get(\App\Support\LibrarySegments::columns('clm_agreement_library', ['id', 'segment', 'regulatory']));
         $agrIdsBySeg = [];
         foreach ($segments as $s) {
             $list = [];
             foreach ($agreements as $a) {
-                if ((string) $a->regulatory !== (string) $s->regulatory_status) continue;
-                if ($this->csvHasToken((string) $a->segment, (string) $s->name)
-                    || $this->csvHasToken((string) $a->segment, (string) $s->code)) {
-                    $list[] = (int) $a->id;
-                }
+                if (\App\Support\LibrarySegments::matches($a, $s)) $list[] = (int) $a->id;
             }
             $agrIdsBySeg[(int) $s->id] = $list;
         }
@@ -250,15 +248,5 @@ class ClmSupplierProfileController extends Controller
         }
 
         return response()->json(['status' => true, 'data' => $out]);
-    }
-
-    private function csvHasToken(?string $csv, string $token): bool
-    {
-        $token = mb_strtolower(trim($token));
-        if ($token === '' || $csv === null || $csv === '') return false;
-        foreach (explode(',', $csv) as $part) {
-            if (mb_strtolower(trim($part)) === $token) return true;
-        }
-        return false;
     }
 }

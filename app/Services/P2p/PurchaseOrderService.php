@@ -175,18 +175,12 @@ class PurchaseOrderService
         $needles = array_values(array_filter([$segment->name, $segment->code]));
         if (!$needles) return collect();
 
-        return DB::table($table)
-            ->where('client_id', $clientId)
-            ->where('regulatory', $segment->regulatory_status)
+        // By segment id when the library row has ids, else by name/code as
+        // before; regulatory must still match (App\Support\LibrarySegments).
+        return \App\Support\LibrarySegments::scopeForSegment(
+                DB::table($table)->where('client_id', $clientId), $segment
+            )
             ->where($statusColumn, $statusValue)
-            ->where(function ($q) use ($needles) {
-                foreach ($needles as $needle) {
-                    $q->orWhere('segment', $needle)
-                        ->orWhere('segment', 'LIKE', $needle . ',%')->orWhere('segment', 'LIKE', $needle . ', %')
-                        ->orWhere('segment', 'LIKE', '%,' . $needle)->orWhere('segment', 'LIKE', '%, ' . $needle)
-                        ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
-                }
-            })
             ->get();
     }
 

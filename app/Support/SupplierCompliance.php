@@ -153,6 +153,7 @@ class SupplierCompliance
 
         $library = ClmAgreementLibrary::where('client_id', $clientId)
             ->where('agr_status', 'Active')
+            ->orderBy('id')
             ->get();
         if ($library->isEmpty()) return [];
 
@@ -160,24 +161,14 @@ class SupplierCompliance
         foreach ($segments as $seg) {
             $ids = [];
             foreach ($library as $row) {
-                if ((string) $row->regulatory !== (string) $seg->regulatory_status) continue;
-                if (!self::segmentMatches($row->segment, $seg->name, $seg->code)) continue;
+                // By segment id when the row has ids, else name/code as before.
+                if (!LibrarySegments::matches($row, $seg)) continue;
                 if (!self::supplierApplicable($row->party)) continue;
                 $ids[] = (int) $row->id;
             }
             $bySegment[(int) $seg->id] = $ids;
         }
         return $bySegment;
-    }
-
-    private static function segmentMatches(?string $csv, ?string $name, ?string $code): bool
-    {
-        $tokens = array_filter(array_map(fn ($t) => strtolower(trim($t)), explode(',', (string) $csv)));
-        foreach ([$name, $code] as $needle) {
-            $needle = strtolower(trim((string) $needle));
-            if ($needle !== '' && in_array($needle, $tokens, true)) return true;
-        }
-        return false;
     }
 
     private static function supplierApplicable(?string $party): bool
