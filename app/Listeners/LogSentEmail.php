@@ -27,6 +27,8 @@ class LogSentEmail
             $mailableClass = $event->data['__laravel_mailable'] ?? null;
 
             $from = $this->firstAddress($message->getFrom());
+            $fromName = \App\Support\TenantMailFrom::resolve($message)
+                ?? ($from['name'] ?? config('mail.from.name'));
             $cc   = $this->addressList($message->getCc());
             $bcc  = $this->addressList($message->getBcc());
 
@@ -64,7 +66,7 @@ class LogSentEmail
                     'category'        => $category,
                     'mailable_class'  => $this->clip($mailableClass, 191),
                     'from_email'      => $this->clip($from['email'] ?? config('mail.from.address'), 191),
-                    'from_name'       => $this->clip($from['name'] ?? config('mail.from.name'), 191),
+                    'from_name'       => $this->clip($fromName, 191),
                     'to_email'        => $this->clip($toEmail, 191),
                     'to_name'         => $this->clip($toName, 191),
                     'cc'              => $cc ?: null,
