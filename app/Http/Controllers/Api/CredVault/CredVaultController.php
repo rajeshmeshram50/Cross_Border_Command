@@ -4796,49 +4796,9 @@ class CredVaultController extends Controller
 
     protected function hodOf(Departments $d, int $clientId): ?array
     {
-        // 1. A manually-set head that still matches a current active employee wins.
-        if (filled($d->head)) {
-            $uid = $this->deptHeads($clientId)[(int) $d->id] ?? null;
-            if ($uid) return ['id' => $uid, 'name' => $d->head, 'initials' => $this->initials($d->head), 'role' => 'HOD'];
-        }
+        if (!filled($d->head)) return null;
 
-        // 2. Otherwise derive from the department's own people — first HOD by id, else first TL by id.
-        $der = $this->derivedDeptHeads($clientId)[(int) $d->id] ?? null;
-        if ($der) return ['id' => $der['id'], 'name' => $der['name'], 'initials' => $this->initials($der['name']), 'role' => $der['role']];
-
-        return null;
-    }
-
-    // Per-department fallback head: the lowest-id active HOD, or (if none) the lowest-id active Team Lead.
-    protected function derivedDeptHeads(int $clientId): array
-    {
-        return $this->memo("derivedHeads:{$clientId}", function () use ($clientId) {
-            $emps = Employee::where('client_id', $clientId)
-                ->where('status', 'Active')
-                ->whereNotNull('department_id')
-                ->with('designation:id,name,level')
-                ->orderBy('id')
-                ->get(['id', 'user_id', 'emp_code', 'client_id', 'first_name', 'middle_name', 'last_name', 'display_name', 'department_id', 'designation_id']);
-
-            $rankOf = fn ($e) => match ($this->levelOf($e->designation?->level ?: $e->designation?->name)) {
-                'hod'   => 1,
-                'tl'    => 2,
-                default => 99,
-            };
-
-            $best = [];
-            foreach ($emps as $e) {
-                $r = $rankOf($e);
-                if ($r > 2) continue;
-                $dep = (int) $e->department_id;
-                // Rows are id-ascending, so the first hit at a better rank stays (lowest id wins).
-                if (!isset($best[$dep]) || $r < $best[$dep]['rank']) {
-                    $name = $e->display_name ?: trim("{$e->first_name} {$e->last_name}");
-                    $best[$dep] = ['rank' => $r, 'id' => $e->resolved_user_id, 'name' => $name, 'role' => $r === 1 ? 'HOD' : 'TL'];
-                }
-            }
-            return $best;
-        });
+        return ['id' => $this->deptHeads($clientId)[(int) $d->id] ?? null, 'name' => $d->head, 'initials' => $this->initials($d->head), 'role' => 'HOD'];
     }
 
     protected function managerOf(User $u): ?int
