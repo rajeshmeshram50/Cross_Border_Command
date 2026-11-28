@@ -173,6 +173,12 @@ function useExactFitRows(
 }
 
 const BP_CSS = `
+/* Party wise / Transaction wise CLM have different heights: one fits the
+   screen, the other scrolls. The app scroller (.main-content) then gained and
+   lost its scrollbar on every switch, and the whole page jumped sideways by
+   its width. Reserving the gutter keeps the width the same either way. Scoped
+   by :has to the two profile pages (only they render .seg-page). */
+.main-content:has(.seg-page) { scrollbar-gutter: stable; }
 :where(.bpx-1) { font-size: 9px !important; font-weight: 500 !important; color: #94a3b8 !important; }
 :where(.bpx-2) { width: 24px !important; height: 24px !important; border-radius: 6px !important; background: linear-gradient(135deg,#0e7490,#0891b2) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
 :where(.bpx-3) { font-size: 9px !important; font-weight: 800 !important; color: #fff !important; }
