@@ -228,7 +228,7 @@ export default function TeamDetails({ dept, onOpenDept, selected, onSelect }: {
                   <b>{d.name}</b>
                   <small>
                     {d.hod?.name && (!scoped || (d.hod.id != null && branch?.some(m => Number(m.user_id) === Number(d.hod.id))))
-                      ? <><span className="tvx-mini">{initials(d.hod.name)}</span>{d.hod.name} · HOD</>
+                      ? <><span className="tvx-mini">{initials(d.hod.name)}</span>{d.hod.name} · {d.hod.role || 'HOD'}</>
                       : <>{scoped ? 'Your team' : 'No HOD assigned'}</>}
                   </small>
                 </span>
