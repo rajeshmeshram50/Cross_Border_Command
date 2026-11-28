@@ -55,6 +55,6 @@ return [
 
     'credvault' => [
         'otp_email' => env('CREDVAULT_OTP_EMAIL', 'php@inhpl.com'),
-        'share_copy_email' => env('CREDVAULT_SHARE_COPY_EMAIL', 'php@inhpl.com'),
+        'share_copy_email' => env('CREDVAULT_SHARE_COPY_EMAIL'),
     ],
 ];
