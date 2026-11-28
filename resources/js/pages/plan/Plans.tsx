@@ -43,8 +43,13 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
 
   const fetchPlans = () => {
     setLoading(true);
-    api.get('/plans').then(res => setPlans(res.data || []))
-      .catch(() => {}).finally(() => setLoading(false));
+    api.get('/plans').then(res => {
+      // Sort alphabetically by name, case-insensitive.
+      const sorted = ([...(res.data || [])] as Plan[]).sort(
+        (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }),
+      );
+      setPlans(sorted);
+    }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => { fetchPlans(); }, []);
