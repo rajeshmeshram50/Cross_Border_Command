@@ -34,6 +34,15 @@ const LIST_VIEW = { view: 'list' } as const;
 const partyLabels = (party: string): string[] =>
   (party ?? '').split(',').map(s => s.trim()).filter(Boolean).map(v => PARTY_LABELS[v] ?? v);
 
+/* Lowest point a row popover may reach: the bottom of the table card (its pager
+   footer), or the window if that is higher. Going over the footer is fine; going
+   below the card is not. */
+const popBottom = (el: Element): number => {
+  const card = el.closest('.clm-tab-body');
+  const cardBottom = card ? card.getBoundingClientRect().bottom : window.innerHeight;
+  return Math.min(window.innerHeight - 4, cardBottom);
+};
+
 export default function ClmTradeDocumentsPage() {
   const toast = useToast();
   const [tab, setTab]           = useState<'list'|'lib'>('list');
@@ -441,8 +450,10 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                                     if (segOpen?.id === r.id) { setSegOpen(null); return; }
                                     const b = e.currentTarget.getBoundingClientRect();
                                     // Open upwards when the space below can't hold the list.
+                                    // "Below" ends at the table card's bottom (its pager footer),
+                                    // not the window, so the list never hangs past the card.
                                     const estH = Math.min(280, 34 + segList.length * 30);
-                                    const below = window.innerHeight - b.bottom - 12;
+                                    const below = popBottom(e.currentTarget) - b.bottom - 8;
                                     const above = b.top - 12;
                                     const flipUp = below < estH && above > below;
                                     setSegOpen({ id: r.id, names: segList, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
@@ -473,7 +484,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                                     if (partyOpen?.id === r.id) { setPartyOpen(null); return; }
                                     const b = e.currentTarget.getBoundingClientRect();
                                     const estH = Math.min(280, 34 + list.length * 30);
-                                    const below = window.innerHeight - b.bottom - 12;
+                                    const below = popBottom(e.currentTarget) - b.bottom - 8;
                                     const above = b.top - 12;
                                     const flipUp = below < estH && above > below;
                                     setPartyOpen({ id: r.id, names: list, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });

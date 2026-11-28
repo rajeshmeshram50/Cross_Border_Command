@@ -169,6 +169,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
      on length alone locked those documents shut: the fix was on the far side of
      the door it closed. */
   const loadedLen = useRef(0);
+  /* The content the server already holds (or the editor's re-serialisation of
+     it — the same document). Save only sends `content` when the editor's HTML
+     differs from this, so Save & Next on step 1, or a save that only changed
+     a field, no longer re-uploads a 200 KB–1 MB document every time. */
+  const savedHtml = useRef<string | null>(null);
   // Unsaved-changes flag — set on every editor edit/insert, cleared on load and
   // on a successful save. Download/Export are blocked while dirty so the user
   // never downloads a stale (last-saved) version of edits they can still see.
@@ -526,6 +531,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setRegulatory(existing.regulatory ?? 'less');
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');   // useCtcEditor seeds the editor from this
+      savedHtml.current = existing.content ?? '';
       // Length as STORED, in characters of text. The save guard compares
       // against this so a document that was already over the limit can still
       // be opened and shortened — see persistDraft.
@@ -545,6 +551,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setRegulatory('less');
       setSegments([]);
       setContent('');
+      savedHtml.current = null;             // new draft — the first save sends everything
       loadedLen.current = 0;                // new draft — nothing stored yet
       setEditorLen(0);
       setHeaderConfig(brandedDefaults.header);
@@ -584,6 +591,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     if (!html || html === '<p></p>') return;
     syncedToEditor.current = true;
     setEditorLen(contentTextLength(ed));
+    // The editor's parse of the stored document is the same document: treat it
+    // as already saved, so an untouched draft does not count as changed.
+    if (savedHtml.current !== null && content === savedHtml.current) savedHtml.current = html;
     if (html === content) return;
     loadedLen.current = contentTextLength(ed);
     setContent(html);
@@ -700,14 +710,22 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       header_config: headerConfig,
       footer_config: footerConfig,
     };
+    // Edit with unchanged content: leave `content` out (the server keeps what
+    // it has — the update only touches the fields it receives). New drafts and
+    // real edits still send it.
+    const contentUnchanged = !!editingId && savedHtml.current !== null && html === savedHtml.current;
+    const body: Partial<typeof payload> = contentUnchanged
+      ? (({ content: _omit, ...rest }) => rest)(payload)
+      : payload;
     try {
       if (editingId) {
-        await api.put(`/clm/trade-doc-library/${editingId}`, payload);
+        await api.put(`/clm/trade-doc-library/${editingId}`, body);
       } else {
         const r = await api.post<{ data?: { id?: number } }>('/clm/trade-doc-library', payload);
         const newId = r.data?.data?.id;
         if (newId) setEditingId(newId);
       }
+      savedHtml.current = html;   // the server now holds this content
       setDirty(false);   // saved — download/export now reflect the current content
       return true;
     } catch (e: any) {
