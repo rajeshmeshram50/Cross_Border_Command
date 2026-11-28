@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Candidate;
+use App\Models\Employee;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\Recruitment;
@@ -961,22 +962,17 @@ class CandidateController extends Controller
             // that person is on the roster, not a candidate.
             $clientId = Recruitment::where('id', $recruitmentId)->value('client_id');
             if ($clientId) {
-                $lc  = mb_strtolower($email);
-                $emp = Employee::query()
+                $lc    = mb_strtolower($email);
+                $taken = Employee::query()
                     ->where('client_id', $clientId)
                     ->where(function ($w) use ($lc) {
                         $w->whereRaw('LOWER(email) = ?', [$lc])
                           ->orWhereRaw('LOWER(official_email) = ?', [$lc]);
                     })
-                    ->first(['id', 'first_name', 'last_name', 'emp_code']);
-                if ($emp) {
-                    $who = trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))
-                        ?: ($emp->emp_code ?: 'an existing employee');
+                    ->exists();
+                if ($taken) {
                     throw ValidationException::withMessages([
-                        'email' => [sprintf(
-                            'This email already belongs to an existing employee (%s). A candidate cannot use an employee email.',
-                            $who,
-                        )],
+                        'email' => ['This email is already taken.'],
                     ]);
                 }
             }
