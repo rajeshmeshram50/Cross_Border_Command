@@ -7,6 +7,7 @@ import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/mast
 import { HolidayFilterModal, type HolidayFilterValues } from './HrHoliday';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
+import { ciSort } from '../../utils/tableSort';
 import FullPageLoader from '../../components/ui/FullPageLoader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -703,6 +704,7 @@ export default function HrLeave() {
       header: 'Employee',
       id: 'employee',
       accessorFn: (r: LeaveRequest) => r.empName,
+      sortingFn: ciSort,
       // wrap: code · role sits on a second line under the name.
       meta: { width: '19%', wrap: true },
       cell: info => {
@@ -726,6 +728,7 @@ export default function HrLeave() {
     {
       header: 'Type',
       accessorKey: 'typeName',
+      sortingFn: ciSort,
       // wrap: opt out of the cell's default ellipsis so the full type pill shows
       // ("Public Holiday" was clipped to "Public Holiday…" even with space).
       meta: { width: '10%', align: 'center', wrap: true },
@@ -738,7 +741,7 @@ export default function HrLeave() {
         );
       },
     },
-    { header: 'Duration', accessorKey: 'durationLabel', meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13">{String(info.getValue() ?? '')}</span> },
+    { header: 'Duration', accessorKey: 'durationLabel', sortingFn: (a, b, id) => (Number(String(a.getValue(id)).replace(/[^\d.]/g, '')) || 0) - (Number(String(b.getValue(id)).replace(/[^\d.]/g, '')) || 0), meta: { width: '7%', align: 'center' }, cell: info => <span className="fs-13">{String(info.getValue() ?? '')}</span> },
     {
       /* Sorts on the ISO from-date so the column is chronological, not
          alphabetical on "05-Aug-2026 → 07-Aug-2026". */
@@ -1416,6 +1419,7 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
     {
       header: 'Holiday',
       accessorKey: 'name',
+      sortingFn: ciSort,
       /* Percentages, not px. As numbers these were shares of the leftover
          width under table-layout:fixed, and 38px against the serial
          column's 56 made Sr No the widest column on the table. */
@@ -1450,6 +1454,7 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
     {
       header: 'Type',
       accessorKey: 'type',
+      sortingFn: ciSort,
       meta: { width: '15%' },
       cell: (info: any) => {
         const t = String(info.row.original.type || '').trim();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import { ciSort } from '../../utils/tableSort';
 import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } from './leavePlansApi';
 import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
@@ -264,6 +265,7 @@ export default function HrLeaveApprovals() {
       header: 'Employee',
       id: 'employee',
       accessorFn: (r) => r.employee?.display_name || `${r.employee?.first_name ?? ''} ${r.employee?.last_name ?? ''}`.trim(),
+      sortingFn: ciSort,
       meta: { width: '22%' },
       cell: info => {
         const r = info.row.original;
@@ -289,6 +291,7 @@ export default function HrLeaveApprovals() {
       header: 'Leave Type',
       id: 'leave_type',
       accessorFn: (r) => r.leave_type?.name ?? '',
+      sortingFn: ciSort,
       meta: { width: '14%', align: 'center' },
       cell: info => (
         <span className="rec-pill" style={{ background: typeTone.bg, color: typeTone.fg, fontSize: 11 }}>

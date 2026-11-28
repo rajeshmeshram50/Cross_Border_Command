@@ -647,13 +647,9 @@ class ConsigneeController extends Controller
         $data = $request->validate($rules);
 
         $data['customer_ids'] = array_values(array_unique(array_map('intval', $data['customer_ids'])));
+        // customer_ids[0] is the consignee's OWN customer — for a Same-as-Customer
+        // consignee that is the one it mirrors. Extra mapped customers are allowed.
         $data['customer_id']  = $data['customer_ids'][0];
-
-        if ($sameAsCustomer && count($data['customer_ids']) > 1) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'same_as_customer' => ['“Same as Customer” can only be used when the consignee is mapped to a single customer.'],
-            ]);
-        }
 
         $primary       = $data['primary_address'] ?? [];
         $seenEmails    = [];
